@@ -1,0 +1,10 @@
+apiVersion: kafka.stackable.de/v1
+kind: KafkaCluster
+metadata:
+  name: simple
+spec:
+  version: 2.6.0
+  zooKeeperReference: foobar
+  brokers:
+    - node_name: soenke-laptop
+    - node_name: lars-laptop
