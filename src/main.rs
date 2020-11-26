@@ -225,7 +225,7 @@ fn build_pod(
                 name: "kafka".to_string(),
                 command: Some(vec![
                     "kafka_2.12-2.6.0/bin/kafka-server-start.sh".to_string(),
-                    "{{ configroot }}/conf".to_string(),
+                    "{{ configroot }}/config/server.properties".to_string(),
                 ]),
                 volume_mounts: Some(vec![VolumeMount {
                     mount_path: "config".to_string(),
