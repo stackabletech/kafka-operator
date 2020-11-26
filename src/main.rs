@@ -1,7 +1,7 @@
 mod crd;
 mod error;
 
-use crate::crd::{KafkaCluster, KafkaClusterSpec};
+use crate::crd::{KafkaCluster, KafkaClusterSpec, KafkaBroker};
 use crate::error::Error;
 
 use futures::StreamExt;
@@ -162,7 +162,7 @@ async fn update_deployment(
         let cm_name = format!("kafka-{}", pod_name);
 
         // First we need to create/update the necessary pods...
-        let pod = build_pod(&kafka_cluster, &labels, &pod_name, &cm_name)?;
+        let pod = build_pod(&kafka_cluster, &broker, &labels, &pod_name, &cm_name)?;
         patch_resource(&pods_api, &pod_name, &pod, FIELD_MANAGER).await?;
 
         // ...then we create the ConfigMap (one per pod):
@@ -187,6 +187,8 @@ async fn delete_deployment(
     kafka_cluster: &KafkaCluster,
     context: &Context<ContextData>,
 ) -> Result<ReconcilerAction, Error> {
+    finalizer::remove_finalizer(context.get_ref().client.clone(), kafka_cluster, FINALIZER_NAME).await?;
+
     Ok(ReconcilerAction {
         requeue_after: Option::None,
     })
@@ -194,6 +196,7 @@ async fn delete_deployment(
 
 fn build_pod(
     resource: &KafkaCluster,
+    broker: &KafkaBroker,
     labels: &BTreeMap<String, String>,
     pod_name: &String,
     cm_name: &String,
@@ -212,6 +215,7 @@ fn build_pod(
 
         // Spec
         spec: Some(PodSpec {
+            node_name: Some(broker.node_name.clone()),
             tolerations: Some(create_tolerations()),
             containers: vec![Container {
                 image: Some(format!(
