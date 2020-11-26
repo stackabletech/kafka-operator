@@ -1695,6 +1695,7 @@ dependencies = [
 [[package]]
 name = "stackable-zookeeper-crd"
 version = "0.1.0"
+source = "git+https://github.com/lfrancke/zookeeper-operator.git?branch=start#d6840d03f4d73204088b2342046ba58f7b86386c"
 dependencies = [
  "k8s-openapi",
  "kube",
