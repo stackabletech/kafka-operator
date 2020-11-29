@@ -1,0 +1,12 @@
+[package]
+name = "stackable-kafka-operator-server"
+version = "0.1.0"
+authors = ["Lars Francke <lars.francke@stackable.de>"]
+edition = "2018"
+
+[dependencies]
+stackable-kafka-crd = { path = "../crd" }
+stackable-operator = { git = "https://github.com/lfrancke/operator-rs.git", branch="start" }
+stackable-kafka-operator = { path = "../operator" }
+
+tokio = { version = "0.2", features = ["macros", "rt-threaded"] }

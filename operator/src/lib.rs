@@ -1,7 +1,6 @@
-mod crd;
 mod error;
 
-use crate::crd::{KafkaCluster, KafkaClusterSpec, KafkaBroker};
+use stackable_kafka_crd::{KafkaCluster, KafkaClusterSpec, KafkaBroker};
 use crate::error::Error;
 
 use futures::StreamExt;
@@ -28,26 +27,6 @@ use tracing::{error, info};
 const FINALIZER_NAME: &str = "kafka.stackable.de/cleanup";
 const FIELD_MANAGER: &str = "kafka.stackable.de";
 
-#[tokio::main]
-async fn main() -> Result<(), error::Error> {
-    initialize_logging();
-    let client = create_client().await?;
-
-    stackable_operator::crd::ensure_crd_created::<KafkaCluster>(client.clone()).await;
-
-    create_controller(client).await;
-    Ok(())
-}
-
-fn initialize_logging() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
-}
-
-async fn create_client() -> Result<kube::Client, error::Error> {
-    return Ok(kube::Client::try_default().await?);
-}
 
 pub async fn create_controller(client: Client) {
     let api: Api<KafkaCluster> = Api::all(client.clone());
