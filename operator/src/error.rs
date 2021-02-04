@@ -10,5 +10,5 @@ pub enum Error {
     OperatorError {
         #[from]
         source: stackable_operator::error::Error,
-    }
+    },
 }
