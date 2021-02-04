@@ -8,8 +8,8 @@ use k8s_openapi::api::core::v1::{
     Affinity, ConfigMap, ConfigMapVolumeSource, Container, Pod, PodAffinityTerm, PodAntiAffinity,
     PodSpec, Volume, VolumeMount,
 };
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, OwnerReference};
-use kube::api::{ListParams, ObjectMeta};
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
+use kube::api::ListParams;
 use kube::Api;
 use serde_json::json;
 use stackable_kafka_crd::{KafkaBroker, KafkaCluster, KafkaClusterSpec};
@@ -50,8 +50,6 @@ impl KafkaState {
         };
          */
 
-        // Writing simple
-        //zookeeper.connect=localhost:2181
         let mut options = HashMap::new();
         options.insert(
             "zookeeper.connect".to_string(),
@@ -153,16 +151,7 @@ fn build_pod(
 ) -> Result<Pod, Error> {
     let pod = Pod {
         // Metadata
-        metadata: ObjectMeta {
-            name: Some(pod_name.to_string()),
-            owner_references: Some(vec![OwnerReference {
-                controller: Some(true),
-                ..metadata::object_to_owner_reference::<KafkaCluster>(resource.metadata.clone())?
-            }]),
-            labels: Some(labels.clone()),
-            ..ObjectMeta::default()
-        },
-
+        metadata: metadata::build_metadata(pod_name.to_string(), Some(labels.clone()), resource)?,
         // Spec
         spec: Some(PodSpec {
             node_name: Some(broker.node_name.clone()),
