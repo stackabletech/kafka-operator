@@ -1,16 +1,15 @@
-use stackable_kafka_crd;
-use stackable_kafka_operator;
-use stackable_operator;
-use stackable_operator::error;
+use stackable_kafka_crd::KafkaCluster;
+use stackable_operator::{client, error};
+
+const FIELD_MANAGER: &str = "kafka.stackable.de";
 
 #[tokio::main]
 async fn main() -> Result<(), error::Error> {
-    stackable_operator::initialize_logging();
-    let client = stackable_operator::create_client().await?;
+    stackable_operator::initialize_logging("KAFKA_OPERATOR_LOG");
+    let client = client::create_client(Some(FIELD_MANAGER.to_string())).await?;
 
-    stackable_operator::crd::ensure_crd_created::<stackable_kafka_crd::KafkaCluster>(client.clone()).await;
+    stackable_operator::crd::ensure_crd_created::<KafkaCluster>(client.clone()).await?;
 
     stackable_kafka_operator::create_controller(client).await;
     Ok(())
-
 }

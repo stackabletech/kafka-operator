@@ -1,176 +1,149 @@
+#![feature(backtrace)]
 mod error;
 
-use stackable_kafka_crd::{KafkaCluster, KafkaClusterSpec, KafkaBroker};
 use crate::error::Error;
 
-use futures::StreamExt;
+use stackable_kafka_crd::{KafkaBroker, KafkaCluster, KafkaClusterSpec};
+
 use handlebars::Handlebars;
 use k8s_openapi::api::core::v1::{
     Affinity, ConfigMap, ConfigMapVolumeSource, Container, Pod, PodAffinityTerm, PodAntiAffinity,
     PodSpec, Volume, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, OwnerReference};
-use kube::api::{ListParams, Meta, ObjectMeta};
-use kube::{Api, Client};
-use kube_runtime::controller::{Context, ReconcilerAction};
-use kube_runtime::Controller;
+use kube::api::{ListParams, ObjectMeta};
+use kube::Api;
 use serde_json::json;
-use stackable_operator::{
-    create_config_map, create_tolerations, decide_controller_action, finalizer,
-    object_to_owner_reference, patch_resource, ContextData, ControllerAction,
+use stackable_operator::client::Client;
+use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
+use stackable_operator::metadata;
+use stackable_operator::reconcile::{
+    ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
 };
-use stackable_zookeeper_crd::ZooKeeperCluster;
+use stackable_operator::{create_config_map, create_tolerations};
 use std::collections::{BTreeMap, HashMap};
-use std::time::Duration;
-use tracing::{error, info};
+use std::future::Future;
+use std::pin::Pin;
+use tracing::{debug, error, info, trace};
 
 const FINALIZER_NAME: &str = "kafka.stackable.de/cleanup";
-const FIELD_MANAGER: &str = "kafka.stackable.de";
 
+type KafkaReconcileResult = ReconcileResult<error::Error>;
+
+struct KafkaState {
+    context: ReconciliationContext<KafkaCluster>,
+    kafka_spec: KafkaClusterSpec,
+}
+
+impl KafkaState {
+    async fn read_existing_pod_information(&mut self) -> KafkaReconcileResult {
+        let name = self.context.name();
+
+        let mut labels = BTreeMap::new();
+        labels.insert("kafka-name".to_string(), name.clone());
+
+        /*
+        let zk: Option<KafkaCluster> = match zk_api.get(&self.kafka_spec.zoo_keeper_reference).await
+        {
+            Ok(zk) => Some(zk),
+            Err(err) => {
+                // TODO: return None for kube:error:ErrorResponse with reason "NotFound" and return with error otherwise?
+                None
+            }
+        };
+         */
+
+        // Writing simple
+        //zookeeper.connect=localhost:2181
+        let mut options = HashMap::new();
+        options.insert(
+            "zookeeper.connect".to_string(),
+            "localhost:2181".to_string(),
+        );
+
+        let mut handlebars = Handlebars::new();
+        handlebars
+            .register_template_string("conf", "{{#each options}}{{@key}}={{this}}\n{{/each}}")
+            .expect("template should work");
+
+        for broker in &self.kafka_spec.brokers {
+            let pod_name = format!("kafka-{}-{}", name, broker.node_name); // TODO: These names need to contain a random component, also check the maximum length of names
+            let cm_name = format!("kafka-{}", pod_name);
+
+            // First we need to create/update the necessary pods...
+            let pod = build_pod(
+                &self.context.resource,
+                &broker,
+                &labels,
+                &pod_name,
+                &cm_name,
+            )?;
+            self.context.client.create(&pod).await?;
+
+            // ...then we create the ConfigMap (one per pod):
+            let config = handlebars
+                .render("conf", &json!({ "options": options }))
+                .unwrap();
+
+            let mut data = BTreeMap::new();
+            data.insert("server.properties".to_string(), config);
+
+            let tmp_name = cm_name.clone() + "-config"; // TODO: Create these names once and pass them around so we are consistent
+            let cm = create_config_map(&self.context.resource, &tmp_name, data)?;
+            self.context.client.create(&cm).await?;
+        }
+
+        Ok(ReconcileFunctionAction::Continue)
+    }
+}
+
+impl ReconciliationState for KafkaState {
+    type Error = error::Error;
+
+    fn reconcile(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<ReconcileFunctionAction, Self::Error>> + Send + '_>>
+    {
+        Box::pin(async move { self.read_existing_pod_information().await })
+    }
+}
+
+struct KafkaStrategy {}
+
+impl KafkaStrategy {
+    pub fn new() -> KafkaStrategy {
+        KafkaStrategy {}
+    }
+}
+
+impl ControllerStrategy for KafkaStrategy {
+    type Item = KafkaCluster;
+    type State = KafkaState;
+
+    fn finalizer_name(&self) -> String {
+        FINALIZER_NAME.to_string()
+    }
+
+    fn init_reconcile_state(&self, context: ReconciliationContext<Self::Item>) -> Self::State {
+        KafkaState {
+            kafka_spec: context.resource.spec.clone(),
+            context,
+        }
+    }
+}
 
 pub async fn create_controller(client: Client) {
-    let api: Api<KafkaCluster> = Api::all(client.clone());
-    let pods_api: Api<Pod> = Api::all(client.clone());
-    let context = ContextData::new_context(client);
+    let kafka_api: Api<KafkaCluster> = client.get_all_api();
+    let pods_api: Api<Pod> = client.get_all_api();
+    let config_maps_api: Api<ConfigMap> = client.get_all_api();
 
-    Controller::new(api, ListParams::default())
+    let controller = Controller::new(kafka_api)
         .owns(pods_api, ListParams::default())
-        .run(reconcile, error_policy, context)
-        .for_each(|res| async move {
-            match res {
-                Ok(o) => info!("Reconciled {:?}", o),
-                Err(e) => info!("Reconcile failed: {}", e),
-            };
-        })
-        .await
-}
+        .owns(config_maps_api, ListParams::default());
 
-/// This method contains the logic of reconciling an object (the desired state) we received with the actual state.
-///
-/// We distinguish between three different types:
-/// * Create
-/// * Update
-/// * Delete
-async fn reconcile(
-    kafka_cluster: KafkaCluster,
-    context: Context<ContextData>,
-) -> Result<ReconcilerAction, Error> {
-    match decide_controller_action(&kafka_cluster, FINALIZER_NAME) {
-        Some(ControllerAction::Create) => {
-            create_deployment(&kafka_cluster, &context).await?;
-        }
-        Some(ControllerAction::Update) => {
-            update_deployment(&kafka_cluster, &context).await?;
-        }
-        Some(ControllerAction::Delete) => {
-            delete_deployment(&kafka_cluster, &context).await?;
-        }
-        None => {
-            //TODO: debug!
-        }
-    }
+    let strategy = KafkaStrategy::new();
 
-    Ok(ReconcilerAction {
-        requeue_after: None,
-    })
-}
-
-/// This method is being called by the Controller whenever there's an error during reconcilation.
-/// We just log the error and requeue the event.
-fn error_policy(error: &Error, _context: Context<ContextData>) -> ReconcilerAction {
-    error!("Reconciliation error:\n{}", error);
-    ReconcilerAction {
-        requeue_after: Some(Duration::from_secs(10)),
-    }
-}
-
-async fn create_deployment(
-    kafka_cluster: &KafkaCluster,
-    context: &Context<ContextData>,
-) -> Result<ReconcilerAction, Error> {
-    finalizer::add_finalizer(
-        context.get_ref().client.clone(),
-        kafka_cluster,
-        FINALIZER_NAME,
-    )
-    .await?;
-
-    update_deployment(kafka_cluster, context).await
-}
-
-async fn update_deployment(
-    kafka_cluster: &KafkaCluster,
-    context: &Context<ContextData>,
-) -> Result<ReconcilerAction, Error> {
-    let kafka_spec: KafkaClusterSpec = kafka_cluster.spec.clone();
-    let client = context.get_ref().client.clone();
-
-    let name = Meta::name(kafka_cluster);
-    let ns = Meta::namespace(kafka_cluster).expect("KafkaCluster is namespaced");
-    let cm_api: Api<ConfigMap> = Api::namespaced(client.clone(), &ns);
-
-    let mut labels = BTreeMap::new();
-    labels.insert("kafka-name".to_string(), name.clone());
-
-    let zk_api: Api<ZooKeeperCluster> = Api::namespaced(client.clone(), "TODO");
-    let zk: Option<ZooKeeperCluster> = match zk_api.get(&kafka_spec.zoo_keeper_reference).await {
-        Ok(zk) => Some(zk),
-        Err(err) => {
-            // TODO: return None for kube:error:ErrorResponse with reason "NotFound" and return with error otherwise?
-            None
-        }
-    };
-
-    let pods_api: Api<Pod> = Api::namespaced(client.clone(), &ns);
-
-    // Writing simple
-    //zookeeper.connect=localhost:2181
-    let mut options = HashMap::new();
-    options.insert(
-        "zookeeper.connect".to_string(),
-        "localhost:2181".to_string(),
-    );
-
-    let mut handlebars = Handlebars::new();
-    handlebars
-        .register_template_string("conf", "{{#each options}}{{@key}}={{this}}\n{{/each}}")
-        .expect("template should work");
-
-    for broker in kafka_spec.brokers {
-        let pod_name = format!("kafka-{}-{}", name, broker.node_name); // TODO: These names need to contain a random component, also check the maximum length of names
-        let cm_name = format!("kafka-{}", pod_name);
-
-        // First we need to create/update the necessary pods...
-        let pod = build_pod(&kafka_cluster, &broker, &labels, &pod_name, &cm_name)?;
-        patch_resource(&pods_api, &pod_name, &pod, FIELD_MANAGER).await?;
-
-        // ...then we create the ConfigMap (one per pod):
-        let config = handlebars
-            .render("conf", &json!({ "options": options }))
-            .unwrap();
-
-        let mut data = BTreeMap::new();
-        data.insert("server.properties".to_string(), config);
-
-        let tmp_name = cm_name.clone() + "-config"; // TODO: Create these names once and pass them around so we are consistent
-        let cm = create_config_map(kafka_cluster, &tmp_name, data)?;
-        patch_resource(&cm_api, &tmp_name, &cm, FIELD_MANAGER).await?;
-    }
-
-    Ok(ReconcilerAction {
-        requeue_after: Option::None,
-    })
-}
-
-async fn delete_deployment(
-    kafka_cluster: &KafkaCluster,
-    context: &Context<ContextData>,
-) -> Result<ReconcilerAction, Error> {
-    finalizer::remove_finalizer(context.get_ref().client.clone(), kafka_cluster, FINALIZER_NAME).await?;
-
-    Ok(ReconcilerAction {
-        requeue_after: Option::None,
-    })
+    controller.run(client, strategy).await;
 }
 
 fn build_pod(
@@ -186,7 +159,7 @@ fn build_pod(
             name: Some(pod_name.clone()),
             owner_references: Some(vec![OwnerReference {
                 controller: Some(true),
-                ..object_to_owner_reference::<KafkaCluster>(resource.metadata.clone())?
+                ..metadata::object_to_owner_reference::<KafkaCluster>(resource.metadata.clone())?
             }]),
             labels: Some(labels.clone()),
             ..ObjectMeta::default()
