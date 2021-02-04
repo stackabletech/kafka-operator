@@ -3,8 +3,6 @@ mod error;
 
 use crate::error::Error;
 
-use stackable_kafka_crd::{KafkaBroker, KafkaCluster, KafkaClusterSpec};
-
 use handlebars::Handlebars;
 use k8s_openapi::api::core::v1::{
     Affinity, ConfigMap, ConfigMapVolumeSource, Container, Pod, PodAffinityTerm, PodAntiAffinity,
@@ -14,17 +12,16 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, OwnerReferen
 use kube::api::{ListParams, ObjectMeta};
 use kube::Api;
 use serde_json::json;
+use stackable_kafka_crd::{KafkaBroker, KafkaCluster, KafkaClusterSpec};
 use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::metadata;
 use stackable_operator::reconcile::{
     ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
 };
-use stackable_operator::{create_config_map, create_tolerations};
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
-use tracing::{debug, error, info, trace};
 
 const FINALIZER_NAME: &str = "kafka.stackable.de/cleanup";
 
@@ -89,7 +86,8 @@ impl KafkaState {
             data.insert("server.properties".to_string(), config);
 
             let tmp_name = cm_name.clone() + "-config"; // TODO: Create these names once and pass them around so we are consistent
-            let cm = create_config_map(&self.context.resource, &tmp_name, data)?;
+            let cm =
+                stackable_operator::create_config_map(&self.context.resource, &tmp_name, data)?;
             self.context.client.create(&cm).await?;
         }
 
@@ -150,13 +148,13 @@ fn build_pod(
     resource: &KafkaCluster,
     broker: &KafkaBroker,
     labels: &BTreeMap<String, String>,
-    pod_name: &String,
-    cm_name: &String,
+    pod_name: &str,
+    cm_name: &str,
 ) -> Result<Pod, Error> {
     let pod = Pod {
         // Metadata
         metadata: ObjectMeta {
-            name: Some(pod_name.clone()),
+            name: Some(pod_name.to_string()),
             owner_references: Some(vec![OwnerReference {
                 controller: Some(true),
                 ..metadata::object_to_owner_reference::<KafkaCluster>(resource.metadata.clone())?
@@ -168,7 +166,7 @@ fn build_pod(
         // Spec
         spec: Some(PodSpec {
             node_name: Some(broker.node_name.clone()),
-            tolerations: Some(create_tolerations()),
+            tolerations: Some(stackable_operator::create_tolerations()),
             containers: vec![Container {
                 image: Some(format!(
                     "stackable/kafka:{}",
