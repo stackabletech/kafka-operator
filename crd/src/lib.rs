@@ -1,7 +1,7 @@
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use stackable_operator::CRD;
+use stackable_operator::Crd;
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
@@ -19,7 +19,7 @@ pub struct KafkaClusterSpec {
     pub zoo_keeper_reference: String,
 }
 
-impl CRD for KafkaCluster {
+impl Crd for KafkaCluster {
     const RESOURCE_NAME: &'static str = "kafkaclusters.kafka.stackable.de";
     const CRD_DEFINITION: &'static str = include_str!("../kafkaclusters.crd.yaml");
 }
