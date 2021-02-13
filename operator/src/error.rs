@@ -11,4 +11,7 @@ pub enum Error {
         #[from]
         source: stackable_operator::error::Error,
     },
+
+    #[error("Error during reconciliation: {0}")]
+    ReconcileError(String),
 }

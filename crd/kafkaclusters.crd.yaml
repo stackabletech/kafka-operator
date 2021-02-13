@@ -7,38 +7,56 @@ spec:
   names:
     kind: KafkaCluster
     plural: kafkaclusters
-    singular: kafkacluster
     shortNames:
       - kafka
+    singular: kafkacluster
   scope: Namespaced
   versions:
-    - name: v1
-      served: true
-      storage: true
+    - additionalPrinterColumns: []
+      name: v1
       schema:
         openAPIV3Schema:
-          type: object
+          description: "Auto-generated derived type for KafkaClusterSpec via `CustomResource`"
           properties:
             spec:
-              type: object
               properties:
-                version:
-                  type: string
-                  enum: [ 2.6.0 ]
                 brokers:
-                  type: array
                   items:
-                    type: object
                     properties:
                       node_name:
                         type: string
-                zooKeeperReference:
+                    required:
+                      - node_name
+                    type: object
+                  type: array
+                version:
+                  enum:
+                    - 2.6.0
                   type: string
-              required: [ "version", "brokers", "zooKeeperReference" ]
+                zooKeeperReference:
+                  description: This is the address to a namespaced resource.
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                  required:
+                    - name
+                    - namespace
+                  type: object
+              required:
+                - brokers
+                - version
+                - zooKeeperReference
+              type: object
             status:
-               type: object
-               properties:
-                 is_bad:
-                   type: boolean
+              nullable: true
+              type: object
+          required:
+            - spec
+          title: KafkaCluster
+          type: object
+      served: true
+      storage: true
       subresources:
-         status: {}
+        status: {}

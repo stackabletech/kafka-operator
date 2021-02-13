@@ -16,7 +16,7 @@ use stackable_operator::Crd;
 pub struct KafkaClusterSpec {
     pub version: KafkaVersion,
     pub brokers: Vec<KafkaBroker>,
-    pub zoo_keeper_reference: String,
+    pub zoo_keeper_reference: NamespaceName,
 }
 
 impl Crd for KafkaCluster {
@@ -38,3 +38,16 @@ pub struct KafkaBroker {
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 pub struct KafkaClusterStatus {}
+
+/// This is the address to a namespaced resource.
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
+pub struct NamespaceName {
+    pub namespace: String,
+    pub name: String,
+}
+
+impl NamespaceName {
+    pub fn new(namespace: String, name: String) -> Self {
+        NamespaceName { namespace, name }
+    }
+}

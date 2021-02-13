@@ -4,7 +4,9 @@ metadata:
   name: simple
 spec:
   version: 2.6.0
-  zooKeeperReference: foobar
+  zooKeeperReference:
+    namespace: default
+    name: simple
   brokers:
     - node_name: soenke-laptop
     - node_name: lars-laptop
