@@ -110,8 +110,8 @@ impl KafkaState {
 
             // If the pod for this server is currently terminating (this could be for restarts or
             // upgrades) wait until it's done terminating.
-            if finalizer::has_deletion_stamp(&pod) {
-                info!("Waiting for Pod [{}] to terminate", Meta::name(&pod));
+            if finalizer::has_deletion_stamp(pod) {
+                info!("Waiting for Pod [{}] to terminate", Meta::name(pod));
                 return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
             }
 
@@ -120,7 +120,7 @@ impl KafkaState {
             if !podutils::is_pod_running_and_ready(&pod) {
                 info!(
                     "Waiting for Pod [{}] to be running and ready",
-                    Meta::name(&pod)
+                    Meta::name(pod)
                 );
                 return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
             }
