@@ -98,20 +98,65 @@ impl KafkaState {
         for broker in &self.kafka_spec.brokers {
             trace!("Reconciling broker [{}]", broker.node_name);
 
-            let pod = match self.existing_pods.iter().find(
-                |pod| matches!(&pod.spec, Some(PodSpec { node_name: Some(node_name), ..}, ..) if node_name == &broker.node_name),
-            ) {
+            // We first check whether we already have a Pod for this Node.
+            // If that's the case we'll use it and if not we create a new one.
+            let pod = match self
+                .existing_pods
+                .iter()
+                .find(|pod| podutils::is_pod_assigned_to_node(pod, &broker.node_name))
+            {
                 None => {
-                    trace!("Found existing pod for broker [{}]", broker.node_name);
-                    continue;
+                    info!(
+                        "Broker on node [{}] missing, creating now",
+                        broker.node_name
+                    );
+                    // TODO: These names need to contain a random component, also check the maximum length of names
+                    let pod_name = format!("kafka-{}-{}", name, broker.node_name);
+                    let cm_name = format!("kafka-{}", pod_name);
+
+                    // First we need to create/update the necessary pods...
+                    let pod = build_pod(
+                        &self.context.resource,
+                        &broker,
+                        &labels,
+                        &pod_name,
+                        &cm_name,
+                    )?;
+                    let pod = self.context.client.create(&pod).await?;
+
+                    // ...then we create the ConfigMap (one per pod):
+                    let config = handlebars
+                        .render("conf", &json!({ "options": options }))
+                        .unwrap();
+
+                    let mut data = BTreeMap::new();
+                    data.insert("server.properties".to_string(), config);
+
+                    // And create the ConfigMap
+                    // TODO: Need to deal with the case where the configmaps already exists (this should only happen in unclean shutdowns or similar bad scenarios)
+                    let tmp_name = cm_name.clone() + "-config"; // TODO: Create these names once and pass them around so we are consistent
+                    let cm = stackable_operator::create_config_map(
+                        &self.context.resource,
+                        &tmp_name,
+                        data,
+                    )?;
+                    self.context.client.create(&cm).await?;
+                    pod
                 }
-                Some(pod) => { pod }
+                Some(pod) => {
+                    trace!(
+                        "Found existing pod [{}] for broker [{}]",
+                        Meta::name(pod),
+                        broker.node_name
+                    );
+                    pod.clone()
+                }
             };
 
             // If the pod for this server is currently terminating (this could be for restarts or
             // upgrades) wait until it's done terminating.
-            if finalizer::has_deletion_stamp(pod) {
-                info!("Waiting for Pod [{}] to terminate", Meta::name(pod));
+            if finalizer::has_deletion_stamp(&pod) {
+                info!("Waiting for Pod [{}] to terminate", Meta::name(&pod));
                 return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
             }
 
@@ -120,39 +165,10 @@ impl KafkaState {
             if !podutils::is_pod_running_and_ready(&pod) {
                 info!(
                     "Waiting for Pod [{}] to be running and ready",
-                    Meta::name(pod)
+                    Meta::name(&pod)
                 );
                 return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
             }
-
-            // TODO: These names need to contain a random component, also check the maximum length of names
-            let pod_name = format!("kafka-{}-{}", name, broker.node_name);
-            let cm_name = format!("kafka-{}", pod_name);
-
-            // First we need to create/update the necessary pods...
-            let pod = build_pod(
-                &self.context.resource,
-                &broker,
-                &labels,
-                &pod_name,
-                &cm_name,
-            )?;
-            self.context.client.create(&pod).await?;
-
-            // ...then we create the ConfigMap (one per pod):
-            let config = handlebars
-                .render("conf", &json!({ "options": options }))
-                .unwrap();
-
-            let mut data = BTreeMap::new();
-            data.insert("server.properties".to_string(), config);
-
-            // And create the ConfigMap
-            // TODO: Need to deal with the case where the configmaps already exists (this should only happen in unclean shutdowns or similar bad scenarios)
-            let tmp_name = cm_name.clone() + "-config"; // TODO: Create these names once and pass them around so we are consistent
-            let cm =
-                stackable_operator::create_config_map(&self.context.resource, &tmp_name, data)?;
-            self.context.client.create(&cm).await?;
         }
 
         Ok(ReconcileFunctionAction::Continue)
