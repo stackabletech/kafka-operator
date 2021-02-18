@@ -1,0 +1,11 @@
+apiVersion: kafka.stackable.tech/v1
+kind: KafkaCluster
+metadata:
+  name: simple
+spec:
+  version: 2.6.0
+  zooKeeperReference:
+    namespace: default
+    name: simple
+  brokers:
+    - node_name: worker-1.stackable.demo
