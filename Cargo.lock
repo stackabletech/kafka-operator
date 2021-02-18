@@ -1477,7 +1477,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.1.0"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#860e75a3ee25a848284e99abd2bdf6671d5f514f"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#01d9bbe87e8ea40ed14a54bd1ca358532ca36563"
 dependencies = [
  "async-trait",
  "either",
