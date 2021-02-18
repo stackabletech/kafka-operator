@@ -29,7 +29,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
-const FINALIZER_NAME: &str = "kafka.stackable.de/cleanup";
+const FINALIZER_NAME: &str = "kafka.stackable.tech/cleanup";
 
 type KafkaReconcileResult = ReconcileResult<error::Error>;
 
@@ -91,6 +91,7 @@ impl KafkaState {
         options.insert("zookeeper.connect".to_string(), zk_servers);
 
         let mut handlebars = Handlebars::new();
+        handlebars.set_strict_mode(true);
         handlebars
             .register_template_string("conf", "{{#each options}}{{@key}}={{this}}\n{{/each}}")
             .expect("template should work");
@@ -124,7 +125,8 @@ impl KafkaState {
                     )?;
                     let pod = self.context.client.create(&pod).await?;
 
-                    // ...then we create the ConfigMap (one per pod):
+                    // ...then we create the data for the ConfigMap
+                    // There will be one ConfigMap per Pod.
                     let config = handlebars
                         .render("conf", &json!({ "options": options }))
                         .unwrap();
@@ -132,7 +134,7 @@ impl KafkaState {
                     let mut data = BTreeMap::new();
                     data.insert("server.properties".to_string(), config);
 
-                    // And create the ConfigMap
+                    // And now create the actual ConfigMap
                     // TODO: Need to deal with the case where the configmaps already exists (this should only happen in unclean shutdowns or similar bad scenarios)
                     let tmp_name = cm_name.clone() + "-config"; // TODO: Create these names once and pass them around so we are consistent
                     let cm = stackable_operator::create_config_map(
@@ -188,6 +190,7 @@ impl KafkaState {
                 .any(|broker| podutils::is_pod_assigned_to_node(pod, &broker.node_name))
             {
                 self.context.client.delete(pod).await?;
+                return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
             }
         }
         Ok(ReconcileFunctionAction::Continue)
@@ -294,27 +297,11 @@ fn build_pod(
             volumes: Some(vec![Volume {
                 name: "config-volume".to_string(),
                 config_map: Some(ConfigMapVolumeSource {
-                    name: Some(format!("{}-config", cm_name)),
+                    name: Some(format!("{}-config", cm_name)), // TODO: Create these names once and pass them around so we are consistent
                     ..ConfigMapVolumeSource::default()
                 }),
                 ..Volume::default()
             }]),
-            affinity: Some(Affinity {
-                pod_anti_affinity: Some(PodAntiAffinity {
-                    required_during_scheduling_ignored_during_execution: Some(vec![
-                        PodAffinityTerm {
-                            label_selector: Some(LabelSelector {
-                                match_labels: Some(labels.clone()),
-                                ..LabelSelector::default()
-                            }),
-                            topology_key: "kubernetes.io/hostname".to_string(),
-                            ..PodAffinityTerm::default()
-                        },
-                    ]),
-                    ..PodAntiAffinity::default()
-                }),
-                ..Affinity::default()
-            }),
             ..PodSpec::default()
         }),
         ..Pod::default()

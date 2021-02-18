@@ -5,7 +5,7 @@ use stackable_operator::Crd;
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
-    group = "kafka.stackable.de",
+    group = "kafka.stackable.tech",
     version = "v1",
     kind = "KafkaCluster",
     shortname = "kafka",
@@ -20,7 +20,7 @@ pub struct KafkaClusterSpec {
 }
 
 impl Crd for KafkaCluster {
-    const RESOURCE_NAME: &'static str = "kafkaclusters.kafka.stackable.de";
+    const RESOURCE_NAME: &'static str = "kafkaclusters.kafka.stackable.tech";
     const CRD_DEFINITION: &'static str = include_str!("../kafkaclusters.crd.yaml");
 }
 

@@ -1,4 +1,4 @@
-apiVersion: kafka.stackable.de/v1
+apiVersion: kafka.stackable.tech/v1
 kind: KafkaCluster
 metadata:
   name: simple
@@ -8,5 +8,4 @@ spec:
     namespace: default
     name: simple
   brokers:
-    - node_name: soenke-laptop
-    - node_name: lars-laptop
+    - node_name: worker-1.stackable.demo

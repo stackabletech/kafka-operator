@@ -1,7 +1,7 @@
 use stackable_kafka_crd::KafkaCluster;
 use stackable_operator::{client, error};
 
-const FIELD_MANAGER: &str = "kafka.stackable.de";
+const FIELD_MANAGER: &str = "kafka.stackable.tech";
 
 #[tokio::main]
 async fn main() -> Result<(), error::Error> {
