@@ -6,10 +6,8 @@ use crate::error::Error;
 use async_trait::async_trait;
 use handlebars::Handlebars;
 use k8s_openapi::api::core::v1::{
-    Affinity, ConfigMap, ConfigMapVolumeSource, Container, Pod, PodAffinityTerm, PodAntiAffinity,
-    PodSpec, Volume, VolumeMount,
+    ConfigMap, ConfigMapVolumeSource, Container, Pod, PodSpec, Volume, VolumeMount,
 };
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::api::{ListParams, Meta};
 use kube::Api;
 use serde_json::json;
