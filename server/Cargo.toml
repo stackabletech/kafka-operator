@@ -10,3 +10,10 @@ stackable-kafka-crd = { path = "../crd" }
 stackable-kafka-operator = { path = "../operator" }
 
 tokio = { version = "1.2", features = ["macros", "rt-multi-thread"] }
+
+[package.metadata.deb]
+maintainer-scripts = "debian/"
+systemd-units = { enable = false }
+assets = [
+    ["../target/release/stackable-kafka-operator-server", "opt/stackable/kafka-operator/", "755"],
+]
