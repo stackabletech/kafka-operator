@@ -4,7 +4,10 @@ on:
   push:
     branches:
       - main
-  pull_request:
+      - deb
+    pull_request:
+  schedule:
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 env:
@@ -19,3 +22,12 @@ jobs:
         run: ~/.cargo/bin/cargo +nightly build --verbose --release
       - name: Build apt package
         run: ~/.cargo/bin/cargo deb --manifest-path server/Cargo.toml --no-build
+      - name: Publish apt package
+        run: >
+          /usr/bin/curl
+          --fail
+          -vvvv
+          -u 'github:${{ secrets.NEXUS_PASSWORD }}'
+          -H "Content-Type: multipart/form-data"
+          --data-binary "$(find target/debian/ -name *.deb)"
+          "https://repo.stackable.tech/repository/deb-nightly/"
