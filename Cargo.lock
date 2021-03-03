@@ -152,6 +152,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "const_format"
+version = "0.2.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0412fd9e3c921f868af82a0097da41c250087e513786858b9e6b6055f8ed300"
+dependencies = [
+ "const_format_proc_macros",
+]
+
+[[package]]
+name = "const_format_proc_macros"
+version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8df496e1bbc93814d728a8036ff054cd95830afe9cf2275c9326688c02eff936"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-xid",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1474,14 +1494,19 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.1.0"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#01d9bbe87e8ea40ed14a54bd1ca358532ca36563"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#eb64e7411277b1dd22ed6d6dd3b57b0421c91281"
 dependencies = [
  "async-trait",
+ "chrono",
+ "const_format",
  "either",
  "futures",
  "k8s-openapi",
  "kube",
  "kube-runtime",
+ "lazy_static",
+ "regex",
+ "schemars",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1496,7 +1521,7 @@ dependencies = [
 [[package]]
 name = "stackable-zookeeper-crd"
 version = "0.1.0"
-source = "git+https://github.com/stackabletech/zookeeper-operator.git?branch=main#49c6cd24c0c843248fb7855eaa70e5e37b547a3a"
+source = "git+https://github.com/stackabletech/zookeeper-operator.git?branch=main#0a6122d124ae30f573469f147ca6cb90861be3d7"
 dependencies = [
  "k8s-openapi",
  "kube",
