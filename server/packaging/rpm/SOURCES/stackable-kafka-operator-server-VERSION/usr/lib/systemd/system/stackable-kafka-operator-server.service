@@ -1,0 +1,13 @@
+[Unit]
+Description=Stackable Kafka Operator
+Before=
+After=network.target
+[Service]
+User=root
+ExecStart=/opt/stackable/stackable-kafka-operator-server/stackable-kafka-operator-server
+Restart=on-abort
+StandardOutput=journal
+StandardError=journal
+Environment="KAFKA_OPERATOR_LOG=info"
+[Install]
+WantedBy=multi-user.target
