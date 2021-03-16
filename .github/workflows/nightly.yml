@@ -38,7 +38,7 @@ jobs:
       - name: Build
         run: ~/.cargo/bin/cargo +nightly build --verbose --release
       - name: Build RPM package
-        run: server/packaging/buildrpm.sh stackable-zookeeper-operator-server
+        run: server/packaging/buildrpm.sh stackable-kafka-operator-server
       - name: Publish RPM package
         run: >-
           /usr/bin/curl
