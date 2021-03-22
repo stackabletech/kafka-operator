@@ -6,40 +6,59 @@ use crate::error::Error;
 use async_trait::async_trait;
 use handlebars::Handlebars;
 use k8s_openapi::api::core::v1::{
-    ConfigMap, ConfigMapVolumeSource, Container, Pod, PodSpec, Volume, VolumeMount,
+    ConfigMap, ConfigMapVolumeSource, Container, Node, Pod, PodSpec, Volume, VolumeMount,
 };
-use kube::api::{ListParams, Meta};
+use kube::api::ListParams;
 use kube::Api;
 use serde_json::json;
-use tracing::{info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
-use stackable_kafka_crd::{KafkaBroker, KafkaCluster, KafkaClusterSpec};
+use stackable_kafka_crd::{KafkaCluster, KafkaClusterSpec};
 use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
+use stackable_operator::metadata;
 use stackable_operator::reconcile::{
-    ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
+    DeletionStrategy, ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
 };
-use stackable_operator::{finalizer, metadata, podutils};
 use stackable_zookeeper_crd::{ZooKeeperCluster, ZooKeeperClusterSpec};
 
+use stackable_operator::role_utils::RoleGroup;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
+use std::string::ToString;
 use std::time::Duration;
+use strum::IntoEnumIterator;
+use strum_macros::Display;
+use strum_macros::EnumIter;
 
 const FINALIZER_NAME: &str = "kafka.stackable.tech/cleanup";
 
+pub const CLUSTER_NAME_LABEL: &str = "kafka.stackable.tech/cluster-name";
+
+pub const NODE_GROUP_LABEL: &str = "kafka.stackable.tech/node-group-name";
+
+pub const NODE_TYPE_LABEL: &str = "kafka.stackable.tech/node-type";
+
 type KafkaReconcileResult = ReconcileResult<error::Error>;
+
+#[derive(EnumIter, Debug, Display, PartialEq, Eq, Hash)]
+pub enum KafkaNodeType {
+    Broker,
+}
 
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
     kafka_spec: KafkaClusterSpec,
     zk_spec: Option<ZooKeeperClusterSpec>,
     existing_pods: Vec<Pod>,
+    eligible_nodes: HashMap<KafkaNodeType, HashMap<String, Vec<Node>>>,
 }
 
 impl KafkaState {
     async fn check_zookeeper_reference(&mut self) -> KafkaReconcileResult {
+        info!("Checking ZookeeperReference exists.");
+        debug!("Checking ZookeeperReference exists.");
         let api: Api<ZooKeeperCluster> = self
             .context
             .client
@@ -66,10 +85,60 @@ impl KafkaState {
         Ok(ReconcileFunctionAction::Continue)
     }
 
-    // TODO: Currently this only allows creation of Kafka Pods, it does not allow any updates or config changes
-    async fn reconcile(&mut self) -> KafkaReconcileResult {
-        let name = self.context.name();
+    pub fn get_full_pod_node_map(&self) -> Vec<(Vec<Node>, BTreeMap<String, Option<String>>)> {
+        let mut eligible_nodes_map = vec![];
+        debug!(
+            "Looking for excess pods that need to be deleted for cluster [{}]",
+            self.context.name()
+        );
+        for node_type in KafkaNodeType::iter() {
+            if let Some(eligible_nodes_for_role) = self.eligible_nodes.get(&node_type) {
+                for (group_name, eligible_nodes) in eligible_nodes_for_role {
+                    // Create labels to identify eligible nodes
+                    trace!(
+                        "Adding [{}] nodes to eligible node list for role [{}] and group [{}].",
+                        eligible_nodes.len(),
+                        node_type,
+                        group_name
+                    );
+                    eligible_nodes_map.push((
+                        eligible_nodes.clone(),
+                        get_node_and_group_labels(group_name, &node_type),
+                    ))
+                }
+            }
+        }
+        eligible_nodes_map
+    }
 
+    pub fn get_deletion_labels(&self) -> BTreeMap<String, Option<Vec<String>>> {
+        let roles = KafkaNodeType::iter()
+            .map(|role| role.to_string())
+            .collect::<Vec<_>>();
+        let mut mandatory_labels = BTreeMap::new();
+
+        mandatory_labels.insert(String::from(NODE_TYPE_LABEL), Some(roles));
+        mandatory_labels.insert(String::from(CLUSTER_NAME_LABEL), None);
+        mandatory_labels
+    }
+
+    async fn create_config_map(&self, name: &str) -> Result<(), Error> {
+        match self
+            .context
+            .client
+            .get::<ConfigMap>(name, Some("default".to_string()))
+            .await
+        {
+            Ok(_) => {
+                debug!("ConfigMap [{}] already exists, skipping creation!", name);
+                return Ok(());
+            }
+            Err(e) => {
+                // TODO: This is shit, but works for now. If there is an actual error in comms with
+                //   K8S, it will most probably also occur further down and be properly handled
+                debug!("Error getting ConfigMap [{}]: [{:?}]", name, e);
+            }
+        }
         let zk_spec = self.zk_spec.as_ref().ok_or_else(|| error::Error::ReconcileError("zk_spec missing, this is a programming error and should never happen. Please report in our issue tracker.".to_string()))?;
 
         // This retrieves all the nodes from the referenced ZooKeeper cluster and creates the
@@ -83,7 +152,7 @@ impl KafkaState {
             .join(",");
 
         let mut labels = BTreeMap::new();
-        labels.insert("kafka-name".to_string(), name.clone());
+        labels.insert("kafka-name".to_string(), name);
 
         let mut options = HashMap::new();
         options.insert("zookeeper.connect".to_string(), zk_servers);
@@ -94,101 +163,105 @@ impl KafkaState {
             .register_template_string("conf", "{{#each options}}{{@key}}={{this}}\n{{/each}}")
             .expect("template should work");
 
-        for broker in &self.kafka_spec.brokers {
-            trace!("Reconciling broker [{}]", broker.node_name);
+        let config = handlebars
+            .render("conf", &json!({ "options": options }))
+            .unwrap();
 
-            // We first check whether we already have a Pod for this Node.
-            // If that's the case we'll use it and if not we create a new one.
-            let pod = match self
-                .existing_pods
-                .iter()
-                .find(|pod| podutils::is_pod_assigned_to_node(pod, &broker.node_name))
-            {
-                None => {
-                    info!(
-                        "Broker on node [{}] missing, creating now",
-                        broker.node_name
-                    );
-                    // TODO: These names need to contain a random component, also check the maximum length of names
-                    let pod_name = format!("kafka-{}-{}", name, broker.node_name);
-                    let cm_name = format!("kafka-{}", pod_name);
+        let mut data = BTreeMap::new();
+        data.insert("server.properties".to_string(), config);
 
-                    // First we need to create/update the necessary pods...
-                    let pod = build_pod(
-                        &self.context.resource,
-                        &broker,
-                        &labels,
-                        &pod_name,
-                        &cm_name,
-                    )?;
-                    let pod = self.context.client.create(&pod).await?;
-
-                    // ...then we create the data for the ConfigMap
-                    // There will be one ConfigMap per Pod.
-                    let config = handlebars
-                        .render("conf", &json!({ "options": options }))
-                        .unwrap();
-
-                    let mut data = BTreeMap::new();
-                    data.insert("server.properties".to_string(), config);
-
-                    // And now create the actual ConfigMap
-                    // TODO: Need to deal with the case where the configmaps already exists (this should only happen in unclean shutdowns or similar bad scenarios)
-                    let tmp_name = cm_name.clone() + "-config"; // TODO: Create these names once and pass them around so we are consistent
-                    let cm = stackable_operator::create_config_map(
-                        &self.context.resource,
-                        &tmp_name,
-                        data,
-                    )?;
-                    self.context.client.create(&cm).await?;
-                    pod
-                }
-                Some(pod) => {
-                    trace!(
-                        "Found existing pod [{}] for broker [{}]",
-                        Meta::name(pod),
-                        broker.node_name
-                    );
-                    pod.clone()
-                }
-            };
-
-            // If the pod for this server is currently terminating (this could be for restarts or
-            // upgrades) wait until it's done terminating.
-            if finalizer::has_deletion_stamp(&pod) {
-                info!("Waiting for Pod [{}] to terminate", Meta::name(&pod));
-                return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
-            }
-
-            // At the moment we'll wait for all pods to be available and ready before we might enact any changes to existing ones.
-            // TODO: Only do this next check if we want "rolling" functionality
-            if !podutils::is_pod_running_and_ready(&pod) {
-                info!(
-                    "Waiting for Pod [{}] to be running and ready",
-                    Meta::name(&pod)
-                );
-                return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
-            }
-        }
-
-        Ok(ReconcileFunctionAction::Continue)
+        // And now create the actual ConfigMap
+        let cm =
+            stackable_operator::config_map::create_config_map(&self.context.resource, &name, data)?;
+        self.context.client.create(&cm).await?;
+        Ok(())
     }
 
-    pub async fn delete_excess_pods(&self) -> KafkaReconcileResult {
-        trace!("Starting to delete excess pods",);
+    async fn create_missing_pods(&mut self) -> KafkaReconcileResult {
+        // The iteration happens in two stages here, to accomodate the way our operators think
+        // about nodes and roles.
+        // The hierarchy is:
+        // - Roles (for example Datanode, Namenode, Kafka Broker)
+        //   - Node groups for this role (user defined)
+        //      - Individual nodes
+        for node_type in KafkaNodeType::iter() {
+            if let Some(nodes_for_role) = self.eligible_nodes.get(&node_type) {
+                for (role_group, nodes) in nodes_for_role {
+                    // Create config map for this rolegroup
+                    let pod_name =
+                        format!("kafka-{}-{}-{}", self.context.name(), role_group, node_type)
+                            .to_lowercase();
+                    let cm_name = format!("{}-config", pod_name);
+                    debug!("pod_name: [{}], cm_name: [{}]", pod_name, cm_name);
 
-        // We iterate over all Pods that have an OwnerReference pointing at us
-        // and we'll try to find all pods that are _not_ assigned to any
-        // broker from the spec, we then delete it.
-        for pod in &self.existing_pods {
-            if !self
-                .kafka_spec
-                .brokers
-                .iter()
-                .any(|broker| podutils::is_pod_assigned_to_node(pod, &broker.node_name))
-            {
-                self.context.client.delete(pod).await?;
-                return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
+                    self.create_config_map(&cm_name).await?;
+                    debug!(
+                        "Identify missing pods for [{}] role and group [{}]",
+                        node_type, role_group
+                    );
+                    trace!(
+                        "candidate_nodes[{}]: [{:?}]",
+                        nodes.len(),
+                        nodes
+                            .iter()
+                            .map(|node| node.metadata.name.clone().unwrap())
+                            .collect::<Vec<_>>()
+                    );
+                    trace!(
+                        "existing_pods[{}]: [{:?}]",
+                        &self.existing_pods.len(),
+                        &self
+                            .existing_pods
+                            .iter()
+                            .map(|pod| pod.metadata.name.clone().unwrap())
+                            .collect::<Vec<_>>()
+                    );
+                    trace!(
+                        "labels: [{:?}]",
+                        get_node_and_group_labels(role_group, &node_type)
+                    );
+                    let nodes_that_need_pods =
+                        stackable_operator::reconcile::find_nodes_that_need_pods(
+                            nodes,
+                            &self.existing_pods,
+                            &get_node_and_group_labels(role_group, &node_type),
+                        )
+                        .await;
+
+                    for node in nodes_that_need_pods {
+                        let node_name = if let Some(node_name) = &node.metadata.name {
+                            node_name
+                        } else {
+                            warn!("No name found in metadata, this should not happen! Skipping node: [{:?}]", node);
+                            continue;
+                        };
+                        debug!(
+                            "Creating pod on node [{}] for [{}] role and group [{}]",
+                            node.metadata
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| String::from("<no node name found>")),
+                            node_type,
+                            role_group
+                        );
+
+                        let mut node_labels = BTreeMap::new();
+                        node_labels.insert(String::from(NODE_TYPE_LABEL), node_type.to_string());
+                        node_labels
+                            .insert(String::from(NODE_GROUP_LABEL), String::from(role_group));
+                        node_labels.insert(String::from(CLUSTER_NAME_LABEL), self.context.name());
+
+                        // Create a pod for this node, role and group combination
+                        let pod = build_pod(
+                            &self.context.resource,
+                            node_name,
+                            &node_labels,
+                            &pod_name,
+                            &cm_name,
+                        )?;
+                        self.context.client.create(&pod).await?;
+                    }
+                }
             }
         }
         Ok(ReconcileFunctionAction::Continue)
@@ -202,12 +275,30 @@ impl ReconciliationState for KafkaState {
         &mut self,
     ) -> Pin<Box<dyn Future<Output = Result<ReconcileFunctionAction, Self::Error>> + Send + '_>>
     {
+        info!("========================= Starting reconciliation =========================");
+        debug!("Deletion Labels: [{:?}]", &self.get_deletion_labels());
+
         Box::pin(async move {
             self.check_zookeeper_reference()
                 .await?
-                .then(self.reconcile())
+                .then(self.context.delete_illegal_pods(
+                    self.existing_pods.as_slice(),
+                    &self.get_deletion_labels(),
+                    DeletionStrategy::OneRequeue,
+                ))
                 .await?
-                .then(self.delete_excess_pods())
+                .then(
+                    self.context
+                        .wait_for_terminating_pods(self.existing_pods.as_slice()),
+                )
+                .await?
+                .then(self.context.delete_excess_pods(
+                    self.get_full_pod_node_map().as_slice(),
+                    &self.existing_pods,
+                    DeletionStrategy::OneRequeue,
+                ))
+                .await?
+                .then(self.create_missing_pods())
                 .await
         })
     }
@@ -238,11 +329,32 @@ impl ControllerStrategy for KafkaStrategy {
         let existing_pods = context.list_pods().await?;
         trace!("Found [{}] pods", existing_pods.len());
 
+        let cluster_spec: KafkaClusterSpec = context.resource.spec.clone();
+
+        let mut eligible_nodes = HashMap::new();
+        eligible_nodes.insert(
+            KafkaNodeType::Broker,
+            context
+                .find_nodes_that_fit_selectors(
+                    cluster_spec
+                        .brokers
+                        .selectors
+                        .iter()
+                        .map(|(group_name, selector_config)| RoleGroup {
+                            name: group_name.to_string(),
+                            selector: selector_config.clone().selector.unwrap(),
+                        })
+                        .collect(),
+                )
+                .await?,
+        );
+
         Ok(KafkaState {
             kafka_spec: context.resource.spec.clone(),
             context,
             zk_spec: None,
             existing_pods,
+            eligible_nodes,
         })
     }
 }
@@ -258,23 +370,43 @@ pub async fn create_controller(client: Client) {
 
     let strategy = KafkaStrategy::new();
 
-    controller.run(client, strategy).await;
+    controller
+        .run(client, strategy, Duration::from_secs(5))
+        .await;
+}
+
+fn get_node_and_group_labels(
+    group_name: &str,
+    node_type: &KafkaNodeType,
+) -> BTreeMap<String, Option<String>> {
+    let mut node_labels = BTreeMap::new();
+    node_labels.insert(String::from(NODE_TYPE_LABEL), Some(node_type.to_string()));
+    node_labels.insert(
+        String::from(NODE_GROUP_LABEL),
+        Some(String::from(group_name)),
+    );
+    node_labels
 }
 
 fn build_pod(
     resource: &KafkaCluster,
-    broker: &KafkaBroker,
+    node: &str,
     labels: &BTreeMap<String, String>,
     pod_name: &str,
     cm_name: &str,
 ) -> Result<Pod, Error> {
     let pod = Pod {
         // Metadata
-        metadata: metadata::build_metadata(pod_name.to_string(), Some(labels.clone()), resource)?,
+        metadata: metadata::build_metadata(
+            pod_name.to_string(),
+            Some(labels.clone()),
+            resource,
+            false,
+        )?,
         // Spec
         spec: Some(PodSpec {
-            node_name: Some(broker.node_name.clone()),
-            tolerations: Some(stackable_operator::create_tolerations()),
+            node_name: Some(node.to_string()),
+            tolerations: Some(stackable_operator::krustlet::create_tolerations()),
             containers: vec![Container {
                 image: Some(format!(
                     "stackable/kafka:{}",
