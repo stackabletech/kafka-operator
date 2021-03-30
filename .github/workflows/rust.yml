@@ -80,4 +80,5 @@ jobs:
       - name: Run cargo bloat
         uses: orf/cargo-bloat-action@v1
         with:
+          bloat_args: --verbose
           token: ${{ secrets.GITHUB_TOKEN }}
