@@ -1481,7 +1481,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "stackable-operator 0.1.0",
+ "stackable-operator 0.1.0 (git+https://github.com/stackabletech/operator-rs.git?branch=hackathon)",
 ]
 
 [[package]]
@@ -1498,7 +1498,7 @@ dependencies = [
  "serde",
  "serde_json",
  "stackable-kafka-crd",
- "stackable-operator 0.1.0",
+ "stackable-operator 0.1.0 (git+https://github.com/stackabletech/operator-rs.git?branch=hackathon)",
  "stackable-zookeeper-crd",
  "strum",
  "strum_macros",
@@ -1513,7 +1513,7 @@ version = "0.1.0-nightly"
 dependencies = [
  "stackable-kafka-crd",
  "stackable-kafka-operator",
- "stackable-operator 0.1.0",
+ "stackable-operator 0.1.0 (git+https://github.com/stackabletech/operator-rs.git?branch=hackathon)",
  "tokio",
  "tracing",
 ]
@@ -1521,6 +1521,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.1.0"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=hackathon#1f3c264e56e05efbf46ff2f5a049c5723ba823e4"
 dependencies = [
  "async-trait",
  "chrono",

@@ -5,7 +5,7 @@ authors = ["Lars Francke <lars.francke@stackable.de>"]
 edition = "2018"
 
 [dependencies]
-stackable-operator = { path = "/home/sliebau/IdeaProjects/operator-rs" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch="hackathon" }
 
 kube = { version = "0.49", default-features = false }
 kube-derive = { version = "0.49.0", default-features = false, features = ["schema"] }

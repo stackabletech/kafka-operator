@@ -18,7 +18,7 @@ use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::metadata;
 use stackable_operator::reconcile::{
-    DeletionStrategy, ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
+    ContinuationStrategy, ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
 };
 use stackable_zookeeper_crd::{ZooKeeperCluster, ZooKeeperClusterSpec};
 
@@ -221,12 +221,11 @@ impl KafkaState {
                         get_node_and_group_labels(role_group, &node_type)
                     );
                     let nodes_that_need_pods =
-                        stackable_operator::reconcile::find_nodes_that_need_pods(
+                        stackable_operator::role_utils::find_nodes_that_need_pods(
                             nodes,
                             &self.existing_pods,
                             &get_node_and_group_labels(role_group, &node_type),
-                        )
-                        .await;
+                        );
 
                     for node in nodes_that_need_pods {
                         let node_name = if let Some(node_name) = &node.metadata.name {
@@ -284,7 +283,7 @@ impl ReconciliationState for KafkaState {
                 .then(self.context.delete_illegal_pods(
                     self.existing_pods.as_slice(),
                     &self.get_deletion_labels(),
-                    DeletionStrategy::OneRequeue,
+                    ContinuationStrategy::OneRequeue,
                 ))
                 .await?
                 .then(
@@ -295,7 +294,7 @@ impl ReconciliationState for KafkaState {
                 .then(self.context.delete_excess_pods(
                     self.get_full_pod_node_map().as_slice(),
                     &self.existing_pods,
-                    DeletionStrategy::OneRequeue,
+                    ContinuationStrategy::OneRequeue,
                 ))
                 .await?
                 .then(self.create_missing_pods())
@@ -317,10 +316,6 @@ impl ControllerStrategy for KafkaStrategy {
     type Item = KafkaCluster;
     type State = KafkaState;
     type Error = error::Error;
-
-    fn finalizer_name(&self) -> String {
-        FINALIZER_NAME.to_string()
-    }
 
     async fn init_reconcile_state(
         &self,
