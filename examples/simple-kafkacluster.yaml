@@ -15,15 +15,3 @@ spec:
             kubernetes.io/hostname: soenke-laptop
         instances: 3
         instancesPerNode: 1
-      default3:
-          selector:
-            matchLabels:
-              kubernetes.io/hostname: lars-laptop
-          instances: 3
-          instancesPerNode: 1
-      default5:
-        selector:
-          matchLabels:
-            kubernetes.io/hostname: lars-laptop
-        instances: 3
-        instancesPerNode: 1

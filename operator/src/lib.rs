@@ -34,7 +34,7 @@ use strum::IntoEnumIterator;
 use strum_macros::Display;
 use strum_macros::EnumIter;
 
-pub const CLUSTER_NAME_LABEL: &str = "kafka.stackable.tech/cluster-name";
+pub const CLUSTER_NAME_LABEL: &str = "app.kubernetes.io/instance";
 
 pub const NODE_GROUP_LABEL: &str = "kafka.stackable.tech/node-group-name";
 
