@@ -52,15 +52,15 @@ impl NamespaceName {
     }
 }
 
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeGroup<T> {
     pub selectors: HashMap<String, SelectorAndConfig<T>>,
     pub config: Option<T>,
 }
 
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SelectorAndConfig<T> {
     pub instances: u8,
     pub instances_per_node: u8,
@@ -69,8 +69,8 @@ pub struct SelectorAndConfig<T> {
     pub selector: Option<LabelSelector>,
 }
 
-#[serde(rename_all = "camelCase")]
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct KafkaConfig {}
 
 pub fn schema(_: &mut SchemaGenerator) -> Schema {

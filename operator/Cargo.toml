@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch="hackathon" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch="main" }
 stackable-zookeeper-crd = { git="https://github.com/stackabletech/zookeeper-operator.git", branch="main" }
 
 async-trait = "0.1"

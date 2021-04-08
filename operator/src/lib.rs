@@ -22,7 +22,9 @@ use stackable_operator::reconcile::{
 };
 use stackable_zookeeper_crd::{ZooKeeperCluster, ZooKeeperClusterSpec};
 
+use stackable_operator::k8s_utils::LabelOptionalValueMap;
 use stackable_operator::role_utils::RoleGroup;
+use stackable_operator::{k8s_utils, role_utils};
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
@@ -31,8 +33,6 @@ use std::time::Duration;
 use strum::IntoEnumIterator;
 use strum_macros::Display;
 use strum_macros::EnumIter;
-
-const FINALIZER_NAME: &str = "kafka.stackable.tech/cleanup";
 
 pub const CLUSTER_NAME_LABEL: &str = "kafka.stackable.tech/cluster-name";
 
@@ -85,7 +85,7 @@ impl KafkaState {
         Ok(ReconcileFunctionAction::Continue)
     }
 
-    pub fn get_full_pod_node_map(&self) -> Vec<(Vec<Node>, BTreeMap<String, Option<String>>)> {
+    pub fn get_full_pod_node_map(&self) -> Vec<(Vec<Node>, LabelOptionalValueMap)> {
         let mut eligible_nodes_map = vec![];
         debug!(
             "Looking for excess pods that need to be deleted for cluster [{}]",
@@ -220,12 +220,11 @@ impl KafkaState {
                         "labels: [{:?}]",
                         get_node_and_group_labels(role_group, &node_type)
                     );
-                    let nodes_that_need_pods =
-                        stackable_operator::role_utils::find_nodes_that_need_pods(
-                            nodes,
-                            &self.existing_pods,
-                            &get_node_and_group_labels(role_group, &node_type),
-                        );
+                    let nodes_that_need_pods = k8s_utils::find_nodes_that_need_pods(
+                        nodes,
+                        &self.existing_pods,
+                        &get_node_and_group_labels(role_group, &node_type),
+                    );
 
                     for node in nodes_that_need_pods {
                         let node_name = if let Some(node_name) = &node.metadata.name {
@@ -329,19 +328,20 @@ impl ControllerStrategy for KafkaStrategy {
         let mut eligible_nodes = HashMap::new();
         eligible_nodes.insert(
             KafkaNodeType::Broker,
-            context
-                .find_nodes_that_fit_selectors(
-                    cluster_spec
-                        .brokers
-                        .selectors
-                        .iter()
-                        .map(|(group_name, selector_config)| RoleGroup {
-                            name: group_name.to_string(),
-                            selector: selector_config.clone().selector.unwrap(),
-                        })
-                        .collect(),
-                )
-                .await?,
+            role_utils::find_nodes_that_fit_selectors(
+                &context.client,
+                None,
+                cluster_spec
+                    .brokers
+                    .selectors
+                    .iter()
+                    .map(|(group_name, selector_config)| RoleGroup {
+                        name: group_name.to_string(),
+                        selector: selector_config.clone().selector.unwrap(),
+                    })
+                    .collect(),
+            )
+            .await?,
         );
 
         Ok(KafkaState {
@@ -370,10 +370,7 @@ pub async fn create_controller(client: Client) {
         .await;
 }
 
-fn get_node_and_group_labels(
-    group_name: &str,
-    node_type: &KafkaNodeType,
-) -> BTreeMap<String, Option<String>> {
+fn get_node_and_group_labels(group_name: &str, node_type: &KafkaNodeType) -> LabelOptionalValueMap {
     let mut node_labels = BTreeMap::new();
     node_labels.insert(String::from(NODE_TYPE_LABEL), Some(node_type.to_string()));
     node_labels.insert(
