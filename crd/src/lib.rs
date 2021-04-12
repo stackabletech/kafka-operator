@@ -1,5 +1,5 @@
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
-use kube_derive::CustomResource;
+use kube::CustomResource;
 use schemars::gen::SchemaGenerator;
 use schemars::schema::Schema;
 use schemars::JsonSchema;

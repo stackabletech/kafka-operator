@@ -126,7 +126,7 @@ impl KafkaState {
         match self
             .context
             .client
-            .get::<ConfigMap>(name, Some("default".to_string()))
+            .get::<ConfigMap>(name, Some(&"default".to_string()))
             .await
         {
             Ok(_) => {
