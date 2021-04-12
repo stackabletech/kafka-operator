@@ -419,7 +419,7 @@ fn build_pod(
             volumes: Some(vec![Volume {
                 name: "config-volume".to_string(),
                 config_map: Some(ConfigMapVolumeSource {
-                    name: Some(format!("{}-config", cm_name)), // TODO: Create these names once and pass them around so we are consistent
+                    name: Some(cm_name.to_string()), // TODO: Create these names once and pass them around so we are consistent
                     ..ConfigMapVolumeSource::default()
                 }),
                 ..Volume::default()
