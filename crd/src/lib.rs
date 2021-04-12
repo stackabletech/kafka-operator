@@ -123,11 +123,8 @@ pub fn schema(_: &mut SchemaGenerator) -> Schema {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{KafkaClusterSpec, KafkaVersion, SelectorAndConfig};
     use schemars::gen::SchemaGenerator;
     use stackable_operator::conditions::schema;
-    use std::error::Error;
-    use std::str::FromStr;
 
     #[test]
     fn print_crd() {
