@@ -62,7 +62,7 @@ pub struct NodeGroup<T> {
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SelectorAndConfig<T> {
-    pub instances: u8,
+    pub instances: u16,
     pub instances_per_node: u8,
     pub config: Option<T>,
     #[schemars(schema_with = "schema")]

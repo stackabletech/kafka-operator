@@ -20,7 +20,7 @@ use stackable_operator::metadata;
 use stackable_operator::reconcile::{
     ContinuationStrategy, ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
 };
-use stackable_zookeeper_crd::{ZooKeeperCluster, ZooKeeperClusterSpec};
+use stackable_zookeeper_crd::ZooKeeperCluster;
 
 use stackable_operator::k8s_utils::LabelOptionalValueMap;
 use stackable_operator::role_utils::RoleGroup;
@@ -49,30 +49,31 @@ pub enum KafkaNodeType {
 
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
-    kafka_spec: KafkaClusterSpec,
-    zk_spec: Option<ZooKeeperClusterSpec>,
+    kafka_definiton: KafkaCluster,
+    zk_cluster: Option<ZooKeeperCluster>,
     existing_pods: Vec<Pod>,
     eligible_nodes: HashMap<KafkaNodeType, HashMap<String, Vec<Node>>>,
 }
 
 impl KafkaState {
     async fn check_zookeeper_reference(&mut self) -> KafkaReconcileResult {
-        info!("Checking ZookeeperReference exists.");
         debug!("Checking ZookeeperReference exists.");
         let api: Api<ZooKeeperCluster> = self
             .context
             .client
-            .get_namespaced_api(&self.kafka_spec.zoo_keeper_reference.namespace);
-        let zk_cluster = api.get(&self.kafka_spec.zoo_keeper_reference.name).await;
+            .get_namespaced_api(&self.kafka_definiton.spec.zoo_keeper_reference.namespace);
+        let zk_cluster = api
+            .get(&self.kafka_definiton.spec.zoo_keeper_reference.name)
+            .await;
 
         // TODO: We need to watch the ZooKeeper resource and do _something_ when it goes down or when its nodes are changed
-        let zk_spec: ZooKeeperClusterSpec = match zk_cluster {
-            Ok(zk) => zk.spec,
+        let zk_cluster: ZooKeeperCluster = match zk_cluster {
+            Ok(zk) => zk,
             Err(err) => {
                 warn!(?err,
                     "Referencing a ZooKeeper cluster that does not exist (or some other error while fetching it): [{}/{}], we will requeue and check again",
-                    &self.kafka_spec.zoo_keeper_reference.namespace,
-                    &self.kafka_spec.zoo_keeper_reference.name
+                    &self.kafka_definiton.spec.zoo_keeper_reference.namespace,
+                    &self.kafka_definiton.spec.zoo_keeper_reference.name
                 );
                 // TODO: Depending on the error either requeue or return an error (which'll requeue as well)
                 // For a not found we'd like to requeue but if there was a transport error we'd like to return it.
@@ -80,7 +81,7 @@ impl KafkaState {
             }
         };
 
-        self.zk_spec = Some(zk_spec);
+        self.zk_cluster = Some(zk_cluster);
 
         Ok(ReconcileFunctionAction::Continue)
     }
@@ -139,7 +140,7 @@ impl KafkaState {
                 debug!("Error getting ConfigMap [{}]: [{:?}]", name, e);
             }
         }
-        let zk_spec = self.zk_spec.as_ref().ok_or_else(|| error::Error::ReconcileError("zk_spec missing, this is a programming error and should never happen. Please report in our issue tracker.".to_string()))?;
+        let zk_spec = &self.zk_cluster.as_ref().ok_or_else(|| error::Error::ReconcileError("zk_spec missing, this is a programming error and should never happen. Please report in our issue tracker.".to_string()))?.spec;
 
         // This retrieves all the nodes from the referenced ZooKeeper cluster and creates the
         // required connection string for Kafka
@@ -204,7 +205,7 @@ impl KafkaState {
                         nodes.len(),
                         nodes
                             .iter()
-                            .map(|node| node.metadata.name.clone().unwrap())
+                            .map(|node| node.metadata.name.as_ref().unwrap())
                             .collect::<Vec<_>>()
                     );
                     trace!(
@@ -213,7 +214,7 @@ impl KafkaState {
                         &self
                             .existing_pods
                             .iter()
-                            .map(|pod| pod.metadata.name.clone().unwrap())
+                            .map(|pod| pod.metadata.name.as_ref().unwrap())
                             .collect::<Vec<_>>()
                     );
                     trace!(
@@ -237,8 +238,8 @@ impl KafkaState {
                             "Creating pod on node [{}] for [{}] role and group [{}]",
                             node.metadata
                                 .name
-                                .clone()
-                                .unwrap_or_else(|| String::from("<no node name found>")),
+                                .as_deref()
+                                .unwrap_or_else(|| "<no node name found>"),
                             node_type,
                             role_group
                         );
@@ -288,6 +289,11 @@ impl ReconciliationState for KafkaState {
                 .then(
                     self.context
                         .wait_for_terminating_pods(self.existing_pods.as_slice()),
+                )
+                .await?
+                .then(
+                    self.context
+                        .wait_for_running_and_ready_pods(&self.existing_pods),
                 )
                 .await?
                 .then(self.context.delete_excess_pods(
@@ -345,9 +351,9 @@ impl ControllerStrategy for KafkaStrategy {
         );
 
         Ok(KafkaState {
-            kafka_spec: context.resource.spec.clone(),
+            kafka_definiton: context.resource.clone(),
             context,
-            zk_spec: None,
+            zk_cluster: None,
             existing_pods,
             eligible_nodes,
         })
@@ -419,7 +425,7 @@ fn build_pod(
             volumes: Some(vec![Volume {
                 name: "config-volume".to_string(),
                 config_map: Some(ConfigMapVolumeSource {
-                    name: Some(cm_name.to_string()), // TODO: Create these names once and pass them around so we are consistent
+                    name: Some(cm_name.to_string()),
                     ..ConfigMapVolumeSource::default()
                 }),
                 ..Volume::default()
