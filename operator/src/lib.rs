@@ -49,7 +49,7 @@ pub enum KafkaNodeType {
 
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
-    kafka_definiton: KafkaCluster,
+    kafka_cluster: KafkaCluster,
     zk_cluster: Option<ZooKeeperCluster>,
     existing_pods: Vec<Pod>,
     eligible_nodes: HashMap<KafkaNodeType, HashMap<String, Vec<Node>>>,
@@ -61,9 +61,9 @@ impl KafkaState {
         let api: Api<ZooKeeperCluster> = self
             .context
             .client
-            .get_namespaced_api(&self.kafka_definiton.spec.zoo_keeper_reference.namespace);
+            .get_namespaced_api(&self.kafka_cluster.spec.zoo_keeper_reference.namespace);
         let zk_cluster = api
-            .get(&self.kafka_definiton.spec.zoo_keeper_reference.name)
+            .get(&self.kafka_cluster.spec.zoo_keeper_reference.name)
             .await;
 
         // TODO: We need to watch the ZooKeeper resource and do _something_ when it goes down or when its nodes are changed
@@ -72,8 +72,8 @@ impl KafkaState {
             Err(err) => {
                 warn!(?err,
                     "Referencing a ZooKeeper cluster that does not exist (or some other error while fetching it): [{}/{}], we will requeue and check again",
-                    &self.kafka_definiton.spec.zoo_keeper_reference.namespace,
-                    &self.kafka_definiton.spec.zoo_keeper_reference.name
+                    &self.kafka_cluster.spec.zoo_keeper_reference.namespace,
+                    &self.kafka_cluster.spec.zoo_keeper_reference.name
                 );
                 // TODO: Depending on the error either requeue or return an error (which'll requeue as well)
                 // For a not found we'd like to requeue but if there was a transport error we'd like to return it.
@@ -179,7 +179,7 @@ impl KafkaState {
     }
 
     async fn create_missing_pods(&mut self) -> KafkaReconcileResult {
-        // The iteration happens in two stages here, to accomodate the way our operators think
+        // The iteration happens in two stages here, to accommodate the way our operators think
         // about nodes and roles.
         // The hierarchy is:
         // - Roles (for example Datanode, Namenode, Kafka Broker)
@@ -239,7 +239,7 @@ impl KafkaState {
                             node.metadata
                                 .name
                                 .as_deref()
-                                .unwrap_or_else(|| "<no node name found>"),
+                                .unwrap_or("<no node name found>"),
                             node_type,
                             role_group
                         );
@@ -351,7 +351,7 @@ impl ControllerStrategy for KafkaStrategy {
         );
 
         Ok(KafkaState {
-            kafka_definiton: context.resource.clone(),
+            kafka_cluster: context.resource.clone(),
             context,
             zk_cluster: None,
             existing_pods,
