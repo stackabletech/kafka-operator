@@ -12,6 +12,7 @@ stackable-kafka-crd = { path = "../crd" }
 stackable-kafka-operator = { path = "../operator" }
 
 tokio = { version = "1.5", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1"
 
 [package.metadata.deb]
 maintainer-scripts = "packaging/debian/"

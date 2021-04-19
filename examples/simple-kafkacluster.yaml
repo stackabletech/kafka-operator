@@ -8,4 +8,10 @@ spec:
     namespace: default
     name: simple
   brokers:
-    - node_name: worker-1.stackable.demo
+    selectors:
+      default:
+        selector:
+          matchLabels:
+            kubernetes.io/hostname: soenke-laptop
+        instances: 3
+        instancesPerNode: 1
