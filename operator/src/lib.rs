@@ -16,10 +16,14 @@ use tracing::{debug, info, trace, warn};
 use stackable_kafka_crd::{KafkaCluster, KafkaClusterSpec};
 use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
+use stackable_operator::labels::{
+    APP_COMPONENT_LABEL, APP_INSTANCE_LABEL, APP_ROLE_GROUP_LABEL, APP_VERSION_LABEL,
+};
 use stackable_operator::metadata;
 use stackable_operator::reconcile::{
     ContinuationStrategy, ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
 };
+
 use stackable_zookeeper_crd::ZooKeeperCluster;
 
 use stackable_operator::k8s_utils::LabelOptionalValueMap;
@@ -33,12 +37,6 @@ use std::time::Duration;
 use strum::IntoEnumIterator;
 use strum_macros::Display;
 use strum_macros::EnumIter;
-
-pub const CLUSTER_NAME_LABEL: &str = "app.kubernetes.io/instance";
-
-pub const NODE_GROUP_LABEL: &str = "kafka.stackable.tech/node-group-name";
-
-pub const NODE_TYPE_LABEL: &str = "kafka.stackable.tech/node-type";
 
 type KafkaReconcileResult = ReconcileResult<error::Error>;
 
@@ -88,10 +86,6 @@ impl KafkaState {
 
     pub fn get_full_pod_node_map(&self) -> Vec<(Vec<Node>, LabelOptionalValueMap)> {
         let mut eligible_nodes_map = vec![];
-        debug!(
-            "Looking for excess pods that need to be deleted for cluster [{}]",
-            self.context.name()
-        );
         for node_type in KafkaNodeType::iter() {
             if let Some(eligible_nodes_for_role) = self.eligible_nodes.get(&node_type) {
                 for (group_name, eligible_nodes) in eligible_nodes_for_role {
@@ -118,8 +112,8 @@ impl KafkaState {
             .collect::<Vec<_>>();
         let mut mandatory_labels = BTreeMap::new();
 
-        mandatory_labels.insert(String::from(NODE_TYPE_LABEL), Some(roles));
-        mandatory_labels.insert(String::from(CLUSTER_NAME_LABEL), None);
+        mandatory_labels.insert(String::from(APP_COMPONENT_LABEL), Some(roles));
+        mandatory_labels.insert(String::from(APP_INSTANCE_LABEL), None);
         mandatory_labels
     }
 
@@ -245,10 +239,15 @@ impl KafkaState {
                         );
 
                         let mut node_labels = BTreeMap::new();
-                        node_labels.insert(String::from(NODE_TYPE_LABEL), node_type.to_string());
                         node_labels
-                            .insert(String::from(NODE_GROUP_LABEL), String::from(role_group));
-                        node_labels.insert(String::from(CLUSTER_NAME_LABEL), self.context.name());
+                            .insert(String::from(APP_COMPONENT_LABEL), node_type.to_string());
+                        node_labels
+                            .insert(String::from(APP_ROLE_GROUP_LABEL), String::from(role_group));
+                        node_labels.insert(String::from(APP_INSTANCE_LABEL), self.context.name());
+                        node_labels.insert(
+                            String::from(APP_VERSION_LABEL),
+                            serde_json::json!(&self.kafka_cluster.spec.version).to_string(),
+                        );
 
                         // Create a pod for this node, role and group combination
                         let pod = build_pod(
@@ -293,7 +292,7 @@ impl ReconciliationState for KafkaState {
                 .await?
                 .then(
                     self.context
-                        .wait_for_running_and_ready_pods(&self.existing_pods),
+                        .wait_for_running_and_ready_pods(&self.existing_pods.as_slice()),
                 )
                 .await?
                 .then(self.context.delete_excess_pods(
@@ -378,9 +377,12 @@ pub async fn create_controller(client: Client) {
 
 fn get_node_and_group_labels(group_name: &str, node_type: &KafkaNodeType) -> LabelOptionalValueMap {
     let mut node_labels = BTreeMap::new();
-    node_labels.insert(String::from(NODE_TYPE_LABEL), Some(node_type.to_string()));
     node_labels.insert(
-        String::from(NODE_GROUP_LABEL),
+        String::from(APP_COMPONENT_LABEL),
+        Some(node_type.to_string()),
+    );
+    node_labels.insert(
+        String::from(APP_ROLE_GROUP_LABEL),
         Some(String::from(group_name)),
     );
     node_labels
