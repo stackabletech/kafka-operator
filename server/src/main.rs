@@ -10,7 +10,7 @@ async fn main() -> Result<(), error::Error> {
     let client = client::create_client(Some(FIELD_MANAGER.to_string())).await?;
 
     info!("Checking CRD");
-    stackable_operator::crd::ensure_crd_created::<KafkaCluster>(client.clone()).await?;
+    stackable_operator::crd::ensure_crd_created::<KafkaCluster>(&client).await?;
 
     info!("Starting controller");
     stackable_kafka_operator::create_controller(client).await;

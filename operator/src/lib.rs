@@ -9,7 +9,7 @@ use k8s_openapi::api::core::v1::{
     ConfigMap, ConfigMapVolumeSource, Container, Node, Pod, PodSpec, Volume, VolumeMount,
 };
 use kube::api::ListParams;
-use kube::Api;
+
 use serde_json::json;
 use tracing::{debug, info, trace, warn};
 
@@ -26,6 +26,7 @@ use stackable_operator::reconcile::{
 
 use stackable_zookeeper_crd::ZooKeeperCluster;
 
+use kube::Api;
 use stackable_operator::k8s_utils::LabelOptionalValueMap;
 use stackable_operator::role_utils::RoleGroup;
 use stackable_operator::{k8s_utils, role_utils};
@@ -331,22 +332,20 @@ impl ControllerStrategy for KafkaStrategy {
         let cluster_spec: KafkaClusterSpec = context.resource.spec.clone();
 
         let mut eligible_nodes = HashMap::new();
+        let test = cluster_spec
+            .brokers
+            .selectors
+            .iter()
+            .map(|(group_name, selector_config)| RoleGroup {
+                name: group_name.to_string(),
+                selector: selector_config.clone().selector.unwrap(),
+            })
+            .collect::<Vec<_>>();
+
         eligible_nodes.insert(
             KafkaNodeType::Broker,
-            role_utils::find_nodes_that_fit_selectors(
-                &context.client,
-                None,
-                cluster_spec
-                    .brokers
-                    .selectors
-                    .iter()
-                    .map(|(group_name, selector_config)| RoleGroup {
-                        name: group_name.to_string(),
-                        selector: selector_config.clone().selector.unwrap(),
-                    })
-                    .collect(),
-            )
-            .await?,
+            role_utils::find_nodes_that_fit_selectors(&context.client, None, test.as_slice())
+                .await?,
         );
 
         Ok(KafkaState {

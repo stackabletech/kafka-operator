@@ -727,11 +727,10 @@ dependencies = [
 
 [[package]]
 name = "kube"
-version = "0.51.0"
+version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d47a55e9f881dc5027dcaf026670fa24b41f67926ab6517e2155488fe9c012a"
+checksum = "65b2fbe85ad92f8435a0f52072f55bd7f0843e082c8e461e56d1ce29440554c8"
 dependencies = [
- "Inflector",
  "base64",
  "bytes",
  "chrono",
@@ -746,7 +745,7 @@ dependencies = [
  "json-patch",
  "jsonpath_lib",
  "k8s-openapi",
- "kube-derive 0.51.0",
+ "kube-derive 0.52.0",
  "log",
  "openssl",
  "pem",
@@ -761,6 +760,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-util",
  "tower",
+ "tracing",
  "url",
 ]
 
@@ -779,11 +779,10 @@ dependencies = [
 
 [[package]]
 name = "kube-derive"
-version = "0.51.0"
+version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c069cf7fcfe148819d01d1ace64ed82d0bef2c5c27efd2dbc073ec4d210becb9"
+checksum = "3dca5161aebec14aa62448469b4c128d165e70da503d43813702a23deeff9612"
 dependencies = [
- "Inflector",
  "darling",
  "proc-macro2",
  "quote",
@@ -812,15 +811,15 @@ dependencies = [
 
 [[package]]
 name = "kube-runtime"
-version = "0.51.0"
+version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d85c47fe6b8d7c4c3b634614d498a841028fc1ccca4c748e1801266848127b"
+checksum = "fdbf7b51e6a4984e929dab0bd13b61592b750a3385e298aaa9100c4830205a12"
 dependencies = [
  "dashmap",
  "derivative",
  "futures",
  "k8s-openapi",
- "kube 0.51.0",
+ "kube 0.52.0",
  "pin-project 1.0.6",
  "serde",
  "smallvec",
@@ -1558,8 +1557,8 @@ name = "stackable-kafka-crd"
 version = "0.1.0"
 dependencies = [
  "k8s-openapi",
- "kube 0.51.0",
- "kube-runtime 0.51.0",
+ "kube 0.52.0",
+ "kube-runtime 0.52.0",
  "schemars",
  "serde",
  "serde_json",
@@ -1577,8 +1576,8 @@ dependencies = [
  "futures",
  "handlebars",
  "k8s-openapi",
- "kube 0.51.0",
- "kube-runtime 0.51.0",
+ "kube 0.52.0",
+ "kube-runtime 0.52.0",
  "serde",
  "serde_json",
  "stackable-kafka-crd",
@@ -1605,7 +1604,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.1.0"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#bb81ea981c85b60eec3d957c3d8d7f1b38aef846"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#1808a3cfb5738d91f641174988c8d795f996527c"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1614,8 +1613,8 @@ dependencies = [
  "futures",
  "json-patch",
  "k8s-openapi",
- "kube 0.51.0",
- "kube-runtime 0.51.0",
+ "kube 0.52.0",
+ "kube-runtime 0.52.0",
  "lazy_static",
  "regex",
  "schemars",
