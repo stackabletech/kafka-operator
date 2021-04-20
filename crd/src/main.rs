@@ -9,7 +9,7 @@ fn main() {
         Err(err) => panic!("Failed to retrieve CRD: [{}]", err),
     };
     match fs::write(target_file, string_schema) {
-        Ok(()) => println!("Succesfully wrote CRD to file."),
+        Ok(()) => println!("Successfully wrote CRD to file."),
         Err(err) => println!("Failed to write file: [{}]", err),
     }
 }
