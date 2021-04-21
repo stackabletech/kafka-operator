@@ -17,7 +17,8 @@ use stackable_kafka_crd::{KafkaCluster, KafkaClusterSpec};
 use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::labels::{
-    APP_COMPONENT_LABEL, APP_INSTANCE_LABEL, APP_ROLE_GROUP_LABEL, APP_VERSION_LABEL,
+    APP_COMPONENT_LABEL, APP_INSTANCE_LABEL, APP_MANAGED_BY_LABEL, APP_NAME_LABEL,
+    APP_ROLE_GROUP_LABEL, APP_VERSION_LABEL,
 };
 use stackable_operator::metadata;
 use stackable_operator::reconcile::{
@@ -27,6 +28,7 @@ use stackable_operator::reconcile::{
 use stackable_zookeeper_crd::ZooKeeperCluster;
 
 use kube::Api;
+use stackable_operator::error::OperatorResult;
 use stackable_operator::k8s_utils::LabelOptionalValueMap;
 use stackable_operator::role_utils::RoleGroup;
 use stackable_operator::{k8s_utils, role_utils};
@@ -40,6 +42,11 @@ use strum_macros::Display;
 use strum_macros::EnumIter;
 
 type KafkaReconcileResult = ReconcileResult<error::Error>;
+
+const FINALIZER_NAME: &str = "kafka.stackable.tech/cleanup";
+
+const APP_NAME: &str = "kafka";
+const MANAGED_BY: &str = "stackable-kafka";
 
 #[derive(EnumIter, Debug, Display, PartialEq, Eq, Hash)]
 pub enum KafkaNodeType {
@@ -173,6 +180,13 @@ impl KafkaState {
         Ok(())
     }
 
+    async fn delete_all_pods(&self) -> OperatorResult<ReconcileFunctionAction> {
+        for pod in &self.existing_pods {
+            self.context.client.delete(pod).await?;
+        }
+        Ok(ReconcileFunctionAction::Done)
+    }
+
     async fn create_missing_pods(&mut self) -> KafkaReconcileResult {
         // The iteration happens in two stages here, to accommodate the way our operators think
         // about nodes and roles.
@@ -240,6 +254,9 @@ impl KafkaState {
                         );
 
                         let mut node_labels = BTreeMap::new();
+                        node_labels.insert(String::from(APP_NAME_LABEL), String::from(APP_NAME));
+                        node_labels
+                            .insert(String::from(APP_MANAGED_BY_LABEL), String::from(MANAGED_BY));
                         node_labels
                             .insert(String::from(APP_COMPONENT_LABEL), node_type.to_string());
                         node_labels
@@ -278,7 +295,10 @@ impl ReconciliationState for KafkaState {
         debug!("Deletion Labels: [{:?}]", &self.get_deletion_labels());
 
         Box::pin(async move {
-            self.check_zookeeper_reference()
+            self.context
+                .handle_deletion(Box::pin(self.delete_all_pods()), FINALIZER_NAME, true)
+                .await?
+                .then(self.check_zookeeper_reference())
                 .await?
                 .then(self.context.delete_illegal_pods(
                     self.existing_pods.as_slice(),
