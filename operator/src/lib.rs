@@ -27,6 +27,7 @@ use stackable_operator::reconcile::{
 
 use stackable_zookeeper_crd::ZooKeeperCluster;
 
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::Api;
 use stackable_operator::error::OperatorResult;
 use stackable_operator::k8s_utils::LabelOptionalValueMap;
@@ -122,6 +123,14 @@ impl KafkaState {
 
         mandatory_labels.insert(String::from(APP_COMPONENT_LABEL), Some(roles));
         mandatory_labels.insert(String::from(APP_INSTANCE_LABEL), None);
+        mandatory_labels.insert(
+            String::from(APP_NAME_LABEL),
+            Some(vec![String::from(APP_NAME)]),
+        );
+        mandatory_labels.insert(
+            String::from(APP_MANAGED_BY_LABEL),
+            Some(vec![String::from(MANAGED_BY)]),
+        );
         mandatory_labels
     }
 
@@ -352,20 +361,30 @@ impl ControllerStrategy for KafkaStrategy {
         let cluster_spec: KafkaClusterSpec = context.resource.spec.clone();
 
         let mut eligible_nodes = HashMap::new();
-        let test = cluster_spec
+        let role_groups = cluster_spec
             .brokers
             .selectors
             .iter()
             .map(|(group_name, selector_config)| RoleGroup {
                 name: group_name.to_string(),
-                selector: selector_config.clone().selector.unwrap(),
+                selector: match &selector_config.selector {
+                    None => LabelSelector {
+                        match_expressions: None,
+                        match_labels: None,
+                    },
+                    Some(selector) => selector.clone(),
+                },
             })
             .collect::<Vec<_>>();
 
         eligible_nodes.insert(
             KafkaNodeType::Broker,
-            role_utils::find_nodes_that_fit_selectors(&context.client, None, test.as_slice())
-                .await?,
+            role_utils::find_nodes_that_fit_selectors(
+                &context.client,
+                None,
+                role_groups.as_slice(),
+            )
+            .await?,
         );
 
         Ok(KafkaState {
