@@ -433,6 +433,8 @@ fn build_pod(
     pod_name: &str,
     cm_name: &str,
 ) -> Result<Pod, Error> {
+    let version = resource.spec.version.to_string();
+
     let pod = Pod {
         // Metadata
         metadata: metadata::build_metadata(
@@ -446,13 +448,10 @@ fn build_pod(
             node_name: Some(node.to_string()),
             tolerations: Some(stackable_operator::krustlet::create_tolerations()),
             containers: vec![Container {
-                image: Some(format!(
-                    "stackable/kafka:{}",
-                    serde_json::json!(resource.spec.version).as_str().unwrap()
-                )),
+                image: Some(format!("stackable/kafka:{}", version)),
                 name: "kafka".to_string(),
                 command: Some(vec![
-                    "kafka_2.12-2.6.0/bin/kafka-server-start.sh".to_string(), // TODO: Don't hardcode this
+                    format!("kafka_2.12-{}/bin/kafka-server-start.sh", version), // TODO: Don't hardcode Scala version
                     "{{ configroot }}/config/server.properties".to_string(),
                 ]),
                 volume_mounts: Some(vec![VolumeMount {
