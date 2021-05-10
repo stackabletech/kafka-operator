@@ -271,9 +271,14 @@ impl KafkaState {
                         node_labels
                             .insert(String::from(APP_ROLE_GROUP_LABEL), String::from(role_group));
                         node_labels.insert(String::from(APP_INSTANCE_LABEL), self.context.name());
+                        // unwrap is ok to use here, as this comes from a hard coded object and should
+                        // really not fail!
                         node_labels.insert(
                             String::from(APP_VERSION_LABEL),
-                            serde_json::json!(&self.kafka_cluster.spec.version).to_string(),
+                            serde_json::json!(&self.kafka_cluster.spec.version)
+                                .as_str()
+                                .unwrap()
+                                .to_owned(),
                         );
 
                         // Create a pod for this node, role and group combination
