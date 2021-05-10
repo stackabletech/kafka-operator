@@ -273,7 +273,7 @@ impl KafkaState {
                         node_labels.insert(String::from(APP_INSTANCE_LABEL), self.context.name());
                         node_labels.insert(
                             String::from(APP_VERSION_LABEL),
-                            serde_json::json!(&self.kafka_cluster.spec.version).to_string(),
+                            self.kafka_cluster.spec.version.clone().to_string(),
                         );
 
                         // Create a pod for this node, role and group combination
