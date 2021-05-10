@@ -28,20 +28,9 @@ impl Crd for KafkaCluster {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(
-    Clone,
-    Debug,
-    Deserialize,
-    Eq,
-    JsonSchema,
-    PartialEq,
-    Serialize,
-    strum_macros::Display,
-    strum_macros::EnumString,
-)]
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
 pub enum KafkaVersion {
     #[serde(rename = "2.6.0")]
-    #[strum(serialize = "2.6.0")]
     v2_6_0,
 }
 
