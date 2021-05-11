@@ -451,13 +451,13 @@ fn build_pod(
             containers: vec![Container {
                 image: Some(format!(
                     "stackable/kafka:{}",
-                    &resource.spec.version.get_fully_qualified_version()
+                    resource.spec.version.get_fully_qualified_version()
                 )),
                 name: "kafka".to_string(),
                 command: Some(vec![
                     format!(
                         "kafka_{}/bin/kafka-server-start.sh",
-                        &resource.spec.version.get_fully_qualified_version()
+                        resource.spec.version.get_fully_qualified_version()
                     ),
                     "{{ configroot }}/config/server.properties".to_string(),
                 ]),

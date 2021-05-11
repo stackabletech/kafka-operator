@@ -38,11 +38,11 @@ pub struct KafkaVersion {
 impl KafkaVersion {
     pub const DEFAULT_SCALA_VERSION: &'static str = "2.13";
 
-    pub fn get_kafka_version(&self) -> &str {
+    pub fn kafka_version(&self) -> &str {
         &self.kafka_version
     }
 
-    pub fn get_scala_version(&self) -> &str {
+    pub fn scala_version(&self) -> &str {
         &self
             .scala_version
             .as_deref()
@@ -50,7 +50,7 @@ impl KafkaVersion {
     }
 
     pub fn get_fully_qualified_version(&self) -> String {
-        format!("{}-{}", self.get_scala_version(), self.get_kafka_version())
+        format!("{}-{}", self.scala_version(), self.kafka_version())
     }
 }
 
@@ -100,22 +100,21 @@ pub struct KafkaConfig {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indoc::indoc;
     use rstest::rstest;
 
     #[rstest]
     #[case::no_scala_version(
-    indoc! {"
-          kafka_version: 2.6.0
-      "},
-    "2.13-2.6.0"
+        "
+        kafka_version: 2.6.0
+      ",
+        "2.13-2.6.0"
     )]
     #[case::with_scala_version(
-    indoc! {"
-          kafka_version: 2.8.0
-          scala_version: 2.12
-      "},
-    "2.12-2.8.0"
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.12
+      ",
+        "2.12-2.8.0"
     )]
     fn test_version(#[case] input: &str, #[case] expected_output: &str) {
         let version: KafkaVersion = serde_yaml::from_str(&input)
