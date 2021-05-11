@@ -33,7 +33,7 @@ spec:
                             nullable: true
                             type: object
                           instances:
-                            format: uint8
+                            format: uint16
                             minimum: 0.0
                             type: integer
                           instancesPerNode:
@@ -80,9 +80,15 @@ spec:
                     - selectors
                   type: object
                 version:
-                  enum:
-                    - 2.6.0
-                  type: string
+                  properties:
+                    kafka_version:
+                      type: string
+                    scala_version:
+                      nullable: true
+                      type: string
+                  required:
+                    - kafka_version
+                  type: object
                 zooKeeperReference:
                   description: This is the address to a namespaced resource.
                   properties:
