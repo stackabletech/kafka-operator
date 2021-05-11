@@ -1583,14 +1583,17 @@ dependencies = [
  "k8s-openapi",
  "kube 0.52.0",
  "kube-runtime 0.52.0",
+ "lazy_static",
  "rstest",
  "schemars",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml",
  "stackable-operator",
  "strum",
  "strum_macros",
+ "thiserror",
 ]
 
 [[package]]
