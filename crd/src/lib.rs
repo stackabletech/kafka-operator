@@ -49,14 +49,14 @@ impl KafkaVersion {
             .unwrap_or(Self::DEFAULT_SCALA_VERSION)
     }
 
-    pub fn get_fully_qualified_version(&self) -> String {
+    pub fn fully_qualified_version(&self) -> String {
         format!("{}-{}", self.scala_version(), self.kafka_version())
     }
 }
 
 impl Display for KafkaVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.get_fully_qualified_version())
+        write!(f, "{}", self.fully_qualified_version())
     }
 }
 
@@ -119,6 +119,6 @@ mod tests {
     fn test_version(#[case] input: &str, #[case] expected_output: &str) {
         let version: KafkaVersion = serde_yaml::from_str(&input)
             .expect("deserializing a known-good value should not fail!");
-        assert_eq!(version.get_fully_qualified_version(), expected_output);
+        assert_eq!(version.fully_qualified_version(), expected_output);
     }
 }

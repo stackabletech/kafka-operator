@@ -271,12 +271,10 @@ impl KafkaState {
                         node_labels
                             .insert(String::from(APP_ROLE_GROUP_LABEL), String::from(role_group));
                         node_labels.insert(String::from(APP_INSTANCE_LABEL), self.context.name());
-                        // unwrap is ok to use here, as this comes from a hard coded object and should
-                        // really not fail!
                         let version: &KafkaVersion = &self.kafka_cluster.spec.version;
                         node_labels.insert(
                             String::from(APP_VERSION_LABEL),
-                            version.get_fully_qualified_version(),
+                            version.fully_qualified_version(),
                         );
 
                         // Create a pod for this node, role and group combination
@@ -451,13 +449,13 @@ fn build_pod(
             containers: vec![Container {
                 image: Some(format!(
                     "stackable/kafka:{}",
-                    resource.spec.version.get_fully_qualified_version()
+                    resource.spec.version.fully_qualified_version()
                 )),
                 name: "kafka".to_string(),
                 command: Some(vec![
                     format!(
                         "kafka_{}/bin/kafka-server-start.sh",
-                        resource.spec.version.get_fully_qualified_version()
+                        resource.spec.version.fully_qualified_version()
                     ),
                     "{{ configroot }}/config/server.properties".to_string(),
                 ]),
