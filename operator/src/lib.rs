@@ -277,12 +277,15 @@ impl KafkaState {
                             version.fully_qualified_version(),
                         );
 
+                        // If the node name is not part of the pod name we get duplicate names
+                        // which prevents all pods from being created
+                        let pod_name_with_node = format!("{}-{}", pod_name, node_name);
                         // Create a pod for this node, role and group combination
                         let pod = build_pod(
                             &self.context.resource,
                             node_name,
                             &node_labels,
-                            &pod_name,
+                            &pod_name_with_node,
                             &cm_name,
                         )?;
                         self.context.client.create(&pod).await?;
