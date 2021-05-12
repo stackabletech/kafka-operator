@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use stackable_operator::label_selector::schema;
 use stackable_operator::Crd;
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
@@ -27,11 +29,35 @@ impl Crd for KafkaCluster {
     const CRD_DEFINITION: &'static str = include_str!("../kafkaclusters.crd.yaml");
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
-pub enum KafkaVersion {
-    #[serde(rename = "2.6.0")]
-    v2_6_0,
+pub struct KafkaVersion {
+    kafka_version: String,
+    scala_version: Option<String>,
+}
+
+impl KafkaVersion {
+    pub const DEFAULT_SCALA_VERSION: &'static str = "2.13";
+
+    pub fn kafka_version(&self) -> &str {
+        &self.kafka_version
+    }
+
+    pub fn scala_version(&self) -> &str {
+        &self
+            .scala_version
+            .as_deref()
+            .unwrap_or(Self::DEFAULT_SCALA_VERSION)
+    }
+
+    pub fn fully_qualified_version(&self) -> String {
+        format!("{}-{}", self.scala_version(), self.kafka_version())
+    }
+}
+
+impl Display for KafkaVersion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.fully_qualified_version())
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
@@ -70,3 +96,29 @@ pub struct SelectorAndConfig<T> {
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaConfig {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::no_scala_version(
+        "
+        kafka_version: 2.6.0
+      ",
+        "2.13-2.6.0"
+    )]
+    #[case::with_scala_version(
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.12
+      ",
+        "2.12-2.8.0"
+    )]
+    fn test_version(#[case] input: &str, #[case] expected_output: &str) {
+        let version: KafkaVersion = serde_yaml::from_str(&input)
+            .expect("deserializing a known-good value should not fail!");
+        assert_eq!(version.fully_qualified_version(), expected_output);
+    }
+}

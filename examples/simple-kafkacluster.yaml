@@ -3,7 +3,8 @@ kind: KafkaCluster
 metadata:
   name: simple
 spec:
-  version: 2.6.0
+  version:
+    kafka_version: 2.6.0
   zooKeeperReference:
     namespace: default
     name: simple

@@ -13,7 +13,7 @@ use kube::api::ListParams;
 use serde_json::json;
 use tracing::{debug, info, trace, warn};
 
-use stackable_kafka_crd::{KafkaCluster, KafkaClusterSpec};
+use stackable_kafka_crd::{KafkaCluster, KafkaClusterSpec, KafkaVersion};
 use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::labels::{
@@ -271,14 +271,10 @@ impl KafkaState {
                         node_labels
                             .insert(String::from(APP_ROLE_GROUP_LABEL), String::from(role_group));
                         node_labels.insert(String::from(APP_INSTANCE_LABEL), self.context.name());
-                        // unwrap is ok to use here, as this comes from a hard coded object and should
-                        // really not fail!
+                        let version: &KafkaVersion = &self.kafka_cluster.spec.version;
                         node_labels.insert(
                             String::from(APP_VERSION_LABEL),
-                            serde_json::json!(&self.kafka_cluster.spec.version)
-                                .as_str()
-                                .unwrap()
-                                .to_owned(),
+                            version.fully_qualified_version(),
                         );
 
                         // Create a pod for this node, role and group combination
@@ -453,11 +449,14 @@ fn build_pod(
             containers: vec![Container {
                 image: Some(format!(
                     "stackable/kafka:{}",
-                    serde_json::json!(resource.spec.version).as_str().unwrap()
+                    resource.spec.version.fully_qualified_version()
                 )),
                 name: "kafka".to_string(),
                 command: Some(vec![
-                    "kafka_2.12-2.6.0/bin/kafka-server-start.sh".to_string(), // TODO: Don't hardcode this
+                    format!(
+                        "kafka_{}/bin/kafka-server-start.sh",
+                        resource.spec.version.fully_qualified_version()
+                    ),
                     "{{ configroot }}/config/server.properties".to_string(),
                 ]),
                 volume_mounts: Some(vec![VolumeMount {
