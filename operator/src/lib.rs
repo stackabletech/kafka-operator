@@ -25,8 +25,6 @@ use stackable_operator::reconcile::{
     ContinuationStrategy, ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
 };
 
-use stackable_zookeeper_crd::ZooKeeperCluster;
-
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::Api;
 use stackable_operator::error::OperatorResult;
@@ -57,38 +55,30 @@ pub enum KafkaNodeType {
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
     kafka_cluster: KafkaCluster,
-    zk_cluster: Option<ZooKeeperCluster>,
+    zoo_keeper_info: Option<stackable_zookeeper_crd::util::ZookeeperConnectionInformation>,
     existing_pods: Vec<Pod>,
     eligible_nodes: HashMap<KafkaNodeType, HashMap<String, Vec<Node>>>,
 }
 
 impl KafkaState {
-    async fn check_zookeeper_reference(&mut self) -> KafkaReconcileResult {
-        debug!("Checking ZookeeperReference exists.");
-        let api: Api<ZooKeeperCluster> = self
-            .context
-            .client
-            .get_namespaced_api(&self.kafka_cluster.spec.zoo_keeper_reference.namespace);
-        let zk_cluster = api
-            .get(&self.kafka_cluster.spec.zoo_keeper_reference.name)
-            .await;
+    async fn get_zookeeper_connection_information(&mut self) -> KafkaReconcileResult {
+        let zk_ref: &stackable_zookeeper_crd::util::ZookeeperReference =
+            &self.context.resource.spec.zoo_keeper_reference;
 
-        // TODO: We need to watch the ZooKeeper resource and do _something_ when it goes down or when its nodes are changed
-        let zk_cluster: ZooKeeperCluster = match zk_cluster {
-            Ok(zk) => zk,
-            Err(err) => {
-                warn!(?err,
-                    "Referencing a ZooKeeper cluster that does not exist (or some other error while fetching it): [{}/{}], we will requeue and check again",
-                    &self.kafka_cluster.spec.zoo_keeper_reference.namespace,
-                    &self.kafka_cluster.spec.zoo_keeper_reference.name
-                );
-                // TODO: Depending on the error either requeue or return an error (which'll requeue as well)
-                // For a not found we'd like to requeue but if there was a transport error we'd like to return it.
-                return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
-            }
-        };
+        if let Some(chroot) = zk_ref.chroot.as_deref() {
+            stackable_zookeeper_crd::util::is_valid_zookeeper_path(chroot)?;
+        }
 
-        self.zk_cluster = Some(zk_cluster);
+        let zookeeper_info =
+            stackable_zookeeper_crd::util::get_zk_connection_info(&self.context.client, zk_ref)
+                .await?;
+
+        debug!(
+            "Received ZooKeeper connect string: [{}]",
+            &zookeeper_info.connection_string
+        );
+
+        self.zoo_keeper_info = Some(zookeeper_info);
 
         Ok(ReconcileFunctionAction::Continue)
     }
@@ -115,7 +105,7 @@ impl KafkaState {
         eligible_nodes_map
     }
 
-    pub fn get_deletion_labels(&self) -> BTreeMap<String, Option<Vec<String>>> {
+    pub fn get_required_labels(&self) -> BTreeMap<String, Option<Vec<String>>> {
         let roles = KafkaNodeType::iter()
             .map(|role| role.to_string())
             .collect::<Vec<_>>();
@@ -134,40 +124,17 @@ impl KafkaState {
         mandatory_labels
     }
 
-    async fn create_config_map(&self, name: &str) -> Result<(), Error> {
-        match self
-            .context
-            .client
-            .get::<ConfigMap>(name, Some(&"default".to_string()))
-            .await
-        {
-            Ok(_) => {
-                debug!("ConfigMap [{}] already exists, skipping creation!", name);
-                return Ok(());
-            }
-            Err(e) => {
-                // TODO: This is shit, but works for now. If there is an actual error in comms with
-                //   K8S, it will most probably also occur further down and be properly handled
-                debug!("Error getting ConfigMap [{}]: [{:?}]", name, e);
-            }
-        }
-        let zk_spec = &self.zk_cluster.as_ref().ok_or_else(|| error::Error::ReconcileError("zk_spec missing, this is a programming error and should never happen. Please report in our issue tracker.".to_string()))?.spec;
-
-        // This retrieves all the nodes from the referenced ZooKeeper cluster and creates the
-        // required connection string for Kafka
-        // TODO: Port is currently hardcoded, this needs to change and in general it might make sense to move this functionality to a ZooKeeper library
-        let zk_servers: String = zk_spec
-            .servers
-            .iter()
-            .map(|server| format!("{}:2181", server.node_name))
-            .collect::<Vec<String>>()
-            .join(",");
-
+    async fn build_config_map(&self, name: &str) -> Result<Option<ConfigMap>, Error> {
         let mut labels = BTreeMap::new();
         labels.insert("kafka-name".to_string(), name);
 
         let mut options = HashMap::new();
-        options.insert("zookeeper.connect".to_string(), zk_servers);
+        if let Some(info) = &self.zoo_keeper_info {
+            options.insert(
+                "zookeeper.connect".to_string(),
+                info.connection_string.clone(),
+            );
+        }
 
         let mut handlebars = Handlebars::new();
         handlebars.set_strict_mode(true);
@@ -182,11 +149,40 @@ impl KafkaState {
         let mut data = BTreeMap::new();
         data.insert("server.properties".to_string(), config);
 
+        match self
+            .context
+            .client
+            .get::<ConfigMap>(name, Some(&self.context.namespace()))
+            .await
+        {
+            Ok(config_map) => {
+                if let Some(existing_config_map_data) = config_map.data {
+                    if existing_config_map_data == data {
+                        debug!(
+                            "ConfigMap [{}] already exists with identical data, skipping creation!",
+                            name
+                        );
+                        return Ok(None);
+                    } else {
+                        debug!(
+                            "ConfigMap [{}] already exists, but differs, recreating it!",
+                            name
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                // TODO: This is shit, but works for now. If there is an actual error in comes with
+                //   K8S, it will most probably also occur further down and be properly handled
+                debug!("Error getting ConfigMap [{}]: [{:?}]", name, e);
+            }
+        }
+
         // And now create the actual ConfigMap
         let cm =
             stackable_operator::config_map::create_config_map(&self.context.resource, &name, data)?;
-        self.context.client.create(&cm).await?;
-        Ok(())
+
+        Ok(Some(cm))
     }
 
     async fn delete_all_pods(&self) -> OperatorResult<ReconcileFunctionAction> {
@@ -213,7 +209,15 @@ impl KafkaState {
                     let cm_name = format!("{}-config", pod_name);
                     debug!("pod_name: [{}], cm_name: [{}]", pod_name, cm_name);
 
-                    self.create_config_map(&cm_name).await?;
+                    // build_config_map returns an Option<ConfigMap>:
+                    // None signals that a config map with identical name and data already exists -> nothing to be done
+                    // Some(ConfigMap) is returned if the config map either does not exists yet or the data differs -> create/override it
+                    // TODO: after the review i actually do not like the flow of that. Returning None if everything is ok does
+                    //    not make that much sense to me. Needs improvement.
+                    if let Some(cm) = self.build_config_map(&cm_name).await? {
+                        self.context.client.create(&cm).await?;
+                    }
+
                     debug!(
                         "Identify missing pods for [{}] role and group [{}]",
                         node_type, role_group
@@ -305,17 +309,17 @@ impl ReconciliationState for KafkaState {
     ) -> Pin<Box<dyn Future<Output = Result<ReconcileFunctionAction, Self::Error>> + Send + '_>>
     {
         info!("========================= Starting reconciliation =========================");
-        debug!("Deletion Labels: [{:?}]", &self.get_deletion_labels());
+        debug!("Deletion Labels: [{:?}]", &self.get_required_labels());
 
         Box::pin(async move {
             self.context
                 .handle_deletion(Box::pin(self.delete_all_pods()), FINALIZER_NAME, true)
                 .await?
-                .then(self.check_zookeeper_reference())
+                .then(self.get_zookeeper_connection_information())
                 .await?
                 .then(self.context.delete_illegal_pods(
                     self.existing_pods.as_slice(),
-                    &self.get_deletion_labels(),
+                    &self.get_required_labels(),
                     ContinuationStrategy::OneRequeue,
                 ))
                 .await?
@@ -394,7 +398,7 @@ impl ControllerStrategy for KafkaStrategy {
         Ok(KafkaState {
             kafka_cluster: context.resource.clone(),
             context,
-            zk_cluster: None,
+            zoo_keeper_info: None,
             existing_pods,
             eligible_nodes,
         })

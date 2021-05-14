@@ -21,7 +21,7 @@ use std::fmt::{Display, Formatter};
 pub struct KafkaClusterSpec {
     pub version: KafkaVersion,
     pub brokers: NodeGroup<KafkaConfig>,
-    pub zoo_keeper_reference: NamespaceName,
+    pub zoo_keeper_reference: stackable_zookeeper_crd::util::ZookeeperReference,
 }
 
 impl Crd for KafkaCluster {
@@ -62,19 +62,6 @@ impl Display for KafkaVersion {
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 pub struct KafkaClusterStatus {}
-
-/// This is the address to a namespaced resource.
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
-pub struct NamespaceName {
-    pub namespace: String,
-    pub name: String,
-}
-
-impl NamespaceName {
-    pub fn new(namespace: String, name: String) -> Self {
-        NamespaceName { namespace, name }
-    }
-}
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
