@@ -169,6 +169,19 @@ impl KafkaState {
         let mut options = HashMap::new();
         options.insert("zookeeper.connect".to_string(), zk_servers);
 
+        // opa -> works only with adapted kafka package (https://github.com/Bisnode/opa-kafka-plugin)
+        // and the opa-authorizer*.jar in the lib directory of the package (https://github.com/Bisnode/opa-kafka-plugin/releases/)
+        options.insert(
+            "authorizer.class.name".to_string(),
+            "com.bisnode.kafka.authorization.OpaAuthorizer".to_string(),
+        );
+        options.insert(
+            "opa.authorizer.url".to_string(),
+            // TODO: make configurable
+            "http://localhost:8181/v1/data/kafka/authz/allow".to_string(),
+        );
+        // opa end
+
         let mut handlebars = Handlebars::new();
         handlebars.set_strict_mode(true);
         handlebars
