@@ -1,0 +1,5 @@
+name: kafka
+version: master
+title: Stackable Operator for Apache Kafka
+nav:
+  - modules/ROOT/nav.adoc
