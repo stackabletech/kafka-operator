@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::label_selector::schema;
 use stackable_operator::Crd;
+use stackable_zookeeper_crd::util::ZookeeperReference;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -21,7 +22,7 @@ use std::fmt::{Display, Formatter};
 pub struct KafkaClusterSpec {
     pub version: KafkaVersion,
     pub brokers: NodeGroup<KafkaConfig>,
-    pub zoo_keeper_reference: stackable_zookeeper_crd::util::ZookeeperReference,
+    pub zookeeper_reference: ZookeeperReference,
 }
 
 impl Crd for KafkaCluster {

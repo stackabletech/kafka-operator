@@ -31,6 +31,7 @@ use stackable_operator::error::OperatorResult;
 use stackable_operator::k8s_utils::LabelOptionalValueMap;
 use stackable_operator::role_utils::RoleGroup;
 use stackable_operator::{k8s_utils, role_utils};
+use stackable_zookeeper_crd::util::ZookeeperConnectionInformation;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
@@ -55,7 +56,7 @@ pub enum KafkaNodeType {
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
     kafka_cluster: KafkaCluster,
-    zoo_keeper_info: Option<stackable_zookeeper_crd::util::ZookeeperConnectionInformation>,
+    zookeeper_info: Option<ZookeeperConnectionInformation>,
     existing_pods: Vec<Pod>,
     eligible_nodes: HashMap<KafkaNodeType, HashMap<String, Vec<Node>>>,
 }
@@ -63,7 +64,7 @@ struct KafkaState {
 impl KafkaState {
     async fn get_zookeeper_connection_information(&mut self) -> KafkaReconcileResult {
         let zk_ref: &stackable_zookeeper_crd::util::ZookeeperReference =
-            &self.context.resource.spec.zoo_keeper_reference;
+            &self.context.resource.spec.zookeeper_reference;
 
         if let Some(chroot) = zk_ref.chroot.as_deref() {
             stackable_zookeeper_crd::util::is_valid_zookeeper_path(chroot)?;
@@ -78,7 +79,7 @@ impl KafkaState {
             &zookeeper_info.connection_string
         );
 
-        self.zoo_keeper_info = Some(zookeeper_info);
+        self.zookeeper_info = Some(zookeeper_info);
 
         Ok(ReconcileFunctionAction::Continue)
     }
@@ -129,7 +130,7 @@ impl KafkaState {
         labels.insert("kafka-name".to_string(), name);
 
         let mut options = HashMap::new();
-        if let Some(info) = &self.zoo_keeper_info {
+        if let Some(info) = &self.zookeeper_info {
             options.insert(
                 "zookeeper.connect".to_string(),
                 info.connection_string.clone(),
@@ -164,6 +165,7 @@ impl KafkaState {
                         );
                         return Ok(None);
                     } else {
+                        // TODO: We run into an reconcile error if the configmap exists with different data
                         debug!(
                             "ConfigMap [{}] already exists, but differs, recreating it!",
                             name
@@ -398,7 +400,7 @@ impl ControllerStrategy for KafkaStrategy {
         Ok(KafkaState {
             kafka_cluster: context.resource.clone(),
             context,
-            zoo_keeper_info: None,
+            zookeeper_info: None,
             existing_pods,
             eligible_nodes,
         })
