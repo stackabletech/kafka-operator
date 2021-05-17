@@ -12,6 +12,9 @@ pub enum Error {
         source: stackable_operator::error::Error,
     },
 
-    #[error("Error during reconciliation: {0}")]
-    ReconcileError(String),
+    #[error("Error from ZooKeeper: {source}")]
+    ZookeeperError {
+        #[from]
+        source: stackable_zookeeper_crd::error::Error,
+    },
 }

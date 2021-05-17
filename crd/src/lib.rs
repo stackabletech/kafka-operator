@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use stackable_opa_crd::util::OpaReference;
 use stackable_operator::label_selector::schema;
 use stackable_operator::Crd;
+use stackable_zookeeper_crd::util::ZookeeperReference;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -22,7 +23,7 @@ use std::fmt::{Display, Formatter};
 pub struct KafkaClusterSpec {
     pub version: KafkaVersion,
     pub brokers: NodeGroup<KafkaConfig>,
-    pub zoo_keeper_reference: NamespaceName,
+    pub zookeeper_reference: ZookeeperReference,
     pub opa_reference: Option<OpaReference>,
 }
 
@@ -64,19 +65,6 @@ impl Display for KafkaVersion {
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 pub struct KafkaClusterStatus {}
-
-/// This is the address to a namespaced resource.
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
-pub struct NamespaceName {
-    pub namespace: String,
-    pub name: String,
-}
-
-impl NamespaceName {
-    pub fn new(namespace: String, name: String) -> Self {
-        NamespaceName { namespace, name }
-    }
-}
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

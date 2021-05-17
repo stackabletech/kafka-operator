@@ -89,9 +89,12 @@ spec:
                   required:
                     - kafka_version
                   type: object
-                zooKeeperReference:
-                  description: This is the address to a namespaced resource.
+                zookeeperReference:
+                  description: Contains all necessary information identify a Stackable managed ZooKeeper ensemble and build a connection string for it. The main purpose for this struct is for other operators that need to reference a ZooKeeper ensemble to use in their CRDs. This has the benefit of keeping references to Zookeeper ensembles consistent throughout the entire stack.
                   properties:
+                    chroot:
+                      nullable: true
+                      type: string
                     name:
                       type: string
                     namespace:
@@ -103,7 +106,7 @@ spec:
               required:
                 - brokers
                 - version
-                - zooKeeperReference
+                - zookeeperReference
               type: object
             status:
               nullable: true
