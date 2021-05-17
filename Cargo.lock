@@ -1588,6 +1588,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "stackable-opa-crd",
  "stackable-operator",
  "strum",
  "strum_macros",
@@ -1606,6 +1607,7 @@ dependencies = [
  "serde",
  "serde_json",
  "stackable-kafka-crd",
+ "stackable-opa-crd",
  "stackable-operator",
  "stackable-zookeeper-crd",
  "strum",
@@ -1624,6 +1626,24 @@ dependencies = [
  "stackable-operator",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "stackable-opa-crd"
+version = "0.1.0"
+dependencies = [
+ "k8s-openapi",
+ "kube 0.52.0",
+ "kube-runtime 0.52.0",
+ "schemars",
+ "serde",
+ "serde_json",
+ "stackable-operator",
+ "strum",
+ "strum_macros",
+ "thiserror",
+ "tracing",
+ "url",
 ]
 
 [[package]]
