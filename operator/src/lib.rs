@@ -26,6 +26,7 @@ use stackable_operator::reconcile::{
 
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::Api;
+use stackable_opa_crd::util::{get_opa_connection_info, OpaApi, OpaApiProtocol};
 use stackable_operator::error::OperatorResult;
 use stackable_operator::k8s_utils::LabelOptionalValueMap;
 use stackable_operator::role_utils::RoleGroup;
@@ -124,9 +125,9 @@ impl KafkaState {
         mandatory_labels
     }
 
-    async fn build_config_map(&self, name: &str) -> Result<Option<ConfigMap>, Error> {
+    async fn create_config_map(&self, cm_name: &str, node_name: &str) -> Result<(), Error> {
         let mut labels = BTreeMap::new();
-        labels.insert("kafka-name".to_string(), name);
+        labels.insert("kafka-name".to_string(), cm_name);
 
         let mut options = HashMap::new();
         if let Some(info) = &self.zookeeper_info {
@@ -135,6 +136,67 @@ impl KafkaState {
                 info.connection_string.clone(),
             );
         }
+
+        // opa -> works only with adapted kafka package (https://github.com/Bisnode/opa-kafka-plugin)
+        // and the opa-authorizer*.jar in the lib directory of the package (https://github.com/Bisnode/opa-kafka-plugin/releases/)
+        // TODO: We cannot query for the opa info as we do for zookeeper (meaning once at the start
+        //    of the reconcile method), since we need the node_name to potentially find matches on
+        //    the same machine for performance increase (which requires the node_name).
+        if let Some(opa_reference) = &self.kafka_cluster.spec.opa_reference {
+            let opa_api = OpaApi::Data {
+                package_path: "kafka/authz".to_string(),
+                rule: "allow".to_string(),
+            };
+
+            match get_opa_connection_info(
+                &self.context.client,
+                opa_reference,
+                &opa_api,
+                &OpaApiProtocol::Http,
+                Some(node_name.to_string()),
+            )
+            .await
+            {
+                Ok(connection_info) => {
+                    debug!(
+                        "Found valid OPA server [{}]",
+                        connection_info.connection_string
+                    );
+
+                    options.insert(
+                        "authorizer.class.name".to_string(),
+                        "com.bisnode.kafka.authorization.OpaAuthorizer".to_string(),
+                    );
+
+                    options.insert(
+                        "opa.authorizer.url".to_string(),
+                        connection_info.connection_string,
+                    );
+
+                    // TODO: make configurable (no caching for now)
+                    options.insert(
+                        "opa.authorizer.cache.initial.capacity".to_string(),
+                        "0".to_string(),
+                    );
+
+                    // TODO: make configurable (no caching for now)
+                    options.insert(
+                        "opa.authorizer.cache.maximum.size".to_string(),
+                        "0".to_string(),
+                    );
+
+                    // TODO: make configurable (no caching for now)
+                    // options.insert(
+                    //     "opa.authorizer.cache.expire.after.seconds".to_string(),
+                    //     "0".to_string(),
+                    // );
+                }
+                Err(err) => {
+                    warn!("Could not retrieve OPA connection information: {}", err)
+                }
+            }
+        }
+        // opa end
 
         let mut handlebars = Handlebars::new();
         handlebars.set_strict_mode(true);
@@ -149,41 +211,43 @@ impl KafkaState {
         let mut data = BTreeMap::new();
         data.insert("server.properties".to_string(), config);
 
+        let config_map = stackable_operator::config_map::create_config_map(
+            &self.context.resource,
+            &cm_name,
+            data,
+        )?;
+
         match self
             .context
             .client
-            .get::<ConfigMap>(name, Some(&self.context.namespace()))
+            .get::<ConfigMap>(cm_name, Some(&self.context.namespace()))
             .await
         {
-            Ok(config_map) => {
-                if let Some(existing_config_map_data) = config_map.data {
-                    if existing_config_map_data == data {
-                        debug!(
-                            "ConfigMap [{}] already exists with identical data, skipping creation!",
-                            name
-                        );
-                        return Ok(None);
-                    } else {
-                        // TODO: We run into an reconcile error if the configmap exists with different data
-                        debug!(
-                            "ConfigMap [{}] already exists, but differs, recreating it!",
-                            name
-                        );
-                    }
-                }
+            Ok(ConfigMap {
+                data: existing_config_map_data,
+                ..
+            }) if existing_config_map_data == config_map.data => {
+                debug!(
+                    "ConfigMap [{}] already exists with identical data, skipping creation!",
+                    cm_name
+                );
+            }
+            Ok(_) => {
+                debug!(
+                    "ConfigMap [{}] already exists, but differs, updating it!",
+                    cm_name
+                );
+                self.context.client.update(&config_map).await?;
             }
             Err(e) => {
                 // TODO: This is shit, but works for now. If there is an actual error in comes with
                 //   K8S, it will most probably also occur further down and be properly handled
-                debug!("Error getting ConfigMap [{}]: [{:?}]", name, e);
+                debug!("Error getting ConfigMap [{}]: [{:?}]", cm_name, e);
+                self.context.client.create(&config_map).await?;
             }
         }
 
-        // And now create the actual ConfigMap
-        let cm =
-            stackable_operator::config_map::create_config_map(&self.context.resource, &name, data)?;
-
-        Ok(Some(cm))
+        Ok(())
     }
 
     async fn delete_all_pods(&self) -> OperatorResult<ReconcileFunctionAction> {
@@ -203,22 +267,6 @@ impl KafkaState {
         for node_type in KafkaNodeType::iter() {
             if let Some(nodes_for_role) = self.eligible_nodes.get(&node_type) {
                 for (role_group, nodes) in nodes_for_role {
-                    // Create config map for this rolegroup
-                    let pod_name =
-                        format!("kafka-{}-{}-{}", self.context.name(), role_group, node_type)
-                            .to_lowercase();
-                    let cm_name = format!("{}-config", pod_name);
-                    debug!("pod_name: [{}], cm_name: [{}]", pod_name, cm_name);
-
-                    // build_config_map returns an Option<ConfigMap>:
-                    // None signals that a config map with identical name and data already exists -> nothing to be done
-                    // Some(ConfigMap) is returned if the config map either does not exists yet or the data differs -> create/override it
-                    // TODO: after the review i actually do not like the flow of that. Returning None if everything is ok does
-                    //    not make that much sense to me. Needs improvement.
-                    if let Some(cm) = self.build_config_map(&cm_name).await? {
-                        self.context.client.create(&cm).await?;
-                    }
-
                     debug!(
                         "Identify missing pods for [{}] role and group [{}]",
                         node_type, role_group
@@ -257,6 +305,14 @@ impl KafkaState {
                             warn!("No name found in metadata, this should not happen! Skipping node: [{:?}]", node);
                             continue;
                         };
+
+                        let pod_name =
+                            format!("kafka-{}-{}-{}", self.context.name(), role_group, node_type)
+                                .to_lowercase();
+                        let cm_name = format!("{}-config", pod_name);
+
+                        self.create_config_map(&cm_name, node_name).await?;
+
                         debug!(
                             "Creating pod on node [{}] for [{}] role and group [{}]",
                             node.metadata

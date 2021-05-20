@@ -2,6 +2,7 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use stackable_opa_crd::util::OpaReference;
 use stackable_operator::label_selector::schema;
 use stackable_operator::Crd;
 use stackable_zookeeper_crd::util::ZookeeperReference;
@@ -23,6 +24,7 @@ pub struct KafkaClusterSpec {
     pub version: KafkaVersion,
     pub brokers: NodeGroup<KafkaConfig>,
     pub zookeeper_reference: ZookeeperReference,
+    pub opa_reference: Option<OpaReference>,
 }
 
 impl Crd for KafkaCluster {
