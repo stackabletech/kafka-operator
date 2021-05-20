@@ -1,8 +1,10 @@
 [package]
-name = "stackable-kafka-crd"
-version = "0.1.0"
 authors = ["Lars Francke <lars.francke@stackable.de>"]
+description = "Stackable Operator for Apache Kafka - The Custom Resource Definition"
 edition = "2018"
+license = "OSL-3.0"
+name = "stackable-kafka-crd"
+version = "0.1.0-nightly"
 
 [dependencies]
 stackable-opa-crd = { git = "https://github.com/stackabletech/opa-operator.git", branch = "main" }
@@ -13,8 +15,8 @@ k8s-openapi = { version = "0.11", default-features = false, features = ["v1_20"]
 kube = { version = "0.52", default-features = false, features = ["jsonpatch", "derive"] }
 kube-runtime = "0.52"
 schemars = "0.8"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0" # Needed by the CustomResource annotation
+serde = { version = "1", features = ["derive"] }
+serde_json = "1" # Needed by the CustomResource annotation
 serde_yaml = "0.8"
 strum = "0.20"
 strum_macros = "0.20"

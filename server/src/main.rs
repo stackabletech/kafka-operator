@@ -12,7 +12,7 @@ async fn main() -> Result<(), error::Error> {
     info!("Checking CRD");
     stackable_operator::crd::ensure_crd_created::<KafkaCluster>(&client).await?;
 
-    info!("Starting controller");
+    info!("Starting Kafka controller");
     stackable_kafka_operator::create_controller(client).await;
     Ok(())
 }
