@@ -26,7 +26,8 @@ use stackable_operator::reconcile::{
 
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::Api;
-use stackable_opa_crd::util::{get_opa_connection_info, OpaApi, OpaApiProtocol};
+use stackable_opa_crd::util;
+use stackable_opa_crd::util::{OpaApi, OpaApiProtocol};
 use stackable_operator::error::OperatorResult;
 use stackable_operator::k8s_utils::LabelOptionalValueMap;
 use stackable_operator::role_utils::RoleGroup;
@@ -148,7 +149,7 @@ impl KafkaState {
                 rule: "allow".to_string(),
             };
 
-            match get_opa_connection_info(
+            match util::get_opa_connection_info(
                 &self.context.client,
                 opa_reference,
                 &opa_api,
@@ -306,9 +307,16 @@ impl KafkaState {
                             continue;
                         };
 
-                        let pod_name =
-                            format!("kafka-{}-{}-{}", self.context.name(), role_group, node_type)
-                                .to_lowercase();
+                        // If the node name is not part of the pod name we get duplicate names
+                        // which prevents all pods from being created
+                        let pod_name = format!(
+                            "kafka-{}-{}-{}-{}",
+                            self.context.name(),
+                            role_group,
+                            node_type,
+                            node_name
+                        )
+                        .to_lowercase();
                         let cm_name = format!("{}-config", pod_name);
 
                         self.create_config_map(&cm_name, node_name).await?;
@@ -338,15 +346,12 @@ impl KafkaState {
                             version.fully_qualified_version(),
                         );
 
-                        // If the node name is not part of the pod name we get duplicate names
-                        // which prevents all pods from being created
-                        let pod_name_with_node = format!("{}-{}", pod_name, node_name);
                         // Create a pod for this node, role and group combination
                         let pod = build_pod(
                             &self.context.resource,
                             node_name,
                             &node_labels,
-                            &pod_name_with_node,
+                            &pod_name,
                             &cm_name,
                         )?;
                         self.context.client.create(&pod).await?;
