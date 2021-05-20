@@ -8,11 +8,14 @@ spec:
   zookeeperReference:
     namespace: default
     name: simple
+  opaReference:
+    namespace: default
+    name: simple-opacluster
   brokers:
     selectors:
       default:
         selector:
           matchLabels:
             kubernetes.io/hostname: debian
-        instances: 3
+        instances: 1
         instancesPerNode: 1
