@@ -1217,9 +1217,9 @@ dependencies = [
 
 [[package]]
 name = "rstest"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c77c86a545c460cffcb2e5f558392e2e6a1edcc9d463cf092bf4ec3c7990641d"
+checksum = "041bb0202c14f6a158bbbf086afb03d0c6e975c2dec7d4912f8061ed44f290af"
 dependencies = [
  "cfg-if",
  "proc-macro2",
