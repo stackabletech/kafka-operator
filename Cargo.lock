@@ -1545,7 +1545,6 @@ dependencies = [
 name = "stackable-kafka-operator-server"
 version = "0.1.0-nightly"
 dependencies = [
- "stackable-kafka-crd",
  "stackable-kafka-operator",
  "stackable-operator",
  "tokio",
