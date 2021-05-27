@@ -447,9 +447,9 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9495705279e7140bf035dde1f6e750c162df8b625267cd52cc44e0b156732c8"
+checksum = "7fcd999463524c52659517fe2cea98493cfe485d10565e7b0fb07dbba7ad2753"
 dependencies = [
  "cfg-if",
  "libc",
@@ -1077,9 +1077,9 @@ checksum = "bc881b2c22681370c6a780e47af9840ef841837bc98118431d4e1868bd0c1086"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.26"
+version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a152013215dca273577e18d2bf00fa862b89b24169fb78c4c95aeb07992c9cec"
+checksum = "f0d8caf72986c1a598726adc988bb5984792ef84f5ee5aa50209145ee8077038"
 dependencies = [
  "unicode-xid",
 ]
@@ -1501,7 +1501,7 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "stackable-kafka-crd"
-version = "0.1.0"
+version = "0.1.0-nightly"
 dependencies = [
  "k8s-openapi",
  "kube",
@@ -1520,7 +1520,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-operator"
-version = "0.1.0"
+version = "0.1.0-nightly"
 dependencies = [
  "async-trait",
  "futures",
@@ -1545,6 +1545,7 @@ dependencies = [
 name = "stackable-kafka-operator-server"
 version = "0.1.0-nightly"
 dependencies = [
+ "serde_yaml",
  "stackable-kafka-crd",
  "stackable-kafka-operator",
  "stackable-operator",
@@ -1555,7 +1556,7 @@ dependencies = [
 [[package]]
 name = "stackable-opa-crd"
 version = "0.1.0"
-source = "git+https://github.com/stackabletech/opa-operator.git?branch=main#cea6d4d4d93f3456ac2e75e9bd5ad6b7c3832e02"
+source = "git+https://github.com/stackabletech/opa-operator.git?branch=main#17e57a966fedfe6420db538458cbe09afcc1a814"
 dependencies = [
  "k8s-openapi",
  "kube",
@@ -1575,7 +1576,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.1.0"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#29658154dd946c8fc2e325af2030beed22f3729e"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#115b445b1f0a1a25614f16ea2c5e8b413fab3635"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1603,7 +1604,7 @@ dependencies = [
 [[package]]
 name = "stackable-zookeeper-crd"
 version = "0.1.0"
-source = "git+https://github.com/stackabletech/zookeeper-operator.git?branch=main#ffd0d3d5fc47d0f9878f3675eeaae741ca09483b"
+source = "git+https://github.com/stackabletech/zookeeper-operator.git?branch=main#f38504c949e5d34dfa63c1407f2745b3cde0e0b1"
 dependencies = [
  "k8s-openapi",
  "kube",
@@ -1768,9 +1769,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-macros"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caf7b11a536f46a809a8a9f0bb4237020f70ecbf115b842360afb127ea2fda57"
+checksum = "c49e3df43841dafb86046472506755d8501c5615673955f6aa17181125d13c37"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1800,9 +1801,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.6.6"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "940a12c99365c31ea8dd9ba04ec1be183ffe4920102bb7122c2f515437601e8e"
+checksum = "1caa0b0c8d94a049db56b5acf8cba99dc0623aab1b26d5b5f5e2d945846b3592"
 dependencies = [
  "bytes",
  "futures-core",

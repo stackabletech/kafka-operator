@@ -29,7 +29,7 @@ pub struct KafkaClusterSpec {
 
 impl Crd for KafkaCluster {
     const RESOURCE_NAME: &'static str = "kafkaclusters.kafka.stackable.tech";
-    const CRD_DEFINITION: &'static str = include_str!("../kafkaclusters.crd.yaml");
+    const CRD_DEFINITION: &'static str = include_str!("../../deploy/crd/kafkacluster.crd.yaml");
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]

@@ -1,8 +1,10 @@
 [package]
-name = "stackable-kafka-crd"
-version = "0.1.0"
 authors = ["Lars Francke <lars.francke@stackable.de>"]
+description = "Stackable Operator for Apache Kafka - The Custom Resource Definition"
 edition = "2018"
+license = "OSL-3.0"
+name = "stackable-kafka-crd"
+version = "0.1.0-nightly"
 
 [dependencies]
 stackable-opa-crd = { git = "https://github.com/stackabletech/opa-operator.git", branch = "main" }
