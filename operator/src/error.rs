@@ -17,4 +17,9 @@ pub enum Error {
         #[from]
         source: stackable_zookeeper_crd::error::Error,
     },
+    // #[error("Error from OPA: {source}")]
+    // OpaError {
+    //     #[from]
+    //     source: stackable_opa_crd::error::Error,
+    // },
 }

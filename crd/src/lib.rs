@@ -1,14 +1,16 @@
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_opa_crd::util::OpaReference;
-use stackable_operator::label_selector::schema;
+use stackable_operator::product_config_utils::{ConfigError, Configuration};
+use stackable_operator::role_utils::Role;
 use stackable_operator::Crd;
 use stackable_zookeeper_crd::util::ZookeeperReference;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use strum_macros::Display;
+use strum_macros::EnumIter;
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
@@ -22,7 +24,7 @@ use std::fmt::{Display, Formatter};
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterSpec {
     pub version: KafkaVersion,
-    pub brokers: NodeGroup<KafkaConfig>,
+    pub brokers: Role<KafkaConfig>,
     pub zookeeper_reference: ZookeeperReference,
     pub opa_reference: Option<OpaReference>,
 }
@@ -63,29 +65,46 @@ impl Display for KafkaVersion {
     }
 }
 
+#[derive(EnumIter, Debug, Display, PartialEq, Eq, Hash)]
+pub enum KafkaRole {
+    Broker,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 pub struct KafkaClusterStatus {}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NodeGroup<T> {
-    pub selectors: HashMap<String, SelectorAndConfig<T>>,
-    pub config: Option<T>,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SelectorAndConfig<T> {
-    pub instances: u16,
-    pub instances_per_node: u8,
-    pub config: Option<T>,
-    #[schemars(schema_with = "schema")]
-    pub selector: Option<LabelSelector>,
-}
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaConfig {}
+
+impl Configuration for KafkaConfig {
+    type Configurable = KafkaCluster;
+
+    fn compute_env(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        Ok(BTreeMap::new())
+    }
+
+    fn compute_cli(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        Ok(BTreeMap::new())
+    }
+
+    fn compute_files(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+        _file: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        Ok(BTreeMap::new())
+    }
+}
 
 #[cfg(test)]
 mod tests {
