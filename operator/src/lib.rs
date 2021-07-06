@@ -1,7 +1,8 @@
 mod error;
+mod pod_utils;
 
 use crate::error::Error;
-
+use crate::pod_utils::build_pod_name;
 use async_trait::async_trait;
 use handlebars::Handlebars;
 use k8s_openapi::api::core::v1::{ConfigMap, Node, Pod};
@@ -11,19 +12,26 @@ use kube::ResourceExt;
 use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
 use serde_json::json;
-use stackable_kafka_crd::{KafkaCluster, KafkaRole, KafkaVersion};
+use stackable_kafka_crd::{
+    KafkaCluster, KafkaRole, KafkaVersion, APP_NAME, MANAGED_BY, OPA_AUTHORIZER_URL,
+    SERVER_PROPERTIES_FILE, ZOOKEEPER_CONNECT,
+};
 use stackable_opa_crd::util;
 use stackable_opa_crd::util::{OpaApi, OpaApiProtocol};
+use stackable_operator::builder::{
+    ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
+};
 use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::error::OperatorResult;
 use stackable_operator::k8s_utils;
 use stackable_operator::labels::{
-    build_common_labels_for_all_managed_resources, APP_COMPONENT_LABEL, APP_INSTANCE_LABEL,
-    APP_MANAGED_BY_LABEL, APP_NAME_LABEL, APP_ROLE_GROUP_LABEL, APP_VERSION_LABEL,
+    build_common_labels_for_all_managed_resources, get_recommended_labels, APP_COMPONENT_LABEL,
+    APP_INSTANCE_LABEL, APP_MANAGED_BY_LABEL, APP_NAME_LABEL, APP_ROLE_GROUP_LABEL,
+    APP_VERSION_LABEL,
 };
 use stackable_operator::product_config_utils::{
-    transform_all_roles_to_config, validate_all_roles_and_groups_config,
+    config_for_role_and_group, transform_all_roles_to_config, validate_all_roles_and_groups_config,
     ValidatedRoleConfigByPropertyKind,
 };
 use stackable_operator::reconcile::{
@@ -46,9 +54,6 @@ use tracing::{debug, info, trace, warn};
 type KafkaReconcileResult = ReconcileResult<error::Error>;
 
 const FINALIZER_NAME: &str = "kafka.stackable.tech/cleanup";
-
-const APP_NAME: &str = "kafka";
-const MANAGED_BY: &str = "stackable-kafka";
 
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
@@ -282,20 +287,6 @@ impl KafkaState {
                             continue;
                         };
 
-                        // If the node name is not part of the pod name we get duplicate names
-                        // which prevents all pods from being created
-                        let pod_name = format!(
-                            "kafka-{}-{}-{}-{}",
-                            self.context.name(),
-                            role_group,
-                            role,
-                            node_name
-                        )
-                        .to_lowercase();
-                        let cm_name = format!("{}-config", pod_name);
-
-                        self.create_config_map(&cm_name, node_name).await?;
-
                         debug!(
                             "Creating pod on node [{}] for [{}] role and group [{}]",
                             node.metadata
@@ -306,35 +297,141 @@ impl KafkaState {
                             role_group
                         );
 
-                        let mut node_labels = BTreeMap::new();
-                        node_labels.insert(String::from(APP_NAME_LABEL), String::from(APP_NAME));
-                        node_labels
-                            .insert(String::from(APP_MANAGED_BY_LABEL), String::from(MANAGED_BY));
-                        node_labels.insert(String::from(APP_COMPONENT_LABEL), role.to_string());
-                        node_labels
-                            .insert(String::from(APP_ROLE_GROUP_LABEL), String::from(role_group));
-                        node_labels.insert(String::from(APP_INSTANCE_LABEL), self.context.name());
-                        let version: &KafkaVersion = &self.kafka_cluster.spec.version;
-                        node_labels.insert(
-                            String::from(APP_VERSION_LABEL),
-                            version.fully_qualified_version(),
-                        );
+                        let (pod, config_maps) = self
+                            .create_pod_and_config_maps(
+                                &role,
+                                role_group,
+                                &node_name,
+                                &config_for_role_and_group(
+                                    role_str,
+                                    role_group,
+                                    &self.validated_role_config,
+                                )?,
+                            )
+                            .await?;
 
-                        // Create a pod for this node, role and group combination
-                        let pod = Pod::default();
-                        // build_pod(
-                        //     &self.context.resource,
-                        //     node_name,
-                        //     &node_labels,
-                        //     &pod_name,
-                        //     &cm_name,
-                        // )?;
                         self.context.client.create(&pod).await?;
+
+                        for config_map in config_maps {
+                            self.create_config_map(config_map, node_name).await?;
+                        }
                     }
                 }
             }
         }
         Ok(ReconcileFunctionAction::Continue)
+    }
+
+    async fn create_pod_and_config_maps(
+        &self,
+        role: &KafkaRole,
+        role_group: &str,
+        node_name: &str,
+        validated_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
+    ) -> Result<(Pod, Vec<ConfigMap>), Error> {
+        let mut config_maps = vec![];
+        let mut env_vars = vec![];
+        let mut start_command = vec![];
+
+        let mut cm_data = BTreeMap::new();
+        let pod_name = build_pod_name(
+            APP_NAME,
+            &self.context.name(),
+            &role.to_string(),
+            role_group,
+            node_name,
+        );
+        let cm_name = format!("{}-config", pod_name);
+
+        for (property_name_kind, config) in validated_config {
+            match property_name_kind {
+                PropertyNameKind::File(file_name) => {
+                    if file_name.as_str() == SERVER_PROPERTIES_FILE {
+                        if let Some(zk_connect) = config.get(ZOOKEEPER_CONNECT) {
+                            cm_data.insert(
+                                SERVER_PROPERTIES_FILE.to_string(),
+                                create_config_file(zk_connect),
+                            );
+                            config_maps.push(
+                                ConfigMapBuilder::new()
+                                    .metadata(
+                                        ObjectMetaBuilder::new()
+                                            .name(cm_name.clone())
+                                            .ownerreference_from_resource(
+                                                &self.context.resource,
+                                                Some(true),
+                                                Some(true),
+                                            )?
+                                            .namespace(&self.context.client.default_namespace)
+                                            .build()?,
+                                    )
+                                    .data(cm_data.clone())
+                                    .build()?,
+                            )
+                        }
+                    }
+                }
+                PropertyNameKind::Env => {
+                    for (property_name, property_value) in config {
+                        if property_name.is_empty() {
+                            warn!("Received empty property_name for ENV... skipping");
+                            continue;
+                        }
+
+                        env_vars.push(EnvVar {
+                            name: property_name.clone(),
+                            value: Some(property_value.to_string()),
+                            value_from: None,
+                        });
+                    }
+                }
+                PropertyNameKind::Cli => {
+                    if let Some(port) = config.get(PORT) {
+                        start_command = create_opa_start_command(Some(port.clone()));
+                    }
+                }
+            }
+        }
+
+        let version = &self.context.resource.spec.version.to_string();
+
+        let labels = get_recommended_labels(
+            &self.context.resource,
+            APP_NAME,
+            version,
+            &role.to_string(),
+            role_group,
+        );
+
+        let mut container_builder = ContainerBuilder::new("opa");
+        container_builder.image(format!(
+            "opa:{}",
+            &self.context.resource.spec.version.to_string()
+        ));
+        container_builder.command(start_command);
+        container_builder.add_configmapvolume(cm_name, "conf".to_string());
+
+        for env in env_vars {
+            if let Some(val) = env.value {
+                container_builder.add_env_var(env.name, val);
+            }
+        }
+
+        let pod = PodBuilder::new()
+            .metadata(
+                ObjectMetaBuilder::new()
+                    .name(pod_name)
+                    .namespace(&self.context.client.default_namespace)
+                    .with_labels(labels)
+                    .ownerreference_from_resource(&self.context.resource, Some(true), Some(true))?
+                    .build()?,
+            )
+            .add_stackable_agent_tolerations()
+            .add_container(container_builder.build())
+            .node_name(node_name)
+            .build()?;
+
+        Ok((pod, config_maps))
     }
 }
 

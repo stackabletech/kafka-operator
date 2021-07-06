@@ -12,6 +12,14 @@ use std::fmt::{Display, Formatter};
 use strum_macros::Display;
 use strum_macros::EnumIter;
 
+pub const APP_NAME: &str = "kafka";
+pub const MANAGED_BY: &str = "stackable-kafka";
+
+pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
+
+pub const ZOOKEEPER_CONNECT: &str = "zookeeper.connect";
+pub const OPA_AUTHORIZER_URL: &str = "opa.authorizer.url";
+
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
     group = "kafka.stackable.tech",
@@ -75,7 +83,10 @@ pub struct KafkaClusterStatus {}
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KafkaConfig {}
+pub struct KafkaConfig {
+    zookeeper_connect: String,
+    opa_url: Option<String>,
+}
 
 impl Configuration for KafkaConfig {
     type Configurable = KafkaCluster;
