@@ -8,14 +8,18 @@ spec:
   zookeeperReference:
     namespace: default
     name: simple
-  opaReference:
-    namespace: default
-    name: simple-opacluster
+#  opa:
+#    reference:
+#      namespace: default
+#      name: simple-opacluster
+#    authorizerClassName: com.bisnode.kafka.authorization.OpaAuthorizer
+#    authorizerCacheInitialCapacity: 0
+#    authorizerCacheMaximumSize: 0
+#    authorizerCacheExpireAfterSeconds: 0
   brokers:
-    selectors:
+    roleGroups:
       default:
         selector:
           matchLabels:
-            kubernetes.io/hostname: debian
-        instances: 1
-        instancesPerNode: 1
+            kubernetes.io/hostname: mdesktop
+        replicas: 1

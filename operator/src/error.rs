@@ -17,9 +17,19 @@ pub enum Error {
         #[from]
         source: stackable_zookeeper_crd::error::Error,
     },
-    // #[error("Error from OPA: {source}")]
-    // OpaError {
-    //     #[from]
-    //     source: stackable_opa_crd::error::Error,
-    // },
+
+    #[error("Error from OPA: {source}")]
+    OpaError {
+        #[from]
+        source: stackable_opa_crd::error::Error,
+    },
+
+    #[error("Error from properties writer: {source}")]
+    PropertiesWriteError {
+        #[from]
+        source: product_config::writer::PropertiesWriterError,
+    },
+
+    #[error("Invalid Configmap. No name found which is required to query the ConfigMap.")]
+    InvalidConfigMap,
 }

@@ -124,3 +124,21 @@ properties:
       asOfVersion: "0.0.0"
       description: "OPA authorizer max cache size"
 
+  - property: &opaAuthorizerCacheExpireAfterSeconds
+      propertyNames:
+        - name: "opa.authorizer.cache.expire.after.seconds"
+          kind:
+            type: "file"
+            file: "server.properties"
+      datatype:
+        type: "integer"
+        unit: *unitCapacity
+      defaultValues:
+        - fromVersion: "0.0.0"
+          value: "0"
+      roles:
+        - name: "broker"
+          required: false
+      asOfVersion: "0.0.0"
+      description: "The number of seconds after which the OPA authorizer cache expires"
+

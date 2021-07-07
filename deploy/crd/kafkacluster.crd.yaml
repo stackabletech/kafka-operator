@@ -13,8 +13,7 @@ spec:
     singular: kafkacluster
   scope: Namespaced
   versions:
-    - additionalPrinterColumns: []
-      name: v1
+    - name: v1
       schema:
         openAPIV3Schema:
           description: "Auto-generated derived type for KafkaClusterSpec via `CustomResource`"
@@ -23,21 +22,51 @@ spec:
               properties:
                 brokers:
                   properties:
+                    cliOverrides:
+                      additionalProperties:
+                        type: string
+                      nullable: true
+                      type: object
                     config:
                       nullable: true
                       type: object
-                    selectors:
+                    configOverrides:
+                      additionalProperties:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      nullable: true
+                      type: object
+                    envOverrides:
+                      additionalProperties:
+                        type: string
+                      nullable: true
+                      type: object
+                    roleGroups:
                       additionalProperties:
                         properties:
+                          cliOverrides:
+                            additionalProperties:
+                              type: string
+                            nullable: true
+                            type: object
                           config:
                             nullable: true
                             type: object
-                          instances:
+                          configOverrides:
+                            additionalProperties:
+                              additionalProperties:
+                                type: string
+                              type: object
+                            nullable: true
+                            type: object
+                          envOverrides:
+                            additionalProperties:
+                              type: string
+                            nullable: true
+                            type: object
+                          replicas:
                             format: uint16
-                            minimum: 0.0
-                            type: integer
-                          instancesPerNode:
-                            format: uint8
                             minimum: 0.0
                             type: integer
                           selector:
@@ -71,25 +100,47 @@ spec:
                                 type: object
                             type: object
                         required:
-                          - instances
-                          - instancesPerNode
+                          - replicas
                           - selector
                         type: object
                       type: object
                   required:
-                    - selectors
+                    - roleGroups
                   type: object
-                opaReference:
-                  description: Contains all necessary information identify a Stackable managed Open Policy Agent (OPA) and build a connection string for it. The main purpose for this struct is for other operators that need to reference an OPA to use in their CRDs. This has the benefit of keeping references to OPA consistent throughout the entire stack.
+                opa:
                   nullable: true
                   properties:
-                    name:
+                    authorizerCacheExpireAfterSeconds:
+                      format: uint
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                    authorizerCacheInitialCapacity:
+                      format: uint
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                    authorizerCacheMaximumSize:
+                      format: uint
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                    authorizerClassName:
                       type: string
-                    namespace:
-                      type: string
+                    reference:
+                      description: Contains all necessary information to identify a Stackable managed Open Policy Agent (OPA) and build a connection string for it. The main purpose for this struct is for other operators that need to reference an OPA to use in their CRDs. This has the benefit of keeping references to OPA consistent throughout the entire stack.
+                      properties:
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                      required:
+                        - name
+                        - namespace
+                      type: object
                   required:
-                    - name
-                    - namespace
+                    - authorizerClassName
+                    - reference
                   type: object
                 version:
                   properties:

@@ -13,7 +13,7 @@ use strum_macros::Display;
 use strum_macros::EnumIter;
 
 pub const APP_NAME: &str = "kafka";
-pub const MANAGED_BY: &str = "stackable-kafka";
+pub const MANAGED_BY: &str = "kafka-operator";
 
 pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 
@@ -34,7 +34,18 @@ pub struct KafkaClusterSpec {
     pub version: KafkaVersion,
     pub brokers: Role<KafkaConfig>,
     pub zookeeper_reference: ZookeeperReference,
-    pub opa_reference: Option<OpaReference>,
+    pub opa: Option<OpaConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpaConfig {
+    pub reference: OpaReference,
+    pub authorizer_class_name: String,
+    //pub authorizer_url: Option<String>,
+    pub authorizer_cache_initial_capacity: Option<usize>,
+    pub authorizer_cache_maximum_size: Option<usize>,
+    pub authorizer_cache_expire_after_seconds: Option<usize>,
 }
 
 impl Crd for KafkaCluster {
@@ -83,10 +94,7 @@ pub struct KafkaClusterStatus {}
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KafkaConfig {
-    zookeeper_connect: String,
-    opa_url: Option<String>,
-}
+pub struct KafkaConfig {}
 
 impl Configuration for KafkaConfig {
     type Configurable = KafkaCluster;
@@ -109,11 +117,42 @@ impl Configuration for KafkaConfig {
 
     fn compute_files(
         &self,
-        _resource: &Self::Configurable,
+        resource: &Self::Configurable,
         _role_name: &str,
         _file: &str,
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
-        Ok(BTreeMap::new())
+        let mut config = BTreeMap::new();
+        // TODO: How to work with zookeeper reference or opa reference?
+        //   The ZooKeeper reference is queried at the start of reconcile and stored in the state
+        //   (which we do not have access here).
+        //   Similar, retrieving the OPA reference requires a node_name, which we do not have here
+        //   either.
+        if let Some(opa_config) = &resource.spec.opa {
+            config.insert(
+                "authorizer.class.name".to_string(),
+                Some(opa_config.authorizer_class_name.clone()),
+            );
+            config.insert(
+                "opa.authorizer.cache.initial.capacity".to_string(),
+                opa_config
+                    .authorizer_cache_initial_capacity
+                    .map(|auth| auth.to_string()),
+            );
+            config.insert(
+                "opa.authorizer.cache.maximum.size".to_string(),
+                opa_config
+                    .authorizer_cache_maximum_size
+                    .map(|auth| auth.to_string()),
+            );
+            config.insert(
+                "opa.authorizer.cache.expire.after.seconds".to_string(),
+                opa_config
+                    .authorizer_cache_expire_after_seconds
+                    .map(|auth| auth.to_string()),
+            );
+        }
+
+        Ok(config)
     }
 }
 

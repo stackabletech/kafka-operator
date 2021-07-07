@@ -4,17 +4,14 @@ mod pod_utils;
 use crate::error::Error;
 use crate::pod_utils::build_pod_name;
 use async_trait::async_trait;
-use handlebars::Handlebars;
-use k8s_openapi::api::core::v1::{ConfigMap, Node, Pod};
+use k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Node, Pod};
 use kube::api::ListParams;
 use kube::Api;
 use kube::ResourceExt;
 use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
-use serde_json::json;
 use stackable_kafka_crd::{
-    KafkaCluster, KafkaRole, KafkaVersion, APP_NAME, MANAGED_BY, OPA_AUTHORIZER_URL,
-    SERVER_PROPERTIES_FILE, ZOOKEEPER_CONNECT,
+    KafkaCluster, KafkaRole, APP_NAME, MANAGED_BY, SERVER_PROPERTIES_FILE, ZOOKEEPER_CONNECT,
 };
 use stackable_opa_crd::util;
 use stackable_opa_crd::util::{OpaApi, OpaApiProtocol};
@@ -27,8 +24,7 @@ use stackable_operator::error::OperatorResult;
 use stackable_operator::k8s_utils;
 use stackable_operator::labels::{
     build_common_labels_for_all_managed_resources, get_recommended_labels, APP_COMPONENT_LABEL,
-    APP_INSTANCE_LABEL, APP_MANAGED_BY_LABEL, APP_NAME_LABEL, APP_ROLE_GROUP_LABEL,
-    APP_VERSION_LABEL,
+    APP_INSTANCE_LABEL, APP_MANAGED_BY_LABEL, APP_NAME_LABEL, APP_VERSION_LABEL,
 };
 use stackable_operator::product_config_utils::{
     config_for_role_and_group, transform_all_roles_to_config, validate_all_roles_and_groups_config,
@@ -87,14 +83,26 @@ impl KafkaState {
         Ok(ReconcileFunctionAction::Continue)
     }
 
-    pub fn get_required_labels(&self) -> BTreeMap<String, Option<Vec<String>>> {
+    pub fn required_pod_labels(&self) -> BTreeMap<String, Option<Vec<String>>> {
         let roles = KafkaRole::iter()
             .map(|role| role.to_string())
             .collect::<Vec<_>>();
         let mut mandatory_labels = BTreeMap::new();
 
         mandatory_labels.insert(String::from(APP_COMPONENT_LABEL), Some(roles));
-        mandatory_labels.insert(String::from(APP_INSTANCE_LABEL), None);
+        mandatory_labels.insert(
+            String::from(APP_INSTANCE_LABEL),
+            Some(vec![self.context.resource.name()]),
+        );
+        mandatory_labels.insert(
+            String::from(APP_VERSION_LABEL),
+            Some(vec![self
+                .context
+                .resource
+                .spec
+                .version
+                .fully_qualified_version()]),
+        );
         mandatory_labels.insert(
             String::from(APP_NAME_LABEL),
             Some(vec![String::from(APP_NAME)]),
@@ -103,101 +111,19 @@ impl KafkaState {
             String::from(APP_MANAGED_BY_LABEL),
             Some(vec![String::from(MANAGED_BY)]),
         );
+
         mandatory_labels
     }
 
-    async fn create_config_map(&self, cm_name: &str, node_name: &str) -> Result<(), Error> {
-        let mut labels = BTreeMap::new();
-        labels.insert("kafka-name".to_string(), cm_name);
-
-        let mut options = HashMap::new();
-        if let Some(info) = &self.zookeeper_info {
-            options.insert(
-                "zookeeper.connect".to_string(),
-                info.connection_string.clone(),
-            );
-        }
-
-        // opa -> works only with adapted kafka package (https://github.com/Bisnode/opa-kafka-plugin)
-        // and the opa-authorizer*.jar in the lib directory of the package (https://github.com/Bisnode/opa-kafka-plugin/releases/)
-        // TODO: We cannot query for the opa info as we do for zookeeper (meaning once at the start
-        //    of the reconcile method), since we need the node_name to potentially find matches on
-        //    the same machine for performance increase (which requires the node_name).
-        if let Some(opa_reference) = &self.kafka_cluster.spec.opa_reference {
-            let opa_api = OpaApi::Data {
-                package_path: "kafka/authz".to_string(),
-                rule: "allow".to_string(),
-            };
-
-            match util::get_opa_connection_info(
-                &self.context.client,
-                opa_reference,
-                &opa_api,
-                &OpaApiProtocol::Http,
-                Some(node_name.to_string()),
-            )
-            .await
-            {
-                Ok(connection_info) => {
-                    debug!(
-                        "Found valid OPA server [{}]",
-                        connection_info.connection_string
-                    );
-
-                    options.insert(
-                        "authorizer.class.name".to_string(),
-                        "com.bisnode.kafka.authorization.OpaAuthorizer".to_string(),
-                    );
-
-                    options.insert(
-                        "opa.authorizer.url".to_string(),
-                        connection_info.connection_string,
-                    );
-
-                    // TODO: make configurable (no caching for now)
-                    options.insert(
-                        "opa.authorizer.cache.initial.capacity".to_string(),
-                        "0".to_string(),
-                    );
-
-                    // TODO: make configurable (no caching for now)
-                    options.insert(
-                        "opa.authorizer.cache.maximum.size".to_string(),
-                        "0".to_string(),
-                    );
-
-                    // TODO: make configurable (no caching for now)
-                    // options.insert(
-                    //     "opa.authorizer.cache.expire.after.seconds".to_string(),
-                    //     "0".to_string(),
-                    // );
-                }
-                Err(err) => {
-                    warn!("Could not retrieve OPA connection information: {:?}", err)
-                }
-            }
-        }
-        // opa end
-
-        let mut handlebars = Handlebars::new();
-        handlebars.set_strict_mode(true);
-        handlebars
-            .register_template_string("conf", "{{#each options}}{{@key}}={{this}}\n{{/each}}")
-            .expect("template should work");
-
-        let config = handlebars
-            .render("conf", &json!({ "options": options }))
-            .unwrap();
-
-        let mut data = BTreeMap::new();
-        data.insert("server.properties".to_string(), config);
-
-        let config_map = ConfigMap::default();
-        //     stackable_operator::config_map::create_config_map(
-        //     &self.context.resource,
-        //     &cm_name,
-        //     data,
-        // )?;
+    /// Create or update a config map.
+    /// - Create if no config map of that name exists
+    /// - Update if config map exists but the content differs
+    /// - Do nothing if the config map exists and the content is identical
+    async fn create_config_map(&self, config_map: ConfigMap) -> Result<(), Error> {
+        let cm_name = match config_map.metadata.name.as_deref() {
+            None => return Err(Error::InvalidConfigMap),
+            Some(name) => name,
+        };
 
         match self
             .context
@@ -303,7 +229,7 @@ impl KafkaState {
                                 role_group,
                                 &node_name,
                                 &config_for_role_and_group(
-                                    role_str,
+                                    &role.to_string(),
                                     role_group,
                                     &self.validated_role_config,
                                 )?,
@@ -313,7 +239,7 @@ impl KafkaState {
                         self.context.client.create(&pod).await?;
 
                         for config_map in config_maps {
-                            self.create_config_map(config_map, node_name).await?;
+                            self.create_config_map(config_map).await?;
                         }
                     }
                 }
@@ -331,7 +257,6 @@ impl KafkaState {
     ) -> Result<(Pod, Vec<ConfigMap>), Error> {
         let mut config_maps = vec![];
         let mut env_vars = vec![];
-        let mut start_command = vec![];
 
         let mut cm_data = BTreeMap::new();
         let pod_name = build_pod_name(
@@ -346,29 +271,60 @@ impl KafkaState {
         for (property_name_kind, config) in validated_config {
             match property_name_kind {
                 PropertyNameKind::File(file_name) => {
+                    let mut adapted_config = config.clone();
+
                     if file_name.as_str() == SERVER_PROPERTIES_FILE {
-                        if let Some(zk_connect) = config.get(ZOOKEEPER_CONNECT) {
-                            cm_data.insert(
-                                SERVER_PROPERTIES_FILE.to_string(),
-                                create_config_file(zk_connect),
+                        if let Some(info) = &self.zookeeper_info {
+                            adapted_config.insert(
+                                ZOOKEEPER_CONNECT.to_string(),
+                                info.connection_string.clone(),
                             );
-                            config_maps.push(
-                                ConfigMapBuilder::new()
-                                    .metadata(
-                                        ObjectMetaBuilder::new()
-                                            .name(cm_name.clone())
-                                            .ownerreference_from_resource(
-                                                &self.context.resource,
-                                                Some(true),
-                                                Some(true),
-                                            )?
-                                            .namespace(&self.context.client.default_namespace)
-                                            .build()?,
-                                    )
-                                    .data(cm_data.clone())
-                                    .build()?,
-                            )
                         }
+
+                        // opa -> works only with adapted kafka package (https://github.com/Bisnode/opa-kafka-plugin)
+                        // and the opa-authorizer*.jar in the lib directory of the package (https://github.com/Bisnode/opa-kafka-plugin/releases/)
+                        // TODO: We cannot query for the opa info as we do for zookeeper (meaning once at the start
+                        //    of the reconcile method), since we need the node_name to potentially find matches on
+                        //    the same machine for performance increase (which requires the node_name).
+                        if let Some(opa_config) = &self.kafka_cluster.spec.opa {
+                            let opa_api = OpaApi::Data {
+                                package_path: "kafka/authz".to_string(),
+                                rule: "allow".to_string(),
+                            };
+
+                            let connection_info = util::get_opa_connection_info(
+                                &self.context.client,
+                                &opa_config.reference,
+                                &opa_api,
+                                &OpaApiProtocol::Http,
+                                Some(node_name.to_string()),
+                            )
+                            .await?;
+
+                            debug!(
+                                "Found valid OPA server [{}]",
+                                connection_info.connection_string
+                            );
+
+                            adapted_config.insert(
+                                "opa.authorizer.url".to_string(),
+                                connection_info.connection_string,
+                            );
+                        }
+
+                        // we need to convert to <String, String> to <String, Option<String>> to deal with
+                        // CLI flags etc. We can not currently represent that via operator-rs / product-config.
+                        // This is a preparation for that.
+                        let transformed_config: BTreeMap<String, Option<String>> = adapted_config
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), Some(v.to_string())))
+                            .collect();
+
+                        let data_string = product_config::writer::to_java_properties_string(
+                            transformed_config.iter(),
+                        )?;
+
+                        cm_data.insert(SERVER_PROPERTIES_FILE.to_string(), data_string);
                     }
                 }
                 PropertyNameKind::Env => {
@@ -385,15 +341,11 @@ impl KafkaState {
                         });
                     }
                 }
-                PropertyNameKind::Cli => {
-                    if let Some(port) = config.get(PORT) {
-                        start_command = create_opa_start_command(Some(port.clone()));
-                    }
-                }
+                _ => {}
             }
         }
 
-        let version = &self.context.resource.spec.version.to_string();
+        let version = &self.context.resource.spec.version.fully_qualified_version();
 
         let labels = get_recommended_labels(
             &self.context.resource,
@@ -403,13 +355,16 @@ impl KafkaState {
             role_group,
         );
 
-        let mut container_builder = ContainerBuilder::new("opa");
-        container_builder.image(format!(
-            "opa:{}",
-            &self.context.resource.spec.version.to_string()
-        ));
-        container_builder.command(start_command);
-        container_builder.add_configmapvolume(cm_name, "conf".to_string());
+        let mut container_builder = ContainerBuilder::new("kafka");
+        container_builder.image(format!("stackable/kafka:{}", &version));
+        container_builder.command(vec![
+            format!("kafka_{}/bin/kafka-server-start.sh", version),
+            format!(
+                "{}configroot{}/config/{}",
+                "{{", "}}", SERVER_PROPERTIES_FILE
+            ),
+        ]);
+        container_builder.add_configmapvolume(cm_name.clone(), "config".to_string());
 
         for env in env_vars {
             if let Some(val) = env.value {
@@ -431,6 +386,23 @@ impl KafkaState {
             .node_name(node_name)
             .build()?;
 
+        config_maps.push(
+            ConfigMapBuilder::new()
+                .metadata(
+                    ObjectMetaBuilder::new()
+                        .name(cm_name)
+                        .ownerreference_from_resource(
+                            &self.context.resource,
+                            Some(true),
+                            Some(true),
+                        )?
+                        .namespace(&self.context.client.default_namespace)
+                        .build()?,
+                )
+                .data(cm_data)
+                .build()?,
+        );
+
         Ok((pod, config_maps))
     }
 }
@@ -443,7 +415,7 @@ impl ReconciliationState for KafkaState {
     ) -> Pin<Box<dyn Future<Output = Result<ReconcileFunctionAction, Self::Error>> + Send + '_>>
     {
         info!("========================= Starting reconciliation =========================");
-        debug!("Deletion Labels: [{:?}]", &self.get_required_labels());
+        debug!("Deletion Labels: [{:?}]", &self.required_pod_labels());
 
         Box::pin(async move {
             self.context
@@ -453,7 +425,7 @@ impl ReconciliationState for KafkaState {
                 .await?
                 .then(self.context.delete_illegal_pods(
                     self.existing_pods.as_slice(),
-                    &self.get_required_labels(),
+                    &self.required_pod_labels(),
                     ContinuationStrategy::OneRequeue,
                 ))
                 .await?
@@ -536,7 +508,7 @@ pub fn validated_product_config(
     roles.insert(
         KafkaRole::Broker.to_string(),
         (
-            vec![PropertyNameKind::File("server.properties".to_string())],
+            vec![PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string())],
             resource.spec.brokers.clone().into_dyn(),
         ),
     );
@@ -544,7 +516,7 @@ pub fn validated_product_config(
     let role_config = transform_all_roles_to_config(resource, roles);
 
     validate_all_roles_and_groups_config(
-        &resource.spec.version.to_string(),
+        &resource.spec.version.kafka_version(),
         &role_config,
         &product_config,
         false,
@@ -570,57 +542,3 @@ pub async fn create_controller(client: Client) {
         .run(client, strategy, Duration::from_secs(5))
         .await;
 }
-
-// fn build_pod(
-//     resource: &KafkaCluster,
-//     node: &str,
-//     labels: &BTreeMap<String, String>,
-//     pod_name: &str,
-//     cm_name: &str,
-// ) -> Result<Pod, Error> {
-// let pod = Pod {
-//     // Metadata
-//     metadata: metadata::build_metadata(
-//         pod_name.to_string(),
-//         Some(labels.clone()),
-//         resource,
-//         false,
-//     )?,
-//     // Spec
-//     spec: Some(PodSpec {
-//         node_name: Some(node.to_string()),
-//         tolerations: Some(stackable_operator::krustlet::create_tolerations()),
-//         containers: vec![Container {
-//             image: Some(format!(
-//                 "stackable/kafka:{}",
-//                 resource.spec.version.fully_qualified_version()
-//             )),
-//             name: "kafka".to_string(),
-//             command: Some(vec![
-//                 format!(
-//                     "kafka_{}/bin/kafka-server-start.sh",
-//                     resource.spec.version.fully_qualified_version()
-//                 ),
-//                 "{{ configroot }}/config/server.properties".to_string(),
-//             ]),
-//             volume_mounts: Some(vec![VolumeMount {
-//                 mount_path: "config".to_string(),
-//                 name: "config-volume".to_string(),
-//                 ..VolumeMount::default()
-//             }]),
-//             ..Container::default()
-//         }],
-//         volumes: Some(vec![Volume {
-//             name: "config-volume".to_string(),
-//             config_map: Some(ConfigMapVolumeSource {
-//                 name: Some(cm_name.to_string()),
-//                 ..ConfigMapVolumeSource::default()
-//             }),
-//             ..Volume::default()
-//         }]),
-//         ..PodSpec::default()
-//     }),
-//     ..Pod::default()
-// };
-// Ok(pod)
-//}
