@@ -39,6 +39,8 @@ pub struct KafkaClusterSpec {
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Contains all data to combine with OPA. The "opa.authorizer.url" is set dynamically in
+/// the controller (local nodes first, random otherwise).
 pub struct OpaConfig {
     pub reference: OpaReference,
     pub authorizer_class_name: String,
@@ -94,7 +96,12 @@ pub struct KafkaClusterStatus {}
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KafkaConfig {}
+/// In order for compute_files from the Configuration trait to work, we cannot pass an empty or
+/// "None" config. Therefore we need at least one required property.
+// TODO: Does "log.dirs" make sense in that case? If we make it an option in can happen that
+pub struct KafkaConfig {
+    log_dirs: String,
+}
 
 impl Configuration for KafkaConfig {
     type Configurable = KafkaCluster;
@@ -151,6 +158,8 @@ impl Configuration for KafkaConfig {
                     .map(|auth| auth.to_string()),
             );
         }
+
+        config.insert("log.dir".to_string(), Some(self.log_dirs.clone()));
 
         Ok(config)
     }

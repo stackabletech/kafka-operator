@@ -8,14 +8,14 @@ spec:
   zookeeperReference:
     namespace: default
     name: simple
-#  opa:
-#    reference:
-#      namespace: default
-#      name: simple-opacluster
-#    authorizerClassName: com.bisnode.kafka.authorization.OpaAuthorizer
-#    authorizerCacheInitialCapacity: 0
-#    authorizerCacheMaximumSize: 0
-#    authorizerCacheExpireAfterSeconds: 0
+  opa:
+    reference:
+      namespace: default
+      name: simple-opacluster
+    authorizerClassName: com.bisnode.kafka.authorization.OpaAuthorizer
+    authorizerCacheInitialCapacity: 0
+    authorizerCacheMaximumSize: 0
+    authorizerCacheExpireAfterSeconds: 0
   brokers:
     roleGroups:
       default:
@@ -23,3 +23,5 @@ spec:
           matchLabels:
             kubernetes.io/hostname: mdesktop
         replicas: 1
+        config:
+          logDirs: "/tmp/kafka-logs"
