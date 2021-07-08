@@ -228,7 +228,7 @@ impl KafkaState {
                                 &role,
                                 role_group,
                                 &node_name,
-                                &config_for_role_and_group(
+                                config_for_role_and_group(
                                     &role.to_string(),
                                     role_group,
                                     &self.validated_role_config,
@@ -509,7 +509,7 @@ pub fn validated_product_config(
         KafkaRole::Broker.to_string(),
         (
             vec![PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string())],
-            resource.spec.brokers.clone().into_dyn(),
+            resource.spec.brokers.clone().into(),
         ),
     );
 

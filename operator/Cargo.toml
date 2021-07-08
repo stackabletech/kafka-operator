@@ -10,7 +10,7 @@ version = "0.1.0-nightly"
 stackable-kafka-crd = { path = "../crd" }
 product-config = { git = "https://github.com/stackabletech/product-config.git", branch = "main" }
 stackable-opa-crd = { git = "https://github.com/stackabletech/opa-operator.git", branch = "adapt_to_operator-rs_and_upd_to_kube_0.57" }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "adapt_to_product_config_interface" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "main" }
 stackable-zookeeper-crd = { git = "https://github.com/stackabletech/zookeeper-operator.git", branch="config" }
 
 async-trait = "0.1"

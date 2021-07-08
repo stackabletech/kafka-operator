@@ -13,7 +13,7 @@ spec:
     singular: kafkacluster
   scope: Namespaced
   versions:
-    - name: v1
+    - name: v1alpha1
       schema:
         openAPIV3Schema:
           description: "Auto-generated derived type for KafkaClusterSpec via `CustomResource`"

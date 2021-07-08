@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use stackable_opa_crd::util::OpaReference;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
 use stackable_operator::role_utils::Role;
-use stackable_operator::Crd;
 use stackable_zookeeper_crd::util::ZookeeperReference;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -23,7 +22,7 @@ pub const OPA_AUTHORIZER_URL: &str = "opa.authorizer.url";
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
     group = "kafka.stackable.tech",
-    version = "v1",
+    version = "v1alpha1",
     kind = "KafkaCluster",
     shortname = "kafka",
     namespaced
@@ -48,11 +47,6 @@ pub struct OpaConfig {
     pub authorizer_cache_initial_capacity: Option<usize>,
     pub authorizer_cache_maximum_size: Option<usize>,
     pub authorizer_cache_expire_after_seconds: Option<usize>,
-}
-
-impl Crd for KafkaCluster {
-    const RESOURCE_NAME: &'static str = "kafkaclusters.kafka.stackable.tech";
-    const CRD_DEFINITION: &'static str = include_str!("../../deploy/crd/kafkacluster.crd.yaml");
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]

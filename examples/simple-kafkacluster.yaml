@@ -1,4 +1,4 @@
-apiVersion: kafka.stackable.tech/v1
+apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
   name: simple
