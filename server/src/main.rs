@@ -20,6 +20,7 @@ async fn main() -> Result<(), error::Error> {
     .await
     {
         error!("Required CRDs missing, aborting: {:?}", error);
+        return Err(error);
     };
 
     stackable_kafka_operator::create_controller(client).await;

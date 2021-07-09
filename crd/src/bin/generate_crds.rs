@@ -3,6 +3,8 @@ use stackable_operator::crd::CustomResourceExt;
 
 fn main() {
     let target_file = "deploy/crd/kafkacluster.crd.yaml";
-    KafkaCluster::write_yaml_schema(target_file).unwrap();
-    println!("Wrote CRD to [{}]", target_file);
+    match KafkaCluster::write_yaml_schema(target_file) {
+        Ok(_) => println!("Wrote CRD to [{}]", target_file),
+        Err(err) => println!("Could not write CRD to [{}]: {:?}", target_file, err),
+    }
 }

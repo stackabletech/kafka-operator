@@ -92,7 +92,8 @@ pub struct KafkaClusterStatus {}
 #[serde(rename_all = "camelCase")]
 /// In order for compute_files from the Configuration trait to work, we cannot pass an empty or
 /// "None" config. Therefore we need at least one required property.
-// TODO: Does "log.dirs" make sense in that case? If we make it an option in can happen that
+// TODO: Does "log.dirs" make sense in that case? If we make it an option in can happen that the
+//    config will be parsed as None.
 pub struct KafkaConfig {
     log_dirs: String,
 }
