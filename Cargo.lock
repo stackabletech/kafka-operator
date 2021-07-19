@@ -1472,8 +1472,8 @@ dependencies = [
  "stackable-opa-crd",
  "stackable-operator",
  "stackable-zookeeper-crd",
- "strum 0.21.0",
- "strum_macros 0.21.1",
+ "strum",
+ "strum_macros",
 ]
 
 [[package]]
@@ -1492,8 +1492,8 @@ dependencies = [
  "stackable-opa-crd",
  "stackable-operator",
  "stackable-zookeeper-crd",
- "strum 0.21.0",
- "strum_macros 0.21.1",
+ "strum",
+ "strum_macros",
  "thiserror",
  "tokio",
  "tracing",
@@ -1503,7 +1503,6 @@ dependencies = [
 name = "stackable-kafka-operator-server"
 version = "0.1.0-nightly"
 dependencies = [
- "serde_yaml",
  "stackable-kafka-crd",
  "stackable-kafka-operator",
  "stackable-operator",
@@ -1513,8 +1512,8 @@ dependencies = [
 
 [[package]]
 name = "stackable-opa-crd"
-version = "0.1.0"
-source = "git+https://github.com/stackabletech/opa-operator.git?branch=adapt_to_operator-rs_and_upd_to_kube_0.57#794888a8d7bebcf4ae6023e4d9e558d88e288e88"
+version = "0.1.0-nightly"
+source = "git+https://github.com/stackabletech/opa-operator.git?branch=main#ac920c7221b362c85dd9cc69e40060f78d3fc32a"
 dependencies = [
  "k8s-openapi",
  "kube",
@@ -1523,10 +1522,9 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "serde_yaml",
  "stackable-operator",
- "strum 0.20.0",
- "strum_macros 0.20.1",
+ "strum",
+ "strum_macros",
  "thiserror",
  "tracing",
  "url",
@@ -1535,7 +1533,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.1.0-nightly"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#711135ffdd021eabd21b4b4adbddf9b9ca5f73ea"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#9c885910d7bd4b5d88acbc49905d4585ac677c42"
 dependencies = [
  "async-trait",
  "backoff",
@@ -1565,7 +1563,7 @@ dependencies = [
 [[package]]
 name = "stackable-zookeeper-crd"
 version = "0.1.0-nightly"
-source = "git+https://github.com/stackabletech/zookeeper-operator.git?branch=config#0829b4ac49763467322bbc7efc2391994d70d5f3"
+source = "git+https://github.com/stackabletech/zookeeper-operator.git?branch=main#a27b48401b255fd084258dc012f7cbbbe1aac56d"
 dependencies = [
  "k8s-openapi",
  "kube",
@@ -1574,10 +1572,9 @@ dependencies = [
  "semver 1.0.3",
  "serde",
  "serde_json",
- "serde_yaml",
  "stackable-operator",
- "strum 0.21.0",
- "strum_macros 0.21.1",
+ "strum",
+ "strum_macros",
  "thiserror",
  "tracing",
 ]
@@ -1590,27 +1587,9 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "strum"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7318c509b5ba57f18533982607f24070a55d353e90d4cae30c467cdb2ad5ac5c"
-
-[[package]]
-name = "strum"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aaf86bbcfd1fa9670b7a129f64fc0c9fcbbfe4f1bc4210e9e98fe71ffc12cde2"
-
-[[package]]
-name = "strum_macros"
-version = "0.20.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee8bc6b87a5112aeeab1f4a9f7ab634fe6cbefc4850006df31267f4cfb9e3149"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "strum_macros"

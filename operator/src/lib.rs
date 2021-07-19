@@ -1,11 +1,10 @@
 mod error;
-mod pod_utils;
 
 use crate::error::Error;
-use crate::pod_utils::build_pod_name;
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Node, Pod};
 use kube::api::ListParams;
+use kube::error::ErrorResponse;
 use kube::Api;
 use kube::ResourceExt;
 use product_config::types::PropertyNameKind;
@@ -26,6 +25,7 @@ use stackable_operator::labels::{
     build_common_labels_for_all_managed_resources, get_recommended_labels, APP_COMPONENT_LABEL,
     APP_INSTANCE_LABEL, APP_MANAGED_BY_LABEL, APP_NAME_LABEL, APP_VERSION_LABEL,
 };
+use stackable_operator::pod_utils;
 use stackable_operator::product_config_utils::{
     config_for_role_and_group, transform_all_roles_to_config, validate_all_roles_and_groups_config,
     ValidatedRoleConfigByPropertyKind,
@@ -119,6 +119,7 @@ impl KafkaState {
     /// - Create if no config map of that name exists
     /// - Update if config map exists but the content differs
     /// - Do nothing if the config map exists and the content is identical
+    /// - Forward any kube errors that may appear
     async fn create_config_map(&self, config_map: ConfigMap) -> Result<(), Error> {
         let cm_name = match config_map.metadata.name.as_deref() {
             None => return Err(Error::InvalidConfigMap),
@@ -147,12 +148,13 @@ impl KafkaState {
                 );
                 self.context.client.update(&config_map).await?;
             }
-            Err(e) => {
-                // TODO: This is shit, but works for now. If there is an actual error in comes with
-                //   K8S, it will most probably also occur further down and be properly handled
-                debug!("Error getting ConfigMap [{}]: [{:?}]", cm_name, e);
+            Err(stackable_operator::error::Error::KubeError {
+                source: kube::error::Error::Api(ErrorResponse { reason, .. }),
+            }) if reason == "NotFound" => {
+                debug!("Error getting ConfigMap [{}]: [{:?}]", cm_name, reason);
                 self.context.client.create(&config_map).await?;
             }
+            Err(e) => return Err(Error::OperatorError { source: e }),
         }
 
         Ok(())
@@ -259,11 +261,11 @@ impl KafkaState {
         let mut env_vars = vec![];
 
         let mut cm_data = BTreeMap::new();
-        let pod_name = build_pod_name(
+        let pod_name = pod_utils::get_pod_name(
             APP_NAME,
             &self.context.name(),
-            &role.to_string(),
             role_group,
+            &role.to_string(),
             node_name,
         );
         let cm_name = format!("{}-config", pod_name);
