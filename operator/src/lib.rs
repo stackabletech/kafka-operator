@@ -15,7 +15,7 @@ use stackable_kafka_crd::{
 use stackable_opa_crd::util;
 use stackable_opa_crd::util::{OpaApi, OpaApiProtocol};
 use stackable_operator::builder::{
-    ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
+    ConfigMapBuilder, ContainerBuilder, ContainerPortBuilder, ObjectMetaBuilder, PodBuilder,
 };
 use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
@@ -50,6 +50,7 @@ use tracing::{debug, info, trace, warn};
 type KafkaReconcileResult = ReconcileResult<error::Error>;
 
 const FINALIZER_NAME: &str = "kafka.stackable.tech/cleanup";
+const SHOULD_BE_SCRAPED: &str = "monitoring.stackable.tech/should_be_scraped";
 
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
@@ -259,8 +260,10 @@ impl KafkaState {
     ) -> Result<(Pod, Vec<ConfigMap>), Error> {
         let mut config_maps = vec![];
         let mut env_vars = vec![];
+        let mut metrics_port: Option<u16> = None;
 
         let mut cm_data = BTreeMap::new();
+
         let pod_name = pod_utils::get_pod_name(
             APP_NAME,
             &self.context.name(),
@@ -268,7 +271,10 @@ impl KafkaState {
             &role.to_string(),
             node_name,
         );
+
         let cm_name = format!("{}-config", pod_name);
+
+        let version = &self.context.resource.spec.version.fully_qualified_version();
 
         for (property_name_kind, config) in validated_config {
             match property_name_kind {
@@ -336,6 +342,21 @@ impl KafkaState {
                             continue;
                         }
 
+                        // if a metrics port is provided (for now by user, it is not required in
+                        // product config to be able to not configure any monitoring / metrics)
+                        if property_name == "metricsPort" {
+                            // cannot panic because checked in product config
+                            metrics_port = Some(property_value.parse::<u16>().unwrap());
+                            env_vars.push(EnvVar {
+                                    name: "EXTRA_ARGS".to_string(),
+                                    // TODO: avoid that "{{" and "}}" formatting
+                                    value: Some(format!("-javaagent:{}packageroot{}/kafka_{}/stackable/lib/jmx_prometheus_javaagent-0.16.1.jar={}:{}packageroot{}/kafka_{}/stackable/conf/jmx_exporter.yaml",
+                                                        "{{", "}}", version, property_value,  "{{", "}}", version)),
+                                    ..EnvVar::default()
+                                });
+                            continue;
+                        }
+
                         env_vars.push(EnvVar {
                             name: property_name.clone(),
                             value: Some(property_value.to_string()),
@@ -346,8 +367,6 @@ impl KafkaState {
                 _ => {}
             }
         }
-
-        let version = &self.context.resource.spec.version.fully_qualified_version();
 
         let labels = get_recommended_labels(
             &self.context.resource,
@@ -367,11 +386,17 @@ impl KafkaState {
             ),
         ]);
         container_builder.add_configmapvolume(cm_name.clone(), "config".to_string());
+        container_builder.add_env_vars(env_vars);
 
-        for env in env_vars {
-            if let Some(val) = env.value {
-                container_builder.add_env_var(env.name, val);
-            }
+        let mut annotations = BTreeMap::new();
+        // only add metrics container port and annotation if available
+        if let Some(metrics_port) = metrics_port {
+            annotations.insert(SHOULD_BE_SCRAPED.to_string(), "true".to_string());
+            container_builder.add_container_port(
+                ContainerPortBuilder::new(metrics_port)
+                    .name("metrics")
+                    .build(),
+            );
         }
 
         let pod = PodBuilder::new()
@@ -380,6 +405,7 @@ impl KafkaState {
                     .name(pod_name)
                     .namespace(&self.context.client.default_namespace)
                     .with_labels(labels)
+                    .with_annotations(annotations)
                     .ownerreference_from_resource(&self.context.resource, Some(true), Some(true))?
                     .build()?,
             )
@@ -510,7 +536,10 @@ pub fn validated_product_config(
     roles.insert(
         KafkaRole::Broker.to_string(),
         (
-            vec![PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string())],
+            vec![
+                PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()),
+                PropertyNameKind::Env,
+            ],
             resource.spec.brokers.clone().into(),
         ),
     );
