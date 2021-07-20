@@ -148,11 +148,13 @@ properties:
           kind:
             type: "env"
       datatype:
-        type: "string"
+        type: "integer"
         unit: *unitPort
+        min: "1024"
+        max: "65535"
       roles:
         - name: "server"
           required: false
       asOfVersion: "0.0.0"
-      description: "The port where Kafka metrics are exposed."
+      description: "The port where ZooKeeper metrics are exposed as a Prometheus endpoint."
 
