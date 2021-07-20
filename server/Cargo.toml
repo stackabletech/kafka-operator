@@ -9,9 +9,8 @@ version = "0.1.0-nightly"
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
 stackable-kafka-operator = { path = "../operator" }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch="main" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "main" }
 
-serde_yaml = "0.8"
 tokio = { version = "1.8", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
 

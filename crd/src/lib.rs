@@ -1,19 +1,28 @@
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_opa_crd::util::OpaReference;
-use stackable_operator::label_selector::schema;
-use stackable_operator::Crd;
+use stackable_operator::product_config_utils::{ConfigError, Configuration};
+use stackable_operator::role_utils::Role;
 use stackable_zookeeper_crd::util::ZookeeperReference;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use strum_macros::Display;
+use strum_macros::EnumIter;
+
+pub const APP_NAME: &str = "kafka";
+pub const MANAGED_BY: &str = "kafka-operator";
+
+pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
+
+pub const ZOOKEEPER_CONNECT: &str = "zookeeper.connect";
+pub const OPA_AUTHORIZER_URL: &str = "opa.authorizer.url";
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
     group = "kafka.stackable.tech",
-    version = "v1",
+    version = "v1alpha1",
     kind = "KafkaCluster",
     shortname = "kafka",
     namespaced
@@ -22,14 +31,22 @@ use std::fmt::{Display, Formatter};
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterSpec {
     pub version: KafkaVersion,
-    pub brokers: NodeGroup<KafkaConfig>,
+    pub brokers: Role<KafkaConfig>,
     pub zookeeper_reference: ZookeeperReference,
-    pub opa_reference: Option<OpaReference>,
+    pub opa: Option<OpaConfig>,
 }
 
-impl Crd for KafkaCluster {
-    const RESOURCE_NAME: &'static str = "kafkaclusters.kafka.stackable.tech";
-    const CRD_DEFINITION: &'static str = include_str!("../../deploy/crd/kafkacluster.crd.yaml");
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Contains all data to combine with OPA. The "opa.authorizer.url" is set dynamically in
+/// the controller (local nodes first, random otherwise).
+pub struct OpaConfig {
+    pub reference: OpaReference,
+    pub authorizer_class_name: String,
+    //pub authorizer_url: Option<String>,
+    pub authorizer_cache_initial_capacity: Option<usize>,
+    pub authorizer_cache_maximum_size: Option<usize>,
+    pub authorizer_cache_expire_after_seconds: Option<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
@@ -63,29 +80,85 @@ impl Display for KafkaVersion {
     }
 }
 
+#[derive(EnumIter, Debug, Display, PartialEq, Eq, Hash)]
+pub enum KafkaRole {
+    Broker,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 pub struct KafkaClusterStatus {}
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NodeGroup<T> {
-    pub selectors: HashMap<String, SelectorAndConfig<T>>,
-    pub config: Option<T>,
-}
-
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SelectorAndConfig<T> {
-    pub instances: u16,
-    pub instances_per_node: u8,
-    pub config: Option<T>,
-    #[schemars(schema_with = "schema")]
-    pub selector: Option<LabelSelector>,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KafkaConfig {}
+/// In order for compute_files from the Configuration trait to work, we cannot pass an empty or
+/// "None" config. Therefore we need at least one required property.
+// TODO: Does "log.dirs" make sense in that case? If we make it an option in can happen that the
+//    config will be parsed as None.
+pub struct KafkaConfig {
+    log_dirs: String,
+}
+
+impl Configuration for KafkaConfig {
+    type Configurable = KafkaCluster;
+
+    fn compute_env(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        Ok(BTreeMap::new())
+    }
+
+    fn compute_cli(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        Ok(BTreeMap::new())
+    }
+
+    fn compute_files(
+        &self,
+        resource: &Self::Configurable,
+        _role_name: &str,
+        _file: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        let mut config = BTreeMap::new();
+        // TODO: How to work with zookeeper reference or opa reference?
+        //   The ZooKeeper reference is queried at the start of reconcile and stored in the state
+        //   (which we do not have access here).
+        //   Similar, retrieving the OPA reference requires a node_name, which we do not have here
+        //   either.
+        if let Some(opa_config) = &resource.spec.opa {
+            config.insert(
+                "authorizer.class.name".to_string(),
+                Some(opa_config.authorizer_class_name.clone()),
+            );
+            config.insert(
+                "opa.authorizer.cache.initial.capacity".to_string(),
+                opa_config
+                    .authorizer_cache_initial_capacity
+                    .map(|auth| auth.to_string()),
+            );
+            config.insert(
+                "opa.authorizer.cache.maximum.size".to_string(),
+                opa_config
+                    .authorizer_cache_maximum_size
+                    .map(|auth| auth.to_string()),
+            );
+            config.insert(
+                "opa.authorizer.cache.expire.after.seconds".to_string(),
+                opa_config
+                    .authorizer_cache_expire_after_seconds
+                    .map(|auth| auth.to_string()),
+            );
+        }
+
+        config.insert("log.dir".to_string(), Some(self.log_dirs.clone()));
+
+        Ok(config)
+    }
+}
 
 #[cfg(test)]
 mod tests {
