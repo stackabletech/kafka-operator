@@ -21,7 +21,7 @@ spec:
       default:
         selector:
           matchLabels:
-            kubernetes.io/hostname: mdesktop
+            kubernetes.io/arch: stackable-linux
         replicas: 1
         config:
           logDirs: "/tmp/kafka-logs"

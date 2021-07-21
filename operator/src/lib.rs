@@ -349,7 +349,6 @@ impl KafkaState {
                             metrics_port = Some(property_value.parse::<u16>().unwrap());
                             env_vars.push(EnvVar {
                                     name: "EXTRA_ARGS".to_string(),
-                                    // TODO: avoid that "{{" and "}}" formatting
                                     value: Some(format!("-javaagent:{{{{packageroot}}}}/kafka_{}/stackable/lib/jmx_prometheus_javaagent-0.16.1.jar={}:{{{{packageroot}}}}/kafka_{}/stackable/conf/jmx_exporter.yaml",
                                                         version, property_value, version)),
                                     ..EnvVar::default()
