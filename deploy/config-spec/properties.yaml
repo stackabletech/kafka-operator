@@ -142,6 +142,20 @@ properties:
       asOfVersion: "0.0.0"
       description: "The number of seconds after which the OPA authorizer cache expires"
 
+  - property: &logDirs
+      propertyNames:
+        - name: "log.dirs"
+          kind:
+            type: "file"
+            file: "server.properties"
+      datatype:
+        type: "string"
+      roles:
+        - name: "server"
+          required: false
+      asOfVersion: "0.0.0"
+      description: "A comma separated list of directories under which to store log files"
+
   - property: &metricsPort
       propertyNames:
         - name: "metricsPort"
@@ -156,5 +170,5 @@ properties:
         - name: "server"
           required: false
       asOfVersion: "0.0.0"
-      description: "The port where ZooKeeper metrics are exposed as a Prometheus endpoint."
+      description: "The port where Kafka metrics are exposed as a Prometheus endpoint."
 

@@ -379,10 +379,7 @@ impl KafkaState {
         container_builder.image(format!("stackable/kafka:{}", &version));
         container_builder.command(vec![
             format!("kafka_{}/bin/kafka-server-start.sh", version),
-            format!(
-                "{}configroot{}/config/{}",
-                "{{", "}}", SERVER_PROPERTIES_FILE
-            ),
+            format!("{{{{configroot}}}}/config/{}", SERVER_PROPERTIES_FILE),
         ]);
         container_builder.add_configmapvolume(cm_name.clone(), "config".to_string());
         container_builder.add_env_vars(env_vars);
