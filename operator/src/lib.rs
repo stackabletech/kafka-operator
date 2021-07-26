@@ -20,7 +20,6 @@ use stackable_operator::builder::{
 use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::error::OperatorResult;
-use stackable_operator::k8s_utils;
 use stackable_operator::labels::{
     build_common_labels_for_all_managed_resources, get_recommended_labels, APP_COMPONENT_LABEL,
     APP_INSTANCE_LABEL, APP_MANAGED_BY_LABEL, APP_NAME_LABEL, APP_VERSION_LABEL,
@@ -37,6 +36,7 @@ use stackable_operator::role_utils::{
     find_nodes_that_fit_selectors, get_role_and_group_labels,
     list_eligible_nodes_for_role_and_group,
 };
+use stackable_operator::{cli, k8s_utils};
 use stackable_zookeeper_crd::util::ZookeeperConnectionInformation;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
@@ -57,7 +57,7 @@ struct KafkaState {
     kafka_cluster: KafkaCluster,
     zookeeper_info: Option<ZookeeperConnectionInformation>,
     existing_pods: Vec<Pod>,
-    eligible_nodes: HashMap<String, HashMap<String, Vec<Node>>>,
+    eligible_nodes: HashMap<String, HashMap<String, (Vec<Node>, usize)>>,
     validated_role_config: ValidatedRoleConfigByPropertyKind,
 }
 
@@ -176,7 +176,7 @@ impl KafkaState {
         //   - Role groups for this role (user defined)
         for role in KafkaRole::iter() {
             if let Some(nodes_for_role) = self.eligible_nodes.get(&role.to_string()) {
-                for (role_group, nodes) in nodes_for_role {
+                for (role_group, (nodes, replicas)) in nodes_for_role {
                     debug!(
                         "Identify missing pods for [{}] role and group [{}]",
                         role, role_group
@@ -206,6 +206,7 @@ impl KafkaState {
                         nodes,
                         &self.existing_pods,
                         &get_role_and_group_labels(&role.to_string(), role_group),
+                        *replicas,
                     );
 
                     for node in nodes_that_need_pods {
@@ -551,7 +552,7 @@ pub fn validated_product_config(
     )
 }
 
-pub async fn create_controller(client: Client) {
+pub async fn create_controller(client: Client) -> OperatorResult<()> {
     let kafka_api: Api<KafkaCluster> = client.get_all_api();
     let pods_api: Api<Pod> = client.get_all_api();
     let config_maps_api: Api<ConfigMap> = client.get_all_api();
@@ -560,12 +561,21 @@ pub async fn create_controller(client: Client) {
         .owns(pods_api, ListParams::default())
         .owns(config_maps_api, ListParams::default());
 
-    let product_config =
-        ProductConfigManager::from_yaml_file("deploy/config-spec/properties.yaml").unwrap();
+    let product_config_path = cli::product_config_path(
+        "kafka-operator",
+        vec![
+            "deploy/config-spec/properties.yaml",
+            "/etc/stackable/kafka-operator/config-spec/properties.yaml",
+        ],
+    )?;
+
+    let product_config = ProductConfigManager::from_yaml_file(&product_config_path).unwrap();
 
     let strategy = KafkaStrategy::new(product_config);
 
     controller
         .run(client, strategy, Duration::from_secs(5))
         .await;
+
+    Ok(())
 }

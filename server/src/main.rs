@@ -23,6 +23,6 @@ async fn main() -> Result<(), error::Error> {
         return Err(error);
     };
 
-    stackable_kafka_operator::create_controller(client).await;
+    stackable_kafka_operator::create_controller(client).await?;
     Ok(())
 }
