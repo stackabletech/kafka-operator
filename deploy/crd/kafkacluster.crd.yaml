@@ -33,6 +33,11 @@ spec:
                       properties:
                         logDirs:
                           type: string
+                        metricsPort:
+                          format: uint16
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
                       required:
                         - logDirs
                       type: object
@@ -62,6 +67,11 @@ spec:
                             properties:
                               logDirs:
                                 type: string
+                              metricsPort:
+                                format: uint16
+                                minimum: 0.0
+                                nullable: true
+                                type: integer
                             required:
                               - logDirs
                             type: object

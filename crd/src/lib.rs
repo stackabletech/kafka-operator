@@ -95,7 +95,8 @@ pub struct KafkaClusterStatus {}
 // TODO: Does "log.dirs" make sense in that case? If we make it an option in can happen that the
 //    config will be parsed as None.
 pub struct KafkaConfig {
-    log_dirs: String,
+    pub log_dirs: String,
+    pub metrics_port: Option<u16>,
 }
 
 impl Configuration for KafkaConfig {
@@ -106,7 +107,11 @@ impl Configuration for KafkaConfig {
         _resource: &Self::Configurable,
         _role_name: &str,
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
-        Ok(BTreeMap::new())
+        let mut result = BTreeMap::new();
+        if let Some(metrics_port) = self.metrics_port {
+            result.insert("metricsPort".to_string(), Some(metrics_port.to_string()));
+        }
+        Ok(result)
     }
 
     fn compute_cli(

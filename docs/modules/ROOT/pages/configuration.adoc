@@ -1,0 +1,107 @@
+= Configuration
+
+== Command Line Parameters
+This operator accepts the following command line parameters:
+
+include::commandline_args.adoc[]
+
+== Kubernetes custom resource options
+
+The cluster can be configured via a YAML file. This custom resource specifies the amount of replicas for each role group, role group or role specific configuration like port definitions etc.
+
+    apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaCluster
+    metadata:
+      name: simple
+    spec:
+      version:
+        kafka_version: 2.8.0
+      zookeeperReference:
+        namespace: default
+        name: simple
+      opa:
+        reference:
+          namespace: default
+          name: simple-opacluster
+        authorizerClassName: com.bisnode.kafka.authorization.OpaAuthorizer
+        authorizerCacheInitialCapacity: 0
+        authorizerCacheMaximumSize: 0
+        authorizerCacheExpireAfterSeconds: 0
+      brokers:
+        roleGroups:
+          default:
+            selector:
+              matchLabels:
+                kubernetes.io/arch: stackable-linux
+            replicas: 1
+            config:
+              logDirs: "/tmp/kafka-logs"
+              metricsPort: 9606
+
+=== Structure
+
+There are three levels of configuration:
+
+[cols="1,1"]
+|===
+|Common shared options
+|Contains configuration that is shared within the whole cluster ensemble. E.g., version, image, encryption or logging.
+
+|Role options
+|This configuration is shared for all roles of a certain type (in this operator, only the Broker role).
+
+|RoleGroup options
+|Options provided in the role group apply to each created "pod".
+|===
+
+=== Common shared options
+[cols="1,1,1,1"]
+|===
+|Name
+|Type
+|Description
+|Related Kafka properties
+
+|version
+|string
+|The Kafka version used in the format: x.y.z
+|
+
+|zookeeperReference
+|struct
+|A reference to a ZooKeeper cluster (namespace, name, chroot)
+|
+
+|opa
+|struct
+|An OPA configuration for Kafka, consisting of an OPA reference (namespace, name) and some authorizer properties
+|
+|===
+
+=== Role & RoleGroup options
+We pool Role and RoleGroup options, since they are the same for Role and RoleGroup.
+
+==== Server
+[cols="1,1,1,1,1"]
+|===
+|Name
+|Type
+|Description
+|Related Kafka properties
+|Location
+
+|metricsPort
+|integer
+|The port where Kafka metrics are exposed as a Prometheus endpoint.
+|
+|JMX Exporter / CLI
+
+|logDirs
+|string
+|A comma separated list of directories under which to store log files
+|log.Dirs
+|server.properties
+
+|===
+
+

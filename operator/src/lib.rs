@@ -15,12 +15,11 @@ use stackable_kafka_crd::{
 use stackable_opa_crd::util;
 use stackable_opa_crd::util::{OpaApi, OpaApiProtocol};
 use stackable_operator::builder::{
-    ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
+    ConfigMapBuilder, ContainerBuilder, ContainerPortBuilder, ObjectMetaBuilder, PodBuilder,
 };
 use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::error::OperatorResult;
-use stackable_operator::k8s_utils;
 use stackable_operator::labels::{
     build_common_labels_for_all_managed_resources, get_recommended_labels, APP_COMPONENT_LABEL,
     APP_INSTANCE_LABEL, APP_MANAGED_BY_LABEL, APP_NAME_LABEL, APP_VERSION_LABEL,
@@ -37,6 +36,7 @@ use stackable_operator::role_utils::{
     find_nodes_that_fit_selectors, get_role_and_group_labels,
     list_eligible_nodes_for_role_and_group,
 };
+use stackable_operator::{cli, k8s_utils};
 use stackable_zookeeper_crd::util::ZookeeperConnectionInformation;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
@@ -50,13 +50,14 @@ use tracing::{debug, info, trace, warn};
 type KafkaReconcileResult = ReconcileResult<error::Error>;
 
 const FINALIZER_NAME: &str = "kafka.stackable.tech/cleanup";
+const SHOULD_BE_SCRAPED: &str = "monitoring.stackable.tech/should_be_scraped";
 
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
     kafka_cluster: KafkaCluster,
     zookeeper_info: Option<ZookeeperConnectionInformation>,
     existing_pods: Vec<Pod>,
-    eligible_nodes: HashMap<String, HashMap<String, Vec<Node>>>,
+    eligible_nodes: HashMap<String, HashMap<String, (Vec<Node>, usize)>>,
     validated_role_config: ValidatedRoleConfigByPropertyKind,
 }
 
@@ -175,7 +176,7 @@ impl KafkaState {
         //   - Role groups for this role (user defined)
         for role in KafkaRole::iter() {
             if let Some(nodes_for_role) = self.eligible_nodes.get(&role.to_string()) {
-                for (role_group, nodes) in nodes_for_role {
+                for (role_group, (nodes, replicas)) in nodes_for_role {
                     debug!(
                         "Identify missing pods for [{}] role and group [{}]",
                         role, role_group
@@ -205,6 +206,7 @@ impl KafkaState {
                         nodes,
                         &self.existing_pods,
                         &get_role_and_group_labels(&role.to_string(), role_group),
+                        *replicas,
                     );
 
                     for node in nodes_that_need_pods {
@@ -259,8 +261,10 @@ impl KafkaState {
     ) -> Result<(Pod, Vec<ConfigMap>), Error> {
         let mut config_maps = vec![];
         let mut env_vars = vec![];
+        let mut metrics_port: Option<u16> = None;
 
         let mut cm_data = BTreeMap::new();
+
         let pod_name = pod_utils::get_pod_name(
             APP_NAME,
             &self.context.name(),
@@ -268,7 +272,10 @@ impl KafkaState {
             &role.to_string(),
             node_name,
         );
+
         let cm_name = format!("{}-config", pod_name);
+
+        let version = &self.context.resource.spec.version.fully_qualified_version();
 
         for (property_name_kind, config) in validated_config {
             match property_name_kind {
@@ -336,6 +343,20 @@ impl KafkaState {
                             continue;
                         }
 
+                        // if a metrics port is provided (for now by user, it is not required in
+                        // product config to be able to not configure any monitoring / metrics)
+                        if property_name == "metricsPort" {
+                            // cannot panic because checked in product config
+                            metrics_port = Some(property_value.parse::<u16>().unwrap());
+                            env_vars.push(EnvVar {
+                                    name: "EXTRA_ARGS".to_string(),
+                                    value: Some(format!("-javaagent:{{{{packageroot}}}}/kafka_{}/stackable/lib/jmx_prometheus_javaagent-0.16.1.jar={}:{{{{packageroot}}}}/kafka_{}/stackable/conf/jmx_exporter.yaml",
+                                                        version, property_value, version)),
+                                    ..EnvVar::default()
+                                });
+                            continue;
+                        }
+
                         env_vars.push(EnvVar {
                             name: property_name.clone(),
                             value: Some(property_value.to_string()),
@@ -346,8 +367,6 @@ impl KafkaState {
                 _ => {}
             }
         }
-
-        let version = &self.context.resource.spec.version.fully_qualified_version();
 
         let labels = get_recommended_labels(
             &self.context.resource,
@@ -361,17 +380,20 @@ impl KafkaState {
         container_builder.image(format!("stackable/kafka:{}", &version));
         container_builder.command(vec![
             format!("kafka_{}/bin/kafka-server-start.sh", version),
-            format!(
-                "{}configroot{}/config/{}",
-                "{{", "}}", SERVER_PROPERTIES_FILE
-            ),
+            format!("{{{{configroot}}}}/config/{}", SERVER_PROPERTIES_FILE),
         ]);
         container_builder.add_configmapvolume(cm_name.clone(), "config".to_string());
+        container_builder.add_env_vars(env_vars);
 
-        for env in env_vars {
-            if let Some(val) = env.value {
-                container_builder.add_env_var(env.name, val);
-            }
+        let mut annotations = BTreeMap::new();
+        // only add metrics container port and annotation if available
+        if let Some(metrics_port) = metrics_port {
+            annotations.insert(SHOULD_BE_SCRAPED.to_string(), "true".to_string());
+            container_builder.add_container_port(
+                ContainerPortBuilder::new(metrics_port)
+                    .name("metrics")
+                    .build(),
+            );
         }
 
         let pod = PodBuilder::new()
@@ -380,6 +402,7 @@ impl KafkaState {
                     .name(pod_name)
                     .namespace(&self.context.client.default_namespace)
                     .with_labels(labels)
+                    .with_annotations(annotations)
                     .ownerreference_from_resource(&self.context.resource, Some(true), Some(true))?
                     .build()?,
             )
@@ -510,7 +533,10 @@ pub fn validated_product_config(
     roles.insert(
         KafkaRole::Broker.to_string(),
         (
-            vec![PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string())],
+            vec![
+                PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()),
+                PropertyNameKind::Env,
+            ],
             resource.spec.brokers.clone().into(),
         ),
     );
@@ -526,7 +552,7 @@ pub fn validated_product_config(
     )
 }
 
-pub async fn create_controller(client: Client) {
+pub async fn create_controller(client: Client) -> OperatorResult<()> {
     let kafka_api: Api<KafkaCluster> = client.get_all_api();
     let pods_api: Api<Pod> = client.get_all_api();
     let config_maps_api: Api<ConfigMap> = client.get_all_api();
@@ -535,12 +561,21 @@ pub async fn create_controller(client: Client) {
         .owns(pods_api, ListParams::default())
         .owns(config_maps_api, ListParams::default());
 
-    let product_config =
-        ProductConfigManager::from_yaml_file("deploy/config-spec/properties.yaml").unwrap();
+    let product_config_path = cli::product_config_path(
+        "kafka-operator",
+        vec![
+            "deploy/config-spec/properties.yaml",
+            "/etc/stackable/kafka-operator/config-spec/properties.yaml",
+        ],
+    )?;
+
+    let product_config = ProductConfigManager::from_yaml_file(&product_config_path).unwrap();
 
     let strategy = KafkaStrategy::new(product_config);
 
     controller
         .run(client, strategy, Duration::from_secs(5))
         .await;
+
+    Ok(())
 }
