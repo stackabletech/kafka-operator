@@ -2,7 +2,7 @@ mod error;
 
 use crate::error::Error;
 use async_trait::async_trait;
-use k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Node, Pod};
+use k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Pod};
 use kube::api::ListParams;
 use kube::error::ErrorResponse;
 use kube::Api;
@@ -34,7 +34,7 @@ use stackable_operator::reconcile::{
 };
 use stackable_operator::role_utils::{
     find_nodes_that_fit_selectors, get_role_and_group_labels,
-    list_eligible_nodes_for_role_and_group,
+    list_eligible_nodes_for_role_and_group, EligibleNodesForRoleAndGroup,
 };
 use stackable_operator::{cli, k8s_utils};
 use stackable_zookeeper_crd::util::ZookeeperConnectionInformation;
@@ -57,7 +57,7 @@ struct KafkaState {
     kafka_cluster: KafkaCluster,
     zookeeper_info: Option<ZookeeperConnectionInformation>,
     existing_pods: Vec<Pod>,
-    eligible_nodes: HashMap<String, HashMap<String, (Vec<Node>, usize)>>,
+    eligible_nodes: EligibleNodesForRoleAndGroup,
     validated_role_config: ValidatedRoleConfigByPropertyKind,
 }
 
@@ -231,7 +231,7 @@ impl KafkaState {
                             .create_pod_and_config_maps(
                                 &role,
                                 role_group,
-                                &node_name,
+                                node_name,
                                 config_for_role_and_group(
                                     &role.to_string(),
                                     role_group,
@@ -461,7 +461,7 @@ impl ReconciliationState for KafkaState {
                 .await?
                 .then(
                     self.context
-                        .wait_for_running_and_ready_pods(&self.existing_pods.as_slice()),
+                        .wait_for_running_and_ready_pods(self.existing_pods.as_slice()),
                 )
                 .await?
                 .then(self.context.delete_excess_pods(
@@ -544,9 +544,9 @@ pub fn validated_product_config(
     let role_config = transform_all_roles_to_config(resource, roles);
 
     validate_all_roles_and_groups_config(
-        &resource.spec.version.kafka_version(),
+        resource.spec.version.kafka_version(),
         &role_config,
-        &product_config,
+        product_config,
         false,
         false,
     )
