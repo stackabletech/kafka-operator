@@ -63,8 +63,7 @@ impl KafkaVersion {
     }
 
     pub fn scala_version(&self) -> &str {
-        &self
-            .scala_version
+        self.scala_version
             .as_deref()
             .unwrap_or(Self::DEFAULT_SCALA_VERSION)
     }
