@@ -63,8 +63,7 @@ impl KafkaVersion {
     }
 
     pub fn scala_version(&self) -> &str {
-        &self
-            .scala_version
+        self.scala_version
             .as_deref()
             .unwrap_or(Self::DEFAULT_SCALA_VERSION)
     }
@@ -185,8 +184,8 @@ mod tests {
         "2.12-2.8.0"
     )]
     fn test_version(#[case] input: &str, #[case] expected_output: &str) {
-        let version: KafkaVersion = serde_yaml::from_str(&input)
-            .expect("deserializing a known-good value should not fail!");
+        let version: KafkaVersion =
+            serde_yaml::from_str(input).expect("deserializing a known-good value should not fail!");
         assert_eq!(version.fully_qualified_version(), expected_output);
     }
 }
