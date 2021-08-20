@@ -20,6 +20,7 @@ use stackable_operator::builder::{
 use stackable_operator::client::Client;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::error::OperatorResult;
+use stackable_operator::k8s_utils;
 use stackable_operator::labels::{
     build_common_labels_for_all_managed_resources, get_recommended_labels, APP_COMPONENT_LABEL,
     APP_INSTANCE_LABEL, APP_MANAGED_BY_LABEL, APP_NAME_LABEL, APP_VERSION_LABEL,
@@ -36,7 +37,6 @@ use stackable_operator::role_utils::{
     find_nodes_that_fit_selectors, get_role_and_group_labels,
     list_eligible_nodes_for_role_and_group, EligibleNodesForRoleAndGroup,
 };
-use stackable_operator::{cli, k8s_utils};
 use stackable_zookeeper_crd::util::ZookeeperConnectionInformation;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
@@ -552,7 +552,7 @@ pub fn validated_product_config(
     )
 }
 
-pub async fn create_controller(client: Client) -> OperatorResult<()> {
+pub async fn create_controller(client: Client, product_config_path: &str) -> OperatorResult<()> {
     let kafka_api: Api<KafkaCluster> = client.get_all_api();
     let pods_api: Api<Pod> = client.get_all_api();
     let config_maps_api: Api<ConfigMap> = client.get_all_api();
@@ -561,15 +561,7 @@ pub async fn create_controller(client: Client) -> OperatorResult<()> {
         .owns(pods_api, ListParams::default())
         .owns(config_maps_api, ListParams::default());
 
-    let product_config_path = cli::product_config_path(
-        "kafka-operator",
-        vec![
-            "deploy/config-spec/properties.yaml",
-            "/etc/stackable/kafka-operator/config-spec/properties.yaml",
-        ],
-    )?;
-
-    let product_config = ProductConfigManager::from_yaml_file(&product_config_path).unwrap();
+    let product_config = ProductConfigManager::from_yaml_file(product_config_path).unwrap();
 
     let strategy = KafkaStrategy::new(product_config);
 
