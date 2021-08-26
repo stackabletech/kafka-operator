@@ -11,7 +11,7 @@ spec:
   opa:
     reference:
       namespace: default
-      name: simple-opacluster
+      name: simple
     authorizerClassName: com.bisnode.kafka.authorization.OpaAuthorizer
     authorizerCacheInitialCapacity: 0
     authorizerCacheMaximumSize: 0
