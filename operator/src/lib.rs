@@ -51,6 +51,7 @@ type KafkaReconcileResult = ReconcileResult<error::Error>;
 
 const FINALIZER_NAME: &str = "kafka.stackable.tech/cleanup";
 const SHOULD_BE_SCRAPED: &str = "monitoring.stackable.tech/should_be_scraped";
+const CONFIG_DIR: &str = "config";
 const CONFIG_MAP_TYPE_CONFIG: &str = "properties";
 const CONFIG_MAP_NODE_NAME_LABEL: &str = "kafka.stackable.tech/node_name";
 
@@ -185,7 +186,7 @@ impl KafkaState {
                             role_group
                         );
 
-                        // now we have a node that needs pods -> get validated config
+                        // now we have a node that needs a pod -> get validated config
                         let validated_config = config_for_role_and_group(
                             role_str,
                             role_group,
@@ -221,7 +222,7 @@ impl KafkaState {
     /// Labels are automatically adapted from the `recommended_labels` with a type (config for
     /// 'server.properties'). Names are generated via `name_utils::build_resource_name`.
     ///
-    /// Returns a map with a 'type' identifier (e.g. config) as key and the corresponding
+    /// Returns a map with a 'type' identifier (e.g. 'properties') as key and the corresponding
     /// ConfigMap as value. This is required to set the volume mounts in the pod later on.
     ///
     /// # Arguments
@@ -307,7 +308,7 @@ impl KafkaState {
                 );
             }
 
-            // we need to convert to <String, String> to <String, Option<String>> to deal with
+            // We need to convert from <String, String> to <String, Option<String>> to deal with
             // CLI flags etc. We can not currently represent that via operator-rs / product-config.
             // This is a preparation for that.
             let transformed_config: BTreeMap<String, Option<String>> = adapted_config
@@ -414,14 +415,17 @@ impl KafkaState {
         container_builder.image(format!("stackable/kafka:{}", &version));
         container_builder.command(vec![
             format!("kafka_{}/bin/kafka-server-start.sh", version),
-            format!("{{{{configroot}}}}/config/{}", SERVER_PROPERTIES_FILE),
+            format!(
+                "{{{{configroot}}}}/{}/{}",
+                CONFIG_DIR, SERVER_PROPERTIES_FILE
+            ),
         ]);
         container_builder.add_env_vars(env_vars);
 
-        // One mount for the config directory, this will be relative to the extracted package
+        // One mount for the config directory
         if let Some(config_map_data) = config_maps.get(CONFIG_MAP_TYPE_CONFIG) {
             if let Some(name) = config_map_data.metadata.name.as_ref() {
-                container_builder.add_configmapvolume(name, "config".to_string());
+                container_builder.add_configmapvolume(name, CONFIG_DIR.to_string());
             } else {
                 return Err(error::Error::MissingConfigMapNameError {
                     cm_type: CONFIG_MAP_TYPE_CONFIG,

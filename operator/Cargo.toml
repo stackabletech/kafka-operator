@@ -9,9 +9,9 @@ version = "0.1.0-nightly"
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
 product-config = { git = "https://github.com/stackabletech/product-config.git", branch = "main" }
-stackable-opa-crd = { git = "https://github.com/stackabletech/opa-operator.git", branch = "adapt_to_operator_rs_build_resource_name_and_create_config_map" }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "add_create_config_maps_with_labels" }
-stackable-zookeeper-crd = { git = "https://github.com/stackabletech/zookeeper-operator.git", branch="adapt_to_operator_pod_name_and_create_config_map" }
+stackable-opa-crd = { git = "https://github.com/stackabletech/opa-operator.git", branch = "main" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "main" }
+stackable-zookeeper-crd = { git = "https://github.com/stackabletech/zookeeper-operator.git", branch="main" }
 
 async-trait = "0.1"
 futures = "0.3"
