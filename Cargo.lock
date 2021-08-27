@@ -1660,7 +1660,7 @@ dependencies = [
 [[package]]
 name = "stackable-opa-crd"
 version = "0.1.0-nightly"
-source = "git+https://github.com/stackabletech/opa-operator.git?branch=main#5f7041c4a50198ec87c0210adc56693c6295b262"
+source = "git+https://github.com/stackabletech/opa-operator.git?branch=main#a4e2dcf4fb1e66ffcd720782bf8dc1ce11b25028"
 dependencies = [
  "k8s-openapi",
  "kube",
