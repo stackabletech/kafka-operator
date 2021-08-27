@@ -4,6 +4,7 @@ description = "Stackable Operator for Apache Kafka - The Custom Resource Definit
 edition = "2018"
 license = "OSL-3.0"
 name = "stackable-kafka-crd"
+repository = "https://github.com/stackabletech/kafka-operator"
 version = "0.1.0-nightly"
 
 [dependencies]
