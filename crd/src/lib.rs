@@ -18,6 +18,8 @@ pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 
 pub const ZOOKEEPER_CONNECT: &str = "zookeeper.connect";
 pub const OPA_AUTHORIZER_URL: &str = "opa.authorizer.url";
+pub const METRICS_PORT: &str = "metricsPort";
+pub const LOG_DIR: &str = "log.dir";
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
@@ -108,7 +110,7 @@ impl Configuration for KafkaConfig {
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
         let mut result = BTreeMap::new();
         if let Some(metrics_port) = self.metrics_port {
-            result.insert("metricsPort".to_string(), Some(metrics_port.to_string()));
+            result.insert(METRICS_PORT.to_string(), Some(metrics_port.to_string()));
         }
         Ok(result)
     }
@@ -158,7 +160,7 @@ impl Configuration for KafkaConfig {
             );
         }
 
-        config.insert("log.dir".to_string(), Some(self.log_dirs.clone()));
+        config.insert(LOG_DIR.to_string(), Some(self.log_dirs.clone()));
 
         Ok(config)
     }
