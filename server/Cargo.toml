@@ -1,11 +1,12 @@
 [package]
 authors = ["Lars Francke <lars.francke@stackable.de>"]
+build = "build.rs"
 description = "Stackable Operator for Apache Kafka"
 edition = "2018"
 license = "OSL-3.0"
 name = "stackable-kafka-operator-server"
+repository = "https://github.com/stackabletech/kafka-operator"
 version = "0.1.0-nightly"
-build = "build.rs"
 
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
