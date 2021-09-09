@@ -40,8 +40,8 @@ jobs:
           -H "Content-Type: multipart/form-data"
           --data-binary "@./$(find target/debian/ -name *.deb)"
           "${{ env.REPO_APT_DEV_URL }}/"
-#      - name: Clean
-#        run: ~/.cargo/bin/cargo clean
+      - name: Clean
+        run: ~/.cargo/bin/cargo clean
 
   centos:
     runs-on: centos${{ matrix.node }}
