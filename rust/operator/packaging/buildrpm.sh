@@ -63,8 +63,8 @@ RPM_SCAFFOLDING_DIR=target/rpm/SOURCES/${PACKAGE_NAME}-${PACKAGE_VERSION}
 echo Creating directory scaffolding for RPM : ${RPM_SCAFFOLDING_DIR}
 mkdir -p ${RPM_SCAFFOLDING_DIR}
 
-cp -r server/packaging/rpm/SOURCES/${PACKAGE_NAME}-VERSION/* ${RPM_SCAFFOLDING_DIR}/
-cp -r server/packaging/rpm/SPECS target/rpm/
+cp -r rust/operator/packaging/rpm/SOURCES/${PACKAGE_NAME}-VERSION/* ${RPM_SCAFFOLDING_DIR}/
+cp -r rust/operator/packaging/rpm/SPECS target/rpm/
 
 # Copy assets to the specified locations
 ~/.cargo/bin/cargo metadata --format-version 1| $(dirname $0)/copy_assets.py ${PACKAGE_NAME} ${RPM_SCAFFOLDING_DIR}
