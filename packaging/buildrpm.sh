@@ -15,10 +15,16 @@ if [ -z $1 ]; then
   exit 1
 fi
 
+if [ -z $2 ]; then
+  echo "This script requires the name of the binary file to be specified as the second parameter!"
+  exit 1
+fi
+
 export WORKSPACE_NAME=$(basename $(pwd))
 
 export PACKAGE_NAME=$1
-BINARY_FILE=target/release/$PACKAGE_NAME
+export BINARY_FILE_NAME=$2
+BINARY_FILE_PATH=target/release/$BINARY_FILE_NAME
 
 # The package description is parsed from the output of `cargo metadata` by using jq.
 # We need to look up the package with a select statement to match the name from an array of packages
