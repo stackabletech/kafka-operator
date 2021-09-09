@@ -71,7 +71,7 @@ echo Defined package release: [${PACKAGE_RELEASE}]
 echo Defined package description: [${PACKAGE_DESCRIPTION}]
 
 
-RPM_SCAFFOLDING_DIR=target/rpm/SOURCES/${PACKAGE_NAME}-${PACKAGE_VERSION}
+RPM_SCAFFOLDING_DIR=target/rpm/SOURCES/${BINARY_FILE_NAME}-${PACKAGE_VERSION}
 
 echo Creating directory scaffolding for RPM : ${RPM_SCAFFOLDING_DIR}
 mkdir -p ${RPM_SCAFFOLDING_DIR}
