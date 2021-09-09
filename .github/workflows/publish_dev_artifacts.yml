@@ -1,4 +1,4 @@
-name: Publish-Artifacts
+name: Publish Dev Artifacts
 
 on:
   push:
@@ -29,15 +29,10 @@ jobs:
         run: ~/.cargo/bin/cargo +nightly build --verbose --release
       - name: Build apt package
         run: ~/.cargo/bin/cargo deb --manifest-path rust/operator-binary/Cargo.toml --no-build
-      - name: Check workflow permissions
-        id: check_permissions
-        uses: scherermichael-oss/action-has-permission@1.0.6
-        with:
-          required-permission: write
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish apt package
-        if: steps.check_permissions.outputs.has-permission
+        env:
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        if: env.NEXUS_PASSWORD != null
         run: >-
           /usr/bin/curl
           --fail
@@ -65,20 +60,15 @@ jobs:
         run: ~/.cargo/bin/cargo +nightly build --verbose --release
       - name: Build RPM package
         run: packaging/buildrpm.sh stackable-kafka-operator-binary stackable-kafka-operator
-      - name: Check workflow permissions
-        id: check_permissions
-        uses: scherermichael-oss/action-has-permission@1.0.6
-        with:
-          required-permission: write
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish RPM package
-        if: steps.check_permissions.outputs.has-permission
+        env:
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        if: env.NEXUS_PASSWORD != null
         run: >-
           /usr/bin/curl
           --fail
           -u 'github:${{ secrets.NEXUS_PASSWORD }}'
           --upload-file "./$(find  target/rpm/RPMS/x86_64/ -name *.rpm)"
           "${{ env.REPO_RPM_DEV_URL }}/el${{ matrix.node }}/"
-#      - name: Clean
-#        run: ~/.cargo/bin/cargo clean
+      - name: Clean
+        run: ~/.cargo/bin/cargo clean
