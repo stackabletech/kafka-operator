@@ -24,7 +24,7 @@ stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git",
 stackable-kafka-crd = { path = "../crd" }
 
 [package.metadata.deb]
-maintainer-scripts = "packaging/debian/"
+maintainer-scripts = "../../packaging/debian/"
 systemd-units = { enable = false }
 assets = [
     ["../../target/release/stackable-kafka-operator", "opt/stackable/kafka-operator/", "755"],
