@@ -1566,20 +1566,6 @@ dependencies = [
 name = "stackable-kafka-operator"
 version = "0.2.0-nightly"
 dependencies = [
- "built",
- "clap",
- "k8s-openapi",
- "stackable-kafka-crd",
- "stackable-kafka-operator-lib",
- "stackable-operator",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "stackable-kafka-operator-lib"
-version = "0.2.0-nightly"
-dependencies = [
  "async-trait",
  "futures",
  "k8s-openapi",
@@ -1595,6 +1581,20 @@ dependencies = [
  "strum",
  "strum_macros",
  "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "stackable-kafka-operator-binary"
+version = "0.2.0-nightly"
+dependencies = [
+ "built",
+ "clap",
+ "k8s-openapi",
+ "stackable-kafka-crd",
+ "stackable-kafka-operator",
+ "stackable-operator",
  "tokio",
  "tracing",
 ]
