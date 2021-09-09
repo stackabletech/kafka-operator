@@ -46,7 +46,7 @@ def copy_assets(root, assets):
           ]
     """
     for asset_def in assets:
-        source = asset_def[0][3:] ### remove the leading ../
+        source = asset_def[0][6:] ### remove the leading ../
         dest = asset_def[1]
         dest_mod = int(asset_def[2], 8)
         
