@@ -29,7 +29,7 @@ def copy_assets(root, assets):
     Example json:
           "assets": [
             [
-              "../target/release/stackable-zookeeper-operator-server",
+              "../target/release/stackable-zookeeper-operator",
               "opt/stackable/zookeeper-operator/",
               "755"
             ],

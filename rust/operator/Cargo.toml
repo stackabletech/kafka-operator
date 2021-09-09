@@ -27,7 +27,7 @@ stackable-kafka-crd = { path = "../crd" }
 maintainer-scripts = "packaging/debian/"
 systemd-units = { enable = false }
 assets = [
-    ["../target/release/stackable-kafka-operator-server", "opt/stackable/kafka-operator/", "755"],
-    ["../deploy/crd/kafkacluster.crd.yaml", "etc/stackable/kafka-operator/crd/", "644"],
-    ["../deploy/config-spec/properties.yaml", "etc/stackable/kafka-operator/config-spec/", "644"],
+    ["../../target/release/stackable-kafka-operator", "opt/stackable/kafka-operator/", "755"],
+    ["../../deploy/crd/kafkacluster.crd.yaml", "etc/stackable/kafka-operator/crd/", "644"],
+    ["../../deploy/config-spec/properties.yaml", "etc/stackable/kafka-operator/config-spec/", "644"],
 ]

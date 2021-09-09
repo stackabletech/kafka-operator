@@ -21,11 +21,11 @@ jobs:
         # We use "mr" instead of "pr" to denote pull request builds, as this prefix comes before "nightly" when lexically
         # sorting packages by version. This means that when installing the package without specifying a version the
         # nighly version is considered more current than mr versions and installed by default
-        run: sed -i -e 's/^version = "\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/version = "\1-mr${{ github.event.number }}"/' server/Cargo.toml
+        run: sed -i -e 's/^version = "\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/version = "\1-mr${{ github.event.number }}"/' rust/operator/Cargo.toml
       - name: Build
         run: ~/.cargo/bin/cargo +nightly build --verbose --release
       - name: Build apt package
-        run: ~/.cargo/bin/cargo deb --manifest-path server/Cargo.toml --no-build
+        run: ~/.cargo/bin/cargo deb --manifest-path rust/operator/Cargo.toml --no-build
       - name: Check workflow permissions
         id: check_permissions
         uses: scherermichael-oss/action-has-permission@1.0.6
@@ -57,11 +57,11 @@ jobs:
         # We use "mr" instead of "pr" to denote pull request builds, as this prefix comes before "nightly" when lexically
         # sorting packages by version. This means that when installing the package without specifying a version the
         # nighly version is considered more current than mr versions and installed by default
-        run: sed -i -e 's/^version = "\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/version = "\1-mr${{ github.event.number }}"/' server/Cargo.toml
+        run: sed -i -e 's/^version = "\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/version = "\1-mr${{ github.event.number }}"/' rust/operator/Cargo.toml
       - name: Build
         run: ~/.cargo/bin/cargo +nightly build --verbose --release
       - name: Build RPM package
-        run: server/packaging/buildrpm.sh stackable-kafka-operator-server
+        run: server/packaging/buildrpm.sh stackable-kafka-operator
       - name: Check workflow permissions
         id: check_permissions
         uses: scherermichael-oss/action-has-permission@1.0.6
