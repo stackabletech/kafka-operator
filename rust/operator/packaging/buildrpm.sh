@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # This script creates an RPM package containing the binary created by this Cargo project.
 # The script is not universally applicable, since it makes a few assumptions about the project structure:
-#  1. The RPM scaffolding needs to be provided in server/packaging/rpm
+#  1. The RPM scaffolding needs to be provided in rust/operator/packaging/rpm
 #  2. The binary to be packaged needs to be created in target/release
 
 # The script takes one argument, which is the name of the binary that has been created by the build process.
