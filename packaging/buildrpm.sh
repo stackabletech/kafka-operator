@@ -65,6 +65,7 @@ export PACKAGE_RELEASE="0$(echo ${VERSION_STRING} | awk -F '-' '{ if ($2 != "") 
 
 echo Defined workspace name: [${WORKSPACE_NAME}]
 echo Defined package name: [${PACKAGE_NAME}]
+echo Defined binary name: [${BINARY_FILE_NAME}]
 echo Defined package version: [${PACKAGE_VERSION}]
 echo Defined package release: [${PACKAGE_RELEASE}]
 echo Defined package description: [${PACKAGE_DESCRIPTION}]
