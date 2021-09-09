@@ -71,9 +71,7 @@ def main(args):
 
     cargo_deb_metadata = json.load(sys.stdin)
     cargo_deb_assets = assets(package_name, cargo_deb_metadata)
-    #copy_assets(destination, cargo_deb_assets)
-    print(cargo_deb_assets)
-
+    copy_assets(destination, cargo_deb_assets)
 
 if __name__ == '__main__':
     main(sys.argv)
