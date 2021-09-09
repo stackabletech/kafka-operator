@@ -63,14 +63,20 @@ RPM_SCAFFOLDING_DIR=target/rpm/SOURCES/${PACKAGE_NAME}-${PACKAGE_VERSION}
 echo Creating directory scaffolding for RPM : ${RPM_SCAFFOLDING_DIR}
 mkdir -p ${RPM_SCAFFOLDING_DIR}
 
+echo Copy 1
 cp -r packaging/rpm/SOURCES/${PACKAGE_NAME}-VERSION/* ${RPM_SCAFFOLDING_DIR}/
+
+echo Copy 2
 cp -r packaging/rpm/SPECS target/rpm/
 
 # Copy assets to the specified locations
+echo Running copy_assets.py
 ~/.cargo/bin/cargo metadata --format-version 1| $(dirname $0)/copy_assets.py ${PACKAGE_NAME} ${RPM_SCAFFOLDING_DIR}
 
+echo Tarring
 pushd target/rpm/SOURCES
 tar czvf ${PACKAGE_NAME}-${PACKAGE_VERSION}.tar.gz ${PACKAGE_NAME}-${PACKAGE_VERSION}
 popd
 
+echo Running rpmbuild
 rpmbuild --define "_topdir `pwd`/target/rpm" -v -ba target/rpm/SPECS/${PACKAGE_NAME}.spec
