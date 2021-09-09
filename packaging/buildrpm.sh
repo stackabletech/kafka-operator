@@ -88,7 +88,7 @@ echo Running copy_assets.py in $(pwd)
 
 echo Tarring
 pushd target/rpm/SOURCES
-tar czvf ${PACKlAGE_NAME}-${PACKAGE_VERSION}.tar.gz ${PACKAGE_NAME}-${PACKAGE_VERSION}
+tar czvf ${BINARY_FILE_NAME}-${PACKAGE_VERSION}.tar.gz ${PACKAGE_NAME}-${PACKAGE_VERSION}
 popd
 
 echo Running rpmbuild
