@@ -17,8 +17,7 @@ fi
 export WORKSPACE_NAME=$(basename $(pwd))
 
 export PACKAGE_NAME=$1
-#BINARY_FILE=target/release/$PACKAGE_NAME
-BINARY_FILE=../target/release/$PACKAGE_NAME
+BINARY_FILE=target/release/$PACKAGE_NAME
 
 # The package description is parsed from the output of `cargo metadata` by using jq.
 # We need to look up the package with a select statement to match the name from an array of packages
