@@ -3,7 +3,7 @@ authors = ["Lars Francke <lars.francke@stackable.de>"]
 description = "Stackable Operator for Apache Kafka - The Operator Library"
 edition = "2018"
 license = "OSL-3.0"
-name = "stackable-kafka-operator"
+name = "stackable-kafka-operator-lib"
 repository = "https://github.com/stackabletech/kafka-operator"
 version = "0.2.0-nightly"
 
