@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # This script creates an RPM package containing the binary created by this Cargo project.
 # The script is not universally applicable, since it makes a few assumptions about the project structure:
-#  1. The RPM scaffolding needs to be provided in rust/operator/packaging/rpm
+#  1. The RPM scaffolding needs to be provided in `packaging/rpm`
 #  2. The binary to be packaged needs to be created in target/release
 
 # The script takes one argument, which is the name of the binary that has been created by the build process.
@@ -63,8 +63,8 @@ RPM_SCAFFOLDING_DIR=target/rpm/SOURCES/${PACKAGE_NAME}-${PACKAGE_VERSION}
 echo Creating directory scaffolding for RPM : ${RPM_SCAFFOLDING_DIR}
 mkdir -p ${RPM_SCAFFOLDING_DIR}
 
-cp -r rust/operator/packaging/rpm/SOURCES/${PACKAGE_NAME}-VERSION/* ${RPM_SCAFFOLDING_DIR}/
-cp -r rust/operator/packaging/rpm/SPECS target/rpm/
+cp -r packaging/rpm/SOURCES/${PACKAGE_NAME}-VERSION/* ${RPM_SCAFFOLDING_DIR}/
+cp -r packaging/rpm/SPECS target/rpm/
 
 # Copy assets to the specified locations
 ~/.cargo/bin/cargo metadata --format-version 1| $(dirname $0)/copy_assets.py ${PACKAGE_NAME} ${RPM_SCAFFOLDING_DIR}
