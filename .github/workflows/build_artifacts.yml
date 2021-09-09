@@ -25,7 +25,7 @@ jobs:
       - name: Build
         run: ~/.cargo/bin/cargo +nightly build --verbose --release
       - name: Build apt package
-        run: ~/.cargo/bin/cargo deb --manifest-path rust/operator/Cargo.toml --no-build
+        run: ~/.cargo/bin/cargo deb --manifest-path rust/operator-binary/Cargo.toml --no-build
       - name: Check workflow permissions
         id: check_permissions
         uses: scherermichael-oss/action-has-permission@1.0.6
