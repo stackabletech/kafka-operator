@@ -31,3 +31,7 @@ assets = [
     ["../../deploy/crd/kafkacluster.crd.yaml", "etc/stackable/kafka-operator/crd/", "644"],
     ["../../deploy/config-spec/properties.yaml", "etc/stackable/kafka-operator/config-spec/", "644"],
 ]
+
+[[bin]]
+name = "stackable-kafka-operator"
+path = "src/stackable-kafka-operator.rs"

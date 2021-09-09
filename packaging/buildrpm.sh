@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 # This script creates an RPM package containing the binary created by this Cargo project.
 # The script is not universally applicable, since it makes a few assumptions about the project structure:
 #  1. The RPM scaffolding needs to be provided in `packaging/rpm`
@@ -70,7 +71,10 @@ echo Copy 2
 cp -r packaging/rpm/SPECS target/rpm/
 
 # Copy assets to the specified locations
-echo Running copy_assets.py
+echo Running copy_assets.py in $(pwd)
+CARGO_META = $(~/.cargo/bin/cargo metadata --format-version 1)
+echo $CARGO_META
+
 ~/.cargo/bin/cargo metadata --format-version 1| $(dirname $0)/copy_assets.py ${PACKAGE_NAME} ${RPM_SCAFFOLDING_DIR}
 
 echo Tarring
