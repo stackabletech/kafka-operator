@@ -9,10 +9,10 @@ RUN microdnf update --disablerepo=* --enablerepo=ubi-8-baseos --enablerepo=ubi-8
   && microdnf install --disablerepo=* --enablerepo=ubi-8-baseos shadow-utils -y \
   && rm -rf /var/cache/yum
 
-COPY --from=builder /app/stackable-kafka-operator /
+COPY --from=builder /app/stackable-[[ operator.product_string ]]-operator /
 
 RUN groupadd -g 1000 stackable && adduser -u 1000 -g stackable -c 'Stackable Operator' stackable
 
 USER 1000:1000
 
-ENTRYPOINT ["/stackable-kafka-operator"]
+ENTRYPOINT ["/stackable-[[ operator.product_string ]]-operator"]
