@@ -1,5 +1,5 @@
 [Unit]
-Description=Stackable Kafka Operator
+Description=Stackable Operator for Apache Kafka
 Before=
 After=network.target
 [Service]
