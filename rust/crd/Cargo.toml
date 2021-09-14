@@ -5,7 +5,7 @@ edition = "2018"
 license = "OSL-3.0"
 name = "stackable-kafka-crd"
 repository = "https://github.com/stackabletech/kafka-operator"
-version = "0.3.0-nightly"
+version = "0.2.1-nightly"
 
 [dependencies]
 stackable-opa-crd = { git = "https://github.com/stackabletech/opa-operator.git", tag = "0.2.0" }
