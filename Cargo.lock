@@ -1601,8 +1601,8 @@ dependencies = [
 
 [[package]]
 name = "stackable-opa-crd"
-version = "0.1.0"
-source = "git+https://github.com/stackabletech/opa-operator.git?tag=0.1.0#7bbc9873a3c6170971c305f8bca36b87c23a9f84"
+version = "0.2.0"
+source = "git+https://github.com/stackabletech/opa-operator.git?tag=0.2.0#ad3e7b7b5e3341d0daf5bf5946545428a502b5e1"
 dependencies = [
  "k8s-openapi",
  "kube",
@@ -1655,8 +1655,8 @@ dependencies = [
 
 [[package]]
 name = "stackable-zookeeper-crd"
-version = "0.1.0"
-source = "git+https://github.com/stackabletech/zookeeper-operator.git?tag=0.1.0#2f38fa508f1b8880b794729f6bf6f954a338d9d3"
+version = "0.2.0"
+source = "git+https://github.com/stackabletech/zookeeper-operator.git?tag=0.2.0#f327118230b474bdedd29d6e89c70a4ee545f7e8"
 dependencies = [
  "k8s-openapi",
  "kube",
