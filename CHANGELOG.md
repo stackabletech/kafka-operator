@@ -2,7 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.3.0 - unreleased
+## [Unreleased]
+
+## [0.2.1] - 2021-09-14
+
 
 - Fixed Dockerfile to use the correct binary ([#167])
 
