@@ -4,8 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.2.1] - 2021-09-14
+### Added
+- Added versioning code from operator-rs for up and downgrades ([#167]).
+- Added `ProductVersion` to status ([#167]).
+- Added `Condition` to status ([#167]).
 
+[#167]: https://github.com/stackabletech/kafka-operator/pull/167
+
+## [0.2.1] - 2021-09-14
 
 - Fixed Dockerfile to use the correct binary ([#167])
 
