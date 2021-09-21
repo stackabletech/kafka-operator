@@ -9,6 +9,18 @@ All notable changes to this project will be documented in this file.
 - Added `ProductVersion` to status ([#167]).
 - Added `Condition` to status ([#167]).
 
+### Changed
+
+- `kube-rs`: `0.58` → `0.60` ([#167]).
+- `k8s-openapi` `0.12` → `0.13` and features: `v1_21` → `v1_22` ([#167]).
+- `operator-rs` `0.2.1` → `0.2.2` ([#167]).
+- `stackable-zookeeper-crd`: `0.2.0` → `0.4.0` ([#167]).
+- `stackable-opa-crd`: `0.2.0` → `0.4.0` ([#167]).
+
+### Removed
+
+- `kube-runtime` dependency ([#167]).
+
 [#167]: https://github.com/stackabletech/kafka-operator/pull/167
 
 ## [0.2.1] - 2021-09-14
