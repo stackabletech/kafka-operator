@@ -1556,7 +1556,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "stackable-opa-crd",
- "stackable-operator",
+ "stackable-operator 0.1.0",
  "stackable-zookeeper-crd",
  "strum",
  "strum_macros",
@@ -1576,7 +1576,7 @@ dependencies = [
  "serde_json",
  "stackable-kafka-crd",
  "stackable-opa-crd",
- "stackable-operator",
+ "stackable-operator 0.1.0",
  "stackable-zookeeper-crd",
  "strum",
  "strum_macros",
@@ -1594,7 +1594,7 @@ dependencies = [
  "k8s-openapi",
  "stackable-kafka-crd",
  "stackable-kafka-operator",
- "stackable-operator",
+ "stackable-operator 0.1.0",
  "tokio",
  "tracing",
 ]
@@ -1611,7 +1611,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "stackable-operator",
+ "stackable-operator 0.1.0",
  "strum",
  "strum_macros",
  "thiserror",
@@ -1654,9 +1654,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "stackable-operator"
+version = "0.2.1"
+source = "git+https://github.com/stackabletech/operator-rs.git?tag=0.2.1#744788b550884aaebe26567b40841b0efc4a7452"
+dependencies = [
+ "async-trait",
+ "backoff",
+ "chrono",
+ "clap",
+ "const_format",
+ "either",
+ "futures",
+ "json-patch",
+ "k8s-openapi",
+ "kube",
+ "kube-runtime",
+ "lazy_static",
+ "product-config",
+ "rand",
+ "regex",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "strum",
+ "strum_macros",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "stackable-zookeeper-crd"
-version = "0.2.0"
-source = "git+https://github.com/stackabletech/zookeeper-operator.git?tag=0.2.0#f327118230b474bdedd29d6e89c70a4ee545f7e8"
+version = "0.3.0"
+source = "git+https://github.com/stackabletech/zookeeper-operator.git?tag=0.3.0#68b563167b29e1e34fc432a5f91d9d76bedd20a7"
 dependencies = [
  "k8s-openapi",
  "kube",
@@ -1665,7 +1699,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "stackable-operator",
+ "stackable-operator 0.2.1",
  "strum",
  "strum_macros",
  "thiserror",
