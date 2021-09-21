@@ -1556,7 +1556,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "stackable-opa-crd",
- "stackable-operator",
+ "stackable-operator 0.1.0",
  "stackable-zookeeper-crd",
  "strum",
  "strum_macros",
@@ -1576,7 +1576,7 @@ dependencies = [
  "serde_json",
  "stackable-kafka-crd",
  "stackable-opa-crd",
- "stackable-operator",
+ "stackable-operator 0.1.0",
  "stackable-zookeeper-crd",
  "strum",
  "strum_macros",
@@ -1594,24 +1594,25 @@ dependencies = [
  "k8s-openapi",
  "stackable-kafka-crd",
  "stackable-kafka-operator",
- "stackable-operator",
+ "stackable-operator 0.1.0",
  "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "stackable-opa-crd"
-version = "0.2.0"
-source = "git+https://github.com/stackabletech/opa-operator.git?tag=0.2.0#ad3e7b7b5e3341d0daf5bf5946545428a502b5e1"
+version = "0.3.0"
+source = "git+https://github.com/stackabletech/opa-operator.git?tag=0.3.0#8cf75afb26bb49e54c27848cdc3f5dca92c14934"
 dependencies = [
  "k8s-openapi",
  "kube",
  "kube-runtime",
  "rand",
  "schemars",
+ "semver",
  "serde",
  "serde_json",
- "stackable-operator",
+ "stackable-operator 0.2.0",
  "strum",
  "strum_macros",
  "thiserror",
@@ -1654,6 +1655,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "stackable-operator"
+version = "0.2.0"
+source = "git+https://github.com/stackabletech/operator-rs.git?tag=0.2.0#e6486e8c134bf7c527b869725a9d7fa2d5f6ec36"
+dependencies = [
+ "async-trait",
+ "backoff",
+ "chrono",
+ "clap",
+ "const_format",
+ "either",
+ "futures",
+ "json-patch",
+ "k8s-openapi",
+ "kube",
+ "kube-runtime",
+ "lazy_static",
+ "product-config",
+ "rand",
+ "regex",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "strum",
+ "strum_macros",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "stackable-zookeeper-crd"
 version = "0.2.0"
 source = "git+https://github.com/stackabletech/zookeeper-operator.git?tag=0.2.0#f327118230b474bdedd29d6e89c70a4ee545f7e8"
@@ -1665,7 +1700,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "stackable-operator",
+ "stackable-operator 0.1.0",
  "strum",
  "strum_macros",
  "thiserror",
