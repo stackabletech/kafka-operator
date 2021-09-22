@@ -1,10 +1,10 @@
 [Unit]
-Description=Stackable Kafka Operator
+Description=Stackable Operator for Apache Kafka
 Before=
 After=network.target
 [Service]
 User=root
-ExecStart=/opt/stackable/kafka-operator/stackable-kafka-operator-server
+ExecStart=/opt/stackable/kafka-operator/stackable-kafka-operator
 Restart=on-abort
 StandardOutput=journal
 StandardError=journal
