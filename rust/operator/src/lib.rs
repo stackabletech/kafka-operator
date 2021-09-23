@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Pod};
 use kube::api::ListParams;
 use kube::Api;
+use kube::CustomResourceExt;
 use kube::ResourceExt;
 use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
@@ -36,6 +37,8 @@ use stackable_operator::role_utils::{
     find_nodes_that_fit_selectors, get_role_and_group_labels,
     list_eligible_nodes_for_role_and_group, EligibleNodesForRoleAndGroup,
 };
+use stackable_operator::status::init_status;
+use stackable_operator::versioning::{finalize_versioning, init_versioning};
 use stackable_operator::{configmap, k8s_utils};
 use stackable_zookeeper_crd::util::ZookeeperConnectionInformation;
 use std::collections::{BTreeMap, HashMap};
@@ -45,7 +48,7 @@ use std::string::ToString;
 use std::sync::Arc;
 use std::time::Duration;
 use strum::IntoEnumIterator;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 type KafkaReconcileResult = ReconcileResult<error::Error>;
 
@@ -57,7 +60,6 @@ const CONFIG_MAP_NODE_NAME_LABEL: &str = "kafka.stackable.tech/node_name";
 
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
-    kafka_cluster: KafkaCluster,
     zookeeper_info: Option<ZookeeperConnectionInformation>,
     existing_pods: Vec<Pod>,
     eligible_nodes: EligibleNodesForRoleAndGroup,
@@ -65,6 +67,19 @@ struct KafkaState {
 }
 
 impl KafkaState {
+    /// Will initialize the status object if it's never been set.
+    async fn init_status(&mut self) -> KafkaReconcileResult {
+        // init status with default values if not available yet.
+        self.context.resource = init_status(&self.context.client, &self.context.resource).await?;
+
+        let spec_version = self.context.resource.spec.version.clone();
+
+        self.context.resource =
+            init_versioning(&self.context.client, &self.context.resource, spec_version).await?;
+
+        Ok(ReconcileFunctionAction::Continue)
+    }
+
     async fn get_zookeeper_connection_information(&mut self) -> KafkaReconcileResult {
         let zk_ref: &stackable_zookeeper_crd::util::ZookeeperReference =
             &self.context.resource.spec.zookeeper_reference;
@@ -134,7 +149,7 @@ impl KafkaState {
         //   - Role groups for this role (user defined)
         for role in KafkaRole::iter() {
             if let Some(nodes_for_role) = self.eligible_nodes.get(&role.to_string()) {
-                for (role_group, (nodes, replicas)) in nodes_for_role {
+                for (role_group, eligible_nodes) in nodes_for_role {
                     let role_str = &role.to_string();
                     debug!(
                         "Identify missing pods for [{}] role and group [{}]",
@@ -142,8 +157,9 @@ impl KafkaState {
                     );
                     trace!(
                         "candidate_nodes[{}]: [{:?}]",
-                        nodes.len(),
-                        nodes
+                        eligible_nodes.nodes.len(),
+                        eligible_nodes
+                            .nodes
                             .iter()
                             .map(|node| node.metadata.name.as_ref().unwrap())
                             .collect::<Vec<_>>()
@@ -162,10 +178,10 @@ impl KafkaState {
                         get_role_and_group_labels(role_str, role_group)
                     );
                     let nodes_that_need_pods = k8s_utils::find_nodes_that_need_pods(
-                        nodes,
+                        &eligible_nodes.nodes,
                         &self.existing_pods,
                         &get_role_and_group_labels(role_str, role_group),
-                        *replicas,
+                        eligible_nodes.replicas,
                     );
 
                     for node in nodes_that_need_pods {
@@ -211,6 +227,12 @@ impl KafkaState {
                 }
             }
         }
+
+        // If we reach here it means all pods must be running on target_version.
+        // We can now set current_version to target_version (if target_version was set) and
+        // target_version to None
+        finalize_versioning(&self.context.client, &self.context.resource).await?;
+
         Ok(ReconcileFunctionAction::Continue)
     }
 
@@ -274,7 +296,7 @@ impl KafkaState {
             // We cannot query for the opa info as we do for zookeeper (meaning once at the start
             // of the reconcile method), since we need the node_name to potentially find matches on
             // the same machine for performance increase (which requires the node_name).
-            if let Some(opa_config) = &self.kafka_cluster.spec.opa {
+            if let Some(opa_config) = &self.context.resource.spec.opa {
                 // If we use opa we need to differentiate the configmaps via the node_name. We need
                 // to create a configmap per node to point to the local installed opa instance if
                 // available. Therefore we add an extra node name to the recommended labels here.
@@ -479,8 +501,13 @@ impl ReconciliationState for KafkaState {
         debug!("Deletion Labels: [{:?}]", &self.required_pod_labels());
 
         Box::pin(async move {
-            self.context
-                .handle_deletion(Box::pin(self.delete_all_pods()), FINALIZER_NAME, true)
+            self.init_status()
+                .await?
+                .then(self.context.handle_deletion(
+                    Box::pin(self.delete_all_pods()),
+                    FINALIZER_NAME,
+                    true,
+                ))
                 .await?
                 .then(self.get_zookeeper_connection_information())
                 .await?
@@ -552,7 +579,6 @@ impl ControllerStrategy for KafkaStrategy {
 
         Ok(KafkaState {
             validated_role_config: validated_product_config(&context.resource, &self.config)?,
-            kafka_cluster: context.resource.clone(),
             context,
             zookeeper_info: None,
             existing_pods,
@@ -589,6 +615,17 @@ pub fn validated_product_config(
 }
 
 pub async fn create_controller(client: Client, product_config_path: &str) -> OperatorResult<()> {
+    if let Err(error) = stackable_operator::crd::wait_until_crds_present(
+        &client,
+        vec![KafkaCluster::crd_name()],
+        None,
+    )
+    .await
+    {
+        error!("Required CRDs missing, aborting: {:?}", error);
+        return Err(error);
+    };
+
     let kafka_api: Api<KafkaCluster> = client.get_all_api();
     let pods_api: Api<Pod> = client.get_all_api();
     let config_maps_api: Api<ConfigMap> = client.get_all_api();

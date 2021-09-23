@@ -1,10 +1,18 @@
+mod error;
+
+use error::Error;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
 use kube::CustomResource;
 use schemars::JsonSchema;
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use stackable_opa_crd::util::OpaReference;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
 use stackable_operator::role_utils::Role;
+use stackable_operator::status::{Conditions, Status, Versioned};
+use stackable_operator::versioning::{ProductVersion, Versioning, VersioningState};
 use stackable_zookeeper_crd::util::ZookeeperReference;
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -38,6 +46,15 @@ pub struct KafkaClusterSpec {
     pub opa: Option<OpaConfig>,
 }
 
+impl Status<KafkaClusterStatus> for KafkaCluster {
+    fn status(&self) -> &Option<KafkaClusterStatus> {
+        &self.status
+    }
+    fn status_mut(&mut self) -> &mut Option<KafkaClusterStatus> {
+        &mut self.status
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 /// Contains all data to combine with OPA. The "opa.authorizer.url" is set dynamically in
@@ -51,7 +68,7 @@ pub struct OpaConfig {
     pub authorizer_cache_expire_after_seconds: Option<usize>,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct KafkaVersion {
     kafka_version: String,
     scala_version: Option<String>,
@@ -59,6 +76,7 @@ pub struct KafkaVersion {
 
 impl KafkaVersion {
     pub const DEFAULT_SCALA_VERSION: &'static str = "2.13";
+    pub const SUPPORTED_SCALA_VERSIONS: [&'static str; 2] = ["2.12", "2.13"];
 
     pub fn kafka_version(&self) -> &str {
         &self.kafka_version
@@ -72,6 +90,55 @@ impl KafkaVersion {
 
     pub fn fully_qualified_version(&self) -> String {
         format!("{}-{}", self.scala_version(), self.kafka_version())
+    }
+
+    pub fn parse(&self) -> Result<(String, Version), error::Error> {
+        // TODO: careful with the string comparison. Works for 2.12 and 2.13.
+        //   will fail for 2.2 and 2.13. At this point we need a smarter comparison.
+        if !Self::SUPPORTED_SCALA_VERSIONS.contains(&self.scala_version()) {
+            return Err(Error::ScalaVersionNotSupported {
+                scala_version: self.scala_version().to_string(),
+                full_version: self.fully_qualified_version(),
+                supported_versions: &Self::SUPPORTED_SCALA_VERSIONS,
+            });
+        }
+
+        match Version::parse(self.kafka_version()) {
+            Ok(kafka_version) => Ok((self.scala_version().to_string(), kafka_version)),
+            Err(err) => Err(Error::KafkaVersionNotParseable {
+                version: self.fully_qualified_version(),
+                error: err.to_string(),
+            }),
+        }
+    }
+}
+
+impl Versioning for KafkaVersion {
+    fn versioning_state(&self, other: &Self) -> VersioningState {
+        let (from_scala, from_kafka) = match self.parse() {
+            Ok((scala, kafka)) => (scala, kafka),
+            Err(err) => return VersioningState::Invalid(err.to_string()),
+        };
+
+        let (to_scala, to_kafka) = match other.parse() {
+            Ok((scala, kafka)) => (scala, kafka),
+            Err(err) => return VersioningState::Invalid(err.to_string()),
+        };
+
+        match (from_scala.cmp(&to_scala), from_kafka.cmp(&to_kafka)) {
+            // scala version, kafka_version
+            (Ordering::Equal, Ordering::Equal) => VersioningState::NoOp,
+
+            (Ordering::Less, Ordering::Less)
+            | (Ordering::Less, Ordering::Equal)
+            | (Ordering::Equal, Ordering::Less)
+            | (Ordering::Greater, Ordering::Less) => VersioningState::ValidUpgrade,
+
+            (Ordering::Less, Ordering::Greater)
+            | (Ordering::Equal, Ordering::Greater)
+            | (Ordering::Greater, Ordering::Equal)
+            | (Ordering::Greater, Ordering::Greater) => VersioningState::ValidDowngrade,
+        }
     }
 }
 
@@ -87,7 +154,30 @@ pub enum KafkaRole {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
-pub struct KafkaClusterStatus {}
+pub struct KafkaClusterStatus {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<Condition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<ProductVersion<KafkaVersion>>,
+}
+
+impl Versioned<KafkaVersion> for KafkaClusterStatus {
+    fn version(&self) -> &Option<ProductVersion<KafkaVersion>> {
+        &self.version
+    }
+    fn version_mut(&mut self) -> &mut Option<ProductVersion<KafkaVersion>> {
+        &mut self.version
+    }
+}
+
+impl Conditions for KafkaClusterStatus {
+    fn conditions(&self) -> &[Condition] {
+        self.conditions.as_slice()
+    }
+    fn conditions_mut(&mut self) -> &mut Vec<Condition> {
+        &mut self.conditions
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -189,5 +279,132 @@ mod tests {
         let version: KafkaVersion =
             serde_yaml::from_str(input).expect("deserializing a known-good value should not fail!");
         assert_eq!(version.fully_qualified_version(), expected_output);
+    }
+
+    #[rstest]
+    #[case::no_scala_version(
+        "
+        kafka_version: 2.6.0
+      ",
+        true
+    )]
+    #[case::with_scala_version(
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.12
+      ",
+        true
+    )]
+    #[case::with_wrong_scala_version(
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.11
+      ",
+        false
+    )]
+    #[case::with_wrong_kafka_version(
+        "
+        kafka_version: 2#.8.0
+        scala_version: 2.12
+      ",
+        false
+    )]
+    fn test_parse_version(#[case] input: &str, #[case] expected_output: bool) {
+        let version: KafkaVersion =
+            serde_yaml::from_str(input).expect("deserializing a known-good value should not fail!");
+
+        assert_eq!(version.parse().is_ok(), expected_output)
+    }
+
+    #[rstest]
+    #[case::versioning_no_op(
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.12
+      ",
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.12
+      ",
+        VersioningState::NoOp
+    )]
+    #[case::versioning_upgrade_scala(
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.12
+      ",
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.13
+      ",
+        VersioningState::ValidUpgrade
+    )]
+    #[case::versioning_upgrade_kafka(
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.12
+      ",
+        "
+        kafka_version: 2.9.0
+        scala_version: 2.12
+      ",
+        VersioningState::ValidUpgrade
+    )]
+    #[case::versioning_upgrade_kafka_scala_lower(
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.13
+      ",
+        "
+        kafka_version: 2.9.0
+        scala_version: 2.12
+      ",
+        VersioningState::ValidUpgrade
+    )]
+    #[case::versioning_downgrade_scala(
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.13
+      ",
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.12
+      ",
+        VersioningState::ValidDowngrade
+    )]
+    #[case::versioning_downgrade_kafka(
+        "
+        kafka_version: 2.9.0
+        scala_version: 2.12
+      ",
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.12
+      ",
+        VersioningState::ValidDowngrade
+    )]
+    #[case::versioning_downgrade_kafka_scala_higher(
+        "
+        kafka_version: 2.9.0
+        scala_version: 2.12
+      ",
+        "
+        kafka_version: 2.8.0
+        scala_version: 2.13
+      ",
+        VersioningState::ValidDowngrade
+    )]
+    fn test_versioning_state(
+        #[case] from_version: &str,
+        #[case] to_version: &str,
+        #[case] expected_output: VersioningState,
+    ) {
+        let from: KafkaVersion = serde_yaml::from_str(from_version)
+            .expect("deserializing a known-good value should not fail!");
+
+        let to: KafkaVersion = serde_yaml::from_str(to_version)
+            .expect("deserializing a known-good value should not fail!");
+
+        assert_eq!(from.versioning_state(&to), expected_output);
     }
 }

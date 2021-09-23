@@ -1,8 +1,6 @@
 use clap::{crate_version, App, AppSettings, SubCommand};
 use stackable_kafka_crd::KafkaCluster;
-use stackable_operator::crd::CustomResourceExt;
 use stackable_operator::{cli, client, error};
-use tracing::error;
 
 mod built_info {
     // The file has been placed there by the build script.
@@ -50,17 +48,6 @@ async fn main() -> Result<(), error::Error> {
     );
 
     let client = client::create_client(Some(FIELD_MANAGER.to_string())).await?;
-
-    if let Err(error) = stackable_operator::crd::wait_until_crds_present(
-        &client,
-        vec![&KafkaCluster::crd_name()],
-        None,
-    )
-    .await
-    {
-        error!("Required CRDs missing, aborting: {:?}", error);
-        return Err(error);
-    };
 
     stackable_kafka_operator::create_controller(client, &product_config_path).await?;
     Ok(())
