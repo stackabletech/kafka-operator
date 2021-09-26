@@ -19,8 +19,12 @@ use stackable_operator::builder::{
     ContainerBuilder, ContainerPortBuilder, ObjectMetaBuilder, PodBuilder,
 };
 use stackable_operator::client::Client;
+use stackable_operator::configmap;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::error::OperatorResult;
+use stackable_operator::identity::{
+    LabeledPodIdentityFactory, NodeIdentity, PodIdentity, PodToNodeMapping,
+};
 use stackable_operator::labels::{
     build_common_labels_for_all_managed_resources, get_recommended_labels, APP_COMPONENT_LABEL,
     APP_INSTANCE_LABEL, APP_MANAGED_BY_LABEL, APP_NAME_LABEL, APP_VERSION_LABEL,
@@ -37,9 +41,11 @@ use stackable_operator::role_utils::{
     find_nodes_that_fit_selectors, get_role_and_group_labels,
     list_eligible_nodes_for_role_and_group, EligibleNodesForRoleAndGroup,
 };
+use stackable_operator::scheduler::{
+    K8SUnboundedHistory, RoleGroupEligibleNodes, ScheduleStrategy, Scheduler, StickyScheduler,
+};
 use stackable_operator::status::init_status;
 use stackable_operator::versioning::{finalize_versioning, init_versioning};
-use stackable_operator::{configmap, k8s_utils};
 use stackable_zookeeper_crd::util::ZookeeperConnectionInformation;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
@@ -57,6 +63,7 @@ const SHOULD_BE_SCRAPED: &str = "monitoring.stackable.tech/should_be_scraped";
 const CONFIG_DIR: &str = "config";
 const CONFIG_MAP_TYPE_CONFIG: &str = "properties";
 const CONFIG_MAP_NODE_NAME_LABEL: &str = "kafka.stackable.tech/node_name";
+const ID_LABEL: &str = "spark.stackable.tech/id";
 
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
@@ -177,50 +184,63 @@ impl KafkaState {
                         "labels: [{:?}]",
                         get_role_and_group_labels(role_str, role_group)
                     );
-                    let nodes_that_need_pods = k8s_utils::find_nodes_that_need_pods(
-                        &eligible_nodes.nodes,
-                        &self.existing_pods,
-                        &get_role_and_group_labels(role_str, role_group),
-                        eligible_nodes.replicas,
+
+                    let mut history = match self
+                        .context
+                        .resource
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.history.as_ref())
+                    {
+                        Some(simple_history) => {
+                            // we clone here because we cannot access mut self because we need it later
+                            // to create config maps and pods. The `status` history will be out of sync
+                            // with the cloned `simple_history` until the next reconcile.
+                            // The `status` history should not be used after this method to avoid side
+                            // effects.
+                            K8SUnboundedHistory::new(&self.context.client, simple_history.clone())
+                        }
+                        None => K8SUnboundedHistory::new(
+                            &self.context.client,
+                            PodToNodeMapping::default(),
+                        ),
+                    };
+
+                    let mut sticky_scheduler =
+                        StickyScheduler::new(&mut history, ScheduleStrategy::GroupAntiAffinity);
+
+                    let pod_id_factory = LabeledPodIdentityFactory::new(
+                        APP_NAME,
+                        &self.context.name(),
+                        &self.eligible_nodes,
+                        ID_LABEL,
+                        1,
                     );
 
-                    for node in nodes_that_need_pods {
-                        let node_name = if let Some(node_name) = &node.metadata.name {
-                            node_name
-                        } else {
-                            warn!("No name found in metadata, this should not happen! Skipping node: [{:?}]", node);
-                            continue;
-                        };
+                    let state = sticky_scheduler.schedule(
+                        &pod_id_factory,
+                        &RoleGroupEligibleNodes::from(&self.eligible_nodes),
+                        &self.existing_pods,
+                    )?;
 
-                        debug!(
-                            "Creating pod on node [{}] for [{}] role and group [{}]",
-                            node.metadata
-                                .name
-                                .as_deref()
-                                .unwrap_or("<no node name found>"),
-                            role_str,
-                            role_group
-                        );
+                    let mapping = state.remaining_mapping().get_filtered(role_str, role_group);
 
+                    if let Some((pod_id, node_id)) = mapping.iter().next() {
                         // now we have a node that needs a pod -> get validated config
                         let validated_config = config_for_role_and_group(
-                            role_str,
-                            role_group,
+                            pod_id.role(),
+                            pod_id.group(),
                             &self.validated_role_config,
                         )?;
 
                         let config_maps = self
-                            .create_config_maps(role_str, role_group, node_name, validated_config)
+                            .create_config_maps(pod_id, node_id, validated_config)
                             .await?;
 
-                        self.create_pod(
-                            role_str,
-                            role_group,
-                            node_name,
-                            &config_maps,
-                            validated_config,
-                        )
-                        .await?;
+                        self.create_pod(pod_id, node_id, &config_maps, validated_config)
+                            .await?;
+
+                        history.save(&self.context.resource).await?;
 
                         return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
                     }
@@ -256,19 +276,18 @@ impl KafkaState {
     ///
     async fn create_config_maps(
         &self,
-        role: &str,
-        group: &str,
-        node_name: &str,
+        pod_id: &PodIdentity,
+        node_id: &NodeIdentity,
         validated_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     ) -> Result<HashMap<&'static str, ConfigMap>, Error> {
         let mut config_maps = HashMap::new();
 
         let recommended_labels = get_recommended_labels(
             &self.context.resource,
-            APP_NAME,
+            pod_id.app(),
             &self.context.resource.spec.version.to_string(),
-            role,
-            group,
+            pod_id.role(),
+            pod_id.group(),
         );
 
         if let Some(config) =
@@ -300,10 +319,8 @@ impl KafkaState {
                 // If we use opa we need to differentiate the configmaps via the node_name. We need
                 // to create a configmap per node to point to the local installed opa instance if
                 // available. Therefore we add an extra node name to the recommended labels here.
-                cm_properties_labels.insert(
-                    CONFIG_MAP_NODE_NAME_LABEL.to_string(),
-                    node_name.to_string(),
-                );
+                cm_properties_labels
+                    .insert(CONFIG_MAP_NODE_NAME_LABEL.to_string(), node_id.name.clone());
 
                 let opa_api = OpaApi::Data {
                     package_path: "kafka/authz".to_string(),
@@ -315,7 +332,7 @@ impl KafkaState {
                     &opa_config.reference,
                     &opa_api,
                     &OpaApiProtocol::Http,
-                    Some(node_name.to_string()),
+                    Some(node_id.name.clone()),
                 )
                 .await?;
 
@@ -345,11 +362,11 @@ impl KafkaState {
             cm_properties_data.insert(SERVER_PROPERTIES_FILE.to_string(), data_string);
 
             let cm_properties_name = name_utils::build_resource_name(
-                APP_NAME,
+                pod_id.app(),
                 &self.context.name(),
-                role,
-                Some(group),
-                Some(node_name),
+                pod_id.role(),
+                Some(pod_id.group()),
+                Some(node_id.name.as_str()),
                 Some(CONFIG_MAP_TYPE_CONFIG),
             )?;
 
@@ -382,9 +399,8 @@ impl KafkaState {
     ///
     async fn create_pod(
         &self,
-        role: &str,
-        group: &str,
-        node_name: &str,
+        pod_id: &PodIdentity,
+        node_id: &NodeIdentity,
         config_maps: &HashMap<&'static str, ConfigMap>,
         validated_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     ) -> Result<Pod, Error> {
@@ -423,15 +439,21 @@ impl KafkaState {
         }
 
         let pod_name = name_utils::build_resource_name(
-            APP_NAME,
+            pod_id.app(),
             &self.context.name(),
-            role,
-            Some(group),
-            Some(node_name),
+            pod_id.role(),
+            Some(pod_id.group()),
+            Some(node_id.name.as_str()),
             None,
         )?;
 
-        let labels = get_recommended_labels(&self.context.resource, APP_NAME, version, role, group);
+        let labels = get_recommended_labels(
+            &self.context.resource,
+            APP_NAME,
+            version,
+            pod_id.role(),
+            pod_id.group(),
+        );
 
         let mut container_builder = ContainerBuilder::new(APP_NAME);
         container_builder.image(format!("stackable/kafka:{}", &version));
@@ -483,7 +505,7 @@ impl KafkaState {
             )
             .add_stackable_agent_tolerations()
             .add_container(container_builder.build())
-            .node_name(node_name)
+            .node_name(node_id.name.clone())
             .build()?;
 
         Ok(self.context.client.create(&pod).await?)
