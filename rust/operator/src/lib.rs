@@ -223,7 +223,12 @@ impl KafkaState {
                         &self.existing_pods,
                     )?;
 
-                    let mapping = state.remaining_mapping().filter(APP_NAME, &self.context.name(), role_str, role_group);
+                    let mapping = state.remaining_mapping().filter(
+                        APP_NAME,
+                        &self.context.name(),
+                        role_str,
+                        role_group,
+                    );
 
                     if let Some((pod_id, node_id)) = mapping.iter().next() {
                         // now we have a node that needs a pod -> get validated config
