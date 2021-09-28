@@ -63,7 +63,7 @@ const SHOULD_BE_SCRAPED: &str = "monitoring.stackable.tech/should_be_scraped";
 const CONFIG_DIR: &str = "config";
 const CONFIG_MAP_TYPE_CONFIG: &str = "properties";
 const CONFIG_MAP_NODE_NAME_LABEL: &str = "kafka.stackable.tech/node_name";
-const ID_LABEL: &str = "spark.stackable.tech/id";
+const ID_LABEL: &str = "kafka.stackable.tech/id";
 
 struct KafkaState {
     context: ReconciliationContext<KafkaCluster>,
@@ -223,7 +223,7 @@ impl KafkaState {
                         &self.existing_pods,
                     )?;
 
-                    let mapping = state.remaining_mapping().get_filtered(role_str, role_group);
+                    let mapping = state.remaining_mapping().filter(APP_NAME, &self.context.name(), role_str, role_group);
 
                     if let Some((pod_id, node_id)) = mapping.iter().next() {
                         // now we have a node that needs a pod -> get validated config
