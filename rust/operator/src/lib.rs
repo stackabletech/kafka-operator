@@ -452,13 +452,14 @@ impl KafkaState {
             None,
         )?;
 
-        let labels = get_recommended_labels(
+        let mut labels = get_recommended_labels(
             &self.context.resource,
             APP_NAME,
             version,
             pod_id.role(),
             pod_id.group(),
         );
+        labels.insert(String::from(ID_LABEL), String::from(pod_id.id()));
 
         let mut container_builder = ContainerBuilder::new(APP_NAME);
         container_builder.image(format!("stackable/kafka:{}", &version));
