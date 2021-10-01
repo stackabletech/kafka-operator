@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Added versioning code from operator-rs for up and downgrades ([#167]).
 - Added `ProductVersion` to status ([#167]).
 - Added `Condition` to status ([#167]).
+- Use sticky scheduler ([#181])
 
 ### Changed
 
@@ -22,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - `kube-runtime` dependency ([#167]).
 
 [#167]: https://github.com/stackabletech/kafka-operator/pull/167
+[#181]: https://github.com/stackabletech/kafka-operator/pull/181
 
 ## [0.2.1] - 2021-09-14
 

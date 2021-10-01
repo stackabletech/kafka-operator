@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use stackable_opa_crd::util::OpaReference;
+use stackable_operator::identity::PodToNodeMapping;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
 use stackable_operator::role_utils::Role;
 use stackable_operator::status::{Conditions, Status, Versioned};
@@ -159,6 +160,8 @@ pub struct KafkaClusterStatus {
     pub conditions: Vec<Condition>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<ProductVersion<KafkaVersion>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history: Option<PodToNodeMapping>,
 }
 
 impl Versioned<KafkaVersion> for KafkaClusterStatus {
