@@ -1190,6 +1190,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "product-config"
+version = "0.2.0-nightly"
+source = "git+https://github.com/stackabletech/product-config.git?branch=main#53c4bac3aa52bf61f5cef4fc47447be67749c3ce"
+dependencies = [
+ "java-properties",
+ "regex",
+ "schemars",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+ "xml-rs",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1607,7 +1623,7 @@ dependencies = [
  "futures",
  "k8s-openapi",
  "kube",
- "product-config",
+ "product-config 0.1.0",
  "serde",
  "serde_json",
  "stackable-kafka-crd",
@@ -1658,7 +1674,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.2.3-nightly"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#79cec28c4c3f0a4738e75a7b7192dc8429299d5e"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#8bda7ca941797a5f7a3fe56080d316d1f99dbe45"
 dependencies = [
  "async-trait",
  "backoff",
@@ -1672,7 +1688,7 @@ dependencies = [
  "kube",
  "kube-runtime",
  "lazy_static",
- "product-config",
+ "product-config 0.2.0-nightly",
  "rand",
  "regex",
  "schemars",
@@ -1697,7 +1713,7 @@ dependencies = [
  "duplicate",
  "k8s-openapi",
  "kube",
- "product-config",
+ "product-config 0.1.0",
  "schemars",
  "semver",
  "serde",
@@ -2247,6 +2263,12 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "xml-rs"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2d7d3948613f75c98fd9328cfdcc45acc4d360655289d0a7d4ec931392200a3"
 
 [[package]]
 name = "yaml-rust"
