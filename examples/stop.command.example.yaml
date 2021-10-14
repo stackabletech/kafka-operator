@@ -1,0 +1,7 @@
+apiVersion: command.kafka.stackable.tech/v1alpha1
+kind: Stop
+metadata:
+  name: kafka-cluster-command-stop
+spec:
+  name: "simple"
+  rolling: true

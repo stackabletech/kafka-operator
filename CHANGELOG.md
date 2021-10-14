@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Added `ProductVersion` to status ([#167]).
 - Added `Condition` to status ([#167]).
 - Use sticky scheduler ([#181])
+- Added support for Start, Stop Restart commands ([#194]).
 
 ### Changed
 
@@ -17,6 +18,8 @@ All notable changes to this project will be documented in this file.
 - `operator-rs` `0.2.1` → `0.2.2` ([#167]).
 - `stackable-zookeeper-crd`: `0.2.0` → `0.4.0` ([#167]).
 - `stackable-opa-crd`: `0.2.0` → `0.4.0` ([#167]).
+- `stackable-zookeeper-crd::util` to `stackable-zookeeper-crd::discovery` ([#194]).
+- Moved CRD availability check to operator-binary ([#194]).
 
 ### Removed
 
@@ -24,6 +27,7 @@ All notable changes to this project will be documented in this file.
 
 [#167]: https://github.com/stackabletech/kafka-operator/pull/167
 [#181]: https://github.com/stackabletech/kafka-operator/pull/181
+[#194]: https://github.com/stackabletech/kafka-operator/pull/194
 
 ## [0.2.1] - 2021-09-14
 
