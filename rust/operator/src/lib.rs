@@ -5,10 +5,10 @@ use async_trait::async_trait;
 use k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Pod};
 use kube::api::ListParams;
 use kube::Api;
-use kube::CustomResourceExt;
 use kube::ResourceExt;
 use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
+use stackable_kafka_crd::commands::{Restart, Start, Stop};
 use stackable_kafka_crd::{
     KafkaCluster, KafkaRole, APP_NAME, MANAGED_BY, METRICS_PORT, SERVER_PROPERTIES_FILE,
     ZOOKEEPER_CONNECT,
@@ -19,6 +19,7 @@ use stackable_operator::builder::{
     ContainerBuilder, ContainerPortBuilder, ObjectMetaBuilder, PodBuilder,
 };
 use stackable_operator::client::Client;
+use stackable_operator::command::materialize_command;
 use stackable_operator::configmap;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::error::OperatorResult;
@@ -44,9 +45,10 @@ use stackable_operator::role_utils::{
 use stackable_operator::scheduler::{
     K8SUnboundedHistory, RoleGroupEligibleNodes, ScheduleStrategy, Scheduler, StickyScheduler,
 };
-use stackable_operator::status::init_status;
+use stackable_operator::status::HasClusterExecutionStatus;
+use stackable_operator::status::{init_status, ClusterExecutionStatus};
 use stackable_operator::versioning::{finalize_versioning, init_versioning};
-use stackable_zookeeper_crd::util::ZookeeperConnectionInformation;
+use stackable_zookeeper_crd::discovery::ZookeeperConnectionInformation;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
@@ -84,20 +86,36 @@ impl KafkaState {
         self.context.resource =
             init_versioning(&self.context.client, &self.context.resource, spec_version).await?;
 
+        // set the cluster status to running
+        if self.context.resource.cluster_execution_status().is_none() {
+            self.context
+                .client
+                .merge_patch_status(
+                    &self.context.resource,
+                    &self
+                        .context
+                        .resource
+                        .cluster_execution_status_patch(&ClusterExecutionStatus::Running),
+                )
+                .await?;
+        }
+
         Ok(ReconcileFunctionAction::Continue)
     }
 
     async fn get_zookeeper_connection_information(&mut self) -> KafkaReconcileResult {
-        let zk_ref: &stackable_zookeeper_crd::util::ZookeeperReference =
+        let zk_ref: &stackable_zookeeper_crd::discovery::ZookeeperReference =
             &self.context.resource.spec.zookeeper_reference;
 
         if let Some(chroot) = zk_ref.chroot.as_deref() {
-            stackable_zookeeper_crd::util::is_valid_zookeeper_path(chroot)?;
+            stackable_zookeeper_crd::discovery::is_valid_zookeeper_path(chroot)?;
         }
 
-        let zookeeper_info =
-            stackable_zookeeper_crd::util::get_zk_connection_info(&self.context.client, zk_ref)
-                .await?;
+        let zookeeper_info = stackable_zookeeper_crd::discovery::get_zk_connection_info(
+            &self.context.client,
+            zk_ref,
+        )
+        .await?;
 
         debug!(
             "Received ZooKeeper connect string: [{}]",
@@ -516,6 +534,44 @@ impl KafkaState {
 
         Ok(self.context.client.create(&pod).await?)
     }
+
+    pub async fn process_command(&mut self) -> KafkaReconcileResult {
+        match self.context.retrieve_current_command().await? {
+            // if there is no new command and the execution status is stopped we stop the
+            // reconcile loop here.
+            None => match self.context.resource.cluster_execution_status() {
+                Some(execution_status) if execution_status == ClusterExecutionStatus::Stopped => {
+                    Ok(ReconcileFunctionAction::Done)
+                }
+                _ => Ok(ReconcileFunctionAction::Continue),
+            },
+            Some(command_ref) => match command_ref.kind.as_str() {
+                "Restart" => {
+                    info!("Restarting cluster [{:?}]", command_ref);
+                    let mut restart_command: Restart =
+                        materialize_command(&self.context.client, &command_ref).await?;
+                    Ok(self.context.default_restart(&mut restart_command).await?)
+                }
+                "Start" => {
+                    info!("Starting cluster [{:?}]", command_ref);
+                    let mut start_command: Start =
+                        materialize_command(&self.context.client, &command_ref).await?;
+                    Ok(self.context.default_start(&mut start_command).await?)
+                }
+                "Stop" => {
+                    info!("Stopping cluster [{:?}]", command_ref);
+                    let mut stop_command: Stop =
+                        materialize_command(&self.context.client, &command_ref).await?;
+
+                    Ok(self.context.default_stop(&mut stop_command).await?)
+                }
+                _ => {
+                    error!("Got unknown type of command: [{:?}]", command_ref);
+                    Ok(ReconcileFunctionAction::Done)
+                }
+            },
+        }
+    }
 }
 
 impl ReconciliationState for KafkaState {
@@ -554,6 +610,8 @@ impl ReconciliationState for KafkaState {
                     self.context
                         .wait_for_running_and_ready_pods(self.existing_pods.as_slice()),
                 )
+                .await?
+                .then(self.process_command())
                 .await?
                 .then(self.context.delete_excess_pods(
                     list_eligible_nodes_for_role_and_group(&self.eligible_nodes).as_slice(),
@@ -643,24 +701,19 @@ pub fn validated_product_config(
 }
 
 pub async fn create_controller(client: Client, product_config_path: &str) -> OperatorResult<()> {
-    if let Err(error) = stackable_operator::crd::wait_until_crds_present(
-        &client,
-        vec![KafkaCluster::crd_name()],
-        None,
-    )
-    .await
-    {
-        error!("Required CRDs missing, aborting: {:?}", error);
-        return Err(error);
-    };
-
     let kafka_api: Api<KafkaCluster> = client.get_all_api();
     let pods_api: Api<Pod> = client.get_all_api();
     let config_maps_api: Api<ConfigMap> = client.get_all_api();
+    let cmd_restart_api: Api<Restart> = client.get_all_api();
+    let cmd_start_api: Api<Start> = client.get_all_api();
+    let cmd_stop_api: Api<Stop> = client.get_all_api();
 
     let controller = Controller::new(kafka_api)
         .owns(pods_api, ListParams::default())
-        .owns(config_maps_api, ListParams::default());
+        .owns(config_maps_api, ListParams::default())
+        .owns(cmd_restart_api, ListParams::default())
+        .owns(cmd_start_api, ListParams::default())
+        .owns(cmd_stop_api, ListParams::default());
 
     let product_config = ProductConfigManager::from_yaml_file(product_config_path).unwrap();
 

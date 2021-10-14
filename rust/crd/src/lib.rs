@@ -1,24 +1,35 @@
+pub mod commands;
 mod error;
 
+use commands::{Restart, Start, Stop};
 use error::Error;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
+use kube::api::ApiResource;
 use kube::CustomResource;
+use kube::CustomResourceExt;
 use schemars::JsonSchema;
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use serde_json::Value;
 use stackable_opa_crd::util::OpaReference;
+use stackable_operator::command::{CommandRef, HasCommands, HasRoleRestartOrder};
+use stackable_operator::controller::HasOwned;
+use stackable_operator::crd::HasApplication;
 use stackable_operator::identity::PodToNodeMapping;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
 use stackable_operator::role_utils::Role;
-use stackable_operator::status::{Conditions, Status, Versioned};
+use stackable_operator::status::{
+    ClusterExecutionStatus, Conditions, HasClusterExecutionStatus, HasCurrentCommand, Status,
+    Versioned,
+};
 use stackable_operator::versioning::{ProductVersion, Versioning, VersioningState};
-use stackable_zookeeper_crd::util::ZookeeperReference;
+use stackable_zookeeper_crd::discovery::ZookeeperReference;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use strum_macros::Display;
-use strum_macros::EnumIter;
+use strum_macros::{Display, EnumIter, EnumString};
 
 pub const APP_NAME: &str = "kafka";
 pub const MANAGED_BY: &str = "kafka-operator";
@@ -35,6 +46,7 @@ pub const LOG_DIR: &str = "log.dir";
     group = "kafka.stackable.tech",
     version = "v1alpha1",
     kind = "KafkaCluster",
+    plural = "kafkaclusters",
     shortname = "kafka",
     namespaced
 )]
@@ -53,6 +65,46 @@ impl Status<KafkaClusterStatus> for KafkaCluster {
     }
     fn status_mut(&mut self) -> &mut Option<KafkaClusterStatus> {
         &mut self.status
+    }
+}
+
+impl HasRoleRestartOrder for KafkaCluster {
+    fn get_role_restart_order() -> Vec<String> {
+        vec![KafkaRole::Broker.to_string()]
+    }
+}
+
+impl HasCommands for KafkaCluster {
+    fn get_command_types() -> Vec<ApiResource> {
+        vec![
+            Start::api_resource(),
+            Stop::api_resource(),
+            Restart::api_resource(),
+        ]
+    }
+}
+
+impl HasOwned for KafkaCluster {
+    fn owned_objects() -> Vec<&'static str> {
+        vec![Restart::crd_name(), Start::crd_name(), Stop::crd_name()]
+    }
+}
+
+impl HasApplication for KafkaCluster {
+    fn get_application_name() -> &'static str {
+        APP_NAME
+    }
+}
+
+impl HasClusterExecutionStatus for KafkaCluster {
+    fn cluster_execution_status(&self) -> Option<ClusterExecutionStatus> {
+        self.status
+            .as_ref()
+            .and_then(|status| status.cluster_execution_status.clone())
+    }
+
+    fn cluster_execution_status_patch(&self, execution_status: &ClusterExecutionStatus) -> Value {
+        json!({ "clusterExecutionStatus": execution_status })
     }
 }
 
@@ -149,12 +201,26 @@ impl Display for KafkaVersion {
     }
 }
 
-#[derive(EnumIter, Debug, Display, PartialEq, Eq, Hash)]
+#[derive(
+    Clone,
+    Debug,
+    Deserialize,
+    Display,
+    EnumIter,
+    Eq,
+    Hash,
+    JsonSchema,
+    PartialEq,
+    Serialize,
+    EnumString,
+)]
 pub enum KafkaRole {
+    #[strum(serialize = "broker")]
     Broker,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct KafkaClusterStatus {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conditions: Vec<Condition>,
@@ -162,6 +228,10 @@ pub struct KafkaClusterStatus {
     pub version: Option<ProductVersion<KafkaVersion>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub history: Option<PodToNodeMapping>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_command: Option<CommandRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_execution_status: Option<ClusterExecutionStatus>,
 }
 
 impl Versioned<KafkaVersion> for KafkaClusterStatus {
@@ -179,6 +249,21 @@ impl Conditions for KafkaClusterStatus {
     }
     fn conditions_mut(&mut self) -> &mut Vec<Condition> {
         &mut self.conditions
+    }
+}
+
+impl HasCurrentCommand for KafkaClusterStatus {
+    fn current_command(&self) -> Option<CommandRef> {
+        self.current_command.clone()
+    }
+    fn set_current_command(&mut self, command: CommandRef) {
+        self.current_command = Some(command);
+    }
+    fn clear_current_command(&mut self) {
+        self.current_command = None
+    }
+    fn tracking_location() -> &'static str {
+        "/status/currentCommand"
     }
 }
 
