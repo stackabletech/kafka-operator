@@ -1611,7 +1611,7 @@ dependencies = [
  "stackable-opa-crd",
  "stackable-operator",
  "stackable-zookeeper-crd",
- "strum 0.21.0",
+ "strum 0.22.0",
  "strum_macros 0.22.0",
  "thiserror",
 ]
@@ -1631,7 +1631,7 @@ dependencies = [
  "stackable-opa-crd",
  "stackable-operator",
  "stackable-zookeeper-crd",
- "strum 0.21.0",
+ "strum 0.22.0",
  "strum_macros 0.22.0",
  "thiserror",
  "tokio",
