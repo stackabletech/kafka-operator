@@ -1192,7 +1192,7 @@ dependencies = [
 [[package]]
 name = "product-config"
 version = "0.2.0-nightly"
-source = "git+https://github.com/stackabletech/product-config.git?branch=main#53c4bac3aa52bf61f5cef4fc47447be67749c3ce"
+source = "git+https://github.com/stackabletech/product-config.git?branch=main#97734dfa78c5e96922b2fc99bbd0cf2a1b7ac89d"
 dependencies = [
  "java-properties",
  "regex",
@@ -1656,7 +1656,7 @@ dependencies = [
 [[package]]
 name = "stackable-opa-crd"
 version = "0.4.1-nightly"
-source = "git+https://github.com/stackabletech/opa-operator.git?branch=main#3f0b66d15e04eba568db4a04caac008a97dc8101"
+source = "git+https://github.com/stackabletech/opa-operator.git?branch=main#b6cd74095d15f98d445a5bed1ca3feb564f5c89c"
 dependencies = [
  "k8s-openapi",
  "kube",
@@ -1667,7 +1667,7 @@ dependencies = [
  "serde_json",
  "stackable-operator",
  "strum 0.21.0",
- "strum_macros 0.21.1",
+ "strum_macros 0.22.0",
  "thiserror",
  "tracing",
  "url",
@@ -1676,7 +1676,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.2.3-nightly"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#7965121542135b6c9c1287b0e7b4f9cf32ae7fe2"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#477c489183569db831447f978c8cb51ecf418ead"
 dependencies = [
  "async-trait",
  "backoff",
@@ -1697,7 +1697,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "strum 0.21.0",
+ "strum 0.22.0",
  "strum_macros 0.22.0",
  "thiserror",
  "tokio",
