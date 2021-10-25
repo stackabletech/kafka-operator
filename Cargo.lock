@@ -1176,23 +1176,8 @@ dependencies = [
 
 [[package]]
 name = "product-config"
-version = "0.1.0"
-source = "git+https://github.com/stackabletech/product-config.git?tag=0.1.0#2c8f66264cceca02d0a7ecb413435041cd7d0ca6"
-dependencies = [
- "java-properties",
- "regex",
- "schemars",
- "semver",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror",
-]
-
-[[package]]
-name = "product-config"
 version = "0.2.0-nightly"
-source = "git+https://github.com/stackabletech/product-config.git?branch=main#53c4bac3aa52bf61f5cef4fc47447be67749c3ce"
+source = "git+https://github.com/stackabletech/product-config.git?branch=main#97734dfa78c5e96922b2fc99bbd0cf2a1b7ac89d"
 dependencies = [
  "java-properties",
  "regex",
@@ -1624,7 +1609,7 @@ dependencies = [
  "futures",
  "k8s-openapi",
  "kube",
- "product-config 0.2.0-nightly",
+ "product-config",
  "serde",
  "serde_json",
  "stackable-kafka-crd",
@@ -1676,7 +1661,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.2.3-nightly"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#7965121542135b6c9c1287b0e7b4f9cf32ae7fe2"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#477c489183569db831447f978c8cb51ecf418ead"
 dependencies = [
  "async-trait",
  "backoff",
@@ -1690,14 +1675,14 @@ dependencies = [
  "kube",
  "kube-runtime",
  "lazy_static",
- "product-config 0.2.0-nightly",
+ "product-config",
  "rand",
  "regex",
  "schemars",
  "serde",
  "serde_json",
  "serde_yaml",
- "strum 0.21.0",
+ "strum 0.22.0",
  "strum_macros 0.22.0",
  "thiserror",
  "tokio",
@@ -1710,19 +1695,19 @@ dependencies = [
 [[package]]
 name = "stackable-zookeeper-crd"
 version = "0.4.1-nightly"
-source = "git+https://github.com/stackabletech/zookeeper-operator.git?branch=main#b284bbc240512d16cf6a340ddc6cbcad9fe279fb"
+source = "git+https://github.com/stackabletech/zookeeper-operator.git?branch=main#f04e97c9b413d06b42d7b685be4ebefdc8a4a902"
 dependencies = [
  "duplicate",
  "k8s-openapi",
  "kube",
- "product-config 0.1.0",
+ "product-config",
  "schemars",
  "semver",
  "serde",
  "serde_json",
  "stackable-operator",
  "strum 0.22.0",
- "strum_macros 0.21.1",
+ "strum_macros 0.22.0",
  "thiserror",
  "tracing",
 ]
