@@ -2,6 +2,3 @@
 members = [
     "rust/crd", "rust/operator", "rust/operator-binary"
 ]
-
-[patch."git+https://github.com/stackabletech/opa-operator.git"]
-stackable-opa-crd = { git = "https://github.com/stackabletech//opa-operator.git", branch = "chore/operator-reexport" }

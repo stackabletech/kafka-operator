@@ -1606,7 +1606,7 @@ dependencies = [
  "stackable-opa-crd",
  "stackable-operator",
  "stackable-zookeeper-crd",
- "strum 0.22.0",
+ "strum",
  "strum_macros",
  "thiserror",
 ]
@@ -1623,7 +1623,7 @@ dependencies = [
  "stackable-opa-crd",
  "stackable-operator",
  "stackable-zookeeper-crd",
- "strum 0.22.0",
+ "strum",
  "strum_macros",
  "thiserror",
  "tokio",
@@ -1646,14 +1646,14 @@ dependencies = [
 [[package]]
 name = "stackable-opa-crd"
 version = "0.4.1-nightly"
-source = "git+https://github.com/stackabletech//opa-operator.git?branch=chore/operator-reexport#27a7f831da359ae10323fb9312ad6effec9d8bad"
+source = "git+https://github.com/stackabletech/opa-operator.git?branch=main#6a4f288c289e3c03cc4e8e0de36721cc4a3c02fe"
 dependencies = [
  "rand",
  "semver",
  "serde",
  "serde_json",
  "stackable-operator",
- "strum 0.21.0",
+ "strum",
  "strum_macros",
  "thiserror",
  "tracing",
@@ -1683,7 +1683,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "strum 0.22.0",
+ "strum",
  "strum_macros",
  "thiserror",
  "tokio",
@@ -1703,7 +1703,7 @@ dependencies = [
  "serde",
  "serde_json",
  "stackable-operator",
- "strum 0.22.0",
+ "strum",
  "strum_macros",
  "thiserror",
  "tracing",
@@ -1720,12 +1720,6 @@ name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
-
-[[package]]
-name = "strum"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaf86bbcfd1fa9670b7a129f64fc0c9fcbbfe4f1bc4210e9e98fe71ffc12cde2"
 
 [[package]]
 name = "strum"
