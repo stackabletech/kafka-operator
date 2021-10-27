@@ -1,7 +1,7 @@
 use clap::{crate_version, App, AppSettings, SubCommand};
-use kube::CustomResourceExt;
 use stackable_kafka_crd::commands::{Restart, Start, Stop};
 use stackable_kafka_crd::KafkaCluster;
+use stackable_operator::kube::CustomResourceExt;
 use stackable_operator::{cli, client, error};
 use tracing::error;
 
