@@ -12,12 +12,11 @@ All notable changes to this project will be documented in this file.
 - Added support for Start, Stop Restart commands ([#194]).
 
 ### Changed
-
+- `operator-rs` `0.2.2` → `0.3.0` ([#207]).
+- `stackable-zookeeper-crd`: `0.2.0` → `0.4.1` ([#207]).
+- `stackable-opa-crd`: `0.2.0` → `0.4.1` ([#207]).
 - `kube-rs`: `0.58` → `0.60` ([#167]).
 - `k8s-openapi` `0.12` → `0.13` and features: `v1_21` → `v1_22` ([#167]).
-- `operator-rs` `0.2.1` → `0.2.2` ([#167]).
-- `stackable-zookeeper-crd`: `0.2.0` → `0.4.0` ([#167]).
-- `stackable-opa-crd`: `0.2.0` → `0.4.0` ([#167]).
 - `stackable-zookeeper-crd::util` to `stackable-zookeeper-crd::discovery` ([#194]).
 - Moved CRD availability check to operator-binary ([#194]).
 
@@ -25,6 +24,7 @@ All notable changes to this project will be documented in this file.
 
 - `kube-runtime` dependency ([#167]).
 
+[#207]: https://github.com/stackabletech/kafka-operator/pull/207
 [#167]: https://github.com/stackabletech/kafka-operator/pull/167
 [#181]: https://github.com/stackabletech/kafka-operator/pull/181
 [#194]: https://github.com/stackabletech/kafka-operator/pull/194
