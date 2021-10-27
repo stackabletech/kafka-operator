@@ -2,12 +2,6 @@ mod error;
 
 use crate::error::Error;
 use async_trait::async_trait;
-use k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Pod};
-use kube::api::ListParams;
-use kube::Api;
-use kube::ResourceExt;
-use product_config::types::PropertyNameKind;
-use product_config::ProductConfigManager;
 use stackable_kafka_crd::commands::{Restart, Start, Stop};
 use stackable_kafka_crd::{
     KafkaCluster, KafkaRole, APP_NAME, MANAGED_BY, METRICS_PORT, SERVER_PROPERTIES_FILE,
@@ -20,17 +14,22 @@ use stackable_operator::builder::{
 };
 use stackable_operator::client::Client;
 use stackable_operator::command::materialize_command;
-use stackable_operator::configmap;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
 use stackable_operator::error::OperatorResult;
 use stackable_operator::identity::{
     LabeledPodIdentityFactory, NodeIdentity, PodIdentity, PodToNodeMapping,
 };
+use stackable_operator::k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Pod};
+use stackable_operator::kube::api::ListParams;
+use stackable_operator::kube::Api;
+use stackable_operator::kube::ResourceExt;
 use stackable_operator::labels::{
     build_common_labels_for_all_managed_resources, get_recommended_labels, APP_COMPONENT_LABEL,
     APP_INSTANCE_LABEL, APP_MANAGED_BY_LABEL, APP_NAME_LABEL, APP_VERSION_LABEL,
 };
 use stackable_operator::name_utils;
+use stackable_operator::product_config::types::PropertyNameKind;
+use stackable_operator::product_config::ProductConfigManager;
 use stackable_operator::product_config_utils::{
     config_for_role_and_group, transform_all_roles_to_config, validate_all_roles_and_groups_config,
     ValidatedRoleConfigByPropertyKind,
@@ -48,6 +47,7 @@ use stackable_operator::scheduler::{
 use stackable_operator::status::HasClusterExecutionStatus;
 use stackable_operator::status::{init_status, ClusterExecutionStatus};
 use stackable_operator::versioning::{finalize_versioning, init_versioning};
+use stackable_operator::{configmap, product_config};
 use stackable_zookeeper_crd::discovery::ZookeeperConnectionInformation;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
