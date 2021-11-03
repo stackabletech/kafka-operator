@@ -1645,8 +1645,8 @@ dependencies = [
 
 [[package]]
 name = "stackable-opa-crd"
-version = "0.4.1"
-source = "git+https://github.com/stackabletech/opa-operator.git?tag=0.4.1#ebe2c0b59abb5e959508fd1af0f0360426e49cdb"
+version = "0.5.0-nightly"
+source = "git+https://github.com/stackabletech/opa-operator.git?branch=use_docker_image#ce4f3e8a0bdd1e0c90f582ceb8d5a9d5635db96d"
 dependencies = [
  "rand",
  "semver",
@@ -1662,8 +1662,8 @@ dependencies = [
 
 [[package]]
 name = "stackable-operator"
-version = "0.3.0"
-source = "git+https://github.com/stackabletech/operator-rs.git?tag=0.3.0#a0a1d10260f7921d436a0cd7ba6ce957368e42fb"
+version = "0.4.0-nightly"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=builder_enhancements#a593d6dc737d4f0ecacba3eaf5cb6c0cf7f41b1a"
 dependencies = [
  "async-trait",
  "backoff",
@@ -1695,8 +1695,8 @@ dependencies = [
 
 [[package]]
 name = "stackable-zookeeper-crd"
-version = "0.4.1"
-source = "git+https://github.com/stackabletech/zookeeper-operator.git?tag=0.4.1#a95a0cb793d07ea9a7a8fcfc6cf4c4ea16452284"
+version = "0.5.0-nightly"
+source = "git+https://github.com/stackabletech/zookeeper-operator.git?branch=adapt_to_use_docker_image#1befb48a54fbc788a228aae4ea5aedac8293145a"
 dependencies = [
  "duplicate",
  "semver",

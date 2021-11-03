@@ -9,9 +9,7 @@ use stackable_kafka_crd::{
 };
 use stackable_opa_crd::util;
 use stackable_opa_crd::util::{OpaApi, OpaApiProtocol};
-use stackable_operator::builder::{
-    ContainerBuilder, ContainerPortBuilder, ObjectMetaBuilder, PodBuilder,
-};
+use stackable_operator::builder::{ContainerBuilder, ObjectMetaBuilder, PodBuilder, VolumeBuilder};
 use stackable_operator::client::Client;
 use stackable_operator::command::materialize_command;
 use stackable_operator::controller::{Controller, ControllerStrategy, ReconciliationState};
@@ -62,7 +60,7 @@ type KafkaReconcileResult = ReconcileResult<error::Error>;
 
 const FINALIZER_NAME: &str = "kafka.stackable.tech/cleanup";
 const SHOULD_BE_SCRAPED: &str = "monitoring.stackable.tech/should_be_scraped";
-const CONFIG_DIR: &str = "config";
+const CONFIG_DIR: &str = "/stackable/config";
 const CONFIG_MAP_TYPE_CONFIG: &str = "properties";
 const CONFIG_MAP_NODE_NAME_LABEL: &str = "kafka.stackable.tech/node_name";
 const ID_LABEL: &str = "kafka.stackable.tech/id";
@@ -446,8 +444,8 @@ impl KafkaState {
                     metrics_port = Some(property_value.parse::<u16>().unwrap());
                     env_vars.push(EnvVar {
                                 name: "EXTRA_ARGS".to_string(),
-                                value: Some(format!("-javaagent:{{{{packageroot}}}}/kafka_{}/stackable/lib/jmx_prometheus_javaagent-0.16.1.jar={}:{{{{packageroot}}}}/kafka_{}/stackable/conf/jmx_exporter.yaml",
-                                                    version, property_value, version)),
+                                value: Some(format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/jmx_exporter.yaml",
+                                                    property_value)),
                                 ..EnvVar::default()
                             });
                     continue;
@@ -480,20 +478,20 @@ impl KafkaState {
         labels.insert(String::from(ID_LABEL), String::from(pod_id.id()));
 
         let mut container_builder = ContainerBuilder::new(APP_NAME);
-        container_builder.image(format!("stackable/kafka:{}", &version));
+        container_builder.image(format!("kafka:{}", version));
         container_builder.command(vec![
-            format!("kafka_{}/bin/kafka-server-start.sh", version),
-            format!(
-                "{{{{configroot}}}}/{}/{}",
-                CONFIG_DIR, SERVER_PROPERTIES_FILE
-            ),
+            "bin/kafka-server-start.sh".to_string(),
+            format!("{}/{}", CONFIG_DIR, SERVER_PROPERTIES_FILE),
         ]);
         container_builder.add_env_vars(env_vars);
+
+        let mut pod_builder = PodBuilder::new();
 
         // One mount for the config directory
         if let Some(config_map_data) = config_maps.get(CONFIG_MAP_TYPE_CONFIG) {
             if let Some(name) = config_map_data.metadata.name.as_ref() {
-                container_builder.add_configmapvolume(name, CONFIG_DIR.to_string());
+                container_builder.add_volume_mount("config", CONFIG_DIR.to_string());
+                pod_builder.add_volume(VolumeBuilder::new("config").with_config_map(name).build());
             } else {
                 return Err(error::Error::MissingConfigMapNameError {
                     cm_type: CONFIG_MAP_TYPE_CONFIG,
@@ -510,14 +508,13 @@ impl KafkaState {
         // only add metrics container port and annotation if available
         if let Some(metrics_port) = metrics_port {
             annotations.insert(SHOULD_BE_SCRAPED.to_string(), "true".to_string());
-            container_builder.add_container_port(
-                ContainerPortBuilder::new(metrics_port)
-                    .name("metrics")
-                    .build(),
-            );
+            container_builder.add_container_port("metrics", i32::from(metrics_port));
         }
 
-        let pod = PodBuilder::new()
+        // TODO: remove if not testing locally
+        container_builder.image_pull_policy("IfNotPresent");
+
+        let pod = pod_builder
             .metadata(
                 ObjectMetaBuilder::new()
                     .generate_name(pod_name)
@@ -530,6 +527,8 @@ impl KafkaState {
             .add_stackable_agent_tolerations()
             .add_container(container_builder.build())
             .node_name(node_id.name.clone())
+            // TODO: first iteration we are using host network
+            .host_network(true)
             .build()?;
 
         Ok(self.context.client.create(&pod).await?)
