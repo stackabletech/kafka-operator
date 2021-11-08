@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 - `operator-rs` `0.3.0` → `0.4.0` ([#214]).
 - Adapted pod image and container command to docker image ([#214]).
+- Adapted documentation to represent new workflow with docker images ([#214]).
 
 [#214]: https://github.com/stackabletech/kafka-operator/pull/214
 

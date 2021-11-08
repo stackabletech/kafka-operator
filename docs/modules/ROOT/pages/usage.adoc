@@ -22,7 +22,7 @@ To create an Apache Kafka (v2.8.0) cluster named "simple" with Prometheus metric
           default:
             selector:
               matchLabels:
-                kubernetes.io/arch: stackable-linux
+                kubernetes.io/os: linux
             replicas: 1
             config:
               logDirs: "/tmp/kafka-logs"
@@ -55,7 +55,7 @@ If you wish to include integration with https://docs.stackable.tech/opa/index.ht
           default:
             selector:
               matchLabels:
-                kubernetes.io/arch: stackable-linux
+                kubernetes.io/os: linux
             replicas: 1
             config:
               logDirs: "/tmp/kafka-logs"
