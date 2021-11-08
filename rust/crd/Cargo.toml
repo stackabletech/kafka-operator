@@ -9,7 +9,7 @@ version = "0.4.0-nightly"
 
 [dependencies]
 stackable-opa-crd = { git = "https://github.com/stackabletech/opa-operator.git", branch = "use_docker_image" }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "builder_enhancements" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.4.0" }
 stackable-zookeeper-crd = { git = "https://github.com/stackabletech/zookeeper-operator.git", branch = "adapt_to_use_docker_image"}
 
 duplicate = "0.3.0"

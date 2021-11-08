@@ -4,8 +4,8 @@ use crate::error::Error;
 use async_trait::async_trait;
 use stackable_kafka_crd::commands::{Restart, Start, Stop};
 use stackable_kafka_crd::{
-    KafkaCluster, KafkaRole, APP_NAME, MANAGED_BY, METRICS_PORT, SERVER_PROPERTIES_FILE,
-    ZOOKEEPER_CONNECT,
+    KafkaCluster, KafkaRole, KafkaVersion, APP_NAME, MANAGED_BY, METRICS_PORT,
+    SERVER_PROPERTIES_FILE, ZOOKEEPER_CONNECT,
 };
 use stackable_opa_crd::util;
 use stackable_opa_crd::util::{OpaApi, OpaApiProtocol};
@@ -428,7 +428,7 @@ impl KafkaState {
         let mut env_vars = vec![];
         let mut metrics_port: Option<u16> = None;
 
-        let version = &self.context.resource.spec.version.fully_qualified_version();
+        let version: &KafkaVersion = &self.context.resource.spec.version;
 
         if let Some(config) = validated_config.get(&PropertyNameKind::Env) {
             for (property_name, property_value) in config {
@@ -444,7 +444,7 @@ impl KafkaState {
                     metrics_port = Some(property_value.parse::<u16>().unwrap());
                     env_vars.push(EnvVar {
                                 name: "EXTRA_ARGS".to_string(),
-                                value: Some(format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/jmx_exporter.yaml",
+                                value: Some(format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml",
                                                     property_value)),
                                 ..EnvVar::default()
                             });
@@ -471,14 +471,18 @@ impl KafkaState {
         let mut labels = get_recommended_labels(
             &self.context.resource,
             APP_NAME,
-            version,
+            &version.fully_qualified_version(),
             pod_id.role(),
             pod_id.group(),
         );
         labels.insert(String::from(ID_LABEL), String::from(pod_id.id()));
 
         let mut container_builder = ContainerBuilder::new(APP_NAME);
-        container_builder.image(format!("kafka:{}", version));
+        container_builder.image(format!(
+            "docker.stackable.tech/stackable/kafka:{}-{}-1.1.0-0.1",
+            version.kafka_version(),
+            version.scala_version()
+        ));
         container_builder.command(vec![
             "bin/kafka-server-start.sh".to_string(),
             format!("{}/{}", CONFIG_DIR, SERVER_PROPERTIES_FILE),
@@ -511,9 +515,6 @@ impl KafkaState {
             container_builder.add_container_port("metrics", i32::from(metrics_port));
         }
 
-        // TODO: remove if not testing locally
-        container_builder.image_pull_policy("IfNotPresent");
-
         let pod = pod_builder
             .metadata(
                 ObjectMetaBuilder::new()
@@ -524,7 +525,6 @@ impl KafkaState {
                     .ownerreference_from_resource(&self.context.resource, Some(true), Some(true))?
                     .build()?,
             )
-            .add_stackable_agent_tolerations()
             .add_container(container_builder.build())
             .node_name(node_id.name.clone())
             // TODO: first iteration we are using host network
