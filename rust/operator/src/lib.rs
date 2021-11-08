@@ -479,6 +479,7 @@ impl KafkaState {
 
         let mut container_builder = ContainerBuilder::new(APP_NAME);
         container_builder.image(format!(
+            // TODO: How to handle the platform version, scala and jmx?
             "docker.stackable.tech/stackable/kafka:{}-{}-1.1.0-0.1",
             version.kafka_version(),
             version.scala_version()
