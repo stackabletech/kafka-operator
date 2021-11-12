@@ -483,11 +483,8 @@ impl KafkaState {
 
         let mut container_builder = ContainerBuilder::new(APP_NAME);
         container_builder.image(format!(
-            // TODO: Depending on the version we should not hard code opa-authorizer
-            //   Version 2.x.x requires opa_authorizer 1.1.0, 3.x.x requires 1.2.0
-            "docker.stackable.tech/stackable/kafka:{}-scala{}-opa_authorizer1.1.0-stackable{}",
+            "docker.stackable.tech/stackable/kafka:{}-stackable{}",
             version.kafka_version(),
-            version.scala_version(),
             DEFAULT_IMAGE_VERSION
         ));
         container_builder.command(vec![
