@@ -58,6 +58,10 @@ use tracing::{debug, error, info, trace, warn};
 
 type KafkaReconcileResult = ReconcileResult<error::Error>;
 
+/// The docker image we default to. This needs to be adapted if the operator does not work
+/// with images 0.0.1, 0.1.0 etc. anymore and requires e.g. a new major version like 1(.0.0).
+const DEFAULT_IMAGE_VERSION: &str = "0";
+
 const FINALIZER_NAME: &str = "kafka.stackable.tech/cleanup";
 const SHOULD_BE_SCRAPED: &str = "monitoring.stackable.tech/should_be_scraped";
 const CONFIG_DIR: &str = "/stackable/config";
@@ -479,10 +483,12 @@ impl KafkaState {
 
         let mut container_builder = ContainerBuilder::new(APP_NAME);
         container_builder.image(format!(
-            // TODO: How to handle the platform version, scala and jmx?
-            "docker.stackable.tech/stackable/kafka:{}-{}-1.1.0-0.1",
+            // TODO: Depending on the version we should not hard code opa-authorizer
+            //   Version 2.x.x requires opa_authorizer 1.1.0, 3.x.x requires 1.2.0
+            "docker.stackable.tech/stackable/kafka:{}-scala{}-opa_authorizer1.1.0-stackable{}",
             version.kafka_version(),
-            version.scala_version()
+            version.scala_version(),
+            DEFAULT_IMAGE_VERSION
         ));
         container_builder.command(vec![
             "bin/kafka-server-start.sh".to_string(),
