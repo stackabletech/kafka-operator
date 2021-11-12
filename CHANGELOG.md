@@ -4,8 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.3.0] - 2021-10-27
+- `operator-rs` `0.3.0` → `0.4.0` ([#214]).
+- `stackable-opa-crd` `0.4.1` → `0.5.0` ([#214]).
+- `stackable-zookeeper-crd` `0.4.1` → `0.5.0` ([#214]).
+- Adapted pod image and container command to docker image ([#214]).
+- Adapted documentation to represent new workflow with docker images ([#214]).
 
+[#214]: https://github.com/stackabletech/kafka-operator/pull/214
+
+## [0.3.0] - 2021-10-27
 
 ### Added
 - Added versioning code from operator-rs for up and downgrades ([#167]).
