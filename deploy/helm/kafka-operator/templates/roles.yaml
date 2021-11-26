@@ -26,13 +26,6 @@ rules:
       - watch
       - patch
   - apiGroups:
-      - hive.stackable.tech
-    resources:
-      - hiveclusters
-    verbs:
-      - get
-      - list
-  - apiGroups:
       - ""
     resources:
       - nodes
