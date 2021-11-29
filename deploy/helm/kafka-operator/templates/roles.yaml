@@ -11,6 +11,7 @@ rules:
     verbs:
       - get
       - list
+      - watch
   # For OPA dependents. Note that OPA it's self is listed here because it's own resource name
   # doesn't follow the *clusters convention
   - apiGroups:
@@ -31,6 +32,7 @@ rules:
       - nodes
     verbs:
       - list
+      - watch
   - apiGroups:
       - ""
     resources:
@@ -40,6 +42,7 @@ rules:
       - create
       - delete
       - list
+      - watch
       - update
   - apiGroups:
       - batch
