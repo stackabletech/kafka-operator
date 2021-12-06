@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2021-12-06
+
+
 - `operator-rs` `0.3.0` → `0.4.0` ([#214]).
 - `stackable-opa-crd` `0.4.1` → `0.5.0` ([#214]).
 - `stackable-zookeeper-crd` `0.4.1` → `0.5.0` ([#214]).
