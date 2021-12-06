@@ -1595,7 +1595,7 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "stackable-kafka-crd"
-version = "0.4.0-nightly"
+version = "0.4.0"
 dependencies = [
  "duplicate",
  "rstest",
@@ -1613,7 +1613,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-operator"
-version = "0.4.0-nightly"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -1632,7 +1632,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-operator-binary"
-version = "0.4.0-nightly"
+version = "0.4.0"
 dependencies = [
  "built",
  "clap",
