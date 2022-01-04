@@ -144,7 +144,7 @@ pub enum KafkaRole {
     Broker,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 /// In order for compute_files from the Configuration trait to work, we cannot pass an empty or
 /// "None" config. Therefore we need at least one required property.

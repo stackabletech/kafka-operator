@@ -28,11 +28,11 @@ spec:
                     cliOverrides:
                       additionalProperties:
                         type: string
-                      nullable: true
+                      default: {}
                       type: object
                     config:
+                      default: {}
                       description: "In order for compute_files from the Configuration trait to work, we cannot pass an empty or \"None\" config. Therefore we need at least one required property."
-                      nullable: true
                       properties:
                         logDirs:
                           type: string
@@ -49,12 +49,12 @@ spec:
                         additionalProperties:
                           type: string
                         type: object
-                      nullable: true
+                      default: {}
                       type: object
                     envOverrides:
                       additionalProperties:
                         type: string
-                      nullable: true
+                      default: {}
                       type: object
                     roleGroups:
                       additionalProperties:
@@ -62,11 +62,11 @@ spec:
                           cliOverrides:
                             additionalProperties:
                               type: string
-                            nullable: true
+                            default: {}
                             type: object
                           config:
+                            default: {}
                             description: "In order for compute_files from the Configuration trait to work, we cannot pass an empty or \"None\" config. Therefore we need at least one required property."
-                            nullable: true
                             properties:
                               logDirs:
                                 type: string
@@ -83,12 +83,12 @@ spec:
                               additionalProperties:
                                 type: string
                               type: object
-                            nullable: true
+                            default: {}
                             type: object
                           envOverrides:
                             additionalProperties:
                               type: string
-                            nullable: true
+                            default: {}
                             type: object
                           replicas:
                             format: uint16
