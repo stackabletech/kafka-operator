@@ -33,12 +33,6 @@ spec:
                     config:
                       default: {}
                       description: "In order for compute_files from the Configuration trait to work, we cannot pass an empty or \"None\" config. Therefore we need at least one required property."
-                      properties:
-                        metricsPort:
-                          format: uint16
-                          minimum: 0.0
-                          nullable: true
-                          type: integer
                       type: object
                     configOverrides:
                       additionalProperties:
@@ -63,12 +57,6 @@ spec:
                           config:
                             default: {}
                             description: "In order for compute_files from the Configuration trait to work, we cannot pass an empty or \"None\" config. Therefore we need at least one required property."
-                            properties:
-                              metricsPort:
-                                format: uint16
-                                minimum: 0.0
-                                nullable: true
-                                type: integer
                             type: object
                           configOverrides:
                             additionalProperties:

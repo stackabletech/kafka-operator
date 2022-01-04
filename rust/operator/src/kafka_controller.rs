@@ -7,7 +7,9 @@ use std::{
 };
 
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{KafkaCluster, KafkaRole, APP_NAME, APP_PORT, SERVER_PROPERTIES_FILE};
+use stackable_kafka_crd::{
+    KafkaCluster, KafkaRole, APP_NAME, APP_PORT, METRICS_PORT, SERVER_PROPERTIES_FILE,
+};
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     k8s_openapi::{
@@ -419,6 +421,13 @@ fn build_broker_rolegroup_statefulset(
         }),
         ..EnvVar::default()
     });
+    let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
+    let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
+    let advertised_listeners_override =
+        "--override \"advertised.listeners=PLAINTEXT://$NODE:$(cat /stackable/tmp/nodeport)\"";
+    let opa_url_override = &opa_url_env_var.map_or(String::new(), |opa| {
+        format!("--override \"opa.authorizer.url=${}\"", opa)
+    });
     let container_kafka = ContainerBuilder::new("kafka")
         .image(image)
         .args(vec![
@@ -427,13 +436,14 @@ fn build_broker_rolegroup_statefulset(
             [
                 "bin/kafka-server-start.sh",
                 &format!("/stackable/config/{}", SERVER_PROPERTIES_FILE),
-                "--override \"zookeeper.connect=$ZOOKEEPER\"",
-                "--override \"advertised.listeners=PLAINTEXT://$NODE:$(cat /stackable/tmp/nodeport)\"",
-                &opa_url_env_var.map_or(String::new(), |opa| format!("--override \"opa.authorizer.url=${}\"", opa))
+                zookeeper_override,
+                advertised_listeners_override,
+                opa_url_override,
             ]
             .join(" "),
         ])
         .add_env_vars(env)
+        .add_env_var("EXTRA_ARGS", jvm_args)
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum
         // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
         // .readiness_probe(Probe {
@@ -453,6 +463,7 @@ fn build_broker_rolegroup_statefulset(
         //     ..Probe::default()
         // })
         .add_container_port("kafka", APP_PORT.into())
+        .add_container_port("metrics", METRICS_PORT.into())
         .add_volume_mount("data", "/stackable/data")
         .add_volume_mount("config", "/stackable/config")
         .add_volume_mount("tmp", "/stackable/tmp")

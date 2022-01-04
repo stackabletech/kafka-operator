@@ -11,13 +11,13 @@ use strum_macros::{Display, EnumIter, EnumString};
 
 pub const APP_NAME: &str = "kafka";
 pub const APP_PORT: u16 = 9092;
+pub const METRICS_PORT: u16 = 9606;
 pub const MANAGED_BY: &str = "kafka-operator";
 
 pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 
 pub const ZOOKEEPER_CONNECT: &str = "zookeeper.connect";
 pub const OPA_AUTHORIZER_URL: &str = "opa.authorizer.url";
-pub const METRICS_PORT: &str = "metricsPort";
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
@@ -147,11 +147,7 @@ pub enum KafkaRole {
 #[serde(rename_all = "camelCase")]
 /// In order for compute_files from the Configuration trait to work, we cannot pass an empty or
 /// "None" config. Therefore we need at least one required property.
-// TODO: Does "log.dirs" make sense in that case? If we make it an option in can happen that the
-//    config will be parsed as None.
-pub struct KafkaConfig {
-    pub metrics_port: Option<u16>,
-}
+pub struct KafkaConfig {}
 
 impl Configuration for KafkaConfig {
     type Configurable = KafkaCluster;
@@ -161,11 +157,7 @@ impl Configuration for KafkaConfig {
         _resource: &Self::Configurable,
         _role_name: &str,
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
-        let mut result = BTreeMap::new();
-        if let Some(metrics_port) = self.metrics_port {
-            result.insert(METRICS_PORT.to_string(), Some(metrics_port.to_string()));
-        }
-        Ok(result)
+        Ok(BTreeMap::new())
     }
 
     fn compute_cli(
