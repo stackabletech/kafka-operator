@@ -118,7 +118,7 @@ impl KafkaPodRef {
 /// Contains all data to combine with OPA. The "opa.authorizer.url" is set dynamically in
 /// the controller (local nodes first, random otherwise).
 pub struct OpaConfig {
-    // pub reference: OpaReference,
+    pub config_map_name: String,
     pub authorizer_class_name: String,
     //pub authorizer_url: Option<String>,
     pub authorizer_cache_initial_capacity: Option<usize>,
@@ -151,8 +151,15 @@ pub enum KafkaRole {
 // TODO: Does "log.dirs" make sense in that case? If we make it an option in can happen that the
 //    config will be parsed as None.
 pub struct KafkaConfig {
+    #[serde(default = "KafkaConfig::default_log_dirs")]
     pub log_dirs: String,
     pub metrics_port: Option<u16>,
+}
+
+impl KafkaConfig {
+    fn default_log_dirs() -> String {
+        "/stackable/data".to_string()
+    }
 }
 
 impl Configuration for KafkaConfig {

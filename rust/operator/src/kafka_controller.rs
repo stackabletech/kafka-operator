@@ -390,6 +390,24 @@ fn build_broker_rolegroup_statefulset(
         }),
         ..EnvVar::default()
     });
+    let opa_url_env_var = if let Some(opa) = &kafka.spec.opa {
+        let env_var = "OPA";
+        env.push(EnvVar {
+            name: env_var.to_string(),
+            value_from: Some(EnvVarSource {
+                config_map_key_ref: Some(ConfigMapKeySelector {
+                    name: Some(opa.config_map_name.clone()),
+                    key: "OPA".to_string(),
+                    ..ConfigMapKeySelector::default()
+                }),
+                ..EnvVarSource::default()
+            }),
+            ..EnvVar::default()
+        });
+        Some(env_var)
+    } else {
+        None
+    };
     env.push(EnvVar {
         name: "NODE".to_string(),
         value_from: Some(EnvVarSource {
@@ -406,12 +424,14 @@ fn build_broker_rolegroup_statefulset(
         .args(vec![
             "sh".to_string(),
             "-c".to_string(),
-            format!(
-                "bin/kafka-server-start.sh /stackable/config/{} {} {}",
-                SERVER_PROPERTIES_FILE,
+            [
+                "bin/kafka-server-start.sh",
+                &format!("/stackable/config/{}", SERVER_PROPERTIES_FILE),
                 "--override \"zookeeper.connect=$ZOOKEEPER\"",
-                "--override advertised.listeners=PLAINTEXT://$NODE:$(cat /stackable/tmp/nodeport)"
-            ),
+                "--override \"advertised.listeners=PLAINTEXT://$NODE:$(cat /stackable/tmp/nodeport)\"",
+                &opa_url_env_var.map_or(String::new(), |opa| format!("--override \"opa.authorizer.url=${}\"", opa))
+            ]
+            .join(" "),
         ])
         .add_env_vars(env)
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum

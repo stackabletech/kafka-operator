@@ -35,14 +35,13 @@ spec:
                       description: "In order for compute_files from the Configuration trait to work, we cannot pass an empty or \"None\" config. Therefore we need at least one required property."
                       properties:
                         logDirs:
+                          default: /stackable/data
                           type: string
                         metricsPort:
                           format: uint16
                           minimum: 0.0
                           nullable: true
                           type: integer
-                      required:
-                        - logDirs
                       type: object
                     configOverrides:
                       additionalProperties:
@@ -69,14 +68,13 @@ spec:
                             description: "In order for compute_files from the Configuration trait to work, we cannot pass an empty or \"None\" config. Therefore we need at least one required property."
                             properties:
                               logDirs:
+                                default: /stackable/data
                                 type: string
                               metricsPort:
                                 format: uint16
                                 minimum: 0.0
                                 nullable: true
                                 type: integer
-                            required:
-                              - logDirs
                             type: object
                           configOverrides:
                             additionalProperties:
@@ -152,8 +150,11 @@ spec:
                       type: integer
                     authorizerClassName:
                       type: string
+                    configMapName:
+                      type: string
                   required:
                     - authorizerClassName
+                    - configMapName
                   type: object
                 stopped:
                   nullable: true

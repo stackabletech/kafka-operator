@@ -5,17 +5,12 @@ metadata:
 spec:
   version: 2.8.1
   zookeeperConfigMapName: simple-kafka-znode
-  # zookeeperReference:
-  #   namespace: default
-  #   name: simple
-  # opa:
-  #   reference:
-  #     namespace: default
-  #     name: simple
-  #   authorizerClassName: com.bisnode.kafka.authorization.OpaAuthorizer
-  #   authorizerCacheInitialCapacity: 0
-  #   authorizerCacheMaximumSize: 0
-  #   authorizerCacheExpireAfterSeconds: 0
+  opa:
+    configMapName: opa-simple
+    authorizerClassName: com.bisnode.kafka.authorization.OpaAuthorizer
+    authorizerCacheInitialCapacity: 0
+    authorizerCacheMaximumSize: 0
+    authorizerCacheExpireAfterSeconds: 0
   brokers:
     roleGroups:
       default:
