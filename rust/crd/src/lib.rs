@@ -153,7 +153,6 @@ pub enum KafkaRole {
 pub struct KafkaConfig {
     pub log_dirs: String,
     pub metrics_port: Option<u16>,
-    pub port: Option<u16>,
 }
 
 impl Configuration for KafkaConfig {
@@ -213,13 +212,6 @@ impl Configuration for KafkaConfig {
                 opa_config
                     .authorizer_cache_expire_after_seconds
                     .map(|auth| auth.to_string()),
-            );
-        }
-
-        if let Some(port) = self.port {
-            config.insert(
-                "listeners".to_string(),
-                Some(format!("PLAINTEXT://:{}", port)),
             );
         }
 

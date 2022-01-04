@@ -337,12 +337,6 @@ fn build_broker_rolegroup_statefulset(
         "docker.stackable.tech/stackable/kafka:{}-stackable0",
         kafka.spec.version
     );
-    let listen_port = rolegroup
-        .config
-        .as_ref()
-        .and_then(|rg_cfg| rg_cfg.config.as_ref()?.port)
-        .or_else(|| role.config.as_ref()?.config.as_ref()?.port)
-        .unwrap_or(APP_PORT);
     let pod_svc_template = Service {
         metadata: ObjectMeta {
             owner_references: Some(vec![OwnerReference {
@@ -357,7 +351,7 @@ fn build_broker_rolegroup_statefulset(
             external_traffic_policy: Some("Local".to_string()),
             ports: Some(vec![ServicePort {
                 name: Some("kafka".to_string()),
-                port: listen_port.into(),
+                port: APP_PORT.into(),
                 ..ServicePort::default()
             }]),
             ..ServiceSpec::default()
@@ -478,7 +472,7 @@ fn build_broker_rolegroup_statefulset(
         //     period_seconds: Some(1),
         //     ..Probe::default()
         // })
-        .add_container_port("kafka", listen_port.into())
+        .add_container_port("kafka", APP_PORT.into())
         .add_volume_mount("data", "/stackable/data")
         .add_volume_mount("config", "/stackable/config")
         .add_volume_mount("tmp", "/stackable/tmp")
