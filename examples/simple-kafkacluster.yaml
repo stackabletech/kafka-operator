@@ -16,7 +16,6 @@ spec:
       default:
         replicas: 5
         config:
-          logDirs: "/stackable/data"
           metricsPort: 9606
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1

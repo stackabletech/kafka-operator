@@ -18,7 +18,6 @@ pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 pub const ZOOKEEPER_CONNECT: &str = "zookeeper.connect";
 pub const OPA_AUTHORIZER_URL: &str = "opa.authorizer.url";
 pub const METRICS_PORT: &str = "metricsPort";
-pub const LOG_DIR: &str = "log.dir";
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
@@ -151,15 +150,7 @@ pub enum KafkaRole {
 // TODO: Does "log.dirs" make sense in that case? If we make it an option in can happen that the
 //    config will be parsed as None.
 pub struct KafkaConfig {
-    #[serde(default = "KafkaConfig::default_log_dirs")]
-    pub log_dirs: String,
     pub metrics_port: Option<u16>,
-}
-
-impl KafkaConfig {
-    fn default_log_dirs() -> String {
-        "/stackable/data".to_string()
-    }
 }
 
 impl Configuration for KafkaConfig {
@@ -221,8 +212,6 @@ impl Configuration for KafkaConfig {
                     .map(|auth| auth.to_string()),
             );
         }
-
-        config.insert(LOG_DIR.to_string(), Some(self.log_dirs.clone()));
 
         Ok(config)
     }

@@ -34,9 +34,6 @@ spec:
                       default: {}
                       description: "In order for compute_files from the Configuration trait to work, we cannot pass an empty or \"None\" config. Therefore we need at least one required property."
                       properties:
-                        logDirs:
-                          default: /stackable/data
-                          type: string
                         metricsPort:
                           format: uint16
                           minimum: 0.0
@@ -67,9 +64,6 @@ spec:
                             default: {}
                             description: "In order for compute_files from the Configuration trait to work, we cannot pass an empty or \"None\" config. Therefore we need at least one required property."
                             properties:
-                              logDirs:
-                                default: /stackable/data
-                                type: string
                               metricsPort:
                                 format: uint16
                                 minimum: 0.0
