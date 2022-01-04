@@ -19,6 +19,7 @@ thiserror = "1.0"
 
 strum = "0.22"
 strum_macros = "0.22"
+snafu = "0.6.10"
 
 [dev-dependencies]
 serde_yaml = "0.8"

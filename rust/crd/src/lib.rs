@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use stackable_operator::crd::HasApplication;
+use snafu::{OptionExt, Snafu};
 use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::kube::CustomResource;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
@@ -43,12 +43,6 @@ pub struct KafkaClusterSpec {
     pub stopped: Option<bool>,
 }
 
-impl HasApplication for KafkaCluster {
-    fn get_application_name() -> &'static str {
-        APP_NAME
-    }
-}
-
 impl KafkaCluster {
     /// The name of the role-level load-balanced Kubernetes `Service`
     pub fn broker_role_service_name(&self) -> Option<String> {
@@ -65,6 +59,57 @@ impl KafkaCluster {
             role: KafkaRole::Broker.to_string(),
             role_group: group_name.into(),
         }
+    }
+
+    /// List all pods expected to form the cluster
+    ///
+    /// We try to predict the pods here rather than looking at the current cluster state in order to
+    /// avoid instance churn.
+    pub fn pods(&self) -> Result<impl Iterator<Item = KafkaPodRef> + '_, NoNamespaceError> {
+        let ns = self
+            .metadata
+            .namespace
+            .clone()
+            .context(NoNamespaceContext)?;
+        Ok(self
+            .spec
+            .brokers
+            .iter()
+            .flat_map(|role| &role.role_groups)
+            // Order rolegroups consistently, to avoid spurious downstream rewrites
+            .collect::<BTreeMap<_, _>>()
+            .into_iter()
+            .flat_map(move |(rolegroup_name, rolegroup)| {
+                let rolegroup_ref = self.broker_rolegroup_ref(rolegroup_name);
+                let ns = ns.clone();
+                (0..rolegroup.replicas.unwrap_or(0)).map(move |i| KafkaPodRef {
+                    namespace: ns.clone(),
+                    role_group_service_name: rolegroup_ref.object_name(),
+                    pod_name: format!("{}-{}", rolegroup_ref.object_name(), i),
+                })
+            }))
+    }
+}
+
+#[derive(Debug, Snafu)]
+#[snafu(display("object has no namespace associated"))]
+pub struct NoNamespaceError;
+
+/// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
+///
+/// Used for service discovery.
+pub struct KafkaPodRef {
+    pub namespace: String,
+    pub role_group_service_name: String,
+    pub pod_name: String,
+}
+
+impl KafkaPodRef {
+    pub fn fqdn(&self) -> String {
+        format!(
+            "{}.{}.{}.svc.cluster.local",
+            self.pod_name, self.role_group_service_name, self.namespace
+        )
     }
 }
 

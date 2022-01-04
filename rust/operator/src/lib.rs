@@ -1,3 +1,4 @@
+mod discovery;
 mod kafka_controller;
 
 use futures::StreamExt;

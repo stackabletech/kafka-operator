@@ -37,6 +37,8 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
+use crate::discovery::{self, build_discovery_configmaps};
+
 const FIELD_MANAGER_SCOPE: &str = "kafkacluster";
 
 pub struct Ctx {
@@ -96,8 +98,10 @@ pub enum Error {
     ObjectMissingMetadataForOwnerRef {
         source: stackable_operator::error::Error,
     },
-    // #[snafu(display("failed to build discovery ConfigMap"))]
-    // BuildDiscoveryConfig { source: discovery::Error },
+    #[snafu(display("failed to build discovery ConfigMap"))]
+    BuildDiscoveryConfig {
+        source: discovery::Error,
+    },
     #[snafu(display("failed to apply discovery ConfigMap"))]
     ApplyDiscoveryConfig {
         source: stackable_operator::error::Error,
@@ -176,19 +180,15 @@ pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<R
             })?;
     }
 
-    // for discovery_cm in
-    //     build_discovery_configmaps(client, &kafka, &kafka, &server_role_service, None)
-    //         .await
-    //         .context(BuildDiscoveryConfig)?
-    // {
-    //     let discovery_cm = client
-    //         .apply_patch(FIELD_MANAGER_SCOPE, &discovery_cm, &discovery_cm)
-    //         .await
-    //         .context(ApplyDiscoveryConfig)?;
-    //     if let Some(generation) = discovery_cm.metadata.resource_version {
-    //         discovery_hash.write(generation.as_bytes())
-    //     }
-    // }
+    for discovery_cm in build_discovery_configmaps(client, &kafka, &kafka, &broker_role_service)
+        .await
+        .context(BuildDiscoveryConfig)?
+    {
+        client
+            .apply_patch(FIELD_MANAGER_SCOPE, &discovery_cm, &discovery_cm)
+            .await
+            .context(ApplyDiscoveryConfig)?;
+    }
 
     Ok(ReconcilerAction {
         requeue_after: None,
@@ -354,6 +354,7 @@ fn build_broker_rolegroup_statefulset(
         },
         spec: Some(ServiceSpec {
             type_: Some("NodePort".to_string()),
+            external_traffic_policy: Some("Local".to_string()),
             ports: Some(vec![ServicePort {
                 name: Some("kafka".to_string()),
                 port: listen_port.into(),
