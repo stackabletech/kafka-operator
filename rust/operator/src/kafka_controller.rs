@@ -17,9 +17,9 @@ use stackable_operator::{
             apps::v1::{StatefulSet, StatefulSetSpec},
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, EmptyDirVolumeSource,
-                EnvVar, EnvVarSource, ObjectFieldSelector, PersistentVolumeClaim,
-                PersistentVolumeClaimSpec, ResourceRequirements, Service, ServicePort, ServiceSpec,
-                Volume,
+                EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector, PersistentVolumeClaim,
+                PersistentVolumeClaimSpec, Probe, ResourceRequirements, Service, ServicePort,
+                ServiceSpec, Volume,
             },
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
@@ -446,22 +446,20 @@ fn build_broker_rolegroup_statefulset(
         .add_env_var("EXTRA_ARGS", jvm_args)
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum
         // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
-        // .readiness_probe(Probe {
-        //     exec: Some(ExecAction {
-        //         command: Some(vec![
-        //             "bash".to_string(),
-        //             "-c".to_string(),
-        //             // We don't have telnet or netcat in the container images, but
-        //             // we can use Bash's virtual /dev/tcp filesystem to accomplish the same thing
-        //             format!(
-        //                 "exec 3<>/dev/tcp/localhost/{} && echo srvr >&3 && grep '^Mode: ' <&3",
-        //                 APP_PORT
-        //             ),
-        //         ]),
-        //     }),
-        //     period_seconds: Some(1),
-        //     ..Probe::default()
-        // })
+        .readiness_probe(Probe {
+            exec: Some(ExecAction {
+                // If the broker is able to get its cluster ID then it has at least completed basic registration at some point
+                command: Some(vec![
+                    "bin/kafka-cluster.sh".to_string(),
+                    "cluster-id".to_string(),
+                    "--bootstrap-server".to_string(),
+                    format!("localhost:{}", APP_PORT),
+                ]),
+            }),
+            timeout_seconds: Some(3),
+            period_seconds: Some(1),
+            ..Probe::default()
+        })
         .add_container_port("kafka", APP_PORT.into())
         .add_container_port("metrics", METRICS_PORT.into())
         .add_volume_mount("data", "/stackable/data")

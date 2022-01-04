@@ -65,6 +65,7 @@ pub async fn reconcile_pod(pod: Pod, ctx: Context<Ctx>) -> Result<ReconcilerActi
                 ..ServicePort::default()
             }]),
             selector: Some([(LABEL_STS_POD_NAME.to_string(), name)].into()),
+            publish_not_ready_addresses: Some(true),
             ..ServiceSpec::default()
         }),
         ..Service::default()
