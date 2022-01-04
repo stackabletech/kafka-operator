@@ -37,7 +37,7 @@ async fn main() -> Result<(), error::Error> {
                 "/etc/stackable/kafka-operator/config-spec/properties.yaml",
             ])?;
             let client = client::create_client(Some("kafka.stackable.tech".to_string())).await?;
-            stackable_kafka_operator::create_controller(client, product_config).await?;
+            stackable_kafka_operator::create_controller(client, product_config).await;
         }
     };
 

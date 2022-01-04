@@ -20,10 +20,7 @@ use stackable_operator::{
                 Volume,
             },
         },
-        apimachinery::pkg::{
-            api::resource::Quantity,
-            apis::meta::v1::{LabelSelector, OwnerReference},
-        },
+        apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
     },
     kube::{
         api::ObjectMeta,
@@ -37,7 +34,10 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
-use crate::discovery::{self, build_discovery_configmaps};
+use crate::{
+    discovery::{self, build_discovery_configmaps},
+    pod_svc_controller,
+};
 
 const FIELD_MANAGER_SCOPE: &str = "kafkacluster";
 
@@ -337,75 +337,30 @@ fn build_broker_rolegroup_statefulset(
         "docker.stackable.tech/stackable/kafka:{}-stackable0",
         kafka.spec.version
     );
-    let pod_svc_template = Service {
-        metadata: ObjectMeta {
-            owner_references: Some(vec![OwnerReference {
-                api_version: "v1".to_string(),
-                kind: "Pod".to_string(),
-                ..OwnerReference::default()
-            }]),
-            ..ObjectMeta::default()
-        },
-        spec: Some(ServiceSpec {
-            type_: Some("NodePort".to_string()),
-            external_traffic_policy: Some("Local".to_string()),
-            ports: Some(vec![ServicePort {
-                name: Some("kafka".to_string()),
-                port: APP_PORT.into(),
-                ..ServicePort::default()
-            }]),
-            ..ServiceSpec::default()
-        }),
-        ..Service::default()
-    };
-    let container_create_svc = ContainerBuilder::new("create-svc")
+    let container_create_svc = ContainerBuilder::new("get-svc")
         .image("bitnami/kubectl:1.21.1")
         .command(vec!["bash".to_string()])
         .args(vec![
-            // "sh".to_string(),
-            "-eu".to_string(),
-            "-o".to_string(),
+            "-euo".to_string(),
             "pipefail".to_string(),
             "-c".to_string(),
             [
-                "echo \"$TEMPLATE\"",
-                "jq '.metadata.name = $name' --arg name \"$POD_NAME\"",
-                "jq '.metadata.ownerReferences[0].name = $name' --arg name \"$POD_NAME\"",
-                "jq '.metadata.ownerReferences[0].uid = $uid' --arg uid \"$POD_UID\"",
-                "jq '.spec.selector.\"statefulset.kubernetes.io/pod-name\" = $name' --arg name \"$POD_NAME\"",
-                "kubectl create -f- -o jsonpath='{.spec.ports[0].nodePort}'",
+                "kubectl get service \"$POD_NAME\" -o jsonpath='{.spec.ports[0].nodePort}'",
                 "tee /stackable/tmp/nodeport",
             ]
             .join(" | "),
         ])
-        .add_env_var(
-            "TEMPLATE",
-            serde_json::to_string(&pod_svc_template).unwrap(),
-        )
-        .add_env_vars(vec![
-            EnvVar {
-                name: "POD_NAME".to_string(),
-                value_from: Some(EnvVarSource {
-                    field_ref: Some(ObjectFieldSelector {
-                        api_version: Some("v1".to_string()),
-                        field_path: "metadata.name".to_string(),
-                    }),
-                    ..EnvVarSource::default()
+        .add_env_vars(vec![EnvVar {
+            name: "POD_NAME".to_string(),
+            value_from: Some(EnvVarSource {
+                field_ref: Some(ObjectFieldSelector {
+                    api_version: Some("v1".to_string()),
+                    field_path: "metadata.name".to_string(),
                 }),
-                ..EnvVar::default()
-            },
-            EnvVar {
-                name: "POD_UID".to_string(),
-                value_from: Some(EnvVarSource {
-                    field_ref: Some(ObjectFieldSelector {
-                        api_version: Some("v1".to_string()),
-                        field_path: "metadata.uid".to_string(),
-                    }),
-                    ..EnvVarSource::default()
-                }),
-                ..EnvVar::default()
-            },
-        ])
+                ..EnvVarSource::default()
+            }),
+            ..EnvVar::default()
+        }])
         .add_volume_mount("tmp", "/stackable/tmp")
         .build();
     let mut env = broker_config
@@ -517,6 +472,7 @@ fn build_broker_rolegroup_statefulset(
                         &rolegroup_ref.role,
                         &rolegroup_ref.role_group,
                     )
+                    .with_label(pod_svc_controller::LABEL_ENABLE, "true")
                 })
                 .add_init_container(container_create_svc)
                 .add_container(container_kafka)
