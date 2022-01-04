@@ -183,11 +183,6 @@ impl Configuration for KafkaConfig {
         _file: &str,
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
         let mut config = BTreeMap::new();
-        // TODO: How to work with zookeeper reference or opa reference?
-        //   The ZooKeeper reference is queried at the start of reconcile and stored in the state
-        //   (which we do not have access here).
-        //   Similar, retrieving the OPA reference requires a node_name, which we do not have here
-        //   either.
         if let Some(opa_config) = &resource.spec.opa {
             config.insert(
                 "authorizer.class.name".to_string(),
