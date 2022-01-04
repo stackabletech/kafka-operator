@@ -3,27 +3,41 @@
 # DON'T MANUALLY EDIT THIS FILE
 # =============
 
+# This script requires https://github.com/mikefarah/yq (not to be confused with https://github.com/kislyuk/yq)
+# It is available from Nixpkgs as `yq-go` (`nix shell nixpkgs#yq-go`)
+
 .PHONY: docker chart-lint compile-chart
 
 TAG    := $(shell git rev-parse --short HEAD)
 
 VERSION := $(shell cargo metadata --format-version 1 | jq '.packages[] | select(.name=="stackable-kafka-operator") | .version')
 
-docker:
+## Docker related targets
+docker-build:
 	docker build --force-rm -t "docker.stackable.tech/stackable/kafka-operator:${VERSION}" -f docker/Dockerfile .
+
+docker-build-latest: docker-build
+	docker tag "docker.stackable.tech/stackable/kafka-operator:${VERSION}" \
+	           "docker.stackable.tech/stackable/kafka-operator:latest"
+
+docker-publish:
 	echo "${NEXUS_PASSWORD}" | docker login --username github --password-stdin docker.stackable.tech
 	docker push --all-tags docker.stackable.tech/stackable/kafka-operator
+
+docker: docker-build docker-publish
+
+docker-release: docker-build-latest docker-publish
 
 ## Chart related targets
 compile-chart: version crds config 
 
 chart-clean:
 	rm -rf deploy/helm/kafka-operator/configs
+	rm -rf deploy/helm/kafka-operator/crds
 	rm -rf deploy/helm/kafka-operator/templates/crds.yaml
 
 version:
 	yq eval -i '.version = ${VERSION} | .appVersion = ${VERSION}' deploy/helm/kafka-operator/Chart.yaml
-
 
 config: deploy/helm/kafka-operator/configs
 
@@ -34,7 +48,7 @@ crds: deploy/helm/kafka-operator/crds/crds.yaml
 
 deploy/helm/kafka-operator/crds/crds.yaml:
 	mkdir -p deploy/helm/kafka-operator/crds
-	cat deploy/crd/*.yaml | yq e '.metadata.annotations["helm.sh/resource-policy"]="keep"' - > ${@}
+	cat deploy/crd/*.yaml | yq eval '.metadata.annotations["helm.sh/resource-policy"]="keep"' - > ${@}
 
 chart-lint: compile-chart
 	docker run -it -v $(shell pwd):/build/helm-charts -w /build/helm-charts quay.io/helmpack/chart-testing:v3.4.0  ct lint --config deploy/helm/chart_testing.yaml
