@@ -79,7 +79,7 @@ fn build_discovery_configmap(
                 .name_and_namespace(kafka)
                 .name(name)
                 .ownerreference_from_resource(owner, None, Some(true))
-                .with_context(|| ObjectMissingMetadataForOwnerRef {
+                .with_context(|_| ObjectMissingMetadataForOwnerRefSnafu {
                     kafka: ObjectRef::from_obj(kafka),
                 })?
                 .with_recommended_labels(
@@ -93,7 +93,7 @@ fn build_discovery_configmap(
         )
         .add_data("KAFKA", bootstrap_servers)
         .build()
-        .context(BuildConfigMap)
+        .context(BuildConfigMapSnafu)
 }
 
 fn find_named_svc_port<'a>(svc: &'a Service, port_name: &str) -> Option<&'a ServicePort> {
@@ -112,11 +112,17 @@ fn service_hosts(
 ) -> Result<impl IntoIterator<Item = (String, u16)>, Error> {
     let svc_fqdn = format!(
         "{}.{}.svc.cluster.local",
-        svc.metadata.name.as_deref().context(NoName)?,
-        svc.metadata.namespace.as_deref().context(NoNamespace)?
+        svc.metadata.name.as_deref().context(NoNameSnafu)?,
+        svc.metadata
+            .namespace
+            .as_deref()
+            .context(NoNamespaceSnafu)?
     );
-    let svc_port = find_named_svc_port(svc, port_name).context(NoServicePort { port_name })?;
-    Ok([(svc_fqdn, svc_port.port.try_into().context(InvalidNodePort)?)])
+    let svc_port = find_named_svc_port(svc, port_name).context(NoServicePortSnafu { port_name })?;
+    Ok([(
+        svc_fqdn,
+        svc_port.port.try_into().context(InvalidNodePortSnafu)?,
+    )])
 }
 
 /// Lists all nodes currently hosting Pods participating in the [`Service`]
@@ -125,15 +131,15 @@ async fn nodeport_hosts(
     svc: &Service,
     port_name: &str,
 ) -> Result<impl IntoIterator<Item = (String, u16)>, Error> {
-    let svc_port = find_named_svc_port(svc, port_name).context(NoServicePort { port_name })?;
-    let node_port = svc_port.node_port.context(NoNodePort { port_name })?;
+    let svc_port = find_named_svc_port(svc, port_name).context(NoServicePortSnafu { port_name })?;
+    let node_port = svc_port.node_port.context(NoNodePortSnafu { port_name })?;
     let endpoints = client
         .get::<Endpoints>(
-            svc.metadata.name.as_deref().context(NoName)?,
+            svc.metadata.name.as_deref().context(NoNameSnafu)?,
             svc.metadata.namespace.as_deref(),
         )
         .await
-        .with_context(|| FindEndpoints {
+        .with_context(|_| FindEndpointsSnafu {
             svc: ObjectRef::from_obj(svc),
         })?;
     let nodes = endpoints
@@ -144,7 +150,7 @@ async fn nodeport_hosts(
         .flatten()
         .flat_map(|addr| addr.node_name);
     let addrs = nodes
-        .map(|node| Ok((node, node_port.try_into().context(InvalidNodePort)?)))
+        .map(|node| Ok((node, node_port.try_into().context(InvalidNodePortSnafu)?)))
         .collect::<Result<BTreeSet<_>, _>>()?;
     Ok(addrs)
 }

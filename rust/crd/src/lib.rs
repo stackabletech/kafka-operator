@@ -61,11 +61,7 @@ impl KafkaCluster {
     /// We try to predict the pods here rather than looking at the current cluster state in order to
     /// avoid instance churn.
     pub fn pods(&self) -> Result<impl Iterator<Item = KafkaPodRef> + '_, NoNamespaceError> {
-        let ns = self
-            .metadata
-            .namespace
-            .clone()
-            .context(NoNamespaceContext)?;
+        let ns = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
         Ok(self
             .spec
             .brokers

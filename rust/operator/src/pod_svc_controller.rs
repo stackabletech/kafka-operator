@@ -42,7 +42,7 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub async fn reconcile_pod(pod: Pod, ctx: Context<Ctx>) -> Result<ReconcilerAction> {
     tracing::info!("Starting reconcile");
-    let name = pod.metadata.name.clone().context(ObjectHasNoName)?;
+    let name = pod.metadata.name.clone().context(ObjectHasNoNameSnafu)?;
     let svc = Service {
         metadata: ObjectMeta {
             namespace: pod.metadata.namespace.clone(),
@@ -51,7 +51,7 @@ pub async fn reconcile_pod(pod: Pod, ctx: Context<Ctx>) -> Result<ReconcilerActi
                 api_version: "v1".to_string(),
                 kind: "Pod".to_string(),
                 name: name.clone(),
-                uid: pod.metadata.uid.context(ObjectHasNoUid)?,
+                uid: pod.metadata.uid.context(ObjectHasNoUidSnafu)?,
                 ..OwnerReference::default()
             }]),
             ..ObjectMeta::default()
@@ -74,7 +74,7 @@ pub async fn reconcile_pod(pod: Pod, ctx: Context<Ctx>) -> Result<ReconcilerActi
         .client
         .apply_patch(FIELD_MANAGER_SCOPE, &svc, &svc)
         .await
-        .with_context(|| ApplyServiceFailed {
+        .with_context(|_| ApplyServiceFailedSnafu {
             service: ObjectRef::from_obj(&svc),
         })?;
     Ok(ReconcilerAction {

@@ -135,17 +135,17 @@ pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<R
                         PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()),
                         PropertyNameKind::Env,
                     ],
-                    kafka.spec.brokers.clone().context(NoBrokerRole)?,
+                    kafka.spec.brokers.clone().context(NoBrokerRoleSnafu)?,
                 ),
             )]
             .into(),
         )
-        .context(GenerateProductConfig)?,
+        .context(GenerateProductConfigSnafu)?,
         &ctx.get_ref().product_config,
         false,
         false,
     )
-    .context(InvalidProductConfig)?;
+    .context(InvalidProductConfigSnafu)?;
     let role_broker_config = validated_config
         .get(&KafkaRole::Broker.to_string())
         .map(Cow::Borrowed)
@@ -159,7 +159,7 @@ pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<R
             &broker_role_service,
         )
         .await
-        .context(ApplyRoleService)?;
+        .context(ApplyRoleServiceSnafu)?;
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup = kafka.broker_rolegroup_ref(rolegroup_name);
 
@@ -170,31 +170,31 @@ pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<R
         client
             .apply_patch(FIELD_MANAGER_SCOPE, &rg_service, &rg_service)
             .await
-            .with_context(|| ApplyRoleGroupService {
+            .with_context(|_| ApplyRoleGroupServiceSnafu {
                 rolegroup: rolegroup.clone(),
             })?;
         client
             .apply_patch(FIELD_MANAGER_SCOPE, &rg_configmap, &rg_configmap)
             .await
-            .with_context(|| ApplyRoleGroupConfig {
+            .with_context(|_| ApplyRoleGroupConfigSnafu {
                 rolegroup: rolegroup.clone(),
             })?;
         client
             .apply_patch(FIELD_MANAGER_SCOPE, &rg_statefulset, &rg_statefulset)
             .await
-            .with_context(|| ApplyRoleGroupStatefulSet {
+            .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
                 rolegroup: rolegroup.clone(),
             })?;
     }
 
     for discovery_cm in build_discovery_configmaps(client, &kafka, &kafka, &broker_role_service)
         .await
-        .context(BuildDiscoveryConfig)?
+        .context(BuildDiscoveryConfigSnafu)?
     {
         client
             .apply_patch(FIELD_MANAGER_SCOPE, &discovery_cm, &discovery_cm)
             .await
-            .context(ApplyDiscoveryConfig)?;
+            .context(ApplyDiscoveryConfigSnafu)?;
     }
 
     Ok(ReconcilerAction {
@@ -208,13 +208,13 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
     let role_name = KafkaRole::Broker.to_string();
     let role_svc_name = kafka
         .broker_role_service_name()
-        .context(GlobalServiceNameNotFound)?;
+        .context(GlobalServiceNameNotFoundSnafu)?;
     Ok(Service {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
             .name(&role_svc_name)
             .ownerreference_from_resource(kafka, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRef)?
+            .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(kafka, APP_NAME, kafka_version(kafka)?, &role_name, "global")
             .build(),
         spec: Some(ServiceSpec {
@@ -252,7 +252,7 @@ fn build_broker_rolegroup_config_map(
                 .name_and_namespace(kafka)
                 .name(rolegroup.object_name())
                 .ownerreference_from_resource(kafka, None, Some(true))
-                .context(ObjectMissingMetadataForOwnerRef)?
+                .context(ObjectMissingMetadataForOwnerRefSnafu)?
                 .with_recommended_labels(
                     kafka,
                     APP_NAME,
@@ -265,13 +265,13 @@ fn build_broker_rolegroup_config_map(
         .add_data(
             "server.properties",
             to_java_properties_string(server_cfg.iter().map(|(k, v)| (k, v))).with_context(
-                || SerializeZooCfg {
+                |_| SerializeZooCfgSnafu {
                     rolegroup: rolegroup.clone(),
                 },
             )?,
         )
         .build()
-        .with_context(|| BuildRoleGroupConfig {
+        .with_context(|_| BuildRoleGroupConfigSnafu {
             rolegroup: rolegroup.clone(),
         })
 }
@@ -288,7 +288,7 @@ fn build_broker_rolegroup_service(
             .name_and_namespace(kafka)
             .name(&rolegroup.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRef)?
+            .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(
                 kafka,
                 APP_NAME,
@@ -334,11 +334,11 @@ fn build_broker_rolegroup_statefulset(
     kafka: &KafkaCluster,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
 ) -> Result<StatefulSet> {
-    let role = kafka.spec.brokers.as_ref().context(NoBrokerRole)?;
+    let role = kafka.spec.brokers.as_ref().context(NoBrokerRoleSnafu)?;
     let rolegroup = role
         .role_groups
         .get(&rolegroup_ref.role_group)
-        .context(RoleGroupNotFound)?;
+        .context(RoleGroupNotFoundSnafu)?;
     let kafka_version = kafka_version(kafka)?;
     let image = format!(
         "docker.stackable.tech/stackable/kafka:{}-stackable0",
@@ -478,7 +478,7 @@ fn build_broker_rolegroup_statefulset(
             .name_and_namespace(kafka)
             .name(&rolegroup_ref.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRef)?
+            .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(
                 kafka,
                 APP_NAME,
@@ -558,7 +558,11 @@ fn build_broker_rolegroup_statefulset(
 }
 
 pub fn kafka_version(kafka: &KafkaCluster) -> Result<&str> {
-    kafka.spec.version.as_deref().context(ObjectHasNoVersion)
+    kafka
+        .spec
+        .version
+        .as_deref()
+        .context(ObjectHasNoVersionSnafu)
 }
 
 pub fn error_policy(_error: &Error, _ctx: Context<Ctx>) -> ReconcilerAction {

@@ -20,5 +20,5 @@ strum = "0.23"
 thiserror = "1.0"
 tokio = { version = "1.14", features = ["macros"] }
 tracing = "0.1"
-snafu = "0.6.10"
+snafu = "0.7"
 tracing-futures = { version = "0.2.5", features = ["futures-03"] }
