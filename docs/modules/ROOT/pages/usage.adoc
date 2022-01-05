@@ -51,5 +51,7 @@ If you wish to include integration with https://docs.stackable.tech/opa/index.ht
             replicas: 1
     EOF
 
+In either case, the Kafka pods must be bound to a role that has permission to `get` `Service` objects. This can be set up using kubectl:
 
+    kubectl create rolebinding kafka --clusterrole=view --serviceaccount=default:default
 
