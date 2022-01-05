@@ -444,28 +444,35 @@ fn build_broker_rolegroup_statefulset(
         ])
         .add_env_vars(env)
         .add_env_var("EXTRA_ARGS", jvm_args)
-        // Only allow the global load balancing service to send traffic to pods that are members of the quorum
-        // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
-        .readiness_probe(Probe {
-            exec: Some(ExecAction {
-                // If the broker is able to get its cluster ID then it has at least completed basic registration at some point
-                command: Some(vec![
-                    "bin/kafka-cluster.sh".to_string(),
-                    "cluster-id".to_string(),
-                    "--bootstrap-server".to_string(),
-                    format!("localhost:{}", APP_PORT),
-                ]),
-            }),
-            timeout_seconds: Some(3),
-            period_seconds: Some(1),
-            ..Probe::default()
-        })
         .add_container_port("kafka", APP_PORT.into())
         .add_container_port("metrics", METRICS_PORT.into())
         .add_volume_mount("data", "/stackable/data")
         .add_volume_mount("config", "/stackable/config")
         .add_volume_mount("tmp", "/stackable/tmp")
         .build();
+    // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
+    // unacceptable perf overhead
+    let mut container_kcat_prober = ContainerBuilder::new("kcat-prober")
+        .image("edenhill/kcat:1.7.0")
+        .command(vec!["sh".to_string()])
+        // Only allow the global load balancing service to send traffic to pods that are members of the quorum
+        // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
+        .readiness_probe(Probe {
+            exec: Some(ExecAction {
+                // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
+                command: Some(vec![
+                    "kcat".to_string(),
+                    "-b".to_string(),
+                    format!("localhost:{}", APP_PORT),
+                    "-L".to_string(),
+                ]),
+            }),
+            timeout_seconds: Some(3),
+            period_seconds: Some(1),
+            ..Probe::default()
+        })
+        .build();
+    container_kcat_prober.stdin = Some(true);
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
@@ -510,6 +517,7 @@ fn build_broker_rolegroup_statefulset(
                 })
                 .add_init_container(container_get_svc)
                 .add_container(container_kafka)
+                .add_container(container_kcat_prober)
                 .add_volume(Volume {
                     name: "config".to_string(),
                     config_map: Some(ConfigMapVolumeSource {
