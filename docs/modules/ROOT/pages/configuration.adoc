@@ -67,9 +67,9 @@ There are three levels of configuration:
 |The Kafka version used in the format: x.y.z
 |
 
-|zookeeperReference
-|struct
-|A reference to a ZooKeeper cluster (namespace, name, chroot)
+|zookeeperConfigMapName
+|string
+|A reference to a ConfigMap containing a connection string for connecting to a ZooKeeper cluster
 |
 
 |opa
@@ -81,7 +81,7 @@ There are three levels of configuration:
 === Role & RoleGroup options
 We pool Role and RoleGroup options, since they are the same for Role and RoleGroup.
 
-==== Server
+==== Broker
 [cols="1,1,1,1,1"]
 |===
 |Name
@@ -89,18 +89,6 @@ We pool Role and RoleGroup options, since they are the same for Role and RoleGro
 |Description
 |Related Kafka properties
 |Location
-
-|metricsPort
-|integer
-|The port where Kafka metrics are exposed as a Prometheus endpoint.
-|
-|JMX Exporter / CLI
-
-|logDirs
-|string
-|A comma separated list of directories under which to store log files
-|log.Dirs
-|server.properties
 
 |===
 

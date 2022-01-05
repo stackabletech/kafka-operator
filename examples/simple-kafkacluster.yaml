@@ -15,8 +15,6 @@ spec:
     roleGroups:
       default:
         replicas: 5
-        config:
-          metricsPort: 9606
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperZnode
