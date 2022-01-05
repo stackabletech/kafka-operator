@@ -17,16 +17,10 @@ pub enum Error {
         source: stackable_operator::error::Error,
         kafka: ObjectRef<KafkaCluster>,
     },
-    #[snafu(display("chroot path {} was relative (must be absolute)", chroot))]
-    RelativeChroot { chroot: String },
     #[snafu(display("object has no name associated"))]
     NoName,
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
-    #[snafu(display("failed to list expected pods"))]
-    ExpectedPods {
-        source: stackable_kafka_crd::NoNamespaceError,
-    },
     #[snafu(display("could not find service port with name {}", port_name))]
     NoServicePort { port_name: String },
     #[snafu(display("service port with name {} does not have a nodePort", port_name))]
@@ -72,10 +66,9 @@ fn build_discovery_configmap(
     kafka: &KafkaCluster,
     hosts: impl IntoIterator<Item = (impl Into<String>, u16)>,
 ) -> Result<ConfigMap, Error> {
-    // Write a connection string of the format that Java ZooKeeper client expects:
-    // "{host1}:{port1},{host2:port2},.../{chroot}"
-    // See https://zookeeper.apache.org/doc/current/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#ZooKeeper-java.lang.String-int-org.apache.zookeeper.Watcher-
-    let conn_str = hosts
+    // Write a list of bootstrap servers in the format that Kafka clients:
+    // "{host1}:{port1},{host2:port2},..."
+    let bootstrap_servers = hosts
         .into_iter()
         .map(|(host, port)| format!("{}:{}", host.into(), port))
         .collect::<Vec<_>>()
@@ -98,7 +91,7 @@ fn build_discovery_configmap(
                 )
                 .build(),
         )
-        .add_data("KAFKA", conn_str)
+        .add_data("KAFKA", bootstrap_servers)
         .build()
         .context(BuildConfigMap)
 }
