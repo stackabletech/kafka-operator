@@ -125,7 +125,7 @@ pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<R
     let client = &ctx.get_ref().client;
 
     let validated_config = validate_all_roles_and_groups_config(
-        &kafka.spec.version,
+        kafka_version(&kafka)?,
         &transform_all_roles_to_config(
             &kafka,
             [(
@@ -342,7 +342,7 @@ fn build_broker_rolegroup_statefulset(
     let kafka_version = kafka_version(kafka)?;
     let image = format!(
         "docker.stackable.tech/stackable/kafka:{}-stackable0",
-        kafka.spec.version
+        kafka_version
     );
     let container_get_svc = ContainerBuilder::new("get-svc")
         .image("bitnami/kubectl:1.21.1")
@@ -558,7 +558,7 @@ fn build_broker_rolegroup_statefulset(
 }
 
 pub fn kafka_version(kafka: &KafkaCluster) -> Result<&str> {
-    Ok(&kafka.spec.version)
+    kafka.spec.version.as_deref().context(ObjectHasNoVersion)
 }
 
 pub fn error_policy(_error: &Error, _ctx: Context<Ctx>) -> ReconcilerAction {

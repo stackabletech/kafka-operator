@@ -31,7 +31,7 @@ pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 )]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterSpec {
-    pub version: String,
+    pub version: Option<String>,
     pub brokers: Option<Role<KafkaConfig>>,
     pub zookeeper_config_map_name: String,
     pub opa: Option<OpaConfig>,
