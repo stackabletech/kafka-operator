@@ -20,6 +20,7 @@ pub async fn create_controller(client: Client, product_config: ProductConfigMana
             .owns(client.get_all_api::<StatefulSet>(), ListParams::default())
             .owns(client.get_all_api::<Service>(), ListParams::default())
             .owns(client.get_all_api::<ConfigMap>(), ListParams::default())
+            .shutdown_on_signal()
             .run(
                 kafka_controller::reconcile_kafka,
                 kafka_controller::error_policy,
@@ -34,6 +35,7 @@ pub async fn create_controller(client: Client, product_config: ProductConfigMana
         ListParams::default().labels(&format!("{}=true", pod_svc_controller::LABEL_ENABLE)),
     )
     .owns(client.get_all_api::<Pod>(), ListParams::default())
+    .shutdown_on_signal()
     .run(
         pod_svc_controller::reconcile_pod,
         pod_svc_controller::error_policy,
