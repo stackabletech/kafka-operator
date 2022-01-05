@@ -344,7 +344,7 @@ fn build_broker_rolegroup_statefulset(
         "docker.stackable.tech/stackable/kafka:{}-stackable0",
         kafka.spec.version
     );
-    let container_create_svc = ContainerBuilder::new("get-svc")
+    let container_get_svc = ContainerBuilder::new("get-svc")
         .image("bitnami/kubectl:1.21.1")
         .command(vec!["bash".to_string()])
         .args(vec![
@@ -508,7 +508,7 @@ fn build_broker_rolegroup_statefulset(
                     )
                     .with_label(pod_svc_controller::LABEL_ENABLE, "true")
                 })
-                .add_init_container(container_create_svc)
+                .add_init_container(container_get_svc)
                 .add_container(container_kafka)
                 .add_volume(Volume {
                     name: "config".to_string(),
