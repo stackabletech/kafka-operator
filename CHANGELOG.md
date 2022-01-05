@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Complete rework ([#256]).
+
+[#256]: https://github.com/stackabletech/kafka-operator/pull/256
+
 ## [0.4.0] - 2021-12-06
 
 
