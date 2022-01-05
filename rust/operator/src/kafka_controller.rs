@@ -301,7 +301,7 @@ fn build_broker_rolegroup_service(
             cluster_ip: Some("None".to_string()),
             ports: Some(vec![
                 ServicePort {
-                    name: Some("zk".to_string()),
+                    name: Some("kafka".to_string()),
                     port: APP_PORT.into(),
                     protocol: Some("TCP".to_string()),
                     ..ServicePort::default()
