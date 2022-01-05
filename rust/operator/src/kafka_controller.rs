@@ -55,7 +55,7 @@ pub enum Error {
     ObjectHasNoNamespace,
     #[snafu(display("object defines no version"))]
     ObjectHasNoVersion,
-    #[snafu(display("object defines no server role"))]
+    #[snafu(display("object defines no broker role"))]
     NoBrokerRole,
     #[snafu(display("failed to calculate global service name"))]
     GlobalServiceNameNotFound,
@@ -146,7 +146,7 @@ pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<R
         false,
     )
     .context(InvalidProductConfig)?;
-    let role_server_config = validated_config
+    let role_broker_config = validated_config
         .get(&KafkaRole::Broker.to_string())
         .map(Cow::Borrowed)
         .unwrap_or_default();
@@ -160,7 +160,7 @@ pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<R
         )
         .await
         .context(ApplyRoleService)?;
-    for (rolegroup_name, rolegroup_config) in role_server_config.iter() {
+    for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup = kafka.broker_rolegroup_ref(rolegroup_name);
 
         let rg_service = build_broker_rolegroup_service(&rolegroup, &kafka)?;
@@ -236,9 +236,9 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
 fn build_broker_rolegroup_config_map(
     rolegroup: &RoleGroupRef<KafkaCluster>,
     kafka: &KafkaCluster,
-    server_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
+    broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
 ) -> Result<ConfigMap> {
-    let server_cfg = server_config
+    let server_cfg = broker_config
         .get(&PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()))
         .cloned()
         .unwrap_or_default();
