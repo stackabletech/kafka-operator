@@ -12,6 +12,8 @@ use stackable_operator::kube::api::ListParams;
 use stackable_operator::kube::runtime::controller::Context;
 use stackable_operator::kube::runtime::Controller;
 use stackable_operator::product_config::ProductConfigManager;
+use tracing::info_span;
+use tracing_futures::Instrument;
 use utils::erase_controller_result_type;
 
 pub async fn create_controller(client: Client, product_config: ProductConfigManager) {
@@ -28,7 +30,8 @@ pub async fn create_controller(client: Client, product_config: ProductConfigMana
                     client: client.clone(),
                     product_config,
                 }),
-            );
+            )
+            .instrument(info_span!("kafka_controller"));
 
     let pod_svc_controller = Controller::new(
         client.get_all_api::<Pod>(),
@@ -40,7 +43,8 @@ pub async fn create_controller(client: Client, product_config: ProductConfigMana
         pod_svc_controller::reconcile_pod,
         pod_svc_controller::error_policy,
         Context::new(pod_svc_controller::Ctx { client }),
-    );
+    )
+    .instrument(info_span!("pod_svc_controller"));
 
     futures::stream::select(
         kafka_controller.map(erase_controller_result_type),
