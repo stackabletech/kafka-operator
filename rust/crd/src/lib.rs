@@ -12,12 +12,8 @@ use strum_macros::{Display, EnumIter, EnumString};
 pub const APP_NAME: &str = "kafka";
 pub const APP_PORT: u16 = 9092;
 pub const METRICS_PORT: u16 = 9606;
-pub const MANAGED_BY: &str = "kafka-operator";
 
 pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
-
-pub const ZOOKEEPER_CONNECT: &str = "zookeeper.connect";
-pub const OPA_AUTHORIZER_URL: &str = "opa.authorizer.url";
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
