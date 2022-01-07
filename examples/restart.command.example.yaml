@@ -1,7 +1,0 @@
-apiVersion: command.kafka.stackable.tech/v1alpha1
-kind: Restart
-metadata:
-  name: kafka-cluster-command-restart
-spec:
-  name: "simple"
-  rolling: true
