@@ -150,9 +150,11 @@ properties:
             file: "server.properties"
       datatype:
         type: "string"
+      recommendedValues:
+        - value: "/stackable/data"
       roles:
-        - name: "server"
-          required: false
+        - name: "broker"
+          required: true
       asOfVersion: "0.0.0"
       description: "A comma separated list of directories under which to store log files"
 
@@ -167,7 +169,7 @@ properties:
         min: "1024"
         max: "65535"
       roles:
-        - name: "server"
+        - name: "broker"
           required: false
       asOfVersion: "0.0.0"
       description: "The port where Kafka metrics are exposed as a Prometheus endpoint."
