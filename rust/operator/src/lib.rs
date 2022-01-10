@@ -16,7 +16,15 @@ use tracing::info_span;
 use tracing_futures::Instrument;
 use utils::erase_controller_result_type;
 
-pub async fn create_controller(client: Client, product_config: ProductConfigManager) {
+pub struct ControllerConfig {
+    pub broker_clusterrole: String,
+}
+
+pub async fn create_controller(
+    client: Client,
+    controller_config: ControllerConfig,
+    product_config: ProductConfigManager,
+) {
     let kafka_controller =
         Controller::new(client.get_all_api::<KafkaCluster>(), ListParams::default())
             .owns(client.get_all_api::<StatefulSet>(), ListParams::default())
@@ -28,6 +36,7 @@ pub async fn create_controller(client: Client, product_config: ProductConfigMana
                 kafka_controller::error_policy,
                 Context::new(kafka_controller::Ctx {
                     client: client.clone(),
+                    controller_config,
                     product_config,
                 }),
             )

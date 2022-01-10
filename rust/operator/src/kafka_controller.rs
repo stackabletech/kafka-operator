@@ -18,15 +18,20 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, EmptyDirVolumeSource,
                 EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector, PersistentVolumeClaim,
-                PersistentVolumeClaimSpec, Probe, ResourceRequirements, Service, ServicePort,
-                ServiceSpec, Volume,
+                PersistentVolumeClaimSpec, PodSpec, Probe, ResourceRequirements, Service,
+                ServiceAccount, ServicePort, ServiceSpec, Volume,
             },
+            rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
+        Resource,
     },
     kube::{
         api::ObjectMeta,
-        runtime::controller::{Context, ReconcilerAction},
+        runtime::{
+            controller::{Context, ReconcilerAction},
+            reflector::ObjectRef,
+        },
     },
     labels::{role_group_selector_labels, role_selector_labels},
     product_config::{
@@ -39,12 +44,15 @@ use stackable_operator::{
 use crate::{
     discovery::{self, build_discovery_configmaps},
     pod_svc_controller,
+    utils::{self, ObjectRefExt},
+    ControllerConfig,
 };
 
 const FIELD_MANAGER_SCOPE: &str = "kafkacluster";
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
+    pub controller_config: ControllerConfig,
     pub product_config: ProductConfigManager,
 }
 
@@ -53,6 +61,8 @@ pub struct Ctx {
 pub enum Error {
     #[snafu(display("object has no namespace"))]
     ObjectHasNoNamespace,
+    #[snafu(display("object has no name"))]
+    ObjectHasNoName,
     #[snafu(display("object defines no version"))]
     ObjectHasNoVersion,
     #[snafu(display("object defines no broker role"))]
@@ -63,8 +73,16 @@ pub enum Error {
     RoleGroupServiceNameNotFound {
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
-    #[snafu(display("failed to apply global Service"))]
+    #[snafu(display("failed to apply role Service"))]
     ApplyRoleService {
+        source: stackable_operator::error::Error,
+    },
+    #[snafu(display("failed to apply role ServiceAccount"))]
+    ApplyRoleServiceAccount {
+        source: stackable_operator::error::Error,
+    },
+    #[snafu(display("failed to apply global RoleBinding"))]
+    ApplyRoleRoleBinding {
         source: stackable_operator::error::Error,
     },
     #[snafu(display("failed to apply Service for {}", rolegroup))]
@@ -105,9 +123,7 @@ pub enum Error {
         source: stackable_operator::error::Error,
     },
     #[snafu(display("failed to build discovery ConfigMap"))]
-    BuildDiscoveryConfig {
-        source: discovery::Error,
-    },
+    BuildDiscoveryConfig { source: discovery::Error },
     #[snafu(display("failed to apply discovery ConfigMap"))]
     ApplyDiscoveryConfig {
         source: stackable_operator::error::Error,
@@ -116,7 +132,14 @@ pub enum Error {
     ApplyStatus {
         source: stackable_operator::error::Error,
     },
-    RoleGroupNotFound,
+    #[snafu(display("failed to find rolegroup {}", rolegroup))]
+    RoleGroupNotFound {
+        rolegroup: RoleGroupRef<KafkaCluster>,
+    },
+    #[snafu(display("invalid ServiceAccount"))]
+    InvalidServiceAccount {
+        source: utils::NamespaceMismatchError,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -152,6 +175,9 @@ pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<R
         .unwrap_or_default();
 
     let broker_role_service = build_broker_role_service(&kafka)?;
+    let (broker_role_serviceaccount, broker_role_rolebinding) =
+        build_broker_role_serviceaccount(&kafka, &ctx.get_ref().controller_config)?;
+    let broker_role_serviceaccount_ref = ObjectRef::from_obj(&broker_role_serviceaccount);
     let broker_role_service = client
         .apply_patch(
             FIELD_MANAGER_SCOPE,
@@ -160,13 +186,33 @@ pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<R
         )
         .await
         .context(ApplyRoleServiceSnafu)?;
+    client
+        .apply_patch(
+            FIELD_MANAGER_SCOPE,
+            &broker_role_serviceaccount,
+            &broker_role_serviceaccount,
+        )
+        .await
+        .context(ApplyRoleServiceAccountSnafu)?;
+    client
+        .apply_patch(
+            FIELD_MANAGER_SCOPE,
+            &broker_role_rolebinding,
+            &broker_role_rolebinding,
+        )
+        .await
+        .context(ApplyRoleRoleBindingSnafu)?;
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup = kafka.broker_rolegroup_ref(rolegroup_name);
 
         let rg_service = build_broker_rolegroup_service(&rolegroup, &kafka)?;
         let rg_configmap = build_broker_rolegroup_config_map(&rolegroup, &kafka, rolegroup_config)?;
-        let rg_statefulset =
-            build_broker_rolegroup_statefulset(&rolegroup, &kafka, rolegroup_config)?;
+        let rg_statefulset = build_broker_rolegroup_statefulset(
+            &rolegroup,
+            &kafka,
+            rolegroup_config,
+            &broker_role_serviceaccount_ref,
+        )?;
         client
             .apply_patch(FIELD_MANAGER_SCOPE, &rg_service, &rg_service)
             .await
@@ -230,6 +276,46 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
         }),
         status: None,
     })
+}
+
+fn build_broker_role_serviceaccount(
+    kafka: &KafkaCluster,
+    controller_config: &ControllerConfig,
+) -> Result<(ServiceAccount, RoleBinding)> {
+    let role_name = KafkaRole::Broker.to_string();
+    let sa_name = format!("{}-{}", kafka.metadata.name.as_ref().unwrap(), role_name);
+    let sa = ServiceAccount {
+        metadata: ObjectMetaBuilder::new()
+            .name_and_namespace(kafka)
+            .name(&sa_name)
+            .ownerreference_from_resource(kafka, None, Some(true))
+            .context(ObjectMissingMetadataForOwnerRefSnafu)?
+            .with_recommended_labels(kafka, APP_NAME, kafka_version(kafka)?, &role_name, "global")
+            .build(),
+        ..ServiceAccount::default()
+    };
+    let binding_name = &sa_name;
+    let binding = RoleBinding {
+        metadata: ObjectMetaBuilder::new()
+            .name_and_namespace(kafka)
+            .name(binding_name)
+            .ownerreference_from_resource(kafka, None, Some(true))
+            .context(ObjectMissingMetadataForOwnerRefSnafu)?
+            .with_recommended_labels(kafka, APP_NAME, kafka_version(kafka)?, &role_name, "global")
+            .build(),
+        role_ref: RoleRef {
+            api_group: ClusterRole::GROUP.to_string(),
+            kind: ClusterRole::KIND.to_string(),
+            name: controller_config.broker_clusterrole.clone(),
+        },
+        subjects: Some(vec![Subject {
+            api_group: Some(ServiceAccount::GROUP.to_string()),
+            kind: ServiceAccount::KIND.to_string(),
+            name: sa_name,
+            namespace: sa.metadata.namespace.clone(),
+        }]),
+    };
+    Ok((sa, binding))
 }
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
@@ -333,12 +419,15 @@ fn build_broker_rolegroup_statefulset(
     rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     kafka: &KafkaCluster,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
+    serviceaccount: &ObjectRef<ServiceAccount>,
 ) -> Result<StatefulSet> {
     let role = kafka.spec.brokers.as_ref().context(NoBrokerRoleSnafu)?;
     let rolegroup = role
         .role_groups
         .get(&rolegroup_ref.role_group)
-        .context(RoleGroupNotFoundSnafu)?;
+        .with_context(|| RoleGroupNotFoundSnafu {
+            rolegroup: rolegroup_ref.clone(),
+        })?;
     let kafka_version = kafka_version(kafka)?;
     let image = format!(
         "docker.stackable.tech/stackable/kafka:{}-stackable0",
@@ -473,6 +562,43 @@ fn build_broker_rolegroup_statefulset(
         })
         .build();
     container_kcat_prober.stdin = Some(true);
+    let mut pod_template = PodBuilder::new()
+        .metadata_builder(|m| {
+            m.with_recommended_labels(
+                kafka,
+                APP_NAME,
+                kafka_version,
+                &rolegroup_ref.role,
+                &rolegroup_ref.role_group,
+            )
+            .with_label(pod_svc_controller::LABEL_ENABLE, "true")
+        })
+        .add_init_container(container_get_svc)
+        .add_container(container_kafka)
+        .add_container(container_kcat_prober)
+        .add_volume(Volume {
+            name: "config".to_string(),
+            config_map: Some(ConfigMapVolumeSource {
+                name: Some(rolegroup_ref.object_name()),
+                ..ConfigMapVolumeSource::default()
+            }),
+            ..Volume::default()
+        })
+        .add_volume(Volume {
+            name: "tmp".to_string(),
+            empty_dir: Some(EmptyDirVolumeSource::default()),
+            ..Volume::default()
+        })
+        .build_template();
+    let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
+    // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
+    pod_template_spec.share_process_namespace = Some(true);
+    pod_template_spec.service_account_name = Some(
+        serviceaccount
+            .name_in_ns_of(kafka)
+            .context(InvalidServiceAccountSnafu)?
+            .to_string(),
+    );
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
@@ -504,34 +630,7 @@ fn build_broker_rolegroup_statefulset(
                 ..LabelSelector::default()
             },
             service_name: rolegroup_ref.object_name(),
-            template: PodBuilder::new()
-                .metadata_builder(|m| {
-                    m.with_recommended_labels(
-                        kafka,
-                        APP_NAME,
-                        kafka_version,
-                        &rolegroup_ref.role,
-                        &rolegroup_ref.role_group,
-                    )
-                    .with_label(pod_svc_controller::LABEL_ENABLE, "true")
-                })
-                .add_init_container(container_get_svc)
-                .add_container(container_kafka)
-                .add_container(container_kcat_prober)
-                .add_volume(Volume {
-                    name: "config".to_string(),
-                    config_map: Some(ConfigMapVolumeSource {
-                        name: Some(rolegroup_ref.object_name()),
-                        ..ConfigMapVolumeSource::default()
-                    }),
-                    ..Volume::default()
-                })
-                .add_volume(Volume {
-                    name: "tmp".to_string(),
-                    empty_dir: Some(EmptyDirVolumeSource::default()),
-                    ..Volume::default()
-                })
-                .build_template(),
+            template: pod_template,
             volume_claim_templates: Some(vec![PersistentVolumeClaim {
                 metadata: ObjectMeta {
                     name: Some("data".to_string()),
