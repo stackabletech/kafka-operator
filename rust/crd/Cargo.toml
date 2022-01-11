@@ -21,7 +21,6 @@ snafu = "0.7"
 
 [dev-dependencies]
 serde_yaml = "0.8"
-rstest = "0.12"
 
 [features]
 default = ["native-tls"]
