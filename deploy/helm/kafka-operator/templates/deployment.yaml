@@ -39,7 +39,8 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
-            KAFKA_BROKER_CLUSTERROLE: {{ .Release.Name }}-kafka-broker-clusterrole
+            - name: KAFKA_BROKER_CLUSTERROLE
+              value: {{ .Release.Name }}-kafka-broker-clusterrole
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
