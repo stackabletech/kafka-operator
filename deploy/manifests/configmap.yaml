@@ -159,7 +159,7 @@ data:
           datatype:
             type: "string"
           recommendedValues:
-            - value: "/stackable/data"
+            - value: "/stackable/data/topicdata"
           roles:
             - name: "broker"
               required: true
