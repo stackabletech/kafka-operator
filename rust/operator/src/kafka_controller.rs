@@ -378,7 +378,12 @@ fn build_broker_rolegroup_statefulset(
     // chowned to that user for it to be able to store data there.
     let mut container_chown = ContainerBuilder::new("chown-data")
         .image(&image)
-        .command(vec!["/bin/bash".to_string(), "-euo".to_string(), "pipefail".to_string(), "-c".to_string()])
+        .command(vec![
+            "/bin/bash".to_string(),
+            "-euo".to_string(),
+            "pipefail".to_string(),
+            "-c".to_string(),
+        ])
         .args(vec![[
             "echo chowning data directory",
             "chown -R stackable:stackable /stackable/data",
