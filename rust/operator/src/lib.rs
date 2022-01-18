@@ -7,7 +7,8 @@ use futures::StreamExt;
 use stackable_kafka_crd::KafkaCluster;
 use stackable_operator::client::Client;
 use stackable_operator::k8s_openapi::api::apps::v1::StatefulSet;
-use stackable_operator::k8s_openapi::api::core::v1::{ConfigMap, Pod, Service};
+use stackable_operator::k8s_openapi::api::core::v1::{ConfigMap, Pod, Service, ServiceAccount};
+use stackable_operator::k8s_openapi::api::rbac::v1::RoleBinding;
 use stackable_operator::kube::api::ListParams;
 use stackable_operator::kube::runtime::controller::Context;
 use stackable_operator::kube::runtime::Controller;
@@ -16,18 +17,32 @@ use tracing::info_span;
 use tracing_futures::Instrument;
 use utils::erase_controller_result_type;
 
-pub async fn create_controller(client: Client, product_config: ProductConfigManager) {
+pub struct ControllerConfig {
+    pub broker_clusterrole: String,
+}
+
+pub async fn create_controller(
+    client: Client,
+    controller_config: ControllerConfig,
+    product_config: ProductConfigManager,
+) {
     let kafka_controller =
         Controller::new(client.get_all_api::<KafkaCluster>(), ListParams::default())
             .owns(client.get_all_api::<StatefulSet>(), ListParams::default())
             .owns(client.get_all_api::<Service>(), ListParams::default())
             .owns(client.get_all_api::<ConfigMap>(), ListParams::default())
+            .owns(
+                client.get_all_api::<ServiceAccount>(),
+                ListParams::default(),
+            )
+            .owns(client.get_all_api::<RoleBinding>(), ListParams::default())
             .shutdown_on_signal()
             .run(
                 kafka_controller::reconcile_kafka,
                 kafka_controller::error_policy,
                 Context::new(kafka_controller::Ctx {
                     client: client.clone(),
+                    controller_config,
                     product_config,
                 }),
             )

@@ -1,4 +1,5 @@
 use stackable_kafka_crd::KafkaCluster;
+use stackable_kafka_operator::ControllerConfig;
 use stackable_operator::cli::Command;
 use stackable_operator::kube::CustomResourceExt;
 use stackable_operator::{client, error};
@@ -12,6 +13,9 @@ mod built_info {
 #[derive(StructOpt)]
 #[structopt(about = built_info::PKG_DESCRIPTION, author = stackable_operator::cli::AUTHOR)]
 struct Opts {
+    #[structopt(long, env)]
+    kafka_broker_clusterrole: String,
+
     #[structopt(subcommand)]
     cmd: Command,
 }
@@ -32,12 +36,16 @@ async fn main() -> Result<(), error::Error> {
                 built_info::BUILT_TIME_UTC,
                 built_info::RUSTC_VERSION,
             );
+            let controller_config = ControllerConfig {
+                broker_clusterrole: opts.kafka_broker_clusterrole,
+            };
             let product_config = product_config.load(&[
                 "deploy/config-spec/properties.yaml",
                 "/etc/stackable/kafka-operator/config-spec/properties.yaml",
             ])?;
             let client = client::create_client(Some("kafka.stackable.tech".to_string())).await?;
-            stackable_kafka_operator::create_controller(client, product_config).await;
+            stackable_kafka_operator::create_controller(client, controller_config, product_config)
+                .await;
         }
     };
 
