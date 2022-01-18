@@ -43,6 +43,11 @@ spec:
           volumeMounts:
             - mountPath: /etc/stackable/{{ include "operator.appname" . }}/config-spec
               name: config-spec
+{[% if operator.product_string in ['kafka'] %}]
+          env:
+            - name: KAFKA_BROKER_CLUSTERROLE
+              value: {{ .Release.Name }}-kafka-broker-clusterrole
+{[% endif %}]
       volumes:
         - name: config-spec
           configMap:
