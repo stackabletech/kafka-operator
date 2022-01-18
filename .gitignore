@@ -7,5 +7,3 @@ target/
 *.iml
 
 *.tgz
-deploy/helm/kafka-operator/configs
-deploy/helm/kafka-operator/templates/crds.yaml
