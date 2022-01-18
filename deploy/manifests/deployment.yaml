@@ -39,6 +39,9 @@ spec:
           volumeMounts:
             - mountPath: /etc/stackable/kafka-operator/config-spec
               name: config-spec
+          env:
+            - name: KAFKA_BROKER_CLUSTERROLE
+              value: kafka-operator-kafka-broker-clusterrole
       volumes:
         - name: config-spec
           configMap:

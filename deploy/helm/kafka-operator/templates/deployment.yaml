@@ -38,14 +38,14 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          env:
-            - name: KAFKA_BROKER_CLUSTERROLE
-              value: {{ .Release.Name }}-kafka-broker-clusterrole
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - mountPath: /etc/stackable/{{ include "operator.appname" . }}/config-spec
               name: config-spec
+          env:
+            - name: KAFKA_BROKER_CLUSTERROLE
+              value: {{ .Release.Name }}-kafka-broker-clusterrole
       volumes:
         - name: config-spec
           configMap:

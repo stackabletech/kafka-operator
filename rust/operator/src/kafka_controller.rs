@@ -10,6 +10,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
     KafkaCluster, KafkaRole, APP_NAME, APP_PORT, METRICS_PORT, SERVER_PROPERTIES_FILE,
 };
+use stackable_operator::k8s_openapi::api::core::v1::SecurityContext;
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     k8s_openapi::{
@@ -459,6 +460,34 @@ fn build_broker_rolegroup_statefulset(
         }])
         .add_volume_mount("tmp", "/stackable/tmp")
         .build();
+
+    // For most storage classes the mounts will belong to the root user and not be writeable to
+    // other users.
+    // Since kafka runs as the user stackable inside of the container the data directory needs to be
+    // chowned to that user for it to be able to store data there.
+    let mut container_chown = ContainerBuilder::new("chown-data")
+        .image(&image)
+        .command(vec![
+            "/bin/bash".to_string(),
+            "-euo".to_string(),
+            "pipefail".to_string(),
+            "-c".to_string(),
+        ])
+        .args(vec![[
+            "echo chowning data directory",
+            "chown -R stackable:stackable /stackable/data",
+            "echo chmodding data directory",
+            "chmod -R a=,u=rwX /stackable/data",
+        ]
+        .join(" && ")])
+        .add_volume_mount("data", "/stackable/data")
+        .build();
+
+    container_chown
+        .security_context
+        .get_or_insert_with(SecurityContext::default)
+        .run_as_user = Some(0);
+
     let mut env = broker_config
         .get(&PropertyNameKind::Env)
         .iter()
@@ -573,6 +602,7 @@ fn build_broker_rolegroup_statefulset(
             )
             .with_label(pod_svc_controller::LABEL_ENABLE, "true")
         })
+        .add_init_container(container_chown)
         .add_init_container(container_get_svc)
         .add_container(container_kafka)
         .add_container(container_kcat_prober)
