@@ -32,9 +32,6 @@ spec:
           securityContext: {}
           image: "docker.stackable.tech/stackable/kafka-operator:0.5.0-nightly"
           imagePullPolicy: IfNotPresent
-          env:
-            - name: KAFKA_BROKER_CLUSTERROLE
-              value: kafka-operator-kafka-broker-clusterrole
           resources: {}
           volumeMounts:
             - mountPath: /etc/stackable/kafka-operator/config-spec
