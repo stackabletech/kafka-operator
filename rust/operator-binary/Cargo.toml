@@ -13,14 +13,13 @@ stackable-kafka-crd = { path = "../crd" }
 stackable-kafka-operator = { path = "../operator" }
 stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.7.0" }
 
-clap = "2.34"
-tokio = { version = "1.14", features = ["macros", "rt-multi-thread"] }
-tracing = "0.1"
-structopt = "0.3.25"
+tokio = { version = "1.15.0", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1.29"
+structopt = "0.3.26"
 serde_yaml = "0.8.23"
 
 [build-dependencies]
-built = { version =  "0.5", features = ["chrono", "git2"] }
+built = { version = "0.5.1", features = ["chrono", "git2"] }
 stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.7.0" }
 stackable-kafka-crd = { path = "../crd" }
 
