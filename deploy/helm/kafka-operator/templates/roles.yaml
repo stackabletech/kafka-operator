@@ -39,6 +39,7 @@ rules:
     resources:
       - pods
       - configmaps
+      - secrets
       - services
       - endpoints
       - serviceaccounts
