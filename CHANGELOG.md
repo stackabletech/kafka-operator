@@ -4,15 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-
-- Enabled Prometheus scraping ([#308]).
-
 ### Changed
 - Complete rework ([#256]).
 
 [#256]: https://github.com/stackabletech/kafka-operator/pull/256
-[#308]: https://github.com/stackabletech/kafka-operator/pull/308
 
 ## [0.4.0] - 2021-12-06
 
