@@ -396,7 +396,7 @@ fn build_broker_rolegroup_service(
                 },
                 ServicePort {
                     name: Some("metrics".to_string()),
-                    port: 9505,
+                    port: 9606,
                     protocol: Some("TCP".to_string()),
                     ..ServicePort::default()
                 },
