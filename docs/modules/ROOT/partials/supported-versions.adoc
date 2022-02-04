@@ -1,0 +1,5 @@
+// The version ranges supported by Kafka-Operator
+// This is a separate file, since it is used by both the direct Kafka documentation, and the overarching
+// Stackable Platform documentation.
+
+- 2.8.1
