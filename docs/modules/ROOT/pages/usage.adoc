@@ -50,3 +50,8 @@ If you wish to include integration with https://docs.stackable.tech/opa/index.ht
           default:
             replicas: 1
     EOF
+
+== Monitoring
+
+The managed ZooKeeper instances are automatically configured to export Prometheus metrics. See
+xref:home::monitoring.adoc[] for more details.

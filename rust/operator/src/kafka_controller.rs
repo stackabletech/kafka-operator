@@ -383,6 +383,7 @@ fn build_broker_rolegroup_service(
                 &rolegroup.role,
                 &rolegroup.role_group,
             )
+            .with_label("prometheus.io/scrape", "true")
             .build(),
         spec: Some(ServiceSpec {
             cluster_ip: Some("None".to_string()),
@@ -395,7 +396,7 @@ fn build_broker_rolegroup_service(
                 },
                 ServicePort {
                     name: Some("metrics".to_string()),
-                    port: 9505,
+                    port: METRICS_PORT.into(),
                     protocol: Some("TCP".to_string()),
                     ..ServicePort::default()
                 },
