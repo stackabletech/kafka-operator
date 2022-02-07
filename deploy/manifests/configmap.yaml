@@ -1,4 +1,5 @@
 ---
+# Source: kafka-operator/templates/configmap.yaml
 apiVersion: v1
 data:
   properties.yaml: |+
@@ -8,21 +9,21 @@ data:
         - unit: &unitPort
             name: "port"
             regex: "^([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
-
+  
         - unit: &unitUrl
             name: "url"
             regex: "^((https?|ftp|file)://)?[-a-zA-Z0-9+&@#}/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]"
             examples:
               - "https://www.stackable.de/blog/"
-
+  
         - unit: &unitCapacity
             name: "capacity"
             regex: "^[1-9]\\d*$"
-
+  
         - unit: &unitMilliseconds
             name: "milliseconds"
             regex: "^[1-9]\\d*$"
-
+  
     properties:
       - property: &zookeeperConnect
           propertyNames:
@@ -41,7 +42,7 @@ data:
               required: true
           asOfVersion: "0.0.0"
           description: "The zookeeper connection string"
-
+  
       - property: &zookeeperTimeout
           propertyNames:
             - name: "zookeeper.connection.timeout.ms"
@@ -59,7 +60,7 @@ data:
               required: true
           asOfVersion: "0.0.0"
           description: "Zookeeper connection timeout in milliseconds."
-
+  
       - property: &opaAuthorizerClassName
           propertyNames:
             - name: "authorizer.class.name"
@@ -76,7 +77,7 @@ data:
               required: false
           asOfVersion: "0.0.0"
           description: "OPA Authorizer class name"
-
+  
       - property: &opaAuthorizerUrl
           propertyNames:
             - name: "opa.authorizer.url"
@@ -91,7 +92,7 @@ data:
               required: false
           asOfVersion: "0.0.0"
           description: "OPA Authorizer URL"
-
+  
       - property: &opaAuthorizerInitialCacheCapacity
           propertyNames:
             - name: "opa.authorizer.cache.initial.capacity"
@@ -109,7 +110,7 @@ data:
               required: false
           asOfVersion: "0.0.0"
           description: "OPA Authorizer initial cache capacity"
-
+  
       - property: &opaAuthorizerMaxCacheSize
           propertyNames:
             - name: "opa.authorizer.cache.maximum.size"
@@ -127,7 +128,7 @@ data:
               required: false
           asOfVersion: "0.0.0"
           description: "OPA authorizer max cache size"
-
+  
       - property: &opaAuthorizerCacheExpireAfterSeconds
           propertyNames:
             - name: "opa.authorizer.cache.expire.after.seconds"
@@ -145,7 +146,7 @@ data:
               required: false
           asOfVersion: "0.0.0"
           description: "The number of seconds after which the OPA authorizer cache expires"
-
+  
       - property: &logDirs
           propertyNames:
             - name: "log.dirs"
@@ -161,7 +162,7 @@ data:
               required: true
           asOfVersion: "0.0.0"
           description: "A comma separated list of directories under which to store log files"
-
+  
       - property: &metricsPort
           propertyNames:
             - name: "metricsPort"
@@ -177,11 +178,13 @@ data:
               required: false
           asOfVersion: "0.0.0"
           description: "The port where Kafka metrics are exposed as a Prometheus endpoint."
-
+  
 kind: ConfigMap
 metadata:
   name: kafka-operator-configmap
   labels:
+    helm.sh/chart: kafka-operator-0.5.0-nightly
     app.kubernetes.io/name: kafka-operator
     app.kubernetes.io/instance: kafka-operator
     app.kubernetes.io/version: "0.5.0-nightly"
+    app.kubernetes.io/managed-by: Helm
