@@ -3,6 +3,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
+    sync::Arc,
     time::Duration,
 };
 
@@ -144,14 +145,17 @@ pub enum Error {
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<ReconcilerAction> {
+pub async fn reconcile_kafka(
+    kafka: Arc<KafkaCluster>,
+    ctx: Context<Ctx>,
+) -> Result<ReconcilerAction> {
     tracing::info!("Starting reconcile");
     let client = &ctx.get_ref().client;
 
     let validated_config = validate_all_roles_and_groups_config(
         kafka_version(&kafka)?,
         &transform_all_roles_to_config(
-            &kafka,
+            &*kafka,
             [(
                 KafkaRole::Broker.to_string(),
                 (
@@ -234,7 +238,7 @@ pub async fn reconcile_kafka(kafka: KafkaCluster, ctx: Context<Ctx>) -> Result<R
             })?;
     }
 
-    for discovery_cm in build_discovery_configmaps(client, &kafka, &kafka, &broker_role_service)
+    for discovery_cm in build_discovery_configmaps(client, &*kafka, &kafka, &broker_role_service)
         .await
         .context(BuildDiscoveryConfigSnafu)?
     {
