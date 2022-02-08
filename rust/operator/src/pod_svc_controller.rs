@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::APP_PORT;
@@ -40,7 +40,7 @@ pub enum Error {
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-pub async fn reconcile_pod(pod: Pod, ctx: Context<Ctx>) -> Result<ReconcilerAction> {
+pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Context<Ctx>) -> Result<ReconcilerAction> {
     tracing::info!("Starting reconcile");
     let name = pod.metadata.name.clone().context(ObjectHasNoNameSnafu)?;
     let svc = Service {
@@ -51,7 +51,7 @@ pub async fn reconcile_pod(pod: Pod, ctx: Context<Ctx>) -> Result<ReconcilerActi
                 api_version: "v1".to_string(),
                 kind: "Pod".to_string(),
                 name: name.clone(),
-                uid: pod.metadata.uid.context(ObjectHasNoUidSnafu)?,
+                uid: pod.metadata.uid.clone().context(ObjectHasNoUidSnafu)?,
                 ..OwnerReference::default()
             }]),
             ..ObjectMeta::default()
