@@ -92,7 +92,7 @@ brokers:
 
 All override property values must be strings.
 
-For a full list of configuration options we refer to the Apache ZooKeeper https://zookeeper.apache.org/doc/r3.7.0/zookeeperAdmin.html#sc_configuration[Configuration Reference].
+For a full list of configuration options we refer to the Apache Kafka https://kafka.apache.org/documentation/#configuration[Configuration Reference].
 
 === Environment Variables
 
