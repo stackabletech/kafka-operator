@@ -1,3 +1,26 @@
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperCluster
+metadata:
+  name: simple-zk
+spec:
+  servers:
+    roleGroups:
+      default:
+        replicas: 3
+        config:
+          myidOffset: 10
+  version: 3.5.8
+  stopped: false
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperZnode
+metadata:
+  name: simple-kafka-znode
+spec:
+  clusterRef:
+    name: simple-zk
+---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
@@ -15,12 +38,3 @@ spec:
     roleGroups:
       default:
         replicas: 5
----
-apiVersion: zookeeper.stackable.tech/v1alpha1
-kind: ZookeeperZnode
-metadata:
-  name: simple-kafka-znode
-spec:
-  clusterRef:
-    name: simple-zk
-    namespace: default
