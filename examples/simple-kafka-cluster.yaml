@@ -4,14 +4,15 @@ kind: ZookeeperCluster
 metadata:
   name: simple-zk
 spec:
+  version: 3.5.8
   servers:
     roleGroups:
       default:
+        selector:
+          matchLabels:
+            kubernetes.io/os: linux
         replicas: 3
-        config:
-          myidOffset: 10
-  version: 3.5.8
-  stopped: false
+        config: {}
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperZnode
