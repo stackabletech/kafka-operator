@@ -11,7 +11,6 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
     KafkaCluster, KafkaRole, APP_NAME, APP_PORT, METRICS_PORT, SERVER_PROPERTIES_FILE,
 };
-use stackable_operator::k8s_openapi::api::core::v1::SecurityContext;
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     k8s_openapi::{
@@ -20,8 +19,8 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, EmptyDirVolumeSource,
                 EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector, PersistentVolumeClaim,
-                PersistentVolumeClaimSpec, PodSpec, Probe, ResourceRequirements, Service,
-                ServiceAccount, ServicePort, ServiceSpec, Volume,
+                PersistentVolumeClaimSpec, PodSpec, Probe, ResourceRequirements, SecurityContext,
+                Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
             },
             rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
         },
@@ -36,12 +35,14 @@ use stackable_operator::{
         },
     },
     labels::{role_group_selector_labels, role_selector_labels},
+    logging::controller::ReconcilerError,
     product_config::{
         types::PropertyNameKind, writer::to_java_properties_string, ProductConfigManager,
     },
     product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
     role_utils::RoleGroupRef,
 };
+use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     discovery::{self, build_discovery_configmaps},
@@ -58,11 +59,10 @@ pub struct Ctx {
     pub product_config: ProductConfigManager,
 }
 
-#[derive(Snafu, Debug)]
+#[derive(Snafu, Debug, EnumDiscriminants)]
+#[strum_discriminants(derive(IntoStaticStr))]
 #[allow(clippy::enum_variant_names)]
 pub enum Error {
-    #[snafu(display("object has no namespace"))]
-    ObjectHasNoNamespace,
     #[snafu(display("object has no name"))]
     ObjectHasNoName,
     #[snafu(display("object defines no version"))]
@@ -71,10 +71,6 @@ pub enum Error {
     NoBrokerRole,
     #[snafu(display("failed to calculate global service name"))]
     GlobalServiceNameNotFound,
-    #[snafu(display("failed to calculate service name for role {}", rolegroup))]
-    RoleGroupServiceNameNotFound {
-        rolegroup: RoleGroupRef<KafkaCluster>,
-    },
     #[snafu(display("failed to apply role Service"))]
     ApplyRoleService {
         source: stackable_operator::error::Error,
@@ -130,10 +126,6 @@ pub enum Error {
     ApplyDiscoveryConfig {
         source: stackable_operator::error::Error,
     },
-    #[snafu(display("failed to update status"))]
-    ApplyStatus {
-        source: stackable_operator::error::Error,
-    },
     #[snafu(display("failed to find rolegroup {}", rolegroup))]
     RoleGroupNotFound {
         rolegroup: RoleGroupRef<KafkaCluster>,
@@ -144,6 +136,12 @@ pub enum Error {
     },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl ReconcilerError for Error {
+    fn category(&self) -> &'static str {
+        ErrorDiscriminants::from(self).into()
+    }
+}
 
 pub async fn reconcile_kafka(
     kafka: Arc<KafkaCluster>,

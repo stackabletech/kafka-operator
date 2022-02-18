@@ -1,5 +1,3 @@
-use std::{sync::Arc, time::Duration};
-
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::APP_PORT;
 use stackable_operator::{
@@ -9,12 +7,12 @@ use stackable_operator::{
     },
     kube::{
         core::ObjectMeta,
-        runtime::{
-            controller::{Context, ReconcilerAction},
-            reflector::ObjectRef,
-        },
+        runtime::controller::{Context, ReconcilerAction},
     },
+    logging::controller::ReconcilerError,
 };
+use std::{sync::Arc, time::Duration};
+use strum::{EnumDiscriminants, IntoStaticStr};
 
 pub const LABEL_ENABLE: &str = "kafka.stackable.tech/pod-service";
 const LABEL_STS_POD_NAME: &str = "statefulset.kubernetes.io/pod-name";
@@ -25,7 +23,8 @@ pub struct Ctx {
     pub client: stackable_operator::client::Client,
 }
 
-#[derive(Snafu, Debug)]
+#[derive(Snafu, Debug, EnumDiscriminants)]
+#[strum_discriminants(derive(IntoStaticStr))]
 #[allow(clippy::enum_variant_names)]
 pub enum Error {
     #[snafu(display("object has no name"))]
@@ -35,10 +34,15 @@ pub enum Error {
     #[snafu(display("failed to apply Service for Pod"))]
     ApplyServiceFailed {
         source: stackable_operator::error::Error,
-        service: ObjectRef<Service>,
     },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl ReconcilerError for Error {
+    fn category(&self) -> &'static str {
+        ErrorDiscriminants::from(self).into()
+    }
+}
 
 pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Context<Ctx>) -> Result<ReconcilerAction> {
     tracing::info!("Starting reconcile");
@@ -74,9 +78,7 @@ pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Context<Ctx>) -> Result<Reconcile
         .client
         .apply_patch(FIELD_MANAGER_SCOPE, &svc, &svc)
         .await
-        .with_context(|_| ApplyServiceFailedSnafu {
-            service: ObjectRef::from_obj(&svc),
-        })?;
+        .context(ApplyServiceFailedSnafu)?;
     Ok(ReconcilerAction {
         requeue_after: None,
     })
