@@ -1,42 +1,27 @@
 [package]
-authors = ["Lars Francke <lars.francke@stackable.de>"]
+authors = ["Stackable GmbH <info@stackable.de>"]
 build = "build.rs"
 description = "Stackable Operator for Apache Kafka"
-edition = "2018"
+edition = "2021"
 license = "OSL-3.0"
 name = "stackable-kafka-operator-binary"
 repository = "https://github.com/stackabletech/kafka-operator"
 version = "0.6.0-nightly"
 
-[package.metadata.deb]
-name = "stackable-kafka-operator"
-maintainer-scripts = "../../packaging/debian/"
-systemd-units = { enable = false, unit-name = "stackable-kafka-operator" }
-assets = [
-    ["../../target/release/stackable-kafka-operator", "opt/stackable/kafka-operator/", "755"],
-    ["../../deploy/crd/kafkacluster.crd.yaml", "etc/stackable/kafka-operator/crd/", "644"],
-    ["../../deploy/crd/restart.crd.yaml", "etc/stackable/kafka-operator/crd/", "644"],
-    ["../../deploy/crd/start.crd.yaml", "etc/stackable/kafka-operator/crd/", "644"],
-    ["../../deploy/crd/stop.crd.yaml", "etc/stackable/kafka-operator/crd/", "644"],
-    ["../../deploy/config-spec/properties.yaml", "etc/stackable/kafka-operator/config-spec/", "644"],
-]
-
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
 stackable-kafka-operator = { path = "../operator" }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.10.0" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.12.0" }
 
-tokio = { version = "1.16.1", features = ["macros", "rt-multi-thread"] }
-tracing = "0.1.30"
-serde_yaml = "0.8.23"
 clap = { version = "3.0.14", features = ["derive", "env"] }
+serde_yaml = "0.8.23"
+tokio = { version = "1.17.0", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1.30"
 
 [build-dependencies]
 built = { version = "0.5.1", features = ["chrono", "git2"] }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.10.0" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.12.0" }
 stackable-kafka-crd = { path = "../crd" }
-
-
 
 [[bin]]
 name = "stackable-kafka-operator"

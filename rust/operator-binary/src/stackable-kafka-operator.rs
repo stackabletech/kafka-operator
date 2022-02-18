@@ -1,9 +1,11 @@
 use clap::Parser;
 use stackable_kafka_crd::KafkaCluster;
 use stackable_kafka_operator::ControllerConfig;
-use stackable_operator::cli::{Command, ProductOperatorRun};
-use stackable_operator::kube::CustomResourceExt;
-use stackable_operator::{client, error};
+use stackable_operator::{
+    cli::{Command, ProductOperatorRun},
+    client, error,
+    kube::CustomResourceExt,
+};
 
 mod built_info {
     // The file has been placed there by the build script.
