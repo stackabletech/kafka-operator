@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- `operator-rs` `0.10.0` → `0.11.0` ([#346]).
+- `operator-rs` `0.10.0` → `0.12.0` ([#346]).
 
 [#346]: https://github.com/stackabletech/kafka-operator/pull/346
 
