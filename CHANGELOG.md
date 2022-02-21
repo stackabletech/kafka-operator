@@ -7,12 +7,14 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Reconciliation errors are now reported as Kubernetes events ([#346]).
+- Support for Kafka 3.1.0 ([#347]).
 
 ### Changed
 
 - `operator-rs` `0.10.0` → `0.12.0` ([#346]).
 
 [#346]: https://github.com/stackabletech/kafka-operator/pull/346
+[#347]: https://github.com/stackabletech/kafka-operator/pull/347
 
 ## [0.5.0] - 2022-02-14
 
