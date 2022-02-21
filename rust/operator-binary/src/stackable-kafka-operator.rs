@@ -15,11 +15,17 @@ mod built_info {
 #[derive(clap::Parser)]
 #[clap(about = built_info::PKG_DESCRIPTION, author = stackable_operator::cli::AUTHOR)]
 struct Opts {
+    #[clap(subcommand)]
+    cmd: Command<KafkaRun>,
+}
+
+#[derive(clap::Parser)]
+struct KafkaRun {
     #[clap(long, env)]
     kafka_broker_clusterrole: String,
 
-    #[clap(subcommand)]
-    cmd: Command,
+    #[clap(flatten)]
+    common: ProductOperatorRun,
 }
 
 #[tokio::main]
@@ -29,7 +35,10 @@ async fn main() -> Result<(), error::Error> {
     let opts = Opts::parse();
     match opts.cmd {
         Command::Crd => println!("{}", serde_yaml::to_string(&KafkaCluster::crd())?),
-        Command::Run(ProductOperatorRun { product_config }) => {
+        Command::Run(KafkaRun {
+            kafka_broker_clusterrole,
+            common: ProductOperatorRun { product_config },
+        }) => {
             stackable_operator::utils::print_startup_string(
                 built_info::PKG_DESCRIPTION,
                 built_info::PKG_VERSION,
@@ -39,7 +48,7 @@ async fn main() -> Result<(), error::Error> {
                 built_info::RUSTC_VERSION,
             );
             let controller_config = ControllerConfig {
-                broker_clusterrole: opts.kafka_broker_clusterrole,
+                broker_clusterrole: kafka_broker_clusterrole,
             };
             let product_config = product_config.load(&[
                 "deploy/config-spec/properties.yaml",
