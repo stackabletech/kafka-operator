@@ -5,29 +5,6 @@ kind: ClusterRole
 metadata:
   name: kafka-operator-clusterrole
 rules:
-  # For Apache ZooKeeper dependents
-  - apiGroups:
-      - zookeeper.stackable.tech
-    resources:
-      - zookeeperclusters
-    verbs:
-      - get
-      - list
-      - watch
-  # For OPA dependents. Note that OPA it's self is listed here because it's own resource name
-  # doesn't follow the *clusters convention
-  - apiGroups:
-      - opa.stackable.tech
-    resources:
-      - openpolicyagents
-      - openpolicyagents/status
-      - regorules
-    verbs:
-      - create
-      - get
-      - list
-      - watch
-      - patch
   - apiGroups:
       - ""
     resources:
@@ -93,23 +70,11 @@ rules:
     verbs:
       - get
   - apiGroups:
-      - command.kafka.stackable.tech
+      - events.k8s.io
     resources:
-      - inits
-      - restarts
-      - starts
-      - stops
+      - events
     verbs:
-      - get
-      - list
-      - patch
-      - watch
-  - apiGroups:
-      - command.kafka.stackable.tech
-    resources:
-      - inits/status
-    verbs:
-      - patch
+      - create
   - apiGroups:
       - kafka.stackable.tech
     resources:

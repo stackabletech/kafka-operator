@@ -12,9 +12,11 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - `operator-rs` `0.10.0` → `0.12.0` ([#346]).
+- `--kafka-broker-clusterrole` is now only accepted for the `run` subcommand ([#349]).
 
 [#346]: https://github.com/stackabletech/kafka-operator/pull/346
 [#347]: https://github.com/stackabletech/kafka-operator/pull/347
+[#349]: https://github.com/stackabletech/kafka-operator/pull/349
 
 ## [0.5.0] - 2022-02-14
 
