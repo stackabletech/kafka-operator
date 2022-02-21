@@ -14,11 +14,11 @@ The cluster can be configured via a YAML file. This custom resource specifies th
     metadata:
       name: simple-kafka
     spec:
-      version: 2.8.1
+      version: 3.1.0
       zookeeperConfigMapName: simple-kafka-znode
       opa:
         configMapName: simple-opa
-        authorizerClassName: com.bisnode.kafka.authorization.OpaAuthorizer
+        authorizerClassName: org.openpolicyagent.kafka.OpaAuthorizer
         authorizerCacheInitialCapacity: 0
         authorizerCacheMaximumSize: 0
         authorizerCacheExpireAfterSeconds: 0

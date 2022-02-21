@@ -4,7 +4,7 @@ After installation, the CRD for this operator must be created:
 
     kubectl apply -f /etc/stackable/kafka-operator/crd/kafkacluster.crd.yaml
 
-To create an Apache Kafka (v2.8.1) cluster named `simple-kafka` assuming that you already have a Zookeeper cluster named `simple-zk`:
+To create an Apache Kafka (v3.1.0) cluster named `simple-kafka` assuming that you already have a Zookeeper cluster named `simple-zk`:
 
     cat <<EOF | kubectl apply -f -
     apiVersion: zookeeper.stackable.tech/v1alpha1
@@ -21,7 +21,7 @@ To create an Apache Kafka (v2.8.1) cluster named `simple-kafka` assuming that yo
     metadata:
       name: simple-kafka
     spec:
-      version: 2.8.1
+      version: 3.1.0
       zookeeperConfigMapName: simple-kafka-znode
       brokers:
         roleGroups:
@@ -37,11 +37,11 @@ If you wish to include integration with https://docs.stackable.tech/opa/index.ht
     metadata:
       name: simple-kafka
     spec:
-      version: 2.8.1
+      version: 3.1.0
       zookeeperConfigMapName: simple-kafka-znode
       opa:
         configMapName: simple-opacluster
-        authorizerClassName: com.bisnode.kafka.authorization.OpaAuthorizer
+        authorizerClassName: org.openpolicyagent.kafka.OpaAuthorizer
         authorizerCacheInitialCapacity: 0
         authorizerCacheMaximumSize: 0
         authorizerCacheExpireAfterSeconds: 0
