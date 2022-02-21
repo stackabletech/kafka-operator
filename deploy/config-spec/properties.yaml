@@ -67,6 +67,8 @@ properties:
       defaultValues:
         - fromVersion: "0.0.0"
           value: "com.bisnode.kafka.authorization.OpaAuthorizer"
+        - fromVersion: "3.0.0"
+          value: "org.openpolicyagent.kafka.OpaAuthorizer"
       roles:
         - name: "broker"
           required: false
