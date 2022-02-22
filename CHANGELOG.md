@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Reconciliation errors are now reported as Kubernetes events ([#346]).
 - Support for Kafka 3.1.0 ([#347]).
+- Use cli parameter `watch-namespace` to specify one(!) namespace to watch
 
 ### Changed
 

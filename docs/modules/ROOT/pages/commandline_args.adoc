@@ -9,3 +9,15 @@
 
 This file contains property definitions for the Apache Kafka configuration.
 
+=== watch-namespace
+
+*Required*: false
+
+*Multiple values:* false
+
+The operator will only watch for resources in the provided namespace `test`:
+
+[source]
+----
+cargo run -- run --watch-namespace=test
+----
