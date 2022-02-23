@@ -8,16 +8,18 @@ All notable changes to this project will be documented in this file.
 
 - Reconciliation errors are now reported as Kubernetes events ([#346]).
 - Support for Kafka 3.1.0 ([#347]).
-- Use cli parameter `watch-namespace` to specify one(!) namespace to watch
+- Use cli argument `watch-namespace` / env var `WATCH_NAMESPACE` to specify
+  a single namespace to watch ([#351]).
 
 ### Changed
 
-- `operator-rs` `0.10.0` → `0.12.0` ([#346]).
+- `operator-rs` `0.10.0` → `0.13.0` ([#346],[#351]).
 - `--kafka-broker-clusterrole` is now only accepted for the `run` subcommand ([#349]).
 
 [#346]: https://github.com/stackabletech/kafka-operator/pull/346
 [#347]: https://github.com/stackabletech/kafka-operator/pull/347
 [#349]: https://github.com/stackabletech/kafka-operator/pull/349
+[#351]: https://github.com/stackabletech/kafka-operator/pull/351
 
 ## [0.5.0] - 2022-02-14
 

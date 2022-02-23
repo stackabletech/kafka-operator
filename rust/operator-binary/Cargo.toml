@@ -11,7 +11,7 @@ version = "0.6.0-nightly"
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
 stackable-kafka-operator = { path = "../operator" }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "main" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.13.0" }
 
 clap = { version = "3.0.14", features = ["derive", "env"] }
 serde_yaml = "0.8.23"
@@ -20,7 +20,7 @@ tracing = "0.1.30"
 
 [build-dependencies]
 built = { version = "0.5.1", features = ["chrono", "git2"] }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "main" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.13.0" }
 stackable-kafka-crd = { path = "../crd" }
 
 [[bin]]

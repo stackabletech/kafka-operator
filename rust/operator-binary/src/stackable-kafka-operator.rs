@@ -62,7 +62,7 @@ async fn main() -> Result<(), error::Error> {
                 client,
                 controller_config,
                 product_config,
-                watch_namespace.as_deref(),
+                watch_namespace,
             )
             .await;
         }

@@ -5,6 +5,7 @@ mod utils;
 
 use futures::StreamExt;
 use stackable_kafka_crd::KafkaCluster;
+use stackable_operator::namespace::WatchNamespace;
 use stackable_operator::{
     client::Client,
     k8s_openapi::api::{
@@ -25,27 +26,27 @@ pub async fn create_controller(
     client: Client,
     controller_config: ControllerConfig,
     product_config: ProductConfigManager,
-    namespace: Option<&str>,
+    namespace: WatchNamespace,
 ) {
     let kafka_controller = Controller::new(
-        client.get_api::<KafkaCluster>(namespace),
+        namespace.get_api::<KafkaCluster>(&client),
         ListParams::default(),
     )
     .owns(
-        client.get_api::<StatefulSet>(namespace),
+        namespace.get_api::<StatefulSet>(&client),
         ListParams::default(),
     )
-    .owns(client.get_api::<Service>(namespace), ListParams::default())
+    .owns(namespace.get_api::<Service>(&client), ListParams::default())
     .owns(
-        client.get_api::<ConfigMap>(namespace),
-        ListParams::default(),
-    )
-    .owns(
-        client.get_api::<ServiceAccount>(namespace),
+        namespace.get_api::<ConfigMap>(&client),
         ListParams::default(),
     )
     .owns(
-        client.get_api::<RoleBinding>(namespace),
+        namespace.get_api::<ServiceAccount>(&client),
+        ListParams::default(),
+    )
+    .owns(
+        namespace.get_api::<RoleBinding>(&client),
         ListParams::default(),
     )
     .shutdown_on_signal()
@@ -63,10 +64,10 @@ pub async fn create_controller(
     });
 
     let pod_svc_controller = Controller::new(
-        client.get_api::<Pod>(namespace),
+        namespace.get_api::<Pod>(&client),
         ListParams::default().labels(&format!("{}=true", pod_svc_controller::LABEL_ENABLE)),
     )
-    .owns(client.get_api::<Pod>(namespace), ListParams::default())
+    .owns(namespace.get_api::<Pod>(&client), ListParams::default())
     .shutdown_on_signal()
     .run(
         pod_svc_controller::reconcile_pod,
