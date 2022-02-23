@@ -7,7 +7,7 @@ use stackable_operator::role_utils::Role;
 use stackable_operator::role_utils::RoleGroupRef;
 use stackable_operator::schemars::{self, JsonSchema};
 use std::collections::BTreeMap;
-use strum_macros::{Display, EnumIter, EnumString};
+use strum::{Display, EnumIter, EnumString};
 
 pub const APP_NAME: &str = "kafka";
 pub const APP_PORT: u16 = 9092;
