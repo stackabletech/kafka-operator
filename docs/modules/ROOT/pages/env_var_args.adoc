@@ -1,7 +1,7 @@
 
 === PRODUCT_CONFIG
 
-*Default value*: `/etc/stackable/zookeeper-operator/config-spec/properties.yaml`
+*Default value*: `/etc/stackable/kafka-operator/config-spec/properties.yaml`
 
 *Required*: false
 
@@ -13,7 +13,21 @@ export PRODUCT_CONFIG=/foo/bar/properties.yaml
 cargo run -- run
 ----
 
+or via docker:
+
+----
+docker run \
+    --name kafka-operator \
+    --network host \
+    --env KUBECONFIG=/home/stackable/.kube/config \
+    --env PRODUCT_CONFIG=/my/product/config.yaml \
+    --mount type=bind,source="$HOME/.kube/config",target="/home/stackable/.kube/config" \
+    docker.stackable.tech/stackable/kafka-operator:latest
+----
+
 === WATCH_NAMESPACE
+
+*Default value*: All namespaces
 
 *Required*: false
 
@@ -25,4 +39,17 @@ The operator will **only** watch for resources in the provided namespace `test`:
 ----
 export WATCH_NAMESPACE=test
 cargo run -- run
+----
+
+or via docker:
+
+[source]
+----
+docker run \
+--name kafka-operator \
+--network host \
+--env KUBECONFIG=/home/stackable/.kube/config \
+--env WATCH_NAMESPACE=test \
+--mount type=bind,source="$HOME/.kube/config",target="/home/stackable/.kube/config" \
+docker.stackable.tech/stackable/kafka-operator:latest
 ----
