@@ -23,7 +23,6 @@ struct Opts {
 struct KafkaRun {
     #[clap(long, env)]
     kafka_broker_clusterrole: String,
-
     #[clap(flatten)]
     common: ProductOperatorRun,
 }
@@ -37,7 +36,11 @@ async fn main() -> Result<(), error::Error> {
         Command::Crd => println!("{}", serde_yaml::to_string(&KafkaCluster::crd())?),
         Command::Run(KafkaRun {
             kafka_broker_clusterrole,
-            common: ProductOperatorRun { product_config },
+            common:
+                ProductOperatorRun {
+                    product_config,
+                    watch_namespace,
+                },
         }) => {
             stackable_operator::utils::print_startup_string(
                 built_info::PKG_DESCRIPTION,
@@ -55,8 +58,13 @@ async fn main() -> Result<(), error::Error> {
                 "/etc/stackable/kafka-operator/config-spec/properties.yaml",
             ])?;
             let client = client::create_client(Some("kafka.stackable.tech".to_string())).await?;
-            stackable_kafka_operator::create_controller(client, controller_config, product_config)
-                .await;
+            stackable_kafka_operator::create_controller(
+                client,
+                controller_config,
+                product_config,
+                watch_namespace,
+            )
+            .await;
         }
     };
 

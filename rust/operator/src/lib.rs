@@ -5,6 +5,7 @@ mod utils;
 
 use futures::StreamExt;
 use stackable_kafka_crd::KafkaCluster;
+use stackable_operator::namespace::WatchNamespace;
 use stackable_operator::{
     client::Client,
     k8s_openapi::api::{
@@ -25,36 +26,48 @@ pub async fn create_controller(
     client: Client,
     controller_config: ControllerConfig,
     product_config: ProductConfigManager,
+    namespace: WatchNamespace,
 ) {
-    let kafka_controller =
-        Controller::new(client.get_all_api::<KafkaCluster>(), ListParams::default())
-            .owns(client.get_all_api::<StatefulSet>(), ListParams::default())
-            .owns(client.get_all_api::<Service>(), ListParams::default())
-            .owns(client.get_all_api::<ConfigMap>(), ListParams::default())
-            .owns(
-                client.get_all_api::<ServiceAccount>(),
-                ListParams::default(),
-            )
-            .owns(client.get_all_api::<RoleBinding>(), ListParams::default())
-            .shutdown_on_signal()
-            .run(
-                kafka_controller::reconcile_kafka,
-                kafka_controller::error_policy,
-                Context::new(kafka_controller::Ctx {
-                    client: client.clone(),
-                    controller_config,
-                    product_config,
-                }),
-            )
-            .map(|res| {
-                report_controller_reconciled(&client, "kafkacluster.kafka.stackable.tech", &res);
-            });
+    let kafka_controller = Controller::new(
+        namespace.get_api::<KafkaCluster>(&client),
+        ListParams::default(),
+    )
+    .owns(
+        namespace.get_api::<StatefulSet>(&client),
+        ListParams::default(),
+    )
+    .owns(namespace.get_api::<Service>(&client), ListParams::default())
+    .owns(
+        namespace.get_api::<ConfigMap>(&client),
+        ListParams::default(),
+    )
+    .owns(
+        namespace.get_api::<ServiceAccount>(&client),
+        ListParams::default(),
+    )
+    .owns(
+        namespace.get_api::<RoleBinding>(&client),
+        ListParams::default(),
+    )
+    .shutdown_on_signal()
+    .run(
+        kafka_controller::reconcile_kafka,
+        kafka_controller::error_policy,
+        Context::new(kafka_controller::Ctx {
+            client: client.clone(),
+            controller_config,
+            product_config,
+        }),
+    )
+    .map(|res| {
+        report_controller_reconciled(&client, "kafkacluster.kafka.stackable.tech", &res);
+    });
 
     let pod_svc_controller = Controller::new(
-        client.get_all_api::<Pod>(),
+        namespace.get_api::<Pod>(&client),
         ListParams::default().labels(&format!("{}=true", pod_svc_controller::LABEL_ENABLE)),
     )
-    .owns(client.get_all_api::<Pod>(), ListParams::default())
+    .owns(namespace.get_api::<Pod>(&client), ListParams::default())
     .shutdown_on_signal()
     .run(
         pod_svc_controller::reconcile_pod,
