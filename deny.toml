@@ -37,8 +37,6 @@ exceptions = [
     { name = "stackable-kafka-crd", allow = ["OSL-3.0"] },
     { name = "stackable-kafka-operator", allow = ["OSL-3.0"] },
     { name = "stackable-kafka-operator-binary", allow = ["OSL-3.0"] },
-    { name = "stackable-opa-crd", allow = ["OSL-3.0"] },
-    { name = "stackable-zookeeper-crd", allow = ["OSL-3.0"] },
     ]
 
 [[licenses.clarify]]
