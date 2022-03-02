@@ -29,12 +29,6 @@ metadata:
 spec:
   version: 3.1.0
   zookeeperConfigMapName: simple-kafka-znode
-  # opa:
-  #   configMapName: opa-simple
-  #   authorizerClassName: org.openpolicyagent.kafka.OpaAuthorizer
-  #   authorizerCacheInitialCapacity: 0
-  #   authorizerCacheMaximumSize: 0
-  #   authorizerCacheExpireAfterSeconds: 0
   brokers:
     roleGroups:
       default:

@@ -113,33 +113,9 @@ spec:
                   required:
                     - roleGroups
                   type: object
-                opa:
-                  description: "Contains all data to combine with OPA. The \"opa.authorizer.url\" is set dynamically in the controller (local nodes first, random otherwise)."
+                opaConfigMapName:
                   nullable: true
-                  properties:
-                    authorizerCacheExpireAfterSeconds:
-                      format: uint
-                      minimum: 0.0
-                      nullable: true
-                      type: integer
-                    authorizerCacheInitialCapacity:
-                      format: uint
-                      minimum: 0.0
-                      nullable: true
-                      type: integer
-                    authorizerCacheMaximumSize:
-                      format: uint
-                      minimum: 0.0
-                      nullable: true
-                      type: integer
-                    authorizerClassName:
-                      type: string
-                    configMapName:
-                      type: string
-                  required:
-                    - authorizerClassName
-                    - configMapName
-                  type: object
+                  type: string
                 stopped:
                   nullable: true
                   type: boolean

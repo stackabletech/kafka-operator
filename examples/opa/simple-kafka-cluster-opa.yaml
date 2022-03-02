@@ -1,0 +1,86 @@
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperCluster
+metadata:
+  name: simple-zk
+spec:
+  version: 3.5.8
+  servers:
+    roleGroups:
+      default:
+        selector:
+          matchLabels:
+            kubernetes.io/os: linux
+        replicas: 3
+        config: {}
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperZnode
+metadata:
+  name: simple-kafka-znode
+spec:
+  clusterRef:
+    name: simple-zk
+---
+apiVersion: opa.stackable.tech/v1alpha1
+kind: OpaCluster
+metadata:
+  name: simple-opa
+spec:
+  version: "0.37.2"
+  servers:
+    roleGroups:
+      default:
+        selector:
+          matchLabels:
+            kubernetes.io/os: linux
+---
+apiVersion: opa.stackable.tech/v1alpha1
+kind: ConfigMap
+metadata:
+  name: simple-kafka-opa-rego-trino
+  labels:
+    opa.stackable.tech/bundle: "kafka"
+data:
+  kafka.rego: |
+    package kafka.authz
+
+    default allow = false
+
+    allow {
+      is_cluster
+    }
+
+    allow {
+      not deny
+    }
+
+    deny {
+      not is_minute_even
+    }
+
+    is_minute_even {
+      floor(time.now_ns() / (1000 * 1000 * 1000 * 60)) % 2 == 0
+    }
+
+    is_cluster {
+      input.action.resourcePattern.resourceType == "CLUSTER"
+    }
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: 3.1.0
+  zookeeperConfigMapName: simple-kafka-znode
+  opaConfigMapName: simple-opa
+  configOverrides:
+    server.properties:
+      opa.authorizer.cache.initial.capacity: "0"
+      opa.authorizer.cache.maximum.size: "0"
+      opa.authorizer.cache.expire.after.seconds: "0"
+  brokers:
+    roleGroups:
+      default:
+        replicas: 3

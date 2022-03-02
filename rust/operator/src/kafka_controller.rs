@@ -352,7 +352,7 @@ fn build_broker_rolegroup_config_map(
                 .build(),
         )
         .add_data(
-            "server.properties",
+            SERVER_PROPERTIES_FILE,
             to_java_properties_string(server_cfg.iter().map(|(k, v)| (k, v))).with_context(
                 |_| SerializeZooCfgSnafu {
                     rolegroup: rolegroup.clone(),
@@ -513,13 +513,13 @@ fn build_broker_rolegroup_statefulset(
         }),
         ..EnvVar::default()
     });
-    let opa_url_env_var = if let Some(opa) = &kafka.spec.opa {
+    let opa_url_env_var = if let Some(opa_config_map_name) = &kafka.spec.opa_config_map_name {
         let env_var = "OPA";
         env.push(EnvVar {
             name: env_var.to_string(),
             value_from: Some(EnvVarSource {
                 config_map_key_ref: Some(ConfigMapKeySelector {
-                    name: Some(opa.config_map_name.clone()),
+                    name: Some(opa_config_map_name.to_string()),
                     key: "OPA".to_string(),
                     ..ConfigMapKeySelector::default()
                 }),
