@@ -29,7 +29,7 @@ To create an Apache Kafka (v3.1.0) cluster named `simple-kafka` assuming that yo
             replicas: 1
     EOF
 
-If you wish to include integration with https://docs.stackable.tech/opa/index.html[Open Policy Agent] and already have an opa cluster, then you can include an `opa` stanza:
+If you wish to include integration with https://docs.stackable.tech/opa/index.html[Open Policy Agent] and already have an opa cluster, then you can include an `opaConfigMapName` pointing to the cluster:
 
     cat <<EOF | kubectl apply -f -
     apiVersion: kafka.stackable.tech/v1alpha1
@@ -39,17 +39,36 @@ If you wish to include integration with https://docs.stackable.tech/opa/index.ht
     spec:
       version: 3.1.0
       zookeeperConfigMapName: simple-kafka-znode
-      opa:
-        configMapName: simple-opacluster
-        authorizerClassName: org.openpolicyagent.kafka.OpaAuthorizer
-        authorizerCacheInitialCapacity: 0
-        authorizerCacheMaximumSize: 0
-        authorizerCacheExpireAfterSeconds: 0
+      opaConfigMapName: simple-opa
       brokers:
         roleGroups:
           default:
             replicas: 1
     EOF
+
+You can change some opa cache properties by overriding:
+
+    cat <<EOF | kubectl apply -f -
+    apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaCluster
+    metadata:
+      name: simple-kafka
+    spec:
+      version: 3.1.0
+      zookeeperConfigMapName: simple-kafka-znode
+      opaConfigMapName: simple-opa
+      configOverrides:
+        server.properties:
+          opa.authorizer.cache.initial.capacity: "100"
+          opa.authorizer.cache.maximum.size: "100"
+          opa.authorizer.cache.expire.after.seconds: "60"
+      brokers:
+        roleGroups:
+          default:
+            replicas: 1
+    EOF
+
+The defaults for `opa.authorizer.cache.initial.capacity`, `opa.authorizer.cache.maximum.size` and `opa.authorizer.cache.expire.after.seconds` are set to `0`.
 
 == Monitoring
 

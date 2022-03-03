@@ -35,6 +35,7 @@ pub struct KafkaClusterSpec {
     pub brokers: Option<Role<KafkaConfig>>,
     pub zookeeper_config_map_name: String,
     pub opa_config_map_name: Option<String>,
+    pub log4j: Option<String>,
     pub stopped: Option<bool>,
 }
 
@@ -149,10 +150,10 @@ impl Configuration for KafkaConfig {
         &self,
         resource: &Self::Configurable,
         _role_name: &str,
-        _file: &str,
+        file: &str,
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
         let mut config = BTreeMap::new();
-        if resource.spec.opa_config_map_name.is_some() {
+        if resource.spec.opa_config_map_name.is_some() && file == SERVER_PROPERTIES_FILE {
             config.insert(
                 "authorizer.class.name".to_string(),
                 Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),
@@ -168,6 +169,10 @@ impl Configuration for KafkaConfig {
             config.insert(
                 "opa.authorizer.cache.expire.after.seconds".to_string(),
                 Some("0".to_string()),
+            );
+            config.insert(
+                "opa.authorizer.metrics.enabled".to_string(),
+                Some("true".to_string()),
             );
         }
 

@@ -109,6 +109,9 @@ spec:
                   required:
                     - roleGroups
                   type: object
+                log4j:
+                  nullable: true
+                  type: string
                 opaConfigMapName:
                   nullable: true
                   type: string
