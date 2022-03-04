@@ -29,7 +29,7 @@ To create an Apache Kafka (v3.1.0) cluster named `simple-kafka` assuming that yo
             replicas: 1
     EOF
 
-If you wish to include integration with https://docs.stackable.tech/opa/index.html[Open Policy Agent] and already have an opa cluster, then you can include an `opa` stanza:
+If you wish to include integration with https://docs.stackable.tech/opa/index.html[Open Policy Agent] and already have an opa cluster, then you can include an `opaConfigMapName` pointing to the cluster:
 
     cat <<EOF | kubectl apply -f -
     apiVersion: kafka.stackable.tech/v1alpha1
@@ -39,22 +39,73 @@ If you wish to include integration with https://docs.stackable.tech/opa/index.ht
     spec:
       version: 3.1.0
       zookeeperConfigMapName: simple-kafka-znode
-      opa:
-        configMapName: simple-opacluster
-        authorizerClassName: org.openpolicyagent.kafka.OpaAuthorizer
-        authorizerCacheInitialCapacity: 0
-        authorizerCacheMaximumSize: 0
-        authorizerCacheExpireAfterSeconds: 0
+      opaConfigMapName: simple-opa
       brokers:
         roleGroups:
           default:
             replicas: 1
     EOF
 
+You can change some opa cache properties by overriding:
+
+    cat <<EOF | kubectl apply -f -
+    apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaCluster
+    metadata:
+      name: simple-kafka
+    spec:
+      version: 3.1.0
+      zookeeperConfigMapName: simple-kafka-znode
+      opaConfigMapName: simple-opa
+      brokers:
+        configOverrides:
+          server.properties:
+            opa.authorizer.cache.initial.capacity: "100"
+            opa.authorizer.cache.maximum.size: "100"
+            opa.authorizer.cache.expire.after.seconds: "10"
+        roleGroups:
+          default:
+            replicas: 1
+    EOF
+
+A full list of settings and their respective defaults can be found https://github.com/anderseknert/opa-kafka-plugin[here].
+
 == Monitoring
 
 The managed Kafka instances are automatically configured to export Prometheus metrics. See
 xref:home::monitoring.adoc[] for more details.
+
+== Provide log4j.properties
+
+Per default, the `log4j.properties` from the kafka package is used. However, you can provide your own `log4j.properties` via the custom resource:
+
+[source,yaml]
+----
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: 3.1.0
+  zookeeperConfigMapName: simple-kafka-znode
+  log4j: |-
+    log4j.rootLogger=INFO, stdout, kafkaAppender
+
+    log4j.appender.stdout=org.apache.log4j.ConsoleAppender
+    log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
+    log4j.appender.stdout.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+    log4j.appender.kafkaAppender=org.apache.log4j.DailyRollingFileAppender
+    log4j.appender.kafkaAppender.DatePattern='.'yyyy-MM-dd-HH
+    log4j.appender.kafkaAppender.File=${kafka.logs.dir}/server.log
+    log4j.appender.kafkaAppender.layout=org.apache.log4j.PatternLayout
+    log4j.appender.kafkaAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+  brokers:
+    roleGroups:
+      default:
+        replicas: 3
+----
 
 == Configuration & Environment Overrides
 

@@ -2,7 +2,7 @@
 # Source: kafka-operator/templates/configmap.yaml
 apiVersion: v1
 data:
-  properties.yaml: |+
+  properties.yaml: |
     version: 0.1.0
     spec:
       units:
@@ -164,23 +164,6 @@ data:
               required: true
           asOfVersion: "0.0.0"
           description: "A comma separated list of directories under which to store log files"
-  
-      - property: &metricsPort
-          propertyNames:
-            - name: "metricsPort"
-              kind:
-                type: "env"
-          datatype:
-            type: "integer"
-            unit: *unitPort
-            min: "1024"
-            max: "65535"
-          roles:
-            - name: "broker"
-              required: false
-          asOfVersion: "0.0.0"
-          description: "The port where Kafka metrics are exposed as a Prometheus endpoint."
-  
 kind: ConfigMap
 metadata:
   name: kafka-operator-configmap

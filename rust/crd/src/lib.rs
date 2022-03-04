@@ -34,7 +34,8 @@ pub struct KafkaClusterSpec {
     pub version: Option<String>,
     pub brokers: Option<Role<KafkaConfig>>,
     pub zookeeper_config_map_name: String,
-    pub opa: Option<OpaConfig>,
+    pub opa_config_map_name: Option<String>,
+    pub log4j: Option<String>,
     pub stopped: Option<bool>,
 }
 
@@ -104,19 +105,6 @@ impl KafkaPodRef {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// Contains all data to combine with OPA. The "opa.authorizer.url" is set dynamically in
-/// the controller (local nodes first, random otherwise).
-pub struct OpaConfig {
-    pub config_map_name: String,
-    pub authorizer_class_name: String,
-    //pub authorizer_url: Option<String>,
-    pub authorizer_cache_initial_capacity: Option<usize>,
-    pub authorizer_cache_maximum_size: Option<usize>,
-    pub authorizer_cache_expire_after_seconds: Option<usize>,
-}
-
 #[derive(
     Clone,
     Debug,
@@ -162,31 +150,18 @@ impl Configuration for KafkaConfig {
         &self,
         resource: &Self::Configurable,
         _role_name: &str,
-        _file: &str,
+        file: &str,
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
         let mut config = BTreeMap::new();
-        if let Some(opa_config) = &resource.spec.opa {
+
+        if resource.spec.opa_config_map_name.is_some() && file == SERVER_PROPERTIES_FILE {
             config.insert(
                 "authorizer.class.name".to_string(),
-                Some(opa_config.authorizer_class_name.clone()),
+                Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),
             );
             config.insert(
-                "opa.authorizer.cache.initial.capacity".to_string(),
-                opa_config
-                    .authorizer_cache_initial_capacity
-                    .map(|auth| auth.to_string()),
-            );
-            config.insert(
-                "opa.authorizer.cache.maximum.size".to_string(),
-                opa_config
-                    .authorizer_cache_maximum_size
-                    .map(|auth| auth.to_string()),
-            );
-            config.insert(
-                "opa.authorizer.cache.expire.after.seconds".to_string(),
-                opa_config
-                    .authorizer_cache_expire_after_seconds
-                    .map(|auth| auth.to_string()),
+                "opa.authorizer.metrics.enabled".to_string(),
+                Some("true".to_string()),
             );
         }
 

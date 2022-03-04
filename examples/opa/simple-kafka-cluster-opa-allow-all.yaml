@@ -12,7 +12,6 @@ spec:
           matchLabels:
             kubernetes.io/os: linux
         replicas: 3
-        config: {}
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperZnode
@@ -22,6 +21,33 @@ spec:
   clusterRef:
     name: simple-zk
 ---
+apiVersion: opa.stackable.tech/v1alpha1
+kind: OpaCluster
+metadata:
+  name: simple-opa
+spec:
+  version: "0.37.2"
+  servers:
+    roleGroups:
+      default:
+        selector:
+          matchLabels:
+            kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: simple-kafka-opa-rego-kafka
+  labels:
+    opa.stackable.tech/bundle: "kafka"
+data:
+  kafka.rego: |
+    package kafka.authz
+
+    allow {
+        true
+    }
+---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
@@ -29,7 +55,11 @@ metadata:
 spec:
   version: 3.1.0
   zookeeperConfigMapName: simple-kafka-znode
+  opaConfigMapName: simple-opa
   brokers:
+    configOverrides:
+      server.properties:
+        opa.authorizer.cache.expire.after.seconds: "0"
     roleGroups:
       default:
         replicas: 3

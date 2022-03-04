@@ -352,12 +352,16 @@ fn build_broker_rolegroup_config_map(
                 .build(),
         )
         .add_data(
-            "server.properties",
+            SERVER_PROPERTIES_FILE,
             to_java_properties_string(server_cfg.iter().map(|(k, v)| (k, v))).with_context(
                 |_| SerializeZooCfgSnafu {
                     rolegroup: rolegroup.clone(),
                 },
             )?,
+        )
+        .add_data(
+            "log4j.properties",
+            kafka.spec.log4j.as_ref().unwrap_or(&"".to_string()),
         )
         .build()
         .with_context(|_| BuildRoleGroupConfigSnafu {
@@ -513,13 +517,13 @@ fn build_broker_rolegroup_statefulset(
         }),
         ..EnvVar::default()
     });
-    let opa_url_env_var = if let Some(opa) = &kafka.spec.opa {
+    let opa_url_env_var = if let Some(opa_config_map_name) = &kafka.spec.opa_config_map_name {
         let env_var = "OPA";
         env.push(EnvVar {
             name: env_var.to_string(),
             value_from: Some(EnvVarSource {
                 config_map_key_ref: Some(ConfigMapKeySelector {
-                    name: Some(opa.config_map_name.clone()),
+                    name: Some(opa_config_map_name.to_string()),
                     key: "OPA".to_string(),
                     ..ConfigMapKeySelector::default()
                 }),
@@ -542,12 +546,24 @@ fn build_broker_rolegroup_statefulset(
         }),
         ..EnvVar::default()
     });
+
+    // add env var for log4j if set
+    if kafka.spec.log4j.is_some() {
+        env.push(EnvVar {
+            name: "KAFKA_LOG4J_OPTS".to_string(),
+            value: Some(
+                "-Dlog4j.configuration=file:/stackable/config/log4j.properties".to_string(),
+            ),
+            ..EnvVar::default()
+        });
+    }
+
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
     let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
     let advertised_listeners_override =
         "--override \"advertised.listeners=PLAINTEXT://$NODE:$(cat /stackable/tmp/nodeport)\"";
-    let opa_url_override = &opa_url_env_var.map_or(String::new(), |opa| {
-        format!("--override \"opa.authorizer.url=${}\"", opa)
+    let opa_url_override = &opa_url_env_var.map_or("", |_| {
+        "--override \"opa.authorizer.url=${OPA}v1/data/kafka/authz/allow\""
     });
     let container_kafka = ContainerBuilder::new("kafka")
         .image(image)
@@ -571,6 +587,7 @@ fn build_broker_rolegroup_statefulset(
         .add_volume_mount("config", "/stackable/config")
         .add_volume_mount("tmp", "/stackable/tmp")
         .build();
+
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
     let mut container_kcat_prober = ContainerBuilder::new("kcat-prober")
