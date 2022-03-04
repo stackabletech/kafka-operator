@@ -57,18 +57,18 @@ You can change some opa cache properties by overriding:
       version: 3.1.0
       zookeeperConfigMapName: simple-kafka-znode
       opaConfigMapName: simple-opa
-      configOverrides:
-        server.properties:
-          opa.authorizer.cache.initial.capacity: "100"
-          opa.authorizer.cache.maximum.size: "100"
-          opa.authorizer.cache.expire.after.seconds: "60"
       brokers:
+        configOverrides:
+          server.properties:
+            opa.authorizer.cache.initial.capacity: "100"
+            opa.authorizer.cache.maximum.size: "100"
+            opa.authorizer.cache.expire.after.seconds: "10"
         roleGroups:
           default:
             replicas: 1
     EOF
 
-The defaults for `opa.authorizer.cache.initial.capacity`, `opa.authorizer.cache.maximum.size` and `opa.authorizer.cache.expire.after.seconds` are set to `0`.
+A full list of settings and their respective defaults can be found https://github.com/anderseknert/opa-kafka-plugin[here].
 
 == Monitoring
 

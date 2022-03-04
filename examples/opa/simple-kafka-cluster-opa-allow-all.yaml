@@ -62,12 +62,10 @@ spec:
   version: 3.1.0
   zookeeperConfigMapName: simple-kafka-znode
   opaConfigMapName: simple-opa
-  configOverrides:
-    server.properties:
-      opa.authorizer.cache.initial.capacity: "100"
-      opa.authorizer.cache.maximum.size: "100"
-      opa.authorizer.cache.expire.after.seconds: "60"
   brokers:
+    configOverrides:
+      server.properties:
+        opa.authorizer.cache.expire.after.seconds: "10"
     roleGroups:
       default:
         replicas: 3

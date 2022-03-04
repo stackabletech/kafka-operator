@@ -140,9 +140,7 @@ spec:
     log4j.logger.org.openpolicyagent=DEBUG, authorizerAppender
   configOverrides:
     server.properties:
-      opa.authorizer.cache.initial.capacity: "100"
-      opa.authorizer.cache.maximum.size: "100"
-      opa.authorizer.cache.expire.after.seconds: "60"
+      opa.authorizer.cache.expire.after.seconds: "10"
   brokers:
     roleGroups:
       default:

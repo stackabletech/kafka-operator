@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
 use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::kube::CustomResource;
+use stackable_operator::product_config_utils::ConfigError::InvalidConfiguration;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
 use stackable_operator::role_utils::Role;
 use stackable_operator::role_utils::RoleGroupRef;
@@ -153,23 +154,21 @@ impl Configuration for KafkaConfig {
         file: &str,
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
         let mut config = BTreeMap::new();
+
         if resource.spec.opa_config_map_name.is_some() && file == SERVER_PROPERTIES_FILE {
-            config.insert(
-                "authorizer.class.name".to_string(),
-                Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),
-            );
-            config.insert(
-                "opa.authorizer.cache.initial.capacity".to_string(),
-                Some("0".to_string()),
-            );
-            config.insert(
-                "opa.authorizer.cache.maximum.size".to_string(),
-                Some("0".to_string()),
-            );
-            config.insert(
-                "opa.authorizer.cache.expire.after.seconds".to_string(),
-                Some("0".to_string()),
-            );
+            // hack to find the right authorizer class
+            let version: Option<&str> = resource.spec.version.as_deref();
+            let version = version.ok_or(InvalidConfiguration {
+                reason: "No version provided!".to_string(),
+            })?;
+            let class_name = if version.starts_with("2.6") {
+                Some("com.bisnode.kafka.authorization.OpaAuthorizer".to_string())
+            } else {
+                Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string())
+            };
+            // end hack
+
+            config.insert("authorizer.class.name".to_string(), class_name);
             config.insert(
                 "opa.authorizer.metrics.enabled".to_string(),
                 Some("true".to_string()),
