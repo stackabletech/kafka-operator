@@ -156,19 +156,10 @@ impl Configuration for KafkaConfig {
         let mut config = BTreeMap::new();
 
         if resource.spec.opa_config_map_name.is_some() && file == SERVER_PROPERTIES_FILE {
-            // hack to find the right authorizer class
-            let version: Option<&str> = resource.spec.version.as_deref();
-            let version = version.ok_or(InvalidConfiguration {
-                reason: "No version provided!".to_string(),
-            })?;
-            let class_name = if version.starts_with("2.6") {
-                Some("com.bisnode.kafka.authorization.OpaAuthorizer".to_string())
-            } else {
-                Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string())
-            };
-            // end hack
-
-            config.insert("authorizer.class.name".to_string(), class_name);
+            config.insert(
+                "authorizer.class.name".to_string(),
+                Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),
+            );
             config.insert(
                 "opa.authorizer.metrics.enabled".to_string(),
                 Some("true".to_string()),
