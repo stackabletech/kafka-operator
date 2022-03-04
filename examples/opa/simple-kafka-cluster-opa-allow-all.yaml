@@ -43,13 +43,13 @@ metadata:
 data:
   kafka.rego: |
     package kafka.authz
-    
+
     default allow = false
-    
+
     allow {
         inter_broker_communication
     }
-    
+
     inter_broker_communication {
     	input.action.resourcePattern.resourceType == "CLUSTER"
     }

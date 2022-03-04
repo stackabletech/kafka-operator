@@ -43,13 +43,13 @@ metadata:
 data:
   kafka.rego: |
     package kafka.authz
-    
+
     default allow = false
-    
+
     allow {
         inter_broker_communication
     }
-    
+
     inter_broker_communication {
     	input.action.resourcePattern.resourceType == "CLUSTER"
     }
@@ -136,7 +136,7 @@ spec:
     # Access denials are logged at INFO level, change to DEBUG to also log allowed accesses
     log4j.logger.kafka.authorizer.logger=INFO, authorizerAppender
     log4j.additivity.kafka.authorizer.logger=false
-    
+
     log4j.logger.org.openpolicyagent=DEBUG, authorizerAppender
   configOverrides:
     server.properties:
