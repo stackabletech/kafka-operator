@@ -1,0 +1,42 @@
+:clusterName: simple-kafka
+:namespace: stackable
+:brokerPort: 9092
+
+= Discovery Profiles
+
+The Stackable Operator for Apache Kafka creates a single discovery profile that allows access to the Kafka cluster https://kubernetes.io/docs/concepts/services-networking/service/[`Service`] which is published into the Kubernetes cluster as a
+https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#configmap-v1-core[`ConfigMap`] object.
+
+== Profiles
+
+Given the following Kafka cluster:
+
+[subs="attributes"]
+----
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: {clusterName} # <1>
+  namespace: {namespace} # <2>
+spec:
+  [...]
+----
+<1> Name of the Kafka cluster which is the name of the `ConfigMap` created for this discovery profile.
+<2> Namespace of the `ConfigMap` created for this discovery profile.
+
+The published `ConfigMap` name and namespace are equal to the cluster name and namespace. In this case `{namespace}/{clusterName}`.
+
+=== Default
+
+This profile allows access to the Kafka cluster from inside the Kubernetes cluster, and connects directly to the metastore NodePort `Service`.
+
+== Contents
+
+The discovery profile contains the following fields where `{clusterName}` represents the name and `{namespace}` the namespace of the cluster:
+
+`KAFKA`::
+====
+Contains the thrift protocol connection string for the Kafka cluster to connect to the metastore:
+[subs="attributes"]
+  {clusterName}.{namespace}.svc.cluster.local:{brokerPort}
+====
