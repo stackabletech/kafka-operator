@@ -3,6 +3,7 @@
 :brokerPort: 9092
 
 = Discovery
+:icons: font
 
 The Stackable Operator for Apache Kafka publishes a discovery https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#configmap-v1-core[`ConfigMap`], which exposes a client configuration bundle that allows access to the Apache Kafka cluster.
 
@@ -12,12 +13,12 @@ The bundle includes a thrift connection string to access the Kafka broker servic
 
 Given the following Kafka cluster:
 
-[source,yaml,subs="attributes,callouts"]
+[source,yaml,subs="normal,callouts"]
 ----
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
-  name: {clusterName} # <1>
+  name: {clusterName}  # <1>
   namespace: {namespace} # <2>
 spec:
   [...]
@@ -34,6 +35,6 @@ The `{namespace}/{clusterName}` discovery `ConfigMap` contains the following fie
 `KAFKA`::
 ====
 Contains the thrift protocol connection string for the Kafka cluster:
-[subs="attributes"]
+[subs="normal"]
   {clusterName}.{namespace}.svc.cluster.local:{brokerPort}
 ====
