@@ -12,7 +12,7 @@ The bundle includes a thrift connection string to access the Kafka broker servic
 
 Given the following Kafka cluster:
 
-[subs="attributes"]
+[source,yaml,subs="attributes,callouts"]
 ----
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
