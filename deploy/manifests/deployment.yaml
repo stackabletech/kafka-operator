@@ -1,15 +1,12 @@
 ---
-# Source: kafka-operator/templates/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kafka-operator-deployment
   labels:
-    helm.sh/chart: kafka-operator-0.6.0-nightly
     app.kubernetes.io/name: kafka-operator
     app.kubernetes.io/instance: kafka-operator
     app.kubernetes.io/version: "0.6.0-nightly"
-    app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
   strategy:
@@ -25,16 +22,13 @@ spec:
         app.kubernetes.io/instance: kafka-operator
     spec:
       serviceAccountName: kafka-operator-serviceaccount
-      securityContext:
-        {}
+      securityContext: {}
       containers:
         - name: kafka-operator
-          securityContext:
-            {}
+          securityContext: {}
           image: "docker.stackable.tech/stackable/kafka-operator:0.6.0-nightly"
           imagePullPolicy: IfNotPresent
-          resources:
-            {}
+          resources: {}
           volumeMounts:
             - mountPath: /etc/stackable/kafka-operator/config-spec
               name: config-spec
