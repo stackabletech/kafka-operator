@@ -30,7 +30,7 @@ use stackable_operator::{
     kube::{
         api::ObjectMeta,
         runtime::{
-            controller::{Context, ReconcilerAction},
+            controller::{Action, Context},
             reflector::ObjectRef,
         },
     },
@@ -143,10 +143,7 @@ impl ReconcilerError for Error {
     }
 }
 
-pub async fn reconcile_kafka(
-    kafka: Arc<KafkaCluster>,
-    ctx: Context<Ctx>,
-) -> Result<ReconcilerAction> {
+pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Context<Ctx>) -> Result<Action> {
     tracing::info!("Starting reconcile");
     let client = &ctx.get_ref().client;
 
@@ -246,9 +243,7 @@ pub async fn reconcile_kafka(
             .context(ApplyDiscoveryConfigSnafu)?;
     }
 
-    Ok(ReconcilerAction {
-        requeue_after: None,
-    })
+    Ok(Action::await_change())
 }
 
 /// The broker-role service is the primary endpoint that should be used by clients that do not perform internal load balancing,
@@ -714,8 +709,6 @@ pub fn kafka_version(kafka: &KafkaCluster) -> Result<&str> {
         .context(ObjectHasNoVersionSnafu)
 }
 
-pub fn error_policy(_error: &Error, _ctx: Context<Ctx>) -> ReconcilerAction {
-    ReconcilerAction {
-        requeue_after: Some(Duration::from_secs(5)),
-    }
+pub fn error_policy(_error: &Error, _ctx: Context<Ctx>) -> Action {
+    Action::requeue(Duration::from_secs(5))
 }

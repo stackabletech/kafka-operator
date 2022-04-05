@@ -9,7 +9,7 @@ version = "0.6.0-nightly"
 
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.13.0" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.15.0" }
 
 futures = "0.3.21"
 serde = { version = "1.0.136", features = ["derive"] }

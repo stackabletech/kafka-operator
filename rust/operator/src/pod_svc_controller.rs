@@ -7,7 +7,7 @@ use stackable_operator::{
     },
     kube::{
         core::ObjectMeta,
-        runtime::controller::{Context, ReconcilerAction},
+        runtime::controller::{Action, Context},
     },
     logging::controller::ReconcilerError,
 };
@@ -44,7 +44,7 @@ impl ReconcilerError for Error {
     }
 }
 
-pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Context<Ctx>) -> Result<ReconcilerAction> {
+pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Context<Ctx>) -> Result<Action> {
     tracing::info!("Starting reconcile");
     let name = pod.metadata.name.clone().context(ObjectHasNoNameSnafu)?;
     let svc = Service {
@@ -79,13 +79,9 @@ pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Context<Ctx>) -> Result<Reconcile
         .apply_patch(FIELD_MANAGER_SCOPE, &svc, &svc)
         .await
         .context(ApplyServiceFailedSnafu)?;
-    Ok(ReconcilerAction {
-        requeue_after: None,
-    })
+    Ok(Action::await_change())
 }
 
-pub fn error_policy(_error: &Error, _ctx: Context<Ctx>) -> ReconcilerAction {
-    ReconcilerAction {
-        requeue_after: Some(Duration::from_secs(5)),
-    }
+pub fn error_policy(_error: &Error, _ctx: Context<Ctx>) -> Action {
+    Action::requeue(Duration::from_secs(5))
 }
