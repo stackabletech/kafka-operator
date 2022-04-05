@@ -114,9 +114,17 @@ spec:
                 log4j:
                   nullable: true
                   type: string
-                opaConfigMapName:
+                opa:
                   nullable: true
-                  type: string
+                  properties:
+                    configMapName:
+                      type: string
+                    package:
+                      nullable: true
+                      type: string
+                  required:
+                    - configMapName
+                  type: object
                 stopped:
                   nullable: true
                   type: boolean

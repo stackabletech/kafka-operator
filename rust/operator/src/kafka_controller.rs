@@ -11,6 +11,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
     KafkaCluster, KafkaRole, APP_NAME, APP_PORT, METRICS_PORT, SERVER_PROPERTIES_FILE,
 };
+use stackable_operator::opa::OpaApiVersion;
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     k8s_openapi::{
@@ -134,6 +135,10 @@ pub enum Error {
     InvalidServiceAccount {
         source: utils::NamespaceMismatchError,
     },
+    #[snafu(display("invalid OpaConfig"))]
+    InvalidOpaConfig {
+        source: stackable_operator::error::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -202,6 +207,25 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Context<Ctx>) -> Res
         )
         .await
         .context(ApplyRoleRoleBindingSnafu)?;
+
+    // Assemble the OPA connection string from the discovery and the given path if provided
+    // Will be passed as --override parameter in the cli in the state ful set
+    let opa_connect = if let Some(opa_spec) = &kafka.spec.opa {
+        Some(
+            opa_spec
+                .full_document_url_from_config_map(
+                    client,
+                    &*kafka,
+                    Some("allow"),
+                    OpaApiVersion::V1,
+                )
+                .await
+                .context(InvalidOpaConfigSnafu)?,
+        )
+    } else {
+        None
+    };
+
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup = kafka.broker_rolegroup_ref(rolegroup_name);
 
@@ -212,6 +236,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Context<Ctx>) -> Res
             &kafka,
             rolegroup_config,
             &broker_role_serviceaccount_ref,
+            opa_connect.as_deref(),
         )?;
         client
             .apply_patch(FIELD_MANAGER_SCOPE, &rg_service, &rg_service)
@@ -423,6 +448,7 @@ fn build_broker_rolegroup_statefulset(
     kafka: &KafkaCluster,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     serviceaccount: &ObjectRef<ServiceAccount>,
+    opa_connect_string: Option<&str>,
 ) -> Result<StatefulSet> {
     let role = kafka.spec.brokers.as_ref().context(NoBrokerRoleSnafu)?;
     let rolegroup = role
@@ -512,24 +538,7 @@ fn build_broker_rolegroup_statefulset(
         }),
         ..EnvVar::default()
     });
-    let opa_url_env_var = if let Some(opa_config_map_name) = &kafka.spec.opa_config_map_name {
-        let env_var = "OPA";
-        env.push(EnvVar {
-            name: env_var.to_string(),
-            value_from: Some(EnvVarSource {
-                config_map_key_ref: Some(ConfigMapKeySelector {
-                    name: Some(opa_config_map_name.to_string()),
-                    key: "OPA".to_string(),
-                    ..ConfigMapKeySelector::default()
-                }),
-                ..EnvVarSource::default()
-            }),
-            ..EnvVar::default()
-        });
-        Some(env_var)
-    } else {
-        None
-    };
+
     env.push(EnvVar {
         name: "NODE".to_string(),
         value_from: Some(EnvVarSource {
@@ -557,9 +566,10 @@ fn build_broker_rolegroup_statefulset(
     let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
     let advertised_listeners_override =
         "--override \"advertised.listeners=PLAINTEXT://$NODE:$(cat /stackable/tmp/nodeport)\"";
-    let opa_url_override = &opa_url_env_var.map_or("", |_| {
-        "--override \"opa.authorizer.url=${OPA}v1/data/kafka/authz/allow\""
+    let opa_url_override = opa_connect_string.map_or("".to_string(), |opa| {
+        format!("--override \"opa.authorizer.url={}\"", opa)
     });
+
     let container_kafka = ContainerBuilder::new("kafka")
         .image(image)
         .args(vec![
@@ -570,7 +580,7 @@ fn build_broker_rolegroup_statefulset(
                 &format!("/stackable/config/{}", SERVER_PROPERTIES_FILE),
                 zookeeper_override,
                 advertised_listeners_override,
-                opa_url_override,
+                &opa_url_override,
             ]
             .join(" "),
         ])
