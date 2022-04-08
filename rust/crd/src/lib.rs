@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
 use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::kube::CustomResource;
+use stackable_operator::opa::OpaConfig;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
 use stackable_operator::role_utils::Role;
 use stackable_operator::role_utils::RoleGroupRef;
@@ -34,7 +35,7 @@ pub struct KafkaClusterSpec {
     pub version: Option<String>,
     pub brokers: Option<Role<KafkaConfig>>,
     pub zookeeper_config_map_name: String,
-    pub opa_config_map_name: Option<String>,
+    pub opa: Option<OpaConfig>,
     pub log4j: Option<String>,
     pub stopped: Option<bool>,
 }
@@ -154,7 +155,7 @@ impl Configuration for KafkaConfig {
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
         let mut config = BTreeMap::new();
 
-        if resource.spec.opa_config_map_name.is_some() && file == SERVER_PROPERTIES_FILE {
+        if resource.spec.opa.is_some() && file == SERVER_PROPERTIES_FILE {
             config.insert(
                 "authorizer.class.name".to_string(),
                 Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),

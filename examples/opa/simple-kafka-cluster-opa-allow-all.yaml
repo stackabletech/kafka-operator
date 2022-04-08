@@ -55,7 +55,9 @@ metadata:
 spec:
   version: 3.1.0
   zookeeperConfigMapName: simple-kafka-znode
-  opaConfigMapName: simple-opa
+  opa:
+    configMapName: simple-opa
+    package: kafka/authz
   brokers:
     configOverrides:
       server.properties:

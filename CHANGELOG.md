@@ -14,15 +14,17 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- `operator-rs` `0.10.0` → `0.13.0` ([#346],[#351]).
+- `operator-rs` `0.10.0` → `0.15.0` ([#346], [#351], [#385]).
 - `--kafka-broker-clusterrole` is now only accepted for the `run` subcommand ([#349]).
 - BREAKING: Adapted the `opa` field in the crd to `opaConfigMapName` and fixed `authorizer.class.name` to `org.openpolicyagent.kafka.OpaAuthorizer` and `opa.authorizer.metrics.enabled` to `true`. Other settings can be changed via `configOverrides` ([#364]).
+- BREAKING: `opaConfigMapName` in CRD adapted to `opa` using the `OpaConfig` from operator-rs ([#385]).
 
 [#346]: https://github.com/stackabletech/kafka-operator/pull/346
 [#347]: https://github.com/stackabletech/kafka-operator/pull/347
 [#349]: https://github.com/stackabletech/kafka-operator/pull/349
 [#351]: https://github.com/stackabletech/kafka-operator/pull/351
 [#364]: https://github.com/stackabletech/kafka-operator/pull/364
+[#385]: https://github.com/stackabletech/kafka-operator/pull/385
 
 ## [0.5.0] - 2022-02-14
 
@@ -32,7 +34,6 @@ All notable changes to this project will be documented in this file.
 [#256]: https://github.com/stackabletech/kafka-operator/pull/256
 
 ## [0.4.0] - 2021-12-06
-
 
 - `operator-rs` `0.3.0` → `0.4.0` ([#214]).
 - `stackable-opa-crd` `0.4.1` → `0.5.0` ([#214]).
