@@ -77,7 +77,7 @@ A full list of settings and their respective defaults can be found https://githu
 == Monitoring
 
 The managed Kafka instances are automatically configured to export Prometheus metrics. See
-xref:home::monitoring.adoc[] for more details.
+xref:home:operators:monitoring.adoc[] for more details.
 
 == Provide log4j.properties
 
