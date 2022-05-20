@@ -23,6 +23,7 @@ pub const APP_PORT: u16 = 9092;
 pub const METRICS_PORT: u16 = 9606;
 
 pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
+pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
@@ -108,7 +109,7 @@ impl KafkaCluster {
 
         let data_pvc = resources
             .storage
-            .log_dir
+            .log_dirs
             .build_pvc("logDir", Some(vec!["ReadWriteOnce"]));
         let pod_resources = resources.clone().into();
 
@@ -146,7 +147,7 @@ impl KafkaCluster {
                 runtime_limits: NoRuntimeLimits {},
             },
             storage: Storage {
-                log_dir: PvcConfig {
+                log_dirs: PvcConfig {
                     capacity: Some(Quantity("1Gi".to_owned())),
                     storage_class: None,
                     selectors: None,
@@ -200,7 +201,7 @@ pub enum KafkaRole {
 #[serde(rename_all = "camelCase")]
 pub struct Storage {
     #[serde(default)]
-    pub log_dir: PvcConfig,
+    pub log_dirs: PvcConfig,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize, Default)]

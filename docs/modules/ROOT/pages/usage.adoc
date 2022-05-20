@@ -191,7 +191,7 @@ brokers:
               capacity: 2Gi
 ----
 
-In the above example, all Kafka brokers in the default group will store data (the location of the property `log.dir`) on a `2Gi` volume.
+In the above example, all Kafka brokers in the default group will store data (the location of the property `log.dirs`) on a `2Gi` volume.
 
 By default, in case nothing is configured in the custom resource for a certain role group, each Pod will have a `1Gi` large local volume mount for the data location.
 

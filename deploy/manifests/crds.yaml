@@ -64,7 +64,7 @@ spec:
                               type: object
                             storage:
                               properties:
-                                logDir:
+                                logDirs:
                                   default:
                                     capacity: ~
                                   properties:
@@ -161,7 +161,7 @@ spec:
                                     type: object
                                   storage:
                                     properties:
-                                      logDir:
+                                      logDirs:
                                         default:
                                           capacity: ~
                                         properties:
