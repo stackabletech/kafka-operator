@@ -11,9 +11,9 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
     KafkaCluster, KafkaRole, APP_NAME, APP_PORT, METRICS_PORT, SERVER_PROPERTIES_FILE,
 };
-use stackable_operator::opa::OpaApiVersion;
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
+    commons::opa::OpaApiVersion,
     k8s_openapi::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},

@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
-use stackable_operator::kube::runtime::reflector::ObjectRef;
-use stackable_operator::kube::CustomResource;
-use stackable_operator::opa::OpaConfig;
-use stackable_operator::product_config_utils::{ConfigError, Configuration};
-use stackable_operator::role_utils::Role;
-use stackable_operator::role_utils::RoleGroupRef;
-use stackable_operator::schemars::{self, JsonSchema};
+use stackable_operator::{
+    commons::opa::OpaConfig,
+    kube::{runtime::reflector::ObjectRef, CustomResource},
+    product_config_utils::{ConfigError, Configuration},
+    role_utils::{Role, RoleGroupRef},
+    schemars::{self, JsonSchema},
+};
 use std::collections::BTreeMap;
 use strum::{Display, EnumIter, EnumString};
 

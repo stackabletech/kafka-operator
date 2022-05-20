@@ -11,10 +11,11 @@ All notable changes to this project will be documented in this file.
 - Use cli argument `watch-namespace` / env var `WATCH_NAMESPACE` to specify
   a single namespace to watch ([#351]).
 - Optional CRD field `log4j` to adapt the `log4j.properties` ([#364]).
+- PVCs for data storage, cpu and memory limits are now configurable ([#xxx]). 
 
 ### Changed
 
-- `operator-rs` `0.10.0` → `0.15.0` ([#346], [#351], [#385]).
+- `operator-rs` `0.10.0` → `0.21.1` ([#346], [#351], [#385], [#xxx]).
 - `--kafka-broker-clusterrole` is now only accepted for the `run` subcommand ([#349]).
 - BREAKING: Adapted the `opa` field in the crd to `opaConfigMapName` and fixed `authorizer.class.name` to `org.openpolicyagent.kafka.OpaAuthorizer` and `opa.authorizer.metrics.enabled` to `true`. Other settings can be changed via `configOverrides` ([#364]).
 - BREAKING: `opaConfigMapName` in CRD adapted to `opa` using the `OpaConfig` from operator-rs ([#385]).
@@ -25,6 +26,7 @@ All notable changes to this project will be documented in this file.
 [#351]: https://github.com/stackabletech/kafka-operator/pull/351
 [#364]: https://github.com/stackabletech/kafka-operator/pull/364
 [#385]: https://github.com/stackabletech/kafka-operator/pull/385
+[#xxx]: https://github.com/stackabletech/kafka-operator/pull/385
 
 ## [0.5.0] - 2022-02-14
 
