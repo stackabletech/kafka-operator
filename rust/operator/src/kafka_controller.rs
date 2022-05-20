@@ -537,7 +537,7 @@ fn build_broker_rolegroup_statefulset(
     {
         env.push(EnvVar {
             name: KAFKA_HEAP_OPTS.to_string(),
-            value: Some(heap_limits.to_string()),
+            value: Some(heap_limits),
             ..EnvVar::default()
         });
     }
