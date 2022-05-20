@@ -6,16 +6,6 @@ metadata:
 spec:
   version: 3.8.0
   servers:
-    config:
-      resources:
-        storage:
-          logDirs:
-            capacity: '2Gi'
-        cpu:
-          max: '500m'
-          min: '250m'
-        memory:
-          limit: '1Gi'
     roleGroups:
       default:
         selector:
@@ -40,6 +30,16 @@ spec:
   version: 3.1.0
   zookeeperConfigMapName: simple-kafka-znode
   brokers:
+    config:
+      resources:
+        storage:
+          logDirs:
+            capacity: '2Gi'
+        cpu:
+          max: '500m'
+          min: '250m'
+        memory:
+          limit: '1Gi'
     roleGroups:
       default:
         replicas: 3

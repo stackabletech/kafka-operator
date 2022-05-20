@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
+use stackable_operator::error::OperatorResult;
+use stackable_operator::memory::to_java_heap;
 use stackable_operator::{
     commons::{
         opa::OpaConfig,
@@ -23,7 +25,11 @@ pub const APP_PORT: u16 = 9092;
 pub const METRICS_PORT: u16 = 9606;
 
 pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
+
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
+pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
+
+const JVM_HEAP_FACTOR: f32 = 0.8;
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
@@ -110,7 +116,7 @@ impl KafkaCluster {
         let data_pvc = resources
             .storage
             .log_dirs
-            .build_pvc("logDir", Some(vec!["ReadWriteOnce"]));
+            .build_pvc(LOG_DIRS_VOLUME_NAME, Some(vec!["ReadWriteOnce"]));
         let pod_resources = resources.clone().into();
 
         (vec![data_pvc], pod_resources)
@@ -154,6 +160,15 @@ impl KafkaCluster {
                 },
             },
         }
+    }
+
+    pub fn heap_limits(&self, resources: &ResourceRequirements) -> OperatorResult<Option<String>> {
+        resources
+            .limits
+            .as_ref()
+            .and_then(|limits| limits.get("memory"))
+            .map(|memory_limit| to_java_heap(memory_limit, JVM_HEAP_FACTOR))
+            .transpose()
     }
 }
 
