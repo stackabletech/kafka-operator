@@ -1,7 +1,15 @@
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
 use stackable_operator::{
-    commons::opa::OpaConfig,
+    commons::{
+        opa::OpaConfig,
+        resources::{CpuLimits, MemoryLimits, NoRuntimeLimits, PvcConfig, Resources},
+    },
+    config::merge::Merge,
+    k8s_openapi::{
+        api::core::v1::{PersistentVolumeClaim, ResourceRequirements},
+        apimachinery::pkg::api::resource::Quantity,
+    },
     kube::{runtime::reflector::ObjectRef, CustomResource},
     product_config_utils::{ConfigError, Configuration},
     role_utils::{Role, RoleGroupRef},
@@ -82,6 +90,70 @@ impl KafkaCluster {
                 })
             }))
     }
+
+    /// Build the [`PersistentVolumeClaim`]s and [`ResourceRequirements`] for the given `rolegroup_ref`.
+    /// These can be defined at the role or rolegroup level and as usual, the
+    /// following precedence rules are implemented:
+    /// 1. group pvc
+    /// 2. role pvc
+    /// 3. a default PVC with 1Gi capacity
+    pub fn resources(
+        &self,
+        rolegroup_ref: &RoleGroupRef<KafkaCluster>,
+    ) -> (Vec<PersistentVolumeClaim>, ResourceRequirements) {
+        let mut role_resources = self.role_resources().unwrap_or_default();
+        role_resources.merge(&Self::default_resources());
+        let mut resources = self.rolegroup_resources(rolegroup_ref).unwrap_or_default();
+        resources.merge(&role_resources);
+
+        let data_pvc = resources
+            .storage
+            .log_dir
+            .build_pvc("logDir", Some(vec!["ReadWriteOnce"]));
+        let pod_resources = resources.clone().into();
+
+        (vec![data_pvc], pod_resources)
+    }
+
+    fn rolegroup_resources(
+        &self,
+        rolegroup_ref: &RoleGroupRef<KafkaCluster>,
+    ) -> Option<Resources<Storage, NoRuntimeLimits>> {
+        let spec: &KafkaClusterSpec = &self.spec;
+        spec.brokers
+            .as_ref()?
+            .role_groups
+            .get(&rolegroup_ref.role_group)?
+            .config
+            .config
+            .resources
+            .clone()
+    }
+
+    fn role_resources(&self) -> Option<Resources<Storage, NoRuntimeLimits>> {
+        let spec: &KafkaClusterSpec = &self.spec;
+        spec.brokers.as_ref()?.config.config.resources.clone()
+    }
+
+    fn default_resources() -> Resources<Storage, NoRuntimeLimits> {
+        Resources {
+            cpu: CpuLimits {
+                min: None,
+                max: None,
+            },
+            memory: MemoryLimits {
+                limit: None,
+                runtime_limits: NoRuntimeLimits {},
+            },
+            storage: Storage {
+                log_dir: PvcConfig {
+                    capacity: Some(Quantity("1Gi".to_owned())),
+                    storage_class: None,
+                    selectors: None,
+                },
+            },
+        }
+    }
 }
 
 #[derive(Debug, Snafu)]
@@ -124,9 +196,18 @@ pub enum KafkaRole {
     Broker,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Merge, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KafkaConfig {}
+pub struct Storage {
+    #[serde(default)]
+    pub log_dir: PvcConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct KafkaConfig {
+    pub resources: Option<Resources<Storage, NoRuntimeLimits>>,
+}
 
 impl Configuration for KafkaConfig {
     type Configurable = KafkaCluster;
