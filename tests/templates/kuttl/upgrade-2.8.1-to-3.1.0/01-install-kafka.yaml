@@ -1,0 +1,16 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 300
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: 2.8.1-stackable0
+  zookeeperConfigMapName: kafka-zk
+  brokers:
+    roleGroups:
+      default:
+        replicas: 1

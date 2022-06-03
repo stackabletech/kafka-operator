@@ -7,7 +7,7 @@ The cluster can be configured via a YAML file. This custom resource specifies th
     metadata:
       name: simple-kafka
     spec:
-      version: 3.1.0
+      version: 3.1.0-stackable0
       zookeeperConfigMapName: simple-kafka-znode
       opa:
         configMapName: simple-opa

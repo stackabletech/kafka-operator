@@ -1,0 +1,16 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: simple-kafka-broker-default
+  labels:
+    app.kubernetes.io/version: 3.1.0
+status:
+  readyReplicas: 1
+  replicas: 1
+  currentReplicas: 1
+  updatedReplicas: 1

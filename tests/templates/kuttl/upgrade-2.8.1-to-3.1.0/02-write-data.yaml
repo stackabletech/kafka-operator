@@ -1,0 +1,27 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 300
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: write-data
+spec:
+  template:
+    spec:
+      containers:
+        - name: write-data
+          image: edenhill/kcat:1.7.1
+          command: [sh, -euo, pipefail, -c]
+          args:
+            - |
+              echo "message written before upgrade" > message
+              kcat -b $KAFKA -t upgrade-test-data -P message
+          env:
+            - name: KAFKA
+              valueFrom:
+                configMapKeyRef:
+                  name: simple-kafka
+                  key: KAFKA
+      restartPolicy: Never
