@@ -15,3 +15,6 @@ tests:
     dimensions:
       - kafka
       - zookeeper
+  - name: upgrade-2.8.1-to-3.1.0
+    dimensions:
+      - zookeeper
