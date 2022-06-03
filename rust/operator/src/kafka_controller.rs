@@ -459,10 +459,7 @@ fn build_broker_rolegroup_statefulset(
             rolegroup: rolegroup_ref.clone(),
         })?;
     let kafka_version = kafka_version(kafka)?;
-    let image = format!(
-        "docker.stackable.tech/stackable/kafka:{}-stackable0",
-        kafka_version
-    );
+    let image = format!("docker.stackable.tech/stackable/kafka:{}", kafka_version);
 
     let container_get_svc = ContainerBuilder::new("get-svc")
         .image("bitnami/kubectl:1.21.1")

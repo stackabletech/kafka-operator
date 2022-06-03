@@ -15,6 +15,6 @@ futures = "0.3.21"
 serde = { version = "1.0.137", features = ["derive"] }
 serde_json = "1.0.81"
 strum = { version = "0.24.0", features = ["derive"] }
-tokio = { version = "1.17.0", features = ["macros"] }
+tokio = { version = "1.18.2", features = ["macros"] }
 tracing = "0.1.34"
 snafu = "0.7.1"
