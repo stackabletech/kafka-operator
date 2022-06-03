@@ -11,10 +11,11 @@ All notable changes to this project will be documented in this file.
 - Use cli argument `watch-namespace` / env var `WATCH_NAMESPACE` to specify
   a single namespace to watch ([#351]).
 - Optional CRD field `log4j` to adapt the `log4j.properties` ([#364]).
+- PVCs for data storage, cpu and memory limits are now configurable ([#405]).
 
 ### Changed
 
-- `operator-rs` `0.10.0` → `0.15.0` ([#346], [#351], [#385]).
+- `operator-rs` `0.10.0` → `0.21.1` ([#346], [#351], [#385], [#405]).
 - `--kafka-broker-clusterrole` is now only accepted for the `run` subcommand ([#349]).
 - BREAKING: Adapted the `opa` field in the crd to `opaConfigMapName` and fixed `authorizer.class.name` to `org.openpolicyagent.kafka.OpaAuthorizer` and `opa.authorizer.metrics.enabled` to `true`. Other settings can be changed via `configOverrides` ([#364]).
 - BREAKING: `opaConfigMapName` in CRD adapted to `opa` using the `OpaConfig` from operator-rs ([#385]).
@@ -25,10 +26,12 @@ All notable changes to this project will be documented in this file.
 [#351]: https://github.com/stackabletech/kafka-operator/pull/351
 [#364]: https://github.com/stackabletech/kafka-operator/pull/364
 [#385]: https://github.com/stackabletech/kafka-operator/pull/385
+[#405]: https://github.com/stackabletech/kafka-operator/pull/405
 
 ## [0.5.0] - 2022-02-14
 
 ### Changed
+
 - Complete rework ([#256]).
 
 [#256]: https://github.com/stackabletech/kafka-operator/pull/256
@@ -46,6 +49,7 @@ All notable changes to this project will be documented in this file.
 ## [0.3.0] - 2021-10-27
 
 ### Added
+
 - Added versioning code from operator-rs for up and downgrades ([#167]).
 - Added `ProductVersion` to status ([#167]).
 - Added `Condition` to status ([#167]).
@@ -53,6 +57,7 @@ All notable changes to this project will be documented in this file.
 - Added support for Start, Stop Restart commands ([#194]).
 
 ### Changed
+
 - `operator-rs` `0.2.2` → `0.3.0` ([#207]).
 - `stackable-zookeeper-crd`: `0.2.0` → `0.4.1` ([#207]).
 - `stackable-opa-crd`: `0.2.0` → `0.4.1` ([#207]).
@@ -79,6 +84,7 @@ All notable changes to this project will be documented in this file.
 ## [0.2.0] - 2021.09.10
 
 ### Changed
+
 - **Breaking:** Repository structure was changed and the -server crate renamed to -binary. As part of this change the -server suffix was removed from both the package name for os packages and the name of the executable ([#157]).
 
 [#157]: https://github.com/stackabletech/kafka-operator/pull/157

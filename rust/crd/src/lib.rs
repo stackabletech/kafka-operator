@@ -1,12 +1,22 @@
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
-use stackable_operator::kube::runtime::reflector::ObjectRef;
-use stackable_operator::kube::CustomResource;
-use stackable_operator::opa::OpaConfig;
-use stackable_operator::product_config_utils::{ConfigError, Configuration};
-use stackable_operator::role_utils::Role;
-use stackable_operator::role_utils::RoleGroupRef;
-use stackable_operator::schemars::{self, JsonSchema};
+use stackable_operator::error::OperatorResult;
+use stackable_operator::memory::to_java_heap;
+use stackable_operator::{
+    commons::{
+        opa::OpaConfig,
+        resources::{CpuLimits, MemoryLimits, NoRuntimeLimits, PvcConfig, Resources},
+    },
+    config::merge::Merge,
+    k8s_openapi::{
+        api::core::v1::{PersistentVolumeClaim, ResourceRequirements},
+        apimachinery::pkg::api::resource::Quantity,
+    },
+    kube::{runtime::reflector::ObjectRef, CustomResource},
+    product_config_utils::{ConfigError, Configuration},
+    role_utils::{Role, RoleGroupRef},
+    schemars::{self, JsonSchema},
+};
 use std::collections::BTreeMap;
 use strum::{Display, EnumIter, EnumString};
 
@@ -15,6 +25,11 @@ pub const APP_PORT: u16 = 9092;
 pub const METRICS_PORT: u16 = 9606;
 
 pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
+
+pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
+pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
+
+const JVM_HEAP_FACTOR: f32 = 0.8;
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
@@ -82,6 +97,81 @@ impl KafkaCluster {
                 })
             }))
     }
+
+    /// Build the [`PersistentVolumeClaim`]s and [`ResourceRequirements`] for the given `rolegroup_ref`.
+    /// These can be defined at the role or rolegroup level and as usual, the
+    /// following precedence rules are implemented:
+    /// 1. group pvc
+    /// 2. role pvc
+    /// 3. a default PVC with 1Gi capacity
+    pub fn resources(
+        &self,
+        rolegroup_ref: &RoleGroupRef<KafkaCluster>,
+    ) -> (Vec<PersistentVolumeClaim>, ResourceRequirements) {
+        let mut role_resources = self.role_resources();
+        role_resources.merge(&Self::default_resources());
+        let mut resources = self.rolegroup_resources(rolegroup_ref);
+        resources.merge(&role_resources);
+
+        let data_pvc = resources
+            .storage
+            .log_dirs
+            .build_pvc(LOG_DIRS_VOLUME_NAME, Some(vec!["ReadWriteOnce"]));
+        let pod_resources = resources.clone().into();
+
+        (vec![data_pvc], pod_resources)
+    }
+
+    fn rolegroup_resources(
+        &self,
+        rolegroup_ref: &RoleGroupRef<KafkaCluster>,
+    ) -> Resources<Storage, NoRuntimeLimits> {
+        let spec: &KafkaClusterSpec = &self.spec;
+
+        spec.brokers
+            .as_ref()
+            .map(|brokers| &brokers.role_groups)
+            .and_then(|role_groups| role_groups.get(&rolegroup_ref.role_group))
+            .map(|role_group| role_group.config.config.resources.clone())
+            .unwrap_or_default()
+    }
+
+    fn role_resources(&self) -> Resources<Storage, NoRuntimeLimits> {
+        let spec: &KafkaClusterSpec = &self.spec;
+        spec.brokers
+            .as_ref()
+            .map(|brokers| brokers.config.config.resources.clone())
+            .unwrap_or_default()
+    }
+
+    fn default_resources() -> Resources<Storage, NoRuntimeLimits> {
+        Resources {
+            cpu: CpuLimits {
+                min: None,
+                max: None,
+            },
+            memory: MemoryLimits {
+                limit: None,
+                runtime_limits: NoRuntimeLimits {},
+            },
+            storage: Storage {
+                log_dirs: PvcConfig {
+                    capacity: Some(Quantity("1Gi".to_owned())),
+                    storage_class: None,
+                    selectors: None,
+                },
+            },
+        }
+    }
+
+    pub fn heap_limits(&self, resources: &ResourceRequirements) -> OperatorResult<Option<String>> {
+        resources
+            .limits
+            .as_ref()
+            .and_then(|limits| limits.get("memory"))
+            .map(|memory_limit| to_java_heap(memory_limit, JVM_HEAP_FACTOR))
+            .transpose()
+    }
 }
 
 #[derive(Debug, Snafu)]
@@ -124,9 +214,19 @@ pub enum KafkaRole {
     Broker,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Merge, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KafkaConfig {}
+pub struct Storage {
+    #[serde(default)]
+    pub log_dirs: PvcConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct KafkaConfig {
+    #[serde(default)]
+    pub resources: Resources<Storage, NoRuntimeLimits>,
+}
 
 impl Configuration for KafkaConfig {
     type Configurable = KafkaCluster;

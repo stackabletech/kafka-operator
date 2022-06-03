@@ -1,5 +1,5 @@
 use clap::Parser;
-use stackable_kafka_crd::KafkaCluster;
+use stackable_kafka_crd::{KafkaCluster, APP_NAME};
 use stackable_kafka_operator::ControllerConfig;
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
@@ -29,8 +29,6 @@ struct KafkaRun {
 
 #[tokio::main]
 async fn main() -> Result<(), error::Error> {
-    stackable_operator::logging::initialize_logging("KAFKA_OPERATOR_LOG");
-
     let opts = Opts::parse();
     match opts.cmd {
         Command::Crd => println!("{}", serde_yaml::to_string(&KafkaCluster::crd())?),
@@ -40,8 +38,14 @@ async fn main() -> Result<(), error::Error> {
                 ProductOperatorRun {
                     product_config,
                     watch_namespace,
+                    tracing_target,
                 },
         }) => {
+            stackable_operator::logging::initialize_logging(
+                "KAFKA_OPERATOR_LOG",
+                APP_NAME,
+                tracing_target,
+            );
             stackable_operator::utils::print_startup_string(
                 built_info::PKG_DESCRIPTION,
                 built_info::PKG_VERSION,

@@ -9,31 +9,28 @@ use std::{
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
-    KafkaCluster, KafkaRole, APP_NAME, APP_PORT, METRICS_PORT, SERVER_PROPERTIES_FILE,
+    KafkaCluster, KafkaRole, APP_NAME, APP_PORT, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME,
+    METRICS_PORT, SERVER_PROPERTIES_FILE,
 };
-use stackable_operator::opa::OpaApiVersion;
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
+    commons::opa::OpaApiVersion,
     k8s_openapi::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, EmptyDirVolumeSource,
-                EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector, PersistentVolumeClaim,
-                PersistentVolumeClaimSpec, PodSpec, Probe, ResourceRequirements, SecurityContext,
-                Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
+                EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe,
+                SecurityContext, Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
             },
             rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
         },
-        apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
+        apimachinery::pkg::apis::meta::v1::LabelSelector,
         Resource,
     },
-    kube::{
-        api::ObjectMeta,
-        runtime::{
-            controller::{Action, Context},
-            reflector::ObjectRef,
-        },
+    kube::runtime::{
+        controller::{Action, Context},
+        reflector::ObjectRef,
     },
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
@@ -137,6 +134,10 @@ pub enum Error {
     },
     #[snafu(display("invalid OpaConfig"))]
     InvalidOpaConfig {
+        source: stackable_operator::error::Error,
+    },
+    #[snafu(display("invalid java heap config: {source}"))]
+    InvalidJavaHeapConfig {
         source: stackable_operator::error::Error,
     },
 }
@@ -462,6 +463,7 @@ fn build_broker_rolegroup_statefulset(
         "docker.stackable.tech/stackable/kafka:{}-stackable0",
         kafka_version
     );
+
     let container_get_svc = ContainerBuilder::new("get-svc")
         .image("bitnami/kubectl:1.21.1")
         .command(vec!["bash".to_string()])
@@ -508,7 +510,7 @@ fn build_broker_rolegroup_statefulset(
             "chmod -R a=,u=rwX /stackable/data",
         ]
         .join(" && ")])
-        .add_volume_mount("data", "/stackable/data")
+        .add_volume_mount(LOG_DIRS_VOLUME_NAME, "/stackable/data")
         .build();
 
     container_chown
@@ -516,16 +518,30 @@ fn build_broker_rolegroup_statefulset(
         .get_or_insert_with(SecurityContext::default)
         .run_as_user = Some(0);
 
+    let (pvc, resources) = kafka.resources(rolegroup_ref);
+
     let mut env = broker_config
         .get(&PropertyNameKind::Env)
-        .iter()
-        .flat_map(|env_vars| env_vars.iter())
+        .into_iter()
+        .flatten()
         .map(|(k, v)| EnvVar {
             name: k.clone(),
             value: Some(v.clone()),
             ..EnvVar::default()
         })
         .collect::<Vec<_>>();
+
+    if let Some(heap_limits) = kafka
+        .heap_limits(&resources)
+        .context(InvalidJavaHeapConfigSnafu)?
+    {
+        env.push(EnvVar {
+            name: KAFKA_HEAP_OPTS.to_string(),
+            value: Some(heap_limits),
+            ..EnvVar::default()
+        });
+    }
+
     env.push(EnvVar {
         name: "ZOOKEEPER".to_string(),
         value_from: Some(EnvVarSource {
@@ -588,9 +604,10 @@ fn build_broker_rolegroup_statefulset(
         .add_env_var("EXTRA_ARGS", jvm_args)
         .add_container_port("kafka", APP_PORT.into())
         .add_container_port("metrics", METRICS_PORT.into())
-        .add_volume_mount("data", "/stackable/data")
+        .add_volume_mount(LOG_DIRS_VOLUME_NAME, "/stackable/data")
         .add_volume_mount("config", "/stackable/config")
         .add_volume_mount("tmp", "/stackable/tmp")
+        .resources(resources)
         .build();
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
@@ -686,25 +703,7 @@ fn build_broker_rolegroup_statefulset(
             },
             service_name: rolegroup_ref.object_name(),
             template: pod_template,
-            volume_claim_templates: Some(vec![PersistentVolumeClaim {
-                metadata: ObjectMeta {
-                    name: Some("data".to_string()),
-                    ..ObjectMeta::default()
-                },
-                spec: Some(PersistentVolumeClaimSpec {
-                    access_modes: Some(vec!["ReadWriteOnce".to_string()]),
-                    resources: Some(ResourceRequirements {
-                        requests: Some({
-                            let mut map = BTreeMap::new();
-                            map.insert("storage".to_string(), Quantity("1Gi".to_string()));
-                            map
-                        }),
-                        ..ResourceRequirements::default()
-                    }),
-                    ..PersistentVolumeClaimSpec::default()
-                }),
-                ..PersistentVolumeClaim::default()
-            }]),
+            volume_claim_templates: Some(pvc),
             ..StatefulSetSpec::default()
         }),
         status: None,
