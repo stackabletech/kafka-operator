@@ -108,9 +108,9 @@ impl KafkaCluster {
         &self,
         rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     ) -> (Vec<PersistentVolumeClaim>, ResourceRequirements) {
-        let mut role_resources = self.role_resources().unwrap_or_default();
+        let mut role_resources = self.role_resources();
         role_resources.merge(&Self::default_resources());
-        let mut resources = self.rolegroup_resources(rolegroup_ref).unwrap_or_default();
+        let mut resources = self.rolegroup_resources(rolegroup_ref);
         resources.merge(&role_resources);
 
         let data_pvc = resources
@@ -125,21 +125,23 @@ impl KafkaCluster {
     fn rolegroup_resources(
         &self,
         rolegroup_ref: &RoleGroupRef<KafkaCluster>,
-    ) -> Option<Resources<Storage, NoRuntimeLimits>> {
+    ) -> Resources<Storage, NoRuntimeLimits> {
         let spec: &KafkaClusterSpec = &self.spec;
+
         spec.brokers
-            .as_ref()?
-            .role_groups
-            .get(&rolegroup_ref.role_group)?
-            .config
-            .config
-            .resources
-            .clone()
+            .as_ref()
+            .map(|brokers| &brokers.role_groups)
+            .and_then(|role_groups| role_groups.get(&rolegroup_ref.role_group))
+            .map(|role_group| role_group.config.config.resources.clone())
+            .unwrap_or_default()
     }
 
-    fn role_resources(&self) -> Option<Resources<Storage, NoRuntimeLimits>> {
+    fn role_resources(&self) -> Resources<Storage, NoRuntimeLimits> {
         let spec: &KafkaClusterSpec = &self.spec;
-        spec.brokers.as_ref()?.config.config.resources.clone()
+        spec.brokers
+            .as_ref()
+            .map(|brokers| brokers.config.config.resources.clone())
+            .unwrap_or_default()
     }
 
     fn default_resources() -> Resources<Storage, NoRuntimeLimits> {
@@ -222,7 +224,8 @@ pub struct Storage {
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaConfig {
-    pub resources: Option<Resources<Storage, NoRuntimeLimits>>,
+    #[serde(default)]
+    pub resources: Resources<Storage, NoRuntimeLimits>,
 }
 
 impl Configuration for KafkaConfig {

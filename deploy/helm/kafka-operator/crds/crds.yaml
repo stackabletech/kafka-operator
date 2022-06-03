@@ -36,7 +36,16 @@ spec:
                       default: {}
                       properties:
                         resources:
-                          nullable: true
+                          default:
+                            memory:
+                              limit: ~
+                              runtimeLimits: {}
+                            cpu:
+                              min: ~
+                              max: ~
+                            storage:
+                              logDirs:
+                                capacity: ~
                           properties:
                             cpu:
                               default:
@@ -133,7 +142,16 @@ spec:
                             default: {}
                             properties:
                               resources:
-                                nullable: true
+                                default:
+                                  memory:
+                                    limit: ~
+                                    runtimeLimits: {}
+                                  cpu:
+                                    min: ~
+                                    max: ~
+                                  storage:
+                                    logDirs:
+                                      capacity: ~
                                 properties:
                                   cpu:
                                     default:
