@@ -31,6 +31,16 @@ pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 
 const JVM_HEAP_FACTOR: f32 = 0.8;
 
+#[derive(Snafu, Debug)]
+pub enum Error {
+    #[snafu(display("could not parse product version from image: [{image_version}]. Expected format e.g. [2.8.0-stackable0.1.0]"))]
+    TrinoProductVersion { image_version: String },
+    #[snafu(display("object has no namespace associated"))]
+    NoNamespace,
+    #[snafu(display("object defines no version"))]
+    ObjectHasNoVersion,
+}
+
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
     group = "kafka.stackable.tech",
@@ -77,7 +87,7 @@ impl KafkaCluster {
     ///
     /// We try to predict the pods here rather than looking at the current cluster state in order to
     /// avoid instance churn.
-    pub fn pods(&self) -> Result<impl Iterator<Item = KafkaPodRef> + '_, NoNamespaceError> {
+    pub fn pods(&self) -> Result<impl Iterator<Item = KafkaPodRef> + '_, Error> {
         let ns = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
         Ok(self
             .spec
@@ -172,11 +182,28 @@ impl KafkaCluster {
             .map(|memory_limit| to_java_heap(memory_limit, JVM_HEAP_FACTOR))
             .transpose()
     }
-}
 
-#[derive(Debug, Snafu)]
-#[snafu(display("object has no namespace associated"))]
-pub struct NoNamespaceError;
+    /// Returns the provided docker image e.g. 2.8.1-stackable0.1.0
+    pub fn image_version(&self) -> Result<&str, Error> {
+        self.spec
+            .version
+            .as_deref()
+            .context(ObjectHasNoVersionSnafu)
+    }
+
+    /// Returns our semver representation for product config e.g. 2.8.1
+    pub fn product_version(&self) -> Result<&str, Error> {
+        let image_version = self.image_version()?;
+        image_version
+            .split('-')
+            .collect::<Vec<_>>()
+            .first()
+            .cloned()
+            .with_context(|| TrinoProductVersionSnafu {
+                image_version: image_version.to_string(),
+            })
+    }
+}
 
 /// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
 ///
