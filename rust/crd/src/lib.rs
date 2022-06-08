@@ -34,7 +34,7 @@ const JVM_HEAP_FACTOR: f32 = 0.8;
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("could not parse product version from image: [{image_version}]. Expected format e.g. [2.8.0-stackable0.1.0]"))]
-    TrinoProductVersion { image_version: String },
+    KafkaProductVersion { image_version: String },
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
     #[snafu(display("object defines no version"))]
@@ -196,10 +196,8 @@ impl KafkaCluster {
         let image_version = self.image_version()?;
         image_version
             .split('-')
-            .collect::<Vec<_>>()
-            .first()
-            .cloned()
-            .with_context(|| TrinoProductVersionSnafu {
+            .next()
+            .with_context(|| KafkaProductVersionSnafu {
                 image_version: image_version.to_string(),
             })
     }

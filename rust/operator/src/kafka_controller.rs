@@ -490,10 +490,10 @@ fn build_broker_rolegroup_statefulset(
         .with_context(|| RoleGroupNotFoundSnafu {
             rolegroup: rolegroup_ref.clone(),
         })?;
-    let kafka_version = kafka
+    let image_version = kafka
         .image_version()
         .context(KafkaVersionParseFailureSnafu)?;
-    let image = format!("docker.stackable.tech/stackable/kafka:{}", kafka_version);
+    let image = format!("docker.stackable.tech/stackable/kafka:{}", image_version);
 
     let container_get_svc = ContainerBuilder::new("get-svc")
         .image("bitnami/kubectl:1.21.1")
@@ -669,7 +669,7 @@ fn build_broker_rolegroup_statefulset(
             m.with_recommended_labels(
                 kafka,
                 APP_NAME,
-                kafka_version,
+                image_version,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             )
@@ -711,7 +711,7 @@ fn build_broker_rolegroup_statefulset(
             .with_recommended_labels(
                 kafka,
                 APP_NAME,
-                kafka_version,
+                image_version,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             )
