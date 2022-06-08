@@ -1,0 +1,28 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: install-kafka
+timeout: 300
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: {{ test_scenario['values']['kafka'] }}
+  zookeeperConfigMapName: kafka-zk
+  brokers:
+    config:
+      resources:
+        storage:
+          logDirs:
+            capacity: '2Gi'
+        cpu:
+          max: '500m'
+          min: '250m'
+        memory:
+          limit: '1Gi'
+    roleGroups:
+      default:
+        replicas: 1

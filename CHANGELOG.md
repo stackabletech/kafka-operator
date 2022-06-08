@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
   a single namespace to watch ([#351]).
 - Optional CRD field `log4j` to adapt the `log4j.properties` ([#364]).
 - PVCs for data storage, cpu and memory limits are now configurable ([#405]).
+- Moved tests from integration tests repo to operator repo ([#409]).
 
 ### Changed
 
@@ -19,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - `--kafka-broker-clusterrole` is now only accepted for the `run` subcommand ([#349]).
 - BREAKING: Adapted the `opa` field in the crd to `opaConfigMapName` and fixed `authorizer.class.name` to `org.openpolicyagent.kafka.OpaAuthorizer` and `opa.authorizer.metrics.enabled` to `true`. Other settings can be changed via `configOverrides` ([#364]).
 - BREAKING: `opaConfigMapName` in CRD adapted to `opa` using the `OpaConfig` from operator-rs ([#385]).
+- BREAKING: Specifying the product version has been changed to adhere to [ADR018](https://docs.stackable.tech/home/contributor/adr/ADR018-product_image_versioning.html) instead of just specifying the product version you will now have to add the Stackable image version as well, so version: 3.1.0 becomes (for example) version: 3.1.0-stackable0 ([#409])
 
 [#346]: https://github.com/stackabletech/kafka-operator/pull/346
 [#347]: https://github.com/stackabletech/kafka-operator/pull/347
@@ -27,6 +29,7 @@ All notable changes to this project will be documented in this file.
 [#364]: https://github.com/stackabletech/kafka-operator/pull/364
 [#385]: https://github.com/stackabletech/kafka-operator/pull/385
 [#405]: https://github.com/stackabletech/kafka-operator/pull/405
+[#409]: https://github.com/stackabletech/kafka-operator/pull/409
 
 ## [0.5.0] - 2022-02-14
 

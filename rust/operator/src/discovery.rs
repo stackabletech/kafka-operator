@@ -8,8 +8,6 @@ use stackable_operator::{
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
 
-use crate::kafka_controller::kafka_version;
-
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("object {} is missing metadata to build owner reference", kafka))]
@@ -36,6 +34,8 @@ pub enum Error {
     BuildConfigMap {
         source: stackable_operator::error::Error,
     },
+    #[snafu(display("failed to parse Kafka version/image"))]
+    KafkaVersionParseFailure { source: stackable_kafka_crd::Error },
 }
 
 /// Builds discovery [`ConfigMap`]s for connecting to a [`KafkaCluster`] for all expected scenarios
@@ -85,7 +85,9 @@ fn build_discovery_configmap(
                 .with_recommended_labels(
                     kafka,
                     APP_NAME,
-                    kafka_version(kafka).unwrap_or("unknown"),
+                    kafka
+                        .image_version()
+                        .context(KafkaVersionParseFailureSnafu)?,
                     &KafkaRole::Broker.to_string(),
                     "discovery",
                 )

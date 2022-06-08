@@ -140,6 +140,8 @@ pub enum Error {
     InvalidJavaHeapConfig {
         source: stackable_operator::error::Error,
     },
+    #[snafu(display("failed to parse Kafka version/image"))]
+    KafkaVersionParseFailure { source: stackable_kafka_crd::Error },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -154,7 +156,9 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Context<Ctx>) -> Res
     let client = &ctx.get_ref().client;
 
     let validated_config = validate_all_roles_and_groups_config(
-        kafka_version(&kafka)?,
+        kafka
+            .product_version()
+            .context(KafkaVersionParseFailureSnafu)?,
         &transform_all_roles_to_config(
             &*kafka,
             [(
@@ -285,7 +289,15 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
             .name(&role_svc_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(kafka, APP_NAME, kafka_version(kafka)?, &role_name, "global")
+            .with_recommended_labels(
+                kafka,
+                APP_NAME,
+                kafka
+                    .image_version()
+                    .context(KafkaVersionParseFailureSnafu)?,
+                &role_name,
+                "global",
+            )
             .build(),
         spec: Some(ServiceSpec {
             ports: Some(vec![ServicePort {
@@ -314,7 +326,15 @@ fn build_broker_role_serviceaccount(
             .name(&sa_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(kafka, APP_NAME, kafka_version(kafka)?, &role_name, "global")
+            .with_recommended_labels(
+                kafka,
+                APP_NAME,
+                kafka
+                    .image_version()
+                    .context(KafkaVersionParseFailureSnafu)?,
+                &role_name,
+                "global",
+            )
             .build(),
         ..ServiceAccount::default()
     };
@@ -325,7 +345,15 @@ fn build_broker_role_serviceaccount(
             .name(binding_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(kafka, APP_NAME, kafka_version(kafka)?, &role_name, "global")
+            .with_recommended_labels(
+                kafka,
+                APP_NAME,
+                kafka
+                    .image_version()
+                    .context(KafkaVersionParseFailureSnafu)?,
+                &role_name,
+                "global",
+            )
             .build(),
         role_ref: RoleRef {
             api_group: ClusterRole::GROUP.to_string(),
@@ -366,7 +394,9 @@ fn build_broker_rolegroup_config_map(
                 .with_recommended_labels(
                     kafka,
                     APP_NAME,
-                    kafka_version(kafka)?,
+                    kafka
+                        .image_version()
+                        .context(KafkaVersionParseFailureSnafu)?,
                     &rolegroup.role,
                     &rolegroup.role_group,
                 )
@@ -406,7 +436,9 @@ fn build_broker_rolegroup_service(
             .with_recommended_labels(
                 kafka,
                 APP_NAME,
-                kafka_version(kafka)?,
+                kafka
+                    .image_version()
+                    .context(KafkaVersionParseFailureSnafu)?,
                 &rolegroup.role,
                 &rolegroup.role_group,
             )
@@ -458,11 +490,10 @@ fn build_broker_rolegroup_statefulset(
         .with_context(|| RoleGroupNotFoundSnafu {
             rolegroup: rolegroup_ref.clone(),
         })?;
-    let kafka_version = kafka_version(kafka)?;
-    let image = format!(
-        "docker.stackable.tech/stackable/kafka:{}-stackable0",
-        kafka_version
-    );
+    let image_version = kafka
+        .image_version()
+        .context(KafkaVersionParseFailureSnafu)?;
+    let image = format!("docker.stackable.tech/stackable/kafka:{}", image_version);
 
     let container_get_svc = ContainerBuilder::new("get-svc")
         .image("bitnami/kubectl:1.21.1")
@@ -638,7 +669,7 @@ fn build_broker_rolegroup_statefulset(
             m.with_recommended_labels(
                 kafka,
                 APP_NAME,
-                kafka_version,
+                image_version,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             )
@@ -680,7 +711,7 @@ fn build_broker_rolegroup_statefulset(
             .with_recommended_labels(
                 kafka,
                 APP_NAME,
-                kafka_version,
+                image_version,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             )
@@ -708,14 +739,6 @@ fn build_broker_rolegroup_statefulset(
         }),
         status: None,
     })
-}
-
-pub fn kafka_version(kafka: &KafkaCluster) -> Result<&str> {
-    kafka
-        .spec
-        .version
-        .as_deref()
-        .context(ObjectHasNoVersionSnafu)
 }
 
 pub fn error_policy(_error: &Error, _ctx: Context<Ctx>) -> Action {
