@@ -8,7 +8,7 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: 3.1.0-stackable0
+  version: {{ test_scenario['values']['upgrade_old'] }}
   zookeeperConfigMapName: kafka-zk
   brokers:
     roleGroups:
