@@ -4,7 +4,7 @@ After installation, the CRD for this operator must be created:
 
     kubectl apply -f /etc/stackable/kafka-operator/crd/kafkacluster.crd.yaml
 
-To create an Apache Kafka (v3.1.0) cluster named `simple-kafka` assuming that you already have a Zookeeper cluster named `simple-zk`:
+To create an Apache Kafka (v3.2.0) cluster named `simple-kafka` assuming that you already have a Zookeeper cluster named `simple-zk`:
 
     cat <<EOF | kubectl apply -f -
     apiVersion: zookeeper.stackable.tech/v1alpha1
@@ -21,7 +21,7 @@ To create an Apache Kafka (v3.1.0) cluster named `simple-kafka` assuming that yo
     metadata:
       name: simple-kafka
     spec:
-      version: 3.1.0-stackable0
+      version: 3.2.0-stackable0.1.0
       zookeeperConfigMapName: simple-kafka-znode
       brokers:
         roleGroups:
@@ -37,7 +37,7 @@ If you wish to include integration with https://docs.stackable.tech/opa/index.ht
     metadata:
       name: simple-kafka
     spec:
-      version: 3.1.0-stackable0
+      version: 3.2.0-stackable0.1.0
       zookeeperConfigMapName: simple-kafka-znode
       opa:
         configMapName: simple-opa
@@ -56,7 +56,7 @@ You can change some opa cache properties by overriding:
     metadata:
       name: simple-kafka
     spec:
-      version: 3.1.0-stackable0
+      version: 3.2.0-stackable0.1.0
       zookeeperConfigMapName: simple-kafka-znode
       opa:
         configMapName: simple-opa
@@ -91,7 +91,7 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: 3.1.0-stackable0
+  version: 3.2.0-stackable0.1.0
   zookeeperConfigMapName: simple-kafka-znode
   log4j: |-
     log4j.rootLogger=INFO, stdout, kafkaAppender
