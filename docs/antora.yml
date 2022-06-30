@@ -1,6 +1,6 @@
 name: kafka
-version: nightly
+version: "0.6"
 title: Stackable Operator for Apache Kafka
 nav:
   - modules/ROOT/nav.adoc
-prerelease: true
+prerelease: false
