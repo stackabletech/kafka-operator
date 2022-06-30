@@ -5,6 +5,7 @@ dimensions:
       - 2.7.1-stackable0
       - 2.8.1-stackable0
       - 3.1.0-stackable0
+      - 3.2.0-stackable0.1.0
   - name: zookeeper
     values:
       - 3.6.3-stackable0.7.1
@@ -14,9 +15,10 @@ dimensions:
     values:
       - 2.7.1-stackable0
       - 2.8.1-stackable0
+      - 3.1.0-stackable0
   - name: upgrade_new
     values:
-      - 3.1.0-stackable0
+      - 3.2.0-stackable0.1.0
 tests:
   - name: smoke
     dimensions:
