@@ -7,10 +7,10 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - operator-rs: 0.21.1 -> 0.22.0 ([#430]).
-- Include chart name when installing with a custom release name ([#xxx])
+- Include chart name when installing with a custom release name ([#432])
 
 [#430]: https://github.com/stackabletech/kafka-operator/pull/430
-[#xxx]: https://github.com/stackabletech/kafka-operator/pull/xxx
+[#432]: https://github.com/stackabletech/kafka-operator/pull/432
 
 ## [0.6.0] - 2022-06-30
 
