@@ -28,10 +28,7 @@ use stackable_operator::{
         apimachinery::pkg::apis::meta::v1::LabelSelector,
         Resource,
     },
-    kube::runtime::{
-        controller::{Action, Context},
-        reflector::ObjectRef,
-    },
+    kube::runtime::{controller::Action, reflector::ObjectRef},
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
     product_config::{
@@ -151,9 +148,9 @@ impl ReconcilerError for Error {
     }
 }
 
-pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Context<Ctx>) -> Result<Action> {
+pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<Action> {
     tracing::info!("Starting reconcile");
-    let client = &ctx.get_ref().client;
+    let client = &ctx.client;
 
     let validated_config = validate_all_roles_and_groups_config(
         kafka
@@ -174,7 +171,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Context<Ctx>) -> Res
             .into(),
         )
         .context(GenerateProductConfigSnafu)?,
-        &ctx.get_ref().product_config,
+        &ctx.product_config,
         false,
         false,
     )
@@ -186,7 +183,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Context<Ctx>) -> Res
 
     let broker_role_service = build_broker_role_service(&kafka)?;
     let (broker_role_serviceaccount, broker_role_rolebinding) =
-        build_broker_role_serviceaccount(&kafka, &ctx.get_ref().controller_config)?;
+        build_broker_role_serviceaccount(&kafka, &ctx.controller_config)?;
     let broker_role_serviceaccount_ref = ObjectRef::from_obj(&broker_role_serviceaccount);
     let broker_role_service = client
         .apply_patch(
@@ -741,6 +738,6 @@ fn build_broker_rolegroup_statefulset(
     })
 }
 
-pub fn error_policy(_error: &Error, _ctx: Context<Ctx>) -> Action {
+pub fn error_policy(_error: &Error, _ctx: Arc<Ctx>) -> Action {
     Action::requeue(Duration::from_secs(5))
 }

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- operator-rs: 0.21.1 -> 0.22.0 ([#430]).
+
+[#430]: https://github.com/stackabletech/kafka-operator/pull/430
+
 ## [0.6.0] - 2022-06-30
 
 ### Added

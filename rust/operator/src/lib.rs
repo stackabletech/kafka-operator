@@ -3,6 +3,8 @@ mod kafka_controller;
 mod pod_svc_controller;
 mod utils;
 
+use std::sync::Arc;
+
 use futures::StreamExt;
 use stackable_kafka_crd::KafkaCluster;
 use stackable_operator::namespace::WatchNamespace;
@@ -13,7 +15,7 @@ use stackable_operator::{
         core::v1::{ConfigMap, Pod, Service, ServiceAccount},
         rbac::v1::RoleBinding,
     },
-    kube::{api::ListParams, runtime::controller::Context, runtime::Controller},
+    kube::{api::ListParams, runtime::Controller},
     logging::controller::report_controller_reconciled,
     product_config::ProductConfigManager,
 };
@@ -53,7 +55,7 @@ pub async fn create_controller(
     .run(
         kafka_controller::reconcile_kafka,
         kafka_controller::error_policy,
-        Context::new(kafka_controller::Ctx {
+        Arc::new(kafka_controller::Ctx {
             client: client.clone(),
             controller_config,
             product_config,
@@ -72,7 +74,7 @@ pub async fn create_controller(
     .run(
         pod_svc_controller::reconcile_pod,
         pod_svc_controller::error_policy,
-        Context::new(pod_svc_controller::Ctx {
+        Arc::new(pod_svc_controller::Ctx {
             client: client.clone(),
         }),
     )
