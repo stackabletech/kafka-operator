@@ -493,7 +493,7 @@ fn build_broker_rolegroup_statefulset(
     let image = format!("docker.stackable.tech/stackable/kafka:{}", image_version);
 
     let container_get_svc = ContainerBuilder::new("get-svc")
-        .image("bitnami/kubectl:1.21.1")
+        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0")
         .command(vec!["bash".to_string()])
         .args(vec![
             "-euo".to_string(),
