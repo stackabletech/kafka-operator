@@ -8,10 +8,12 @@ All notable changes to this project will be documented in this file.
 
 - operator-rs: 0.21.1 -> 0.22.0 ([#430]).
 - Include chart name when installing with a custom release name ([#429], [#431]).
+- Kafka init container now uses Stackable tools rather than Bitnami kubectl ([#434])
 
 [#429]: https://github.com/stackabletech/kafka-operator/pull/429
 [#430]: https://github.com/stackabletech/kafka-operator/pull/430
 [#431]: https://github.com/stackabletech/kafka-operator/pull/431
+[#434]: https://github.com/stackabletech/kafka-operator/pull/434
 
 ## [0.6.0] - 2022-06-30
 
