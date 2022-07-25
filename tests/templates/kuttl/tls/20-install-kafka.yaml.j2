@@ -1,0 +1,20 @@
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperZnode
+metadata:
+  name: test-kafka-znode
+spec:
+  clusterRef:
+    name: test-zk
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: {{ test_scenario['values']['kafka'] }}
+  zookeeperConfigMapName: test-kafka-znode
+  brokers:
+    roleGroups:
+      default:
+        replicas: 2

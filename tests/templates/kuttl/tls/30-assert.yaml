@@ -1,0 +1,7 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+metadata:
+  name: test-tls
+commands:
+  - script: kubectl exec -n $NAMESPACE test-zk-server-primary-0 -- /tmp/test_tls.sh $NAMESPACE
