@@ -23,6 +23,7 @@ use strum::{Display, EnumIter, EnumString};
 pub const APP_NAME: &str = "kafka";
 pub const APP_PORT: u16 = 9092;
 pub const METRICS_PORT: u16 = 9606;
+pub const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
 
 pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 
@@ -62,7 +63,71 @@ pub struct KafkaClusterSpec {
     pub zookeeper_config_map_name: String,
     pub opa: Option<OpaConfig>,
     pub log4j: Option<String>,
+    #[serde(
+        default = "global_config_default",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub config: Option<GlobalKafkaConfig>,
     pub stopped: Option<bool>,
+}
+
+#[derive(Clone, Default, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalKafkaConfig {
+    /// Only affects client connections. This setting controls:
+    /// - If TLS encryption is used at all
+    /// - Which cert the servers should use to authenticate themselves against the client
+    /// Defaults to `TlsSecretClass` { secret_class: "tls".to_string() }.
+    #[serde(
+        default = "tls_secret_class_default",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub tls: Option<TlsSecretClass>,
+    /// Only affects client connections. This setting controls:
+    /// - If clients need to authenticate themselves against the server via TLS
+    /// - Which ca.crt to use when validating the provided client certs
+    /// Defaults to `None`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_authentication: Option<ClientAuthenticationClass>,
+    /// Only affects internal communication. Use mutual verification between Kafka Broker Nodes
+    /// (mandatory). This setting controls:
+    /// - Which cert the brokers should use to authenticate themselves against other brokers
+    /// - Which ca.crt to use when validating the other server
+    #[serde(
+        default = "tls_secret_class_default",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub internal_tls: Option<TlsSecretClass>,
+}
+
+fn global_config_default() -> Option<GlobalKafkaConfig> {
+    Some(GlobalKafkaConfig {
+        tls: Some(TlsSecretClass {
+            secret_class: TLS_DEFAULT_SECRET_CLASS.to_string(),
+        }),
+        client_authentication: None,
+        internal_tls: Some(TlsSecretClass {
+            secret_class: TLS_DEFAULT_SECRET_CLASS.to_string(),
+        }),
+    })
+}
+
+#[derive(Clone, Default, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientAuthenticationClass {
+    pub authentication_class: String,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TlsSecretClass {
+    pub secret_class: String,
+}
+
+fn tls_secret_class_default() -> Option<TlsSecretClass> {
+    Some(TlsSecretClass {
+        secret_class: TLS_DEFAULT_SECRET_CLASS.to_string(),
+    })
 }
 
 impl KafkaCluster {
