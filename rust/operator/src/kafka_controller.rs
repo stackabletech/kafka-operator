@@ -1,16 +1,10 @@
 //! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
 
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-    time::Duration,
-};
-
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
-    KafkaCluster, KafkaRole, APP_NAME, APP_PORT, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME,
-    METRICS_PORT, SERVER_PROPERTIES_FILE,
+    KafkaCluster, KafkaRole, APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME, KAFKA_HEAP_OPTS,
+    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, SECURE_CLIENT_PORT,
+    SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE,
 };
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
@@ -19,9 +13,10 @@ use stackable_operator::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
             core::v1::{
-                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, EmptyDirVolumeSource,
-                EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe,
-                SecurityContext, Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
+                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
+                EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
+                PodSpec, Probe, SecurityContext, Service, ServiceAccount, ServicePort, ServiceSpec,
+                Volume,
             },
             rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
         },
@@ -36,6 +31,12 @@ use stackable_operator::{
     },
     product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
     role_utils::RoleGroupRef,
+};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+    time::Duration,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
@@ -297,12 +298,7 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
             )
             .build(),
         spec: Some(ServiceSpec {
-            ports: Some(vec![ServicePort {
-                name: Some("kafka".to_string()),
-                port: APP_PORT.into(),
-                protocol: Some("TCP".to_string()),
-                ..ServicePort::default()
-            }]),
+            ports: Some(service_ports(kafka)),
             selector: Some(role_selector_labels(kafka, APP_NAME, &role_name)),
             type_: Some("NodePort".to_string()),
             ..ServiceSpec::default()
@@ -446,7 +442,7 @@ fn build_broker_rolegroup_service(
             ports: Some(vec![
                 ServicePort {
                     name: Some("kafka".to_string()),
-                    port: APP_PORT.into(),
+                    port: CLIENT_PORT.into(),
                     protocol: Some("TCP".to_string()),
                     ..ServicePort::default()
                 },
@@ -492,6 +488,23 @@ fn build_broker_rolegroup_statefulset(
         .context(KafkaVersionParseFailureSnafu)?;
     let image = format!("docker.stackable.tech/stackable/kafka:{}", image_version);
 
+    let get_svc_args = if kafka.client_tls_secret_class().is_some()
+        && kafka.internal_tls_secret_class().is_some()
+    {
+        format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee/stackable/tmp/{name}_nodeport", name = SECURE_CLIENT_PORT_NAME)
+    } else if kafka.client_tls_secret_class().is_some()
+        || kafka.internal_tls_secret_class().is_some()
+    {
+        [
+            format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee/stackable/tmp/{name}_nodeport", name = CLIENT_PORT_NAME),
+            format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee/stackable/tmp/{name}_nodeport", name = SECURE_CLIENT_PORT_NAME),
+        ].join(" && ")
+    }
+    // If no is TLS specified the HTTP port is sufficient
+    else {
+        format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee/stackable/tmp/{name}_nodeport", name = CLIENT_PORT_NAME)
+    };
+
     let container_get_svc = ContainerBuilder::new("get-svc")
         .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
         .command(vec!["bash".to_string()])
@@ -499,11 +512,7 @@ fn build_broker_rolegroup_statefulset(
             "-euo".to_string(),
             "pipefail".to_string(),
             "-c".to_string(),
-            [
-                "kubectl get service \"$POD_NAME\" -o jsonpath='{.spec.ports[0].nodePort}'",
-                "tee /stackable/tmp/nodeport",
-            ]
-            .join(" | "),
+            get_svc_args,
         ])
         .add_env_vars(vec![EnvVar {
             name: "POD_NAME".to_string(),
@@ -608,8 +617,10 @@ fn build_broker_rolegroup_statefulset(
 
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
     let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
-    let advertised_listeners_override =
-        "--override \"advertised.listeners=PLAINTEXT://$NODE:$(cat /stackable/tmp/nodeport)\"";
+    let advertised_listeners_override = format!(
+        "--override \"advertised.listeners={}\"",
+        get_listeners(kafka)
+    );
     let opa_url_override = opa_connect_string.map_or("".to_string(), |opa| {
         format!("--override \"opa.authorizer.url={}\"", opa)
     });
@@ -623,15 +634,14 @@ fn build_broker_rolegroup_statefulset(
                 "bin/kafka-server-start.sh",
                 &format!("/stackable/config/{}", SERVER_PROPERTIES_FILE),
                 zookeeper_override,
-                advertised_listeners_override,
+                &advertised_listeners_override,
                 &opa_url_override,
             ]
             .join(" "),
         ])
         .add_env_vars(env)
         .add_env_var("EXTRA_ARGS", jvm_args)
-        .add_container_port("kafka", APP_PORT.into())
-        .add_container_port("metrics", METRICS_PORT.into())
+        .add_container_ports(container_ports(kafka))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, "/stackable/data")
         .add_volume_mount("config", "/stackable/config")
         .add_volume_mount("tmp", "/stackable/tmp")
@@ -651,7 +661,7 @@ fn build_broker_rolegroup_statefulset(
                 command: Some(vec![
                     "kcat".to_string(),
                     "-b".to_string(),
-                    format!("localhost:{}", APP_PORT),
+                    format!("localhost:{}", CLIENT_PORT),
                     "-L".to_string(),
                 ]),
             }),
@@ -740,4 +750,130 @@ fn build_broker_rolegroup_statefulset(
 
 pub fn error_policy(_error: &Error, _ctx: Arc<Ctx>) -> Action {
     Action::requeue(Duration::from_secs(5))
+}
+
+fn get_listeners(kafka: &KafkaCluster) -> String {
+    // If both client and internal TLS are set we do not need the HTTP port.
+    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
+        format!(
+            "SSL://$NODE:$(cat /stackable/tmp/{secure}_nodeport)",
+            secure = SECURE_CLIENT_PORT_NAME
+        )
+    // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
+    // for internal communications.
+    // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
+    // for client communications.
+    } else if kafka.client_tls_secret_class().is_some()
+        || kafka.internal_tls_secret_class().is_some()
+    {
+        format!("PLANTEXT://$NODE:$(cat /stackable/tmp/{insecure}_nodeport),SSL://$NODE:$(cat /stackable/tmp/{secure}_nodeport)",
+                insecure = CLIENT_PORT_NAME, secure = SECURE_CLIENT_PORT_NAME )
+    }
+    // If no is TLS specified the HTTP port is sufficient
+    else {
+        format!(
+            "SSL://$NODE:$(cat /stackable/tmp/{insecure}_nodeport)",
+            insecure = CLIENT_PORT_NAME
+        )
+    }
+}
+
+fn service_ports(kafka: &KafkaCluster) -> Vec<ServicePort> {
+    let mut ports = vec![ServicePort {
+        name: Some(METRICS_PORT_NAME.to_string()),
+        port: METRICS_PORT.into(),
+        protocol: Some("TCP".to_string()),
+        ..ServicePort::default()
+    }];
+
+    // If both client and internal TLS are set we do not need the HTTP port.
+    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
+        ports.push(ServicePort {
+            name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
+            port: SECURE_CLIENT_PORT.into(),
+            protocol: Some("TCP".to_string()),
+            ..ServicePort::default()
+        });
+    }
+    // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
+    // for internal communications.
+    // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
+    // for client communications.
+    else if kafka.client_tls_secret_class().is_some()
+        || kafka.internal_tls_secret_class().is_some()
+    {
+        ports.push(ServicePort {
+            name: Some(CLIENT_PORT_NAME.to_string()),
+            port: CLIENT_PORT.into(),
+            protocol: Some("TCP".to_string()),
+            ..ServicePort::default()
+        });
+        ports.push(ServicePort {
+            name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
+            port: SECURE_CLIENT_PORT.into(),
+            protocol: Some("TCP".to_string()),
+            ..ServicePort::default()
+        });
+    }
+    // If no is TLS specified the HTTP port is sufficient
+    else {
+        ports.push(ServicePort {
+            name: Some(CLIENT_PORT_NAME.to_string()),
+            port: CLIENT_PORT.into(),
+            protocol: Some("TCP".to_string()),
+            ..ServicePort::default()
+        });
+    }
+
+    ports
+}
+
+fn container_ports(kafka: &KafkaCluster) -> Vec<ContainerPort> {
+    let mut ports = vec![ContainerPort {
+        name: Some(METRICS_PORT_NAME.to_string()),
+        container_port: METRICS_PORT.into(),
+        protocol: Some("TCP".to_string()),
+        ..ContainerPort::default()
+    }];
+
+    // If both client and internal TLS are set we do not need the HTTP port.
+    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
+        ports.push(ContainerPort {
+            name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
+            container_port: SECURE_CLIENT_PORT.into(),
+            protocol: Some("TCP".to_string()),
+            ..ContainerPort::default()
+        });
+    }
+    // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
+    // for internal communications.
+    // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
+    // for client communications.
+    else if kafka.client_tls_secret_class().is_some()
+        || kafka.internal_tls_secret_class().is_some()
+    {
+        ports.push(ContainerPort {
+            name: Some(CLIENT_PORT_NAME.to_string()),
+            container_port: CLIENT_PORT.into(),
+            protocol: Some("TCP".to_string()),
+            ..ContainerPort::default()
+        });
+        ports.push(ContainerPort {
+            name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
+            container_port: SECURE_CLIENT_PORT.into(),
+            protocol: Some("TCP".to_string()),
+            ..ContainerPort::default()
+        });
+    }
+    // If no is TLS specified the HTTP port is sufficient
+    else {
+        ports.push(ContainerPort {
+            name: Some(CLIENT_PORT_NAME.to_string()),
+            container_port: CLIENT_PORT.into(),
+            protocol: Some("TCP".to_string()),
+            ..ContainerPort::default()
+        });
+    }
+
+    ports
 }

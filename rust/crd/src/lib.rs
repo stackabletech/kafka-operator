@@ -21,14 +21,32 @@ use std::collections::BTreeMap;
 use strum::{Display, EnumIter, EnumString};
 
 pub const APP_NAME: &str = "kafka";
-pub const APP_PORT: u16 = 9092;
+// ports
+pub const CLIENT_PORT_NAME: &str = "http";
+pub const CLIENT_PORT: u16 = 9092;
+pub const SECURE_CLIENT_PORT_NAME: &str = "https";
+pub const SECURE_CLIENT_PORT: u16 = 9093;
+pub const METRICS_PORT_NAME: &str = "metrics";
 pub const METRICS_PORT: u16 = 9606;
-pub const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
-
+// config files
 pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
-
+// env vars
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
+// server_properties
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
+// TLS
+pub const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
+pub const SSL_KEYSTORE_LOCATION: &str = "ssl.keystore.location";
+pub const SSL_KEYSTORE_PASSWORD: &str = "ssl.keystore.password";
+pub const SSL_KEYSTORE_TYPE: &str = "ssl.keystore.type";
+pub const SSL_TRUSTSTORE_LOCATION: &str = "ssl.truststore.location";
+pub const SSL_TRUSTSTORE_PASSWORD: &str = "ssl.truststore.password";
+pub const SSL_TRUSTSTORE_TYPE: &str = "ssl.truststore.type";
+pub const SSL_STORE_PASSWORD: &str = "changeit";
+pub const SSL_CLIENT_AUTH: &str = "ssl.client.auth";
+// directories
+pub const CLIENT_TLS_DIR: &str = "/stackable/tls/client";
+pub const INTERNAL_TLS_DIR: &str = "/stackable/tls/internal";
 
 const JVM_HEAP_FACTOR: f32 = 0.8;
 
@@ -266,6 +284,40 @@ impl KafkaCluster {
                 image_version: image_version.to_string(),
             })
     }
+
+    pub fn client_port(&self) -> u16 {
+        if self.is_client_secure() {
+            SECURE_CLIENT_PORT
+        } else {
+            CLIENT_PORT
+        }
+    }
+
+    /// Returns the secret class for client connection encryption. Defaults to `tls`.
+    pub fn client_tls_secret_class(&self) -> Option<&TlsSecretClass> {
+        let spec: &KafkaClusterSpec = &self.spec;
+        spec.config.as_ref().and_then(|c| c.tls.as_ref())
+    }
+
+    /// Checks if we should use TLS to encrypt client connections.
+    pub fn is_client_secure(&self) -> bool {
+        self.client_tls_secret_class().is_some()
+    }
+
+    /// Returns the authentication class used for client authentication
+    pub fn client_tls_authentication_class(&self) -> Option<String> {
+        let spec: &KafkaClusterSpec = &self.spec;
+        spec.config
+            .as_ref()
+            .and_then(|c| c.client_authentication.as_ref())
+            .map(|tls| tls.authentication_class.clone())
+    }
+
+    /// Returns the secret class for internal server encryption
+    pub fn internal_tls_secret_class(&self) -> Option<&TlsSecretClass> {
+        let spec: &KafkaClusterSpec = &self.spec;
+        spec.config.as_ref().and_then(|c| c.internal_tls.as_ref())
+    }
 }
 
 /// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
@@ -345,15 +397,47 @@ impl Configuration for KafkaConfig {
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
         let mut config = BTreeMap::new();
 
-        if resource.spec.opa.is_some() && file == SERVER_PROPERTIES_FILE {
-            config.insert(
-                "authorizer.class.name".to_string(),
-                Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),
-            );
-            config.insert(
-                "opa.authorizer.metrics.enabled".to_string(),
-                Some("true".to_string()),
-            );
+        if file == SERVER_PROPERTIES_FILE {
+            // OPA
+            if resource.spec.opa.is_some() {
+                config.insert(
+                    "authorizer.class.name".to_string(),
+                    Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),
+                );
+                config.insert(
+                    "opa.authorizer.metrics.enabled".to_string(),
+                    Some("true".to_string()),
+                );
+            }
+            // Client TLS
+            if resource.client_tls_secret_class().is_some() {
+                config.insert(
+                    SSL_KEYSTORE_LOCATION.to_string(),
+                    Some(format!("{}/keystore.p12", CLIENT_TLS_DIR)),
+                );
+                config.insert(
+                    SSL_KEYSTORE_PASSWORD.to_string(),
+                    Some(SSL_KEYSTORE_PASSWORD.to_string()),
+                );
+                config.insert(SSL_KEYSTORE_TYPE.to_string(), Some("PKCS12".to_string()));
+                config.insert(
+                    SSL_TRUSTSTORE_LOCATION.to_string(),
+                    Some(format!("{}/truststore.p12", CLIENT_TLS_DIR)),
+                );
+                config.insert(
+                    SSL_TRUSTSTORE_PASSWORD.to_string(),
+                    Some(SSL_KEYSTORE_PASSWORD.to_string()),
+                );
+                config.insert(SSL_TRUSTSTORE_TYPE.to_string(), Some("PKCS12".to_string()));
+
+                // Authentication
+                if resource.client_tls_authentication_class().is_some() {
+                    config.insert(SSL_CLIENT_AUTH.to_string(), Some("required".to_string()));
+                }
+            }
+
+            // Internal TLS
+            if resource.internal_tls_secret_class().is_some() {}
         }
 
         Ok(config)

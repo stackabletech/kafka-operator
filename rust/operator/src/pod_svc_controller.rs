@@ -1,5 +1,5 @@
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::APP_PORT;
+use stackable_kafka_crd::{CLIENT_PORT, CLIENT_PORT_NAME};
 use stackable_operator::{
     k8s_openapi::{
         api::core::v1::{Pod, Service, ServicePort, ServiceSpec},
@@ -60,9 +60,10 @@ pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Arc<Ctx>) -> Result<Action> {
         spec: Some(ServiceSpec {
             type_: Some("NodePort".to_string()),
             external_traffic_policy: Some("Local".to_string()),
+            // TODO: get ports from pod?
             ports: Some(vec![ServicePort {
-                name: Some("kafka".to_string()),
-                port: APP_PORT.into(),
+                name: Some(CLIENT_PORT_NAME.to_string()),
+                port: CLIENT_PORT.into(),
                 ..ServicePort::default()
             }]),
             selector: Some([(LABEL_STS_POD_NAME.to_string(), name)].into()),
