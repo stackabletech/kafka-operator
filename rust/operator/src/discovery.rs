@@ -47,12 +47,12 @@ pub async fn build_discovery_configmaps(
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name();
     Ok(vec![
-        build_discovery_configmap(&name, owner, kafka, service_hosts(svc, "kafka")?)?,
+        build_discovery_configmap(&name, owner, kafka, service_hosts(svc, "https")?)?,
         build_discovery_configmap(
             &format!("{}-nodeport", name),
             owner,
             kafka,
-            nodeport_hosts(client, svc, "kafka").await?,
+            nodeport_hosts(client, svc, "https").await?,
         )?,
     ])
 }

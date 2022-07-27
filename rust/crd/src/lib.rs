@@ -44,9 +44,14 @@ pub const SSL_TRUSTSTORE_PASSWORD: &str = "ssl.truststore.password";
 pub const SSL_TRUSTSTORE_TYPE: &str = "ssl.truststore.type";
 pub const SSL_STORE_PASSWORD: &str = "changeit";
 pub const SSL_CLIENT_AUTH: &str = "ssl.client.auth";
+// TLS internal
+pub const SECURITY_INTER_BROKER_PROTOCOL: &str = "security.inter.broker.protocol";
 // directories
-pub const CLIENT_TLS_DIR: &str = "/stackable/tls/client";
-pub const INTERNAL_TLS_DIR: &str = "/stackable/tls/internal";
+pub const STACKABLE_TMP_DIR: &str = "/stackable/tmp";
+pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
+pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
+pub const STACKABLE_TLS_CERTS_DIR: &str = "/stackable/certificates";
+pub const SYSTEM_TRUST_STORE_DIR: &str = "/etc/pki/java/cacerts";
 
 const JVM_HEAP_FACTOR: f32 = 0.8;
 
@@ -301,11 +306,11 @@ impl KafkaCluster {
 
     /// Checks if we should use TLS to encrypt client connections.
     pub fn is_client_secure(&self) -> bool {
-        self.client_tls_secret_class().is_some()
+        self.client_tls_secret_class().is_some() || self.client_authentication_class().is_some()
     }
 
     /// Returns the authentication class used for client authentication
-    pub fn client_tls_authentication_class(&self) -> Option<String> {
+    pub fn client_authentication_class(&self) -> Option<String> {
         let spec: &KafkaClusterSpec = &self.spec;
         spec.config
             .as_ref()
@@ -413,31 +418,41 @@ impl Configuration for KafkaConfig {
             if resource.client_tls_secret_class().is_some() {
                 config.insert(
                     SSL_KEYSTORE_LOCATION.to_string(),
-                    Some(format!("{}/keystore.p12", CLIENT_TLS_DIR)),
+                    Some(format!("{}/keystore.p12", STACKABLE_TLS_CERTS_DIR)),
                 );
                 config.insert(
                     SSL_KEYSTORE_PASSWORD.to_string(),
-                    Some(SSL_KEYSTORE_PASSWORD.to_string()),
+                    Some(SSL_STORE_PASSWORD.to_string()),
                 );
                 config.insert(SSL_KEYSTORE_TYPE.to_string(), Some("PKCS12".to_string()));
                 config.insert(
                     SSL_TRUSTSTORE_LOCATION.to_string(),
-                    Some(format!("{}/truststore.p12", CLIENT_TLS_DIR)),
+                    Some(format!("{}/truststore.p12", STACKABLE_TLS_CERTS_DIR)),
                 );
                 config.insert(
                     SSL_TRUSTSTORE_PASSWORD.to_string(),
-                    Some(SSL_KEYSTORE_PASSWORD.to_string()),
+                    Some(SSL_STORE_PASSWORD.to_string()),
                 );
                 config.insert(SSL_TRUSTSTORE_TYPE.to_string(), Some("PKCS12".to_string()));
 
                 // Authentication
-                if resource.client_tls_authentication_class().is_some() {
+                if resource.client_authentication_class().is_some() {
                     config.insert(SSL_CLIENT_AUTH.to_string(), Some("required".to_string()));
                 }
             }
 
+            // We require authentication
+            if resource.client_authentication_class().is_some() {
+                config.insert(SSL_CLIENT_AUTH.to_string(), Some("required".to_string()));
+            }
+
             // Internal TLS
-            if resource.internal_tls_secret_class().is_some() {}
+            if resource.internal_tls_secret_class().is_some() {
+                config.insert(
+                    SECURITY_INTER_BROKER_PROTOCOL.to_string(),
+                    Some("SSL".to_string()),
+                );
+            }
         }
 
         Ok(config)

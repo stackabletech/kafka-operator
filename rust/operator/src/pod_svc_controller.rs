@@ -1,8 +1,8 @@
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{CLIENT_PORT, CLIENT_PORT_NAME};
+use stackable_kafka_crd::APP_NAME;
 use stackable_operator::{
     k8s_openapi::{
-        api::core::v1::{Pod, Service, ServicePort, ServiceSpec},
+        api::core::v1::{Container, Pod, Service, ServicePort, ServiceSpec},
         apimachinery::pkg::apis::meta::v1::OwnerReference,
     },
     kube::{core::ObjectMeta, runtime::controller::Action},
@@ -44,6 +44,27 @@ impl ReconcilerError for Error {
 pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Arc<Ctx>) -> Result<Action> {
     tracing::info!("Starting reconcile");
     let name = pod.metadata.name.clone().context(ObjectHasNoNameSnafu)?;
+    let mut ports: Vec<ServicePort> = vec![];
+
+    if let Some(spec) = &pod.spec {
+        for container in &spec
+            .containers
+            .iter()
+            .filter(|container| container.name == APP_NAME)
+            .collect::<Vec<&Container>>()
+        {
+            if let Some(container_ports) = &container.ports {
+                for port in container_ports {
+                    ports.push(ServicePort {
+                        name: port.name.clone(),
+                        port: port.container_port,
+                        ..ServicePort::default()
+                    });
+                }
+            }
+        }
+    }
+
     let svc = Service {
         metadata: ObjectMeta {
             namespace: pod.metadata.namespace.clone(),
@@ -61,11 +82,7 @@ pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Arc<Ctx>) -> Result<Action> {
             type_: Some("NodePort".to_string()),
             external_traffic_policy: Some("Local".to_string()),
             // TODO: get ports from pod?
-            ports: Some(vec![ServicePort {
-                name: Some(CLIENT_PORT_NAME.to_string()),
-                port: CLIENT_PORT.into(),
-                ..ServicePort::default()
-            }]),
+            ports: Some(ports),
             selector: Some([(LABEL_STS_POD_NAME.to_string(), name)].into()),
             publish_not_ready_addresses: Some(true),
             ..ServiceSpec::default()

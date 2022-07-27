@@ -2,9 +2,13 @@
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
-    KafkaCluster, KafkaRole, APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME, KAFKA_HEAP_OPTS,
-    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, SECURE_CLIENT_PORT,
-    SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE,
+    KafkaCluster, KafkaRole, TlsSecretClass, APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME,
+    KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, SECURE_CLIENT_PORT,
+    SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
+    STACKABLE_TLS_CERTS_DIR, STACKABLE_TMP_DIR,
+};
+use stackable_operator::builder::{
+    SecretOperatorVolumeSourceBuilder, SecurityContextBuilder, VolumeBuilder,
 };
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
@@ -15,8 +19,7 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
                 EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
-                PodSpec, Probe, SecurityContext, Service, ServiceAccount, ServicePort, ServiceSpec,
-                Volume,
+                PodSpec, Probe, Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
             },
             rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
         },
@@ -40,7 +43,9 @@ use std::{
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
+use crate::command::kcat_container_cmd_args;
 use crate::{
+    command,
     discovery::{self, build_discovery_configmaps},
     pod_svc_controller,
     utils::{self, ObjectRefExt},
@@ -476,6 +481,10 @@ fn build_broker_rolegroup_statefulset(
     serviceaccount: &ObjectRef<ServiceAccount>,
     opa_connect_string: Option<&str>,
 ) -> Result<StatefulSet> {
+    let mut cb_kafka = ContainerBuilder::new(APP_NAME);
+    let mut cb_prepare = ContainerBuilder::new("prepare");
+    let mut pod_builder = PodBuilder::new();
+
     let role = kafka.spec.brokers.as_ref().context(NoBrokerRoleSnafu)?;
     let rolegroup = role
         .role_groups
@@ -491,19 +500,25 @@ fn build_broker_rolegroup_statefulset(
     let get_svc_args = if kafka.client_tls_secret_class().is_some()
         && kafka.internal_tls_secret_class().is_some()
     {
-        format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee/stackable/tmp/{name}_nodeport", name = SECURE_CLIENT_PORT_NAME)
+        format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = STACKABLE_TMP_DIR, name = SECURE_CLIENT_PORT_NAME)
     } else if kafka.client_tls_secret_class().is_some()
         || kafka.internal_tls_secret_class().is_some()
     {
         [
-            format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee/stackable/tmp/{name}_nodeport", name = CLIENT_PORT_NAME),
-            format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee/stackable/tmp/{name}_nodeport", name = SECURE_CLIENT_PORT_NAME),
+            format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = STACKABLE_TMP_DIR, name = CLIENT_PORT_NAME),
+            format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = STACKABLE_TMP_DIR, name = SECURE_CLIENT_PORT_NAME),
         ].join(" && ")
     }
     // If no is TLS specified the HTTP port is sufficient
     else {
-        format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee/stackable/tmp/{name}_nodeport", name = CLIENT_PORT_NAME)
+        format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = STACKABLE_TMP_DIR, name = CLIENT_PORT_NAME)
     };
+
+    if let Some(tls) = kafka.client_tls_secret_class() {
+        cb_prepare.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
+        cb_kafka.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
+        pod_builder.add_volume(create_tls_volume("tls-certificate", Some(tls)));
+    }
 
     let container_get_svc = ContainerBuilder::new("get-svc")
         .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
@@ -525,35 +540,21 @@ fn build_broker_rolegroup_statefulset(
             }),
             ..EnvVar::default()
         }])
-        .add_volume_mount("tmp", "/stackable/tmp")
+        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
         .build();
 
-    // For most storage classes the mounts will belong to the root user and not be writeable to
-    // other users.
-    // Since kafka runs as the user stackable inside of the container the data directory needs to be
-    // chowned to that user for it to be able to store data there.
-    let mut container_chown = ContainerBuilder::new("chown-data")
-        .image(&image)
+    cb_prepare
+        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
         .command(vec![
             "/bin/bash".to_string(),
             "-euo".to_string(),
             "pipefail".to_string(),
             "-c".to_string(),
         ])
-        .args(vec![[
-            "echo chowning data directory",
-            "chown -R stackable:stackable /stackable/data",
-            "echo chmodding data directory",
-            "chmod -R a=,u=rwX /stackable/data",
-        ]
-        .join(" && ")])
-        .add_volume_mount(LOG_DIRS_VOLUME_NAME, "/stackable/data")
-        .build();
-
-    container_chown
-        .security_context
-        .get_or_insert_with(SecurityContext::default)
-        .run_as_user = Some(0);
+        .args(vec![command::prepare_container_cmd_args(kafka)])
+        .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
+        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
+        .security_context(SecurityContextBuilder::run_as_root());
 
     let (pvc, resources) = kafka.resources(rolegroup_ref);
 
@@ -617,6 +618,10 @@ fn build_broker_rolegroup_statefulset(
 
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
     let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
+    let listeners_override = format!(
+        "--override \"listeners=PLAINTEXT://0.0.0.0:{},SSL://0.0.0.0:{}\"",
+        CLIENT_PORT, SECURE_CLIENT_PORT
+    );
     let advertised_listeners_override = format!(
         "--override \"advertised.listeners={}\"",
         get_listeners(kafka)
@@ -625,7 +630,7 @@ fn build_broker_rolegroup_statefulset(
         format!("--override \"opa.authorizer.url={}\"", opa)
     });
 
-    let container_kafka = ContainerBuilder::new("kafka")
+    cb_kafka
         .image(image)
         .args(vec![
             "sh".to_string(),
@@ -634,6 +639,7 @@ fn build_broker_rolegroup_statefulset(
                 "bin/kafka-server-start.sh",
                 &format!("/stackable/config/{}", SERVER_PROPERTIES_FILE),
                 zookeeper_override,
+                &listeners_override,
                 &advertised_listeners_override,
                 &opa_url_override,
             ]
@@ -642,11 +648,10 @@ fn build_broker_rolegroup_statefulset(
         .add_env_vars(env)
         .add_env_var("EXTRA_ARGS", jvm_args)
         .add_container_ports(container_ports(kafka))
-        .add_volume_mount(LOG_DIRS_VOLUME_NAME, "/stackable/data")
-        .add_volume_mount("config", "/stackable/config")
-        .add_volume_mount("tmp", "/stackable/tmp")
-        .resources(resources)
-        .build();
+        .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
+        .add_volume_mount("config", STACKABLE_CONFIG_DIR)
+        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
+        .resources(resources);
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
@@ -658,12 +663,7 @@ fn build_broker_rolegroup_statefulset(
         .readiness_probe(Probe {
             exec: Some(ExecAction {
                 // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(vec![
-                    "kcat".to_string(),
-                    "-b".to_string(),
-                    format!("localhost:{}", CLIENT_PORT),
-                    "-L".to_string(),
-                ]),
+                command: Some(kcat_container_cmd_args(kafka)),
             }),
             timeout_seconds: Some(3),
             period_seconds: Some(1),
@@ -671,7 +671,7 @@ fn build_broker_rolegroup_statefulset(
         })
         .build();
     container_kcat_prober.stdin = Some(true);
-    let mut pod_template = PodBuilder::new()
+    let mut pod_template = pod_builder
         .metadata_builder(|m| {
             m.with_recommended_labels(
                 kafka,
@@ -682,9 +682,9 @@ fn build_broker_rolegroup_statefulset(
             )
             .with_label(pod_svc_controller::LABEL_ENABLE, "true")
         })
-        .add_init_container(container_chown)
+        .add_init_container(cb_prepare.build())
         .add_init_container(container_get_svc)
-        .add_container(container_kafka)
+        .add_container(cb_kafka.build())
         .add_container(container_kcat_prober)
         .add_volume(Volume {
             name: "config".to_string(),
@@ -756,7 +756,8 @@ fn get_listeners(kafka: &KafkaCluster) -> String {
     // If both client and internal TLS are set we do not need the HTTP port.
     if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
         format!(
-            "SSL://$NODE:$(cat /stackable/tmp/{secure}_nodeport)",
+            "SSL://$NODE:$(cat {dir}/{secure}_nodeport)",
+            dir = STACKABLE_TMP_DIR,
             secure = SECURE_CLIENT_PORT_NAME
         )
     // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
@@ -766,13 +767,16 @@ fn get_listeners(kafka: &KafkaCluster) -> String {
     } else if kafka.client_tls_secret_class().is_some()
         || kafka.internal_tls_secret_class().is_some()
     {
-        format!("PLANTEXT://$NODE:$(cat /stackable/tmp/{insecure}_nodeport),SSL://$NODE:$(cat /stackable/tmp/{secure}_nodeport)",
-                insecure = CLIENT_PORT_NAME, secure = SECURE_CLIENT_PORT_NAME )
+        format!("PLAINTEXT://$NODE:$(cat {dir}/{insecure}_nodeport),SSL://$NODE:$(cat /{dir}/{secure}_nodeport)",
+                dir = STACKABLE_TMP_DIR,
+                insecure = CLIENT_PORT_NAME,
+                secure = SECURE_CLIENT_PORT_NAME )
     }
     // If no is TLS specified the HTTP port is sufficient
     else {
         format!(
-            "SSL://$NODE:$(cat /stackable/tmp/{insecure}_nodeport)",
+            "SSL://$NODE:$(cat {dir}/{insecure}_nodeport)",
+            dir = STACKABLE_TMP_DIR,
             insecure = CLIENT_PORT_NAME
         )
     }
@@ -876,4 +880,21 @@ fn container_ports(kafka: &KafkaCluster) -> Vec<ContainerPort> {
     }
 
     ports
+}
+
+fn create_tls_volume(volume_name: &str, tls_secret_class: Option<&TlsSecretClass>) -> Volume {
+    let mut secret_class_name = "tls";
+
+    if let Some(tls) = tls_secret_class {
+        secret_class_name = &tls.secret_class;
+    }
+
+    VolumeBuilder::new(volume_name)
+        .ephemeral(
+            SecretOperatorVolumeSourceBuilder::new(secret_class_name)
+                .with_pod_scope()
+                .with_node_scope()
+                .build(),
+        )
+        .build()
 }
