@@ -501,18 +501,19 @@ fn build_broker_rolegroup_statefulset(
     let get_svc_args = if kafka.client_tls_secret_class().is_some()
         && kafka.internal_tls_secret_class().is_some()
     {
-        format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = STACKABLE_TMP_DIR, name = SECURE_CLIENT_PORT_NAME)
+        get_node_port(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME)
     } else if kafka.client_tls_secret_class().is_some()
         || kafka.internal_tls_secret_class().is_some()
     {
         [
-            format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = STACKABLE_TMP_DIR, name = CLIENT_PORT_NAME),
-            format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = STACKABLE_TMP_DIR, name = SECURE_CLIENT_PORT_NAME),
-        ].join(" && ")
+            get_node_port(STACKABLE_TMP_DIR, CLIENT_PORT_NAME),
+            get_node_port(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME),
+        ]
+        .join(" && ")
     }
     // If no is TLS specified the HTTP port is sufficient
     else {
-        format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = STACKABLE_TMP_DIR, name = CLIENT_PORT_NAME)
+        get_node_port(STACKABLE_TMP_DIR, CLIENT_PORT_NAME)
     };
 
     if let Some(tls) = kafka.client_tls_secret_class() {
@@ -899,4 +900,8 @@ fn create_tls_volume(volume_name: &str, tls_secret_class: Option<&TlsSecretClass
                 .build(),
         )
         .build()
+}
+
+fn get_node_port(directory: &str, port_name: &str) -> String {
+    format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = directory, name = port_name)
 }
