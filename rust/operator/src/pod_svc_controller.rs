@@ -81,7 +81,6 @@ pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Arc<Ctx>) -> Result<Action> {
         spec: Some(ServiceSpec {
             type_: Some("NodePort".to_string()),
             external_traffic_policy: Some("Local".to_string()),
-            // TODO: get ports from pod?
             ports: Some(ports),
             selector: Some([(LABEL_STS_POD_NAME.to_string(), name)].into()),
             publish_not_ready_addresses: Some(true),

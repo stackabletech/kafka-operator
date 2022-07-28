@@ -1,6 +1,5 @@
 use stackable_kafka_crd::{
-    KafkaCluster, CLIENT_PORT, SECURE_CLIENT_PORT, SSL_KEYSTORE_LOCATION, SSL_KEYSTORE_PASSWORD,
-    SSL_STORE_PASSWORD, SSL_TRUSTSTORE_LOCATION, SSL_TRUSTSTORE_PASSWORD, STACKABLE_DATA_DIR,
+    KafkaCluster, CLIENT_PORT, SECURE_CLIENT_PORT, SSL_STORE_PASSWORD, STACKABLE_DATA_DIR,
     STACKABLE_TLS_CERTS_DIR, STACKABLE_TMP_DIR, SYSTEM_TRUST_STORE_DIR,
 };
 
@@ -34,19 +33,14 @@ pub fn kcat_container_cmd_args(kafka: &KafkaCluster) -> Vec<String> {
             "-X".to_string(),
             "security.protocol=SSL".to_string(),
             "-X".to_string(),
-            format!(
-                "{}={}/keystore.p12",
-                SSL_KEYSTORE_LOCATION, STACKABLE_TLS_CERTS_DIR
-            ),
-            "-X".to_string(),
-            format!("{}={}", SSL_KEYSTORE_PASSWORD, SSL_STORE_PASSWORD),
+            format!("ssl.key.location={}/tls.key", STACKABLE_TLS_CERTS_DIR),
             "-X".to_string(),
             format!(
-                "{}={}/truststore.p12",
-                SSL_TRUSTSTORE_LOCATION, STACKABLE_TLS_CERTS_DIR
+                "ssl.certificate.location={}/tls.crt",
+                STACKABLE_TLS_CERTS_DIR
             ),
             "-X".to_string(),
-            format!("{}={}", SSL_TRUSTSTORE_PASSWORD, SSL_STORE_PASSWORD),
+            format!("ssl.ca.location={}/ca.crt", STACKABLE_TLS_CERTS_DIR),
         ]);
     } else {
         args.push("-b".to_string());

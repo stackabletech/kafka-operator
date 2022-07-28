@@ -483,6 +483,7 @@ fn build_broker_rolegroup_statefulset(
 ) -> Result<StatefulSet> {
     let mut cb_kafka = ContainerBuilder::new(APP_NAME);
     let mut cb_prepare = ContainerBuilder::new("prepare");
+    let mut cb_kcat_prober = ContainerBuilder::new("kcat-prober");
     let mut pod_builder = PodBuilder::new();
 
     let role = kafka.spec.brokers.as_ref().context(NoBrokerRoleSnafu)?;
@@ -517,6 +518,7 @@ fn build_broker_rolegroup_statefulset(
     if let Some(tls) = kafka.client_tls_secret_class() {
         cb_prepare.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
         cb_kafka.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
+        cb_kcat_prober.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
         pod_builder.add_volume(create_tls_volume("tls-certificate", Some(tls)));
     }
 
@@ -655,7 +657,7 @@ fn build_broker_rolegroup_statefulset(
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
-    let mut container_kcat_prober = ContainerBuilder::new("kcat-prober")
+    let mut container_kcat_prober = cb_kcat_prober
         .image("edenhill/kcat:1.7.0")
         .command(vec!["sh".to_string()])
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum
