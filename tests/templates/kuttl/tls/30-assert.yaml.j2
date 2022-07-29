@@ -1,0 +1,12 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+metadata:
+  name: test-tls
+commands:
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+  - script: kubectl exec -n $NAMESPACE test-kafka-broker-default-0 -- /tmp/test_client_tls.sh $NAMESPACE
+{% endif %}
+{% if test_scenario['values']['use-internal-tls'] == 'true' %}
+  - script: kubectl exec -n $NAMESPACE test-kafka-broker-default-0 -- /tmp/test_internal_tls.sh $NAMESPACE
+{% endif %}

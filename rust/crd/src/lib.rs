@@ -34,7 +34,8 @@ pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
-// TLS
+// - listener
+// - TLS
 pub const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
 pub const SSL_KEYSTORE_LOCATION: &str = "ssl.keystore.location";
 pub const SSL_KEYSTORE_PASSWORD: &str = "ssl.keystore.password";
@@ -44,13 +45,14 @@ pub const SSL_TRUSTSTORE_PASSWORD: &str = "ssl.truststore.password";
 pub const SSL_TRUSTSTORE_TYPE: &str = "ssl.truststore.type";
 pub const SSL_STORE_PASSWORD: &str = "changeit";
 pub const SSL_CLIENT_AUTH: &str = "ssl.client.auth";
-// TLS internal
+// - TLS internal
 pub const SECURITY_INTER_BROKER_PROTOCOL: &str = "security.inter.broker.protocol";
 // directories
 pub const STACKABLE_TMP_DIR: &str = "/stackable/tmp";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_TLS_CERTS_DIR: &str = "/stackable/certificates";
+pub const STACKABLE_TLS_CERTS_INTERNAL_DIR: &str = "/stackable/certificates_internal";
 pub const SYSTEM_TRUST_STORE_DIR: &str = "/etc/pki/java/cacerts";
 
 const JVM_HEAP_FACTOR: f32 = 0.8;

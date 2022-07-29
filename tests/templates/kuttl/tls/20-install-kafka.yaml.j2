@@ -10,11 +10,49 @@ spec:
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
-  name: simple-kafka
+  name: test-kafka
 spec:
   version: {{ test_scenario['values']['kafka'] }}
   zookeeperConfigMapName: test-kafka-znode
+  config:
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+    tls:
+      secretClass: tls
+    clientAuthentication:
+      authenticationClass: kafka-client-tls
+{% else %}
+    tls: null
+{% endif %}
+{% if test_scenario['values']['use-internal-tls'] == 'true' %}
+    internalTls:
+      secretClass: tls
+{% endif %}
   brokers:
     roleGroups:
       default:
-        replicas: 2
+        replicas: 3
+
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+---
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: kafka-client-tls
+spec:
+  provider:
+    tls:
+      clientCertSecretClass: kafka-client-tls
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-client-tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-tls-kafka-client-ca
+          namespace: default
+        autoGenerate: true
+{% endif %}
