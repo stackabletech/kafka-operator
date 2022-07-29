@@ -621,13 +621,10 @@ fn build_broker_rolegroup_statefulset(
 
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
     let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
-    let listeners_override = format!(
-        "--override \"listeners=PLAINTEXT://0.0.0.0:{},SSL://0.0.0.0:{}\"",
-        CLIENT_PORT, SECURE_CLIENT_PORT
-    );
+    let listeners_override = format!("--override \"listeners={}\"", get_listeners(kafka));
     let advertised_listeners_override = format!(
         "--override \"advertised.listeners={}\"",
-        get_listeners(kafka)
+        get_advertised_listeners(kafka)
     );
     let opa_url_override = opa_connect_string.map_or("".to_string(), |opa| {
         format!("--override \"opa.authorizer.url={}\"", opa)
@@ -758,6 +755,29 @@ pub fn error_policy(_error: &Error, _ctx: Arc<Ctx>) -> Action {
 fn get_listeners(kafka: &KafkaCluster) -> String {
     // If both client and internal TLS are set we do not need the HTTP port.
     if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
+        format!("SSL://0.0.0.0:{}", secure = SECURE_CLIENT_PORT)
+        // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
+        // for internal communications.
+        // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
+        // for client communications.
+    } else if kafka.client_tls_secret_class().is_some()
+        || kafka.internal_tls_secret_class().is_some()
+    {
+        format!(
+            "PLAINTEXT://0.0.0.0:{insecure},SSL://0.0.0.0:{secure}",
+            insecure = CLIENT_PORT,
+            secure = SECURE_CLIENT_PORT
+        )
+    }
+    // If no is TLS specified the HTTP port is sufficient
+    else {
+        format!("PLAINTEXT://0.0.0.0:{insecure}", insecure = CLIENT_PORT)
+    }
+}
+
+fn get_advertised_listeners(kafka: &KafkaCluster) -> String {
+    // If both client and internal TLS are set we do not need the HTTP port.
+    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
         format!(
             "SSL://$NODE:$(cat {dir}/{secure}_nodeport)",
             dir = STACKABLE_TMP_DIR,
@@ -778,7 +798,7 @@ fn get_listeners(kafka: &KafkaCluster) -> String {
     // If no is TLS specified the HTTP port is sufficient
     else {
         format!(
-            "SSL://$NODE:$(cat {dir}/{insecure}_nodeport)",
+            "PLAINTEXT://$NODE:$(cat {dir}/{insecure}_nodeport)",
             dir = STACKABLE_TMP_DIR,
             insecure = CLIENT_PORT_NAME
         )

@@ -86,15 +86,12 @@ pub struct KafkaClusterSpec {
     pub zookeeper_config_map_name: String,
     pub opa: Option<OpaConfig>,
     pub log4j: Option<String>,
-    #[serde(
-        default = "global_config_default",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub config: Option<GlobalKafkaConfig>,
+    #[serde(default)]
+    pub config: GlobalKafkaConfig,
     pub stopped: Option<bool>,
 }
 
-#[derive(Clone, Default, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalKafkaConfig {
     /// Only affects client connections. This setting controls:
@@ -112,27 +109,22 @@ pub struct GlobalKafkaConfig {
     /// Defaults to `None`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_authentication: Option<ClientAuthenticationClass>,
-    /// Only affects internal communication. Use mutual verification between Kafka Broker Nodes
-    /// (mandatory). This setting controls:
-    /// - Which cert the brokers should use to authenticate themselves against other brokers
+    /// Only affects internal communication. Use mutual verification between Trino nodes
+    /// This setting controls:
+    /// - Which cert the servers should use to authenticate themselves against other servers
     /// - Which ca.crt to use when validating the other server
-    #[serde(
-        default = "tls_secret_class_default",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub internal_tls: Option<TlsSecretClass>,
 }
 
-fn global_config_default() -> Option<GlobalKafkaConfig> {
-    Some(GlobalKafkaConfig {
-        tls: Some(TlsSecretClass {
-            secret_class: TLS_DEFAULT_SECRET_CLASS.to_string(),
-        }),
-        client_authentication: None,
-        internal_tls: Some(TlsSecretClass {
-            secret_class: TLS_DEFAULT_SECRET_CLASS.to_string(),
-        }),
-    })
+impl Default for GlobalKafkaConfig {
+    fn default() -> Self {
+        GlobalKafkaConfig {
+            tls: tls_secret_class_default(),
+            client_authentication: None,
+            internal_tls: None,
+        }
+    }
 }
 
 #[derive(Clone, Default, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -290,38 +282,30 @@ impl KafkaCluster {
             })
     }
 
-    pub fn client_port(&self) -> u16 {
-        if self.is_client_secure() {
-            SECURE_CLIENT_PORT
-        } else {
-            CLIENT_PORT
-        }
-    }
-
     /// Returns the secret class for client connection encryption. Defaults to `tls`.
     pub fn client_tls_secret_class(&self) -> Option<&TlsSecretClass> {
         let spec: &KafkaClusterSpec = &self.spec;
-        spec.config.as_ref().and_then(|c| c.tls.as_ref())
-    }
-
-    /// Checks if we should use TLS to encrypt client connections.
-    pub fn is_client_secure(&self) -> bool {
-        self.client_tls_secret_class().is_some() || self.client_authentication_class().is_some()
+        spec.config.tls.as_ref()
     }
 
     /// Returns the authentication class used for client authentication
-    pub fn client_authentication_class(&self) -> Option<String> {
+    pub fn client_authentication_class(&self) -> Option<&str> {
         let spec: &KafkaClusterSpec = &self.spec;
         spec.config
+            .client_authentication
             .as_ref()
-            .and_then(|c| c.client_authentication.as_ref())
-            .map(|tls| tls.authentication_class.clone())
+            .map(|tls| tls.authentication_class.as_ref())
     }
 
     /// Returns the secret class for internal server encryption
     pub fn internal_tls_secret_class(&self) -> Option<&TlsSecretClass> {
         let spec: &KafkaClusterSpec = &self.spec;
-        spec.config.as_ref().and_then(|c| c.internal_tls.as_ref())
+        spec.config.internal_tls.as_ref()
+    }
+
+    /// Checks if we should use TLS to encrypt client connections.
+    pub fn is_client_secure(&self) -> bool {
+        self.client_tls_secret_class().is_some() || self.client_authentication_class().is_some()
     }
 }
 
@@ -456,5 +440,145 @@ impl Configuration for KafkaConfig {
         }
 
         Ok(config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_client_tls() {
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          version: abc
+          zookeeperConfigMapName: xyz
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(
+            kafka.client_tls_secret_class().unwrap().secret_class,
+            TLS_DEFAULT_SECRET_CLASS.to_string()
+        );
+        assert_eq!(kafka.internal_tls_secret_class(), None);
+
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          version: abc
+          zookeeperConfigMapName: xyz
+          config:
+            tls:
+              secretClass: simple-kafka-client-tls
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(
+            kafka.client_tls_secret_class().unwrap().secret_class,
+            "simple-kafka-client-tls".to_string()
+        );
+        assert_eq!(kafka.internal_tls_secret_class(), None);
+
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          version: abc
+          zookeeperConfigMapName: xyz
+          config:
+            tls: null
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(kafka.client_tls_secret_class(), None);
+        assert_eq!(kafka.internal_tls_secret_class(), None);
+
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          version: abc
+          zookeeperConfigMapName: xyz
+          config:
+            internalTls:
+              secretClass: simple-kafka-internal-tls
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(
+            kafka.client_tls_secret_class().unwrap().secret_class,
+            TLS_DEFAULT_SECRET_CLASS.to_string()
+        );
+        assert_eq!(
+            kafka.internal_tls_secret_class().unwrap().secret_class,
+            "simple-kafka-internal-tls"
+        );
+    }
+
+    #[test]
+    fn test_internal_tls() {
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          version: abc
+          zookeeperConfigMapName: xyz
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(kafka.internal_tls_secret_class(), None);
+        assert_eq!(
+            kafka.client_tls_secret_class().unwrap().secret_class,
+            TLS_DEFAULT_SECRET_CLASS
+        );
+
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          version: abc
+          zookeeperConfigMapName: xyz
+          config:
+            internalTls:
+              secretClass: simple-kafka-internal-tls
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(
+            kafka.internal_tls_secret_class().unwrap().secret_class,
+            "simple-kafka-internal-tls".to_string()
+        );
+        assert_eq!(
+            kafka.client_tls_secret_class().unwrap().secret_class,
+            TLS_DEFAULT_SECRET_CLASS
+        );
+
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          version: abc
+          zookeeperConfigMapName: xyz
+          config:
+            tls:
+              secretClass: simple-kafka-client-tls
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(kafka.internal_tls_secret_class(), None);
+        assert_eq!(
+            kafka.client_tls_secret_class().unwrap().secret_class,
+            "simple-kafka-client-tls"
+        );
     }
 }

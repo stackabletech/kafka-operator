@@ -279,9 +279,6 @@ spec:
                   default:
                     tls:
                       secretClass: tls
-                    internalTls:
-                      secretClass: tls
-                  nullable: true
                   properties:
                     clientAuthentication:
                       description: "Only affects client connections. This setting controls: - If clients need to authenticate themselves against the server via TLS - Which ca.crt to use when validating the provided client certs Defaults to `None`"
@@ -293,9 +290,7 @@ spec:
                         - authenticationClass
                       type: object
                     internalTls:
-                      default:
-                        secretClass: tls
-                      description: "Only affects internal communication. Use mutual verification between Kafka Broker Nodes (mandatory). This setting controls: - Which cert the brokers should use to authenticate themselves against other brokers - Which ca.crt to use when validating the other server"
+                      description: "Only affects internal communication. Use mutual verification between Trino nodes This setting controls: - Which cert the servers should use to authenticate themselves against other servers - Which ca.crt to use when validating the other server"
                       nullable: true
                       properties:
                         secretClass:
