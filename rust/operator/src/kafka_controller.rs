@@ -444,20 +444,7 @@ fn build_broker_rolegroup_service(
             .build(),
         spec: Some(ServiceSpec {
             cluster_ip: Some("None".to_string()),
-            ports: Some(vec![
-                ServicePort {
-                    name: Some("kafka".to_string()),
-                    port: CLIENT_PORT.into(),
-                    protocol: Some("TCP".to_string()),
-                    ..ServicePort::default()
-                },
-                ServicePort {
-                    name: Some("metrics".to_string()),
-                    port: METRICS_PORT.into(),
-                    protocol: Some("TCP".to_string()),
-                    ..ServicePort::default()
-                },
-            ]),
+            ports: Some(service_ports(kafka)),
             selector: Some(role_group_selector_labels(
                 kafka,
                 APP_NAME,

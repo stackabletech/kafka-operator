@@ -32,6 +32,8 @@ spec:
   config:
     tls:
       secretClass: tls
+    internalTls:
+      secretClass: tls
   brokers:
     roleGroups:
       default:
