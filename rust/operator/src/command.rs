@@ -1,7 +1,7 @@
 use stackable_kafka_crd::{
-    KafkaCluster, CLIENT_PORT, SECURE_CLIENT_PORT, SSL_STORE_PASSWORD, STACKABLE_DATA_DIR,
-    STACKABLE_TLS_CERTS_DIR, STACKABLE_TLS_CERTS_INTERNAL_DIR, STACKABLE_TMP_DIR,
-    SYSTEM_TRUST_STORE_DIR,
+    KafkaCluster, CLIENT_PORT, CLIENT_PORT_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME,
+    SSL_STORE_PASSWORD, STACKABLE_DATA_DIR, STACKABLE_TLS_CERTS_DIR,
+    STACKABLE_TLS_CERTS_INTERNAL_DIR, STACKABLE_TMP_DIR, SYSTEM_TRUST_STORE_DIR,
 };
 
 pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
@@ -30,6 +30,24 @@ pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
     args.extend(chown_and_chmod(STACKABLE_TMP_DIR));
 
     args.join(" && ")
+}
+
+pub fn get_svc_container_args(kafka: &KafkaCluster) -> String {
+    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
+        get_node_port(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME)
+    } else if kafka.client_tls_secret_class().is_some()
+        || kafka.internal_tls_secret_class().is_some()
+    {
+        [
+            get_node_port(STACKABLE_TMP_DIR, CLIENT_PORT_NAME),
+            get_node_port(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME),
+        ]
+        .join(" && ")
+    }
+    // If no is TLS specified the HTTP port is sufficient
+    else {
+        get_node_port(STACKABLE_TMP_DIR, CLIENT_PORT_NAME)
+    }
 }
 
 pub fn kcat_container_cmd_args(kafka: &KafkaCluster) -> Vec<String> {
@@ -83,4 +101,9 @@ fn chown_and_chmod(directory: &str) -> Vec<String> {
         format!("chown -R stackable:stackable {dir}", dir = directory),
         format!("chmod -R a=,u=rwX {dir}", dir = directory),
     ]
+}
+
+/// Extract the nodeport from the nodeport service
+fn get_node_port(directory: &str, port_name: &str) -> String {
+    format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = directory, name = port_name)
 }

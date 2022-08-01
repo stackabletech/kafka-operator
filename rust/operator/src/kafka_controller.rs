@@ -45,7 +45,7 @@ use std::{
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-use crate::command::kcat_container_cmd_args;
+use crate::command::{get_svc_container_args, kcat_container_cmd_args};
 use crate::{
     command,
     discovery::{self, build_discovery_configmaps},
@@ -489,23 +489,7 @@ fn build_broker_rolegroup_statefulset(
         .context(KafkaVersionParseFailureSnafu)?;
     let image = format!("docker.stackable.tech/stackable/kafka:{}", image_version);
 
-    let get_svc_args = if kafka.client_tls_secret_class().is_some()
-        && kafka.internal_tls_secret_class().is_some()
-    {
-        get_node_port(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME)
-    } else if kafka.client_tls_secret_class().is_some()
-        || kafka.internal_tls_secret_class().is_some()
-    {
-        [
-            get_node_port(STACKABLE_TMP_DIR, CLIENT_PORT_NAME),
-            get_node_port(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME),
-        ]
-        .join(" && ")
-    }
-    // If no is TLS specified the HTTP port is sufficient
-    else {
-        get_node_port(STACKABLE_TMP_DIR, CLIENT_PORT_NAME)
-    };
+    let get_svc_args = get_svc_container_args(kafka);
 
     if let Some(tls) = kafka.client_tls_secret_class() {
         cb_prepare.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
@@ -885,11 +869,6 @@ fn create_tls_volume(volume_name: &str, tls_secret_class: Option<&TlsSecretClass
                 .build(),
         )
         .build()
-}
-
-/// Extract the nodeport from the nodeport service
-fn get_node_port(directory: &str, port_name: &str) -> String {
-    format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = directory, name = port_name)
 }
 
 struct KafkaListener {
