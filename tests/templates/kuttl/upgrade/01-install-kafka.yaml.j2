@@ -10,6 +10,13 @@ metadata:
 spec:
   version: {{ test_scenario['values']['upgrade_old'] }}
   zookeeperConfigMapName: kafka-zk
+  config:
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+    tls:
+      secretClass: tls
+{% else %}
+    tls: null
+{% endif %}
   brokers:
     roleGroups:
       default:

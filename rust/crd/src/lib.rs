@@ -321,11 +321,6 @@ impl KafkaCluster {
         let spec: &KafkaClusterSpec = &self.spec;
         spec.config.internal_tls.as_ref()
     }
-
-    /// Checks if we should use TLS to encrypt client connections.
-    pub fn is_client_secure(&self) -> bool {
-        self.client_tls_secret_class().is_some() || self.client_authentication_class().is_some()
-    }
 }
 
 /// Reference to a single `Pod` that is a component of a [`KafkaCluster`]

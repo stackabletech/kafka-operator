@@ -5,12 +5,11 @@ use stackable_kafka_crd::{
 };
 
 pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
-    let mut args = vec![
-        // Copy system truststore to stackable truststore
-        format!("keytool -importkeystore -srckeystore {SYSTEM_TRUST_STORE_DIR} -srcstoretype jks -srcstorepass {SSL_STORE_PASSWORD} -destkeystore {STACKABLE_TLS_CERTS_DIR}/truststore.p12 -deststoretype pkcs12 -deststorepass {SSL_STORE_PASSWORD} -noprompt")
-    ];
+    let mut args = vec![];
 
     if kafka.client_tls_secret_class().is_some() {
+        // Copy system truststore to stackable truststore
+        args.push(format!("keytool -importkeystore -srckeystore {SYSTEM_TRUST_STORE_DIR} -srcstoretype jks -srcstorepass {SSL_STORE_PASSWORD} -destkeystore {STACKABLE_TLS_CERTS_DIR}/truststore.p12 -deststoretype pkcs12 -deststorepass {SSL_STORE_PASSWORD} -noprompt"));
         args.extend(create_key_and_trust_store(
             STACKABLE_TLS_CERTS_DIR,
             "stackable-tls-ca-cert",
@@ -32,7 +31,7 @@ pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
     args.join(" && ")
 }
 
-pub fn get_svc_container_args(kafka: &KafkaCluster) -> String {
+pub fn get_svc_container_cmd_args(kafka: &KafkaCluster) -> String {
     if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
         get_node_port(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME)
     } else if kafka.client_tls_secret_class().is_some()

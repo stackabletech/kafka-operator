@@ -12,6 +12,13 @@ metadata:
 spec:
   version: {{ test_scenario['values']['kafka'] }}
   zookeeperConfigMapName: kafka-zk
+  config:
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+    tls:
+      secretClass: tls
+{% else %}
+    tls: null
+{% endif %}
   brokers:
     config:
       resources:

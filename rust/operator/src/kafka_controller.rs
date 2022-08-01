@@ -45,7 +45,7 @@ use std::{
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-use crate::command::{get_svc_container_args, kcat_container_cmd_args};
+use crate::command::{get_svc_container_cmd_args, kcat_container_cmd_args};
 use crate::{
     command,
     discovery::{self, build_discovery_configmaps},
@@ -489,7 +489,7 @@ fn build_broker_rolegroup_statefulset(
         .context(KafkaVersionParseFailureSnafu)?;
     let image = format!("docker.stackable.tech/stackable/kafka:{}", image_version);
 
-    let get_svc_args = get_svc_container_args(kafka);
+    let get_svc_args = get_svc_container_cmd_args(kafka);
 
     if let Some(tls) = kafka.client_tls_secret_class() {
         cb_prepare.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
@@ -762,37 +762,14 @@ fn service_ports(kafka: &KafkaCluster) -> Vec<ServicePort> {
         ..ServicePort::default()
     }];
 
-    // If both client and internal TLS are set we do not need the HTTP port.
-    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
+    if kafka.client_tls_secret_class().is_some() {
         ports.push(ServicePort {
             name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
             port: SECURE_CLIENT_PORT.into(),
             protocol: Some("TCP".to_string()),
             ..ServicePort::default()
         });
-    }
-    // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
-    // for internal communications.
-    // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
-    // for client communications.
-    else if kafka.client_tls_secret_class().is_some()
-        || kafka.internal_tls_secret_class().is_some()
-    {
-        ports.push(ServicePort {
-            name: Some(CLIENT_PORT_NAME.to_string()),
-            port: CLIENT_PORT.into(),
-            protocol: Some("TCP".to_string()),
-            ..ServicePort::default()
-        });
-        ports.push(ServicePort {
-            name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
-            port: SECURE_CLIENT_PORT.into(),
-            protocol: Some("TCP".to_string()),
-            ..ServicePort::default()
-        });
-    }
-    // If no is TLS specified the HTTP port is sufficient
-    else {
+    } else {
         ports.push(ServicePort {
             name: Some(CLIENT_PORT_NAME.to_string()),
             port: CLIENT_PORT.into(),
@@ -812,37 +789,14 @@ fn container_ports(kafka: &KafkaCluster) -> Vec<ContainerPort> {
         ..ContainerPort::default()
     }];
 
-    // If both client and internal TLS are set we do not need the HTTP port.
-    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
+    if kafka.client_tls_secret_class().is_some() {
         ports.push(ContainerPort {
             name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
             container_port: SECURE_CLIENT_PORT.into(),
             protocol: Some("TCP".to_string()),
             ..ContainerPort::default()
         });
-    }
-    // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
-    // for internal communications.
-    // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
-    // for client communications.
-    else if kafka.client_tls_secret_class().is_some()
-        || kafka.internal_tls_secret_class().is_some()
-    {
-        ports.push(ContainerPort {
-            name: Some(CLIENT_PORT_NAME.to_string()),
-            container_port: CLIENT_PORT.into(),
-            protocol: Some("TCP".to_string()),
-            ..ContainerPort::default()
-        });
-        ports.push(ContainerPort {
-            name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
-            container_port: SECURE_CLIENT_PORT.into(),
-            protocol: Some("TCP".to_string()),
-            ..ContainerPort::default()
-        });
-    }
-    // If no is TLS specified the HTTP port is sufficient
-    else {
+    } else {
         ports.push(ContainerPort {
             name: Some(CLIENT_PORT_NAME.to_string()),
             container_port: CLIENT_PORT.into(),
@@ -912,7 +866,7 @@ fn get_kafka_listener(
         // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
         // for client communications.
         Ok(KafkaListener {
-            listener: format!("internal://0.0.0.0:{SECURE_INTERNAL_PORT},SSL://0.0.0.0:{CLIENT_PORT}"),
+            listener: format!("internal://0.0.0.0:{SECURE_INTERNAL_PORT},PLAINTEXT://0.0.0.0:{CLIENT_PORT}"),
             advertised_listener: format!(
                 "internal://{pod}:{SECURE_INTERNAL_PORT},PLAINTEXT://$NODE:$(cat {STACKABLE_TMP_DIR}/{CLIENT_PORT_NAME}_nodeport)", pod = pod_fqdn
             ),

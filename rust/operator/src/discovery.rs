@@ -1,7 +1,9 @@
 use std::{collections::BTreeSet, convert::TryInto, num::TryFromIntError};
 
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{KafkaCluster, KafkaRole, APP_NAME};
+use stackable_kafka_crd::{
+    KafkaCluster, KafkaRole, APP_NAME, CLIENT_PORT_NAME, SECURE_CLIENT_PORT_NAME,
+};
 use stackable_operator::{
     builder::{ConfigMapBuilder, ObjectMetaBuilder},
     k8s_openapi::api::core::v1::{ConfigMap, Endpoints, Service, ServicePort},
@@ -46,13 +48,18 @@ pub async fn build_discovery_configmaps(
     svc: &Service,
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name();
+    let port_name = if kafka.client_tls_secret_class().is_some() {
+        SECURE_CLIENT_PORT_NAME
+    } else {
+        CLIENT_PORT_NAME
+    };
     Ok(vec![
-        build_discovery_configmap(&name, owner, kafka, service_hosts(svc, "https")?)?,
+        build_discovery_configmap(&name, owner, kafka, service_hosts(svc, port_name)?)?,
         build_discovery_configmap(
             &format!("{}-nodeport", name),
             owner,
             kafka,
-            nodeport_hosts(client, svc, "https").await?,
+            nodeport_hosts(client, svc, port_name).await?,
         )?,
     ])
 }

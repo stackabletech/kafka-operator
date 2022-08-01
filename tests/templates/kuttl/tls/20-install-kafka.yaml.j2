@@ -6,6 +6,30 @@ metadata:
 spec:
   clusterRef:
     name: test-zk
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+---
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: kafka-client-tls
+spec:
+  provider:
+    tls:
+      clientCertSecretClass: kafka-client-tls
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: test-kafka-client-tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-tls-kafka-client-ca
+          namespace: default
+        autoGenerate: true
+{% endif %}
 {% if test_scenario['values']['use-internal-tls'] == 'true' %}
 ---
 apiVersion: secrets.stackable.tech/v1alpha1
@@ -34,7 +58,7 @@ spec:
     tls:
       secretClass: tls
     clientAuthentication:
-      authenticationClass: kafka-client-tls
+      authenticationClass: test-kafka-client-tls
 {% else %}
     tls: null
 {% endif %}
@@ -46,27 +70,3 @@ spec:
     roleGroups:
       default:
         replicas: 3
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
----
-apiVersion: authentication.stackable.tech/v1alpha1
-kind: AuthenticationClass
-metadata:
-  name: kafka-client-tls
-spec:
-  provider:
-    tls:
-      clientCertSecretClass: kafka-client-tls
----
-apiVersion: secrets.stackable.tech/v1alpha1
-kind: SecretClass
-metadata:
-  name: kafka-client-tls
-spec:
-  backend:
-    autoTls:
-      ca:
-        secret:
-          name: secret-provisioner-tls-kafka-client-ca
-          namespace: default
-        autoGenerate: true
-{% endif %}
