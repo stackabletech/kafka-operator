@@ -22,6 +22,19 @@ spec:
   clusterRef:
     name: simple-zk
 ---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-internal-tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-kafka-internal-tls-ca
+          namespace: default
+        autoGenerate: true
+---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
@@ -33,7 +46,7 @@ spec:
     tls:
       secretClass: tls
     internalTls:
-      secretClass: tls
+      secretClass: kafka-internal-tls
   brokers:
     roleGroups:
       default:

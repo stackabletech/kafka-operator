@@ -1,6 +1,7 @@
 use stackable_kafka_crd::{
     KafkaCluster, CLIENT_PORT, SECURE_CLIENT_PORT, SSL_STORE_PASSWORD, STACKABLE_DATA_DIR,
-    STACKABLE_TLS_CERTS_DIR, STACKABLE_TMP_DIR, SYSTEM_TRUST_STORE_DIR,
+    STACKABLE_TLS_CERTS_DIR, STACKABLE_TLS_CERTS_INTERNAL_DIR, STACKABLE_TMP_DIR,
+    SYSTEM_TRUST_STORE_DIR,
 };
 
 pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
@@ -12,9 +13,17 @@ pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
     if kafka.client_tls_secret_class().is_some() {
         args.extend(create_key_and_trust_store(
             STACKABLE_TLS_CERTS_DIR,
-            "stackable-ca-cert",
+            "stackable-tls-ca-cert",
         ));
         args.extend(chown_and_chmod(STACKABLE_TLS_CERTS_DIR));
+    }
+
+    if kafka.internal_tls_secret_class().is_some() {
+        args.extend(create_key_and_trust_store(
+            STACKABLE_TLS_CERTS_INTERNAL_DIR,
+            "stackable-internal-tls-ca-cert",
+        ));
+        args.extend(chown_and_chmod(STACKABLE_TLS_CERTS_INTERNAL_DIR));
     }
 
     args.extend(chown_and_chmod(STACKABLE_DATA_DIR));

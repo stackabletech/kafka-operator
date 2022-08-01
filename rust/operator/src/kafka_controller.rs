@@ -3,13 +3,15 @@
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
     KafkaCluster, KafkaRole, TlsSecretClass, APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME,
-    KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, SECURE_CLIENT_PORT,
-    SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
-    STACKABLE_TLS_CERTS_DIR, STACKABLE_TMP_DIR,
+    INTERNAL_PORT, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
+    SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME, SECURE_INTERNAL_PORT, SERVER_PROPERTIES_FILE,
+    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_TLS_CERTS_DIR,
+    STACKABLE_TLS_CERTS_INTERNAL_DIR, STACKABLE_TMP_DIR,
 };
 use stackable_operator::builder::{
     SecretOperatorVolumeSourceBuilder, SecurityContextBuilder, VolumeBuilder,
 };
+use stackable_operator::kube::ResourceExt;
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     commons::opa::OpaApiVersion,
@@ -66,6 +68,8 @@ pub struct Ctx {
 pub enum Error {
     #[snafu(display("object has no name"))]
     ObjectHasNoName,
+    #[snafu(display("object has no namespace"))]
+    ObjectHasNoNamespace,
     #[snafu(display("object defines no version"))]
     ObjectHasNoVersion,
     #[snafu(display("object defines no broker role"))]
@@ -510,6 +514,15 @@ fn build_broker_rolegroup_statefulset(
         pod_builder.add_volume(create_tls_volume("tls-certificate", Some(tls)));
     }
 
+    if let Some(tls_internal) = kafka.internal_tls_secret_class() {
+        cb_prepare.add_volume_mount("internal-tls-certificate", STACKABLE_TLS_CERTS_INTERNAL_DIR);
+        cb_kafka.add_volume_mount("internal-tls-certificate", STACKABLE_TLS_CERTS_INTERNAL_DIR);
+        pod_builder.add_volume(create_tls_volume(
+            "internal-tls-certificate",
+            Some(tls_internal),
+        ));
+    }
+
     let container_get_svc = ContainerBuilder::new("get-svc")
         .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
         .command(vec!["bash".to_string()])
@@ -594,6 +607,17 @@ fn build_broker_rolegroup_statefulset(
         }),
         ..EnvVar::default()
     });
+    env.push(EnvVar {
+        name: "POD_NAME".to_string(),
+        value_from: Some(EnvVarSource {
+            field_ref: Some(ObjectFieldSelector {
+                api_version: Some("v1".to_string()),
+                field_path: "metadata.name".to_string(),
+            }),
+            ..EnvVarSource::default()
+        }),
+        ..EnvVar::default()
+    });
 
     // add env var for log4j if set
     if kafka.spec.log4j.is_some() {
@@ -608,10 +632,16 @@ fn build_broker_rolegroup_statefulset(
 
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
     let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
-    let listeners_override = format!("--override \"listeners={}\"", get_listeners(kafka));
+
+    let kafka_listeners = get_kafka_listener(kafka, rolegroup_ref)?;
+    let listeners_override = format!("--override \"listeners={}\"", kafka_listeners.listener);
     let advertised_listeners_override = format!(
         "--override \"advertised.listeners={}\"",
-        get_advertised_listeners(kafka)
+        kafka_listeners.advertised_listener
+    );
+    let listener_security_protocol_map_override = format!(
+        "--override \"listener.security.protocol.map={}\"",
+        kafka_listeners.listener_security_protocol_map
     );
     let opa_url_override = opa_connect_string.map_or("".to_string(), |opa| {
         format!("--override \"opa.authorizer.url={}\"", opa)
@@ -628,6 +658,7 @@ fn build_broker_rolegroup_statefulset(
                 zookeeper_override,
                 &listeners_override,
                 &advertised_listeners_override,
+                &listener_security_protocol_map_override,
                 &opa_url_override,
             ]
             .join(" "),
@@ -652,8 +683,8 @@ fn build_broker_rolegroup_statefulset(
                 // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
                 command: Some(kcat_container_cmd_args(kafka)),
             }),
-            timeout_seconds: Some(3),
-            period_seconds: Some(1),
+            timeout_seconds: Some(5),
+            period_seconds: Some(2),
             ..Probe::default()
         })
         .build();
@@ -737,59 +768,6 @@ fn build_broker_rolegroup_statefulset(
 
 pub fn error_policy(_error: &Error, _ctx: Arc<Ctx>) -> Action {
     Action::requeue(Duration::from_secs(5))
-}
-
-fn get_listeners(kafka: &KafkaCluster) -> String {
-    // If both client and internal TLS are set we do not need the HTTP port.
-    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
-        format!("SSL://0.0.0.0:{}", secure = SECURE_CLIENT_PORT)
-        // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
-        // for internal communications.
-        // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
-        // for client communications.
-    } else if kafka.client_tls_secret_class().is_some()
-        || kafka.internal_tls_secret_class().is_some()
-    {
-        format!(
-            "PLAINTEXT://0.0.0.0:{insecure},SSL://0.0.0.0:{secure}",
-            insecure = CLIENT_PORT,
-            secure = SECURE_CLIENT_PORT
-        )
-    }
-    // If no is TLS specified the HTTP port is sufficient
-    else {
-        format!("PLAINTEXT://0.0.0.0:{insecure}", insecure = CLIENT_PORT)
-    }
-}
-
-fn get_advertised_listeners(kafka: &KafkaCluster) -> String {
-    // If both client and internal TLS are set we do not need the HTTP port.
-    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
-        format!(
-            "SSL://$NODE:$(cat {dir}/{secure}_nodeport)",
-            dir = STACKABLE_TMP_DIR,
-            secure = SECURE_CLIENT_PORT_NAME
-        )
-    // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
-    // for internal communications.
-    // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
-    // for client communications.
-    } else if kafka.client_tls_secret_class().is_some()
-        || kafka.internal_tls_secret_class().is_some()
-    {
-        format!("PLAINTEXT://$NODE:$(cat {dir}/{insecure}_nodeport),SSL://$NODE:$(cat /{dir}/{secure}_nodeport)",
-                dir = STACKABLE_TMP_DIR,
-                insecure = CLIENT_PORT_NAME,
-                secure = SECURE_CLIENT_PORT_NAME )
-    }
-    // If no is TLS specified the HTTP port is sufficient
-    else {
-        format!(
-            "PLAINTEXT://$NODE:$(cat {dir}/{insecure}_nodeport)",
-            dir = STACKABLE_TMP_DIR,
-            insecure = CLIENT_PORT_NAME
-        )
-    }
 }
 
 fn service_ports(kafka: &KafkaCluster) -> Vec<ServicePort> {
@@ -909,6 +887,67 @@ fn create_tls_volume(volume_name: &str, tls_secret_class: Option<&TlsSecretClass
         .build()
 }
 
+/// Extract the nodeport from the nodeport service
 fn get_node_port(directory: &str, port_name: &str) -> String {
     format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{name}\")].nodePort}}' | tee {dir}/{name}_nodeport", dir = directory, name = port_name)
+}
+
+struct KafkaListener {
+    pub listener: String,
+    pub advertised_listener: String,
+    pub listener_security_protocol_map: String,
+}
+
+/// Returns the `listener`, `advertised.listener` and `listener.security.protocol.map`  properties
+/// depending on internal and external TLS settings.
+fn get_kafka_listener(
+    kafka: &KafkaCluster,
+    rolegroup_ref: &RoleGroupRef<KafkaCluster>,
+) -> Result<KafkaListener> {
+    let pod_fqdn = format!(
+        "$POD_NAME.{}.{}.svc.cluster.local",
+        rolegroup_ref.object_name(),
+        kafka.namespace().context(ObjectHasNoNamespaceSnafu)?
+    );
+
+    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
+        // If both client and internal TLS are set we do not need the HTTP port.
+        Ok(KafkaListener {
+            listener: format!("internal://0.0.0.0:{SECURE_INTERNAL_PORT},SSL://0.0.0.0:{SECURE_CLIENT_PORT}"),
+            advertised_listener: format!(
+                "internal://{pod}:{SECURE_INTERNAL_PORT},SSL://$NODE:$(cat {STACKABLE_TMP_DIR}/{SECURE_CLIENT_PORT_NAME}_nodeport)", pod = pod_fqdn
+            ),
+            listener_security_protocol_map: "internal:SSL,SSL:SSL".to_string()
+        })
+    } else if kafka.client_tls_secret_class().is_some() {
+        // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
+        // for internal communications.
+        Ok(KafkaListener {
+            listener: format!("internal://0.0.0.0:{INTERNAL_PORT},SSL://0.0.0.0:{SECURE_CLIENT_PORT}"),
+            advertised_listener: format!(
+                "internal://{pod}:{INTERNAL_PORT},SSL://$NODE:$(cat {STACKABLE_TMP_DIR}/{SECURE_CLIENT_PORT_NAME}_nodeport)", pod = pod_fqdn
+            ),
+            listener_security_protocol_map: "internal:PLAINTEXT,SSL:SSL".to_string()
+        })
+    } else if kafka.internal_tls_secret_class().is_some() {
+        // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
+        // for client communications.
+        Ok(KafkaListener {
+            listener: format!("internal://0.0.0.0:{SECURE_INTERNAL_PORT},SSL://0.0.0.0:{CLIENT_PORT}"),
+            advertised_listener: format!(
+                "internal://{pod}:{SECURE_INTERNAL_PORT},PLAINTEXT://$NODE:$(cat {STACKABLE_TMP_DIR}/{CLIENT_PORT_NAME}_nodeport)", pod = pod_fqdn
+            ),
+            listener_security_protocol_map: "internal:SSL,PLAINTEXT:PLAINTEXT".to_string()
+        })
+    } else {
+        // If no is TLS specified the HTTP port is sufficient
+        Ok(KafkaListener {
+            listener: format!("internal://0.0.0.0:{INTERNAL_PORT},PLAINTEXT://0.0.0.0:{CLIENT_PORT}"),
+            advertised_listener: format!(
+            "internal://{pod}:{INTERNAL_PORT},PLAINTEXT://$NODE:$(cat {STACKABLE_TMP_DIR}/{CLIENT_PORT_NAME}_nodeport)",
+            pod = pod_fqdn
+            ),
+            listener_security_protocol_map: "internal:PLAINTEXT,PLAINTEXT:PLAINTEXT".to_string()
+        })
+    }
 }

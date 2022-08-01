@@ -26,6 +26,8 @@ pub const CLIENT_PORT_NAME: &str = "http";
 pub const CLIENT_PORT: u16 = 9092;
 pub const SECURE_CLIENT_PORT_NAME: &str = "https";
 pub const SECURE_CLIENT_PORT: u16 = 9093;
+pub const INTERNAL_PORT: u16 = 19092;
+pub const SECURE_INTERNAL_PORT: u16 = 19093;
 pub const METRICS_PORT_NAME: &str = "metrics";
 pub const METRICS_PORT: u16 = 9606;
 // config files
@@ -35,6 +37,9 @@ pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 // - listener
+pub const LISTENER_SECURITY_PROTOCOL_MAP: &str = "listener.security.protocol.map";
+pub const LISTENER: &str = "listeners";
+pub const ADVERTISED_LISTENER: &str = "advertised.listeners";
 // - TLS
 pub const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
 pub const SSL_KEYSTORE_LOCATION: &str = "ssl.keystore.location";
@@ -45,8 +50,20 @@ pub const SSL_TRUSTSTORE_PASSWORD: &str = "ssl.truststore.password";
 pub const SSL_TRUSTSTORE_TYPE: &str = "ssl.truststore.type";
 pub const SSL_STORE_PASSWORD: &str = "changeit";
 pub const SSL_CLIENT_AUTH: &str = "ssl.client.auth";
+pub const SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: &str = "ssl.endpoint.identification.algorithm";
 // - TLS internal
 pub const SECURITY_INTER_BROKER_PROTOCOL: &str = "security.inter.broker.protocol";
+pub const INTER_BROKER_LISTENER_NAME: &str = "inter.broker.listener.name";
+pub const INTER_SSL_KEYSTORE_LOCATION: &str = "listener.name.internal.ssl.keystore.location";
+pub const INTER_SSL_KEYSTORE_PASSWORD: &str = "listener.name.internal.ssl.keystore.password";
+pub const INTER_SSL_KEYSTORE_TYPE: &str = "listener.name.internal.ssl.keystore.type";
+pub const INTER_SSL_TRUSTSTORE_LOCATION: &str = "listener.name.internal.ssl.truststore.location";
+pub const INTER_SSL_TRUSTSTORE_PASSWORD: &str = "listener.name.internal.ssl.truststore.password";
+pub const INTER_SSL_TRUSTSTORE_TYPE: &str = "listener.name.internal.ssl.truststore.type";
+pub const INTER_SSL_STORE_PASSWORD: &str = "changeit";
+pub const INTER_SSL_CLIENT_AUTH: &str = "listener.name.internal.ssl.client.auth";
+pub const INTER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: &str =
+    "listener.name.internal.ssl.endpoint.identification.algorithm";
 // directories
 pub const STACKABLE_TMP_DIR: &str = "/stackable/tmp";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
@@ -400,6 +417,7 @@ impl Configuration for KafkaConfig {
                     Some("true".to_string()),
                 );
             }
+
             // Client TLS
             if resource.client_tls_secret_class().is_some() {
                 config.insert(
@@ -424,21 +442,57 @@ impl Configuration for KafkaConfig {
                 // Authentication
                 if resource.client_authentication_class().is_some() {
                     config.insert(SSL_CLIENT_AUTH.to_string(), Some("required".to_string()));
+                    config.insert(
+                        SSL_ENDPOINT_IDENTIFICATION_ALGORITHM.to_string(),
+                        Some("HTTPS".to_string()),
+                    );
                 }
-            }
-
-            // We require authentication
-            if resource.client_authentication_class().is_some() {
-                config.insert(SSL_CLIENT_AUTH.to_string(), Some("required".to_string()));
             }
 
             // Internal TLS
             if resource.internal_tls_secret_class().is_some() {
                 config.insert(
-                    SECURITY_INTER_BROKER_PROTOCOL.to_string(),
-                    Some("SSL".to_string()),
+                    INTER_SSL_KEYSTORE_LOCATION.to_string(),
+                    Some(format!("{}/keystore.p12", STACKABLE_TLS_CERTS_INTERNAL_DIR)),
+                );
+                config.insert(
+                    INTER_SSL_KEYSTORE_PASSWORD.to_string(),
+                    Some(INTER_SSL_STORE_PASSWORD.to_string()),
+                );
+                config.insert(
+                    INTER_SSL_KEYSTORE_TYPE.to_string(),
+                    Some("PKCS12".to_string()),
+                );
+                config.insert(
+                    INTER_SSL_TRUSTSTORE_LOCATION.to_string(),
+                    Some(format!(
+                        "{}/truststore.p12",
+                        STACKABLE_TLS_CERTS_INTERNAL_DIR
+                    )),
+                );
+                config.insert(
+                    INTER_SSL_TRUSTSTORE_PASSWORD.to_string(),
+                    Some(INTER_SSL_STORE_PASSWORD.to_string()),
+                );
+                config.insert(
+                    INTER_SSL_TRUSTSTORE_TYPE.to_string(),
+                    Some("PKCS12".to_string()),
+                );
+                config.insert(
+                    INTER_SSL_CLIENT_AUTH.to_string(),
+                    Some("required".to_string()),
+                );
+                config.insert(
+                    INTER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM.to_string(),
+                    Some("HTTPS".to_string()),
                 );
             }
+
+            // common
+            config.insert(
+                INTER_BROKER_LISTENER_NAME.to_string(),
+                Some("internal".to_string()),
+            );
         }
 
         Ok(config)
