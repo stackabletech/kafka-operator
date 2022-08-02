@@ -1,7 +1,8 @@
 use stackable_kafka_crd::{
     KafkaCluster, CLIENT_PORT, CLIENT_PORT_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME,
-    SSL_STORE_PASSWORD, STACKABLE_DATA_DIR, STACKABLE_TLS_CERTS_DIR,
-    STACKABLE_TLS_CERTS_INTERNAL_DIR, STACKABLE_TMP_DIR, SYSTEM_TRUST_STORE_DIR,
+    SSL_STORE_PASSWORD, STACKABLE_DATA_DIR, STACKABLE_TLS_CERTS_AUTHENTICATION_DIR,
+    STACKABLE_TLS_CERTS_DIR, STACKABLE_TLS_CERTS_INTERNAL_DIR, STACKABLE_TMP_DIR,
+    SYSTEM_TRUST_STORE_DIR,
 };
 
 pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
@@ -15,6 +16,11 @@ pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
             "stackable-tls-ca-cert",
         ));
         args.extend(chown_and_chmod(STACKABLE_TLS_CERTS_DIR));
+
+        if kafka.client_authentication_class().is_some() {
+            args.push(format!("echo [{STACKABLE_TLS_CERTS_DIR}] Importing client authentication cert to truststore"));
+            args.push(format!("keytool -importcert -file {STACKABLE_TLS_CERTS_AUTHENTICATION_DIR}/ca.crt -keystore {STACKABLE_TLS_CERTS_DIR}/truststore.p12 -storetype pkcs12 -noprompt -alias stackable-tls-client-ca-cert -storepass {SSL_STORE_PASSWORD}"));
+        }
     }
 
     if kafka.internal_tls_secret_class().is_some() {

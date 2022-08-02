@@ -70,6 +70,7 @@ pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_TLS_CERTS_DIR: &str = "/stackable/certificates";
 pub const STACKABLE_TLS_CERTS_INTERNAL_DIR: &str = "/stackable/certificates_internal";
+pub const STACKABLE_TLS_CERTS_AUTHENTICATION_DIR: &str = "/stackable/certificates_authentication";
 pub const SYSTEM_TRUST_STORE_DIR: &str = "/etc/pki/java/cacerts";
 
 const JVM_HEAP_FACTOR: f32 = 0.8;

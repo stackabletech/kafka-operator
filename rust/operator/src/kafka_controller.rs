@@ -5,16 +5,19 @@ use stackable_kafka_crd::{
     KafkaCluster, KafkaRole, TlsSecretClass, APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME,
     INTERNAL_PORT, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
     SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME, SECURE_INTERNAL_PORT, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_TLS_CERTS_DIR,
-    STACKABLE_TLS_CERTS_INTERNAL_DIR, STACKABLE_TMP_DIR,
+    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_TLS_CERTS_AUTHENTICATION_DIR,
+    STACKABLE_TLS_CERTS_DIR, STACKABLE_TLS_CERTS_INTERNAL_DIR, STACKABLE_TMP_DIR,
 };
-use stackable_operator::builder::{
-    SecretOperatorVolumeSourceBuilder, SecurityContextBuilder, VolumeBuilder,
-};
-use stackable_operator::kube::ResourceExt;
+use stackable_operator::commons::tls::TlsAuthenticationProvider;
 use stackable_operator::{
-    builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
-    commons::opa::OpaApiVersion,
+    builder::{
+        ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
+        SecretOperatorVolumeSourceBuilder, SecurityContextBuilder, VolumeBuilder,
+    },
+    commons::{
+        authentication::{AuthenticationClass, AuthenticationClassProvider},
+        opa::OpaApiVersion,
+    },
     k8s_openapi::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
@@ -28,7 +31,11 @@ use stackable_operator::{
         apimachinery::pkg::apis::meta::v1::LabelSelector,
         Resource,
     },
-    kube::runtime::{controller::Action, reflector::ObjectRef},
+    kube::{
+        api::DynamicObject,
+        runtime::{controller::Action, reflector::ObjectRef},
+        ResourceExt,
+    },
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
     product_config::{
@@ -149,12 +156,63 @@ pub enum Error {
     },
     #[snafu(display("failed to parse Kafka version/image"))]
     KafkaVersionParseFailure { source: stackable_kafka_crd::Error },
+    #[snafu(display("failed to retrieve {}", authentication_class))]
+    AuthenticationClassRetrieval {
+        source: stackable_operator::error::Error,
+        authentication_class: ObjectRef<AuthenticationClass>,
+    },
+    #[snafu(display(
+        "failed to use authentication mechanism {} - supported methods: {:?}",
+        method,
+        supported
+    ))]
+    AuthenticationMethodNotSupported {
+        authentication_class: ObjectRef<AuthenticationClass>,
+        supported: Vec<String>,
+        method: String,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl ReconcilerError for Error {
     fn category(&self) -> &'static str {
         ErrorDiscriminants::from(self).into()
+    }
+
+    fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
+        match self {
+            Error::ObjectHasNoName => None,
+            Error::ObjectHasNoNamespace => None,
+            Error::ObjectHasNoVersion => None,
+            Error::NoBrokerRole => None,
+            Error::GlobalServiceNameNotFound => None,
+            Error::ApplyRoleService { .. } => None,
+            Error::ApplyRoleServiceAccount { .. } => None,
+            Error::ApplyRoleRoleBinding { .. } => None,
+            Error::ApplyRoleGroupService { .. } => None,
+            Error::BuildRoleGroupConfig { .. } => None,
+            Error::ApplyRoleGroupConfig { .. } => None,
+            Error::ApplyRoleGroupStatefulSet { .. } => None,
+            Error::GenerateProductConfig { .. } => None,
+            Error::InvalidProductConfig { .. } => None,
+            Error::SerializeZooCfg { .. } => None,
+            Error::ObjectMissingMetadataForOwnerRef { .. } => None,
+            Error::BuildDiscoveryConfig { .. } => None,
+            Error::ApplyDiscoveryConfig { .. } => None,
+            Error::RoleGroupNotFound { .. } => None,
+            Error::InvalidServiceAccount { .. } => None,
+            Error::InvalidOpaConfig { .. } => None,
+            Error::InvalidJavaHeapConfig { .. } => None,
+            Error::KafkaVersionParseFailure { .. } => None,
+            Error::AuthenticationClassRetrieval {
+                authentication_class,
+                ..
+            } => Some(authentication_class.clone().erase()),
+            Error::AuthenticationMethodNotSupported {
+                authentication_class,
+                ..
+            } => Some(authentication_class.clone().erase()),
+        }
     }
 }
 
@@ -191,6 +249,38 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .map(Cow::Borrowed)
         .unwrap_or_default();
 
+    let client_authentication_class = if let Some(auth_class) = kafka.client_authentication_class()
+    {
+        Some(
+            client
+                .get::<AuthenticationClass>(auth_class, None) // AuthenticationClass has ClusterScope
+                .await
+                .context(AuthenticationClassRetrievalSnafu {
+                    authentication_class: ObjectRef::<AuthenticationClass>::new(auth_class),
+                })?,
+        )
+    } else {
+        None
+    };
+
+    // Assemble the OPA connection string from the discovery and the given path if provided
+    // Will be passed as --override parameter in the cli in the state ful set
+    let opa_connect = if let Some(opa_spec) = &kafka.spec.opa {
+        Some(
+            opa_spec
+                .full_document_url_from_config_map(
+                    client,
+                    &*kafka,
+                    Some("allow"),
+                    OpaApiVersion::V1,
+                )
+                .await
+                .context(InvalidOpaConfigSnafu)?,
+        )
+    } else {
+        None
+    };
+
     let broker_role_service = build_broker_role_service(&kafka)?;
     let (broker_role_serviceaccount, broker_role_rolebinding) =
         build_broker_role_serviceaccount(&kafka, &ctx.controller_config)?;
@@ -220,24 +310,6 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .await
         .context(ApplyRoleRoleBindingSnafu)?;
 
-    // Assemble the OPA connection string from the discovery and the given path if provided
-    // Will be passed as --override parameter in the cli in the state ful set
-    let opa_connect = if let Some(opa_spec) = &kafka.spec.opa {
-        Some(
-            opa_spec
-                .full_document_url_from_config_map(
-                    client,
-                    &*kafka,
-                    Some("allow"),
-                    OpaApiVersion::V1,
-                )
-                .await
-                .context(InvalidOpaConfigSnafu)?,
-        )
-    } else {
-        None
-    };
-
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup = kafka.broker_rolegroup_ref(rolegroup_name);
 
@@ -249,6 +321,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             rolegroup_config,
             &broker_role_serviceaccount_ref,
             opa_connect.as_deref(),
+            client_authentication_class.as_ref(),
         )?;
         client
             .apply_patch(FIELD_MANAGER_SCOPE, &rg_service, &rg_service)
@@ -471,6 +544,7 @@ fn build_broker_rolegroup_statefulset(
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     serviceaccount: &ObjectRef<ServiceAccount>,
     opa_connect_string: Option<&str>,
+    client_authentication_class: Option<&AuthenticationClass>,
 ) -> Result<StatefulSet> {
     let mut cb_kafka = ContainerBuilder::new(APP_NAME);
     let mut cb_prepare = ContainerBuilder::new("prepare");
@@ -496,6 +570,33 @@ fn build_broker_rolegroup_statefulset(
         cb_kafka.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
         cb_kcat_prober.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
         pod_builder.add_volume(create_tls_volume("tls-certificate", Some(tls)));
+
+        // add client authentication if required
+        if let Some(auth_class) = client_authentication_class {
+            match &auth_class.spec.provider {
+                AuthenticationClassProvider::Tls(TlsAuthenticationProvider {
+                    client_cert_secret_class: Some(secret_class),
+                }) => {
+                    cb_prepare.add_volume_mount(
+                        "client-tls-authentication-certificate",
+                        STACKABLE_TLS_CERTS_AUTHENTICATION_DIR,
+                    );
+                    pod_builder.add_volume(create_tls_volume(
+                        "client-tls-authentication-certificate",
+                        Some(&TlsSecretClass {
+                            secret_class: secret_class.clone(),
+                        }),
+                    ));
+                }
+                _ => {
+                    return Err(Error::AuthenticationMethodNotSupported {
+                        authentication_class: ObjectRef::from_obj(auth_class),
+                        supported: vec!["tls".to_string()],
+                        method: auth_class.spec.provider.to_string(),
+                    })
+                }
+            }
+        }
     }
 
     if let Some(tls_internal) = kafka.internal_tls_secret_class() {

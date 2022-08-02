@@ -2,22 +2,8 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 timeout: 300
----
-apiVersion: kafka.stackable.tech/v1alpha1
-kind: KafkaCluster
-metadata:
-  name: simple-kafka
-spec:
-  version: {{ test_scenario['values']['upgrade_new'] }}
-  zookeeperConfigMapName: kafka-zk
-  config:
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
-    tls:
-      secretClass: tls
-{% else %}
-    tls: null
-{% endif %}
-  brokers:
-    roleGroups:
-      default:
-        replicas: 1
+commands:
+  - script: >-
+      kubectl --namespace $NAMESPACE
+      patch kafkaclusters.kafka.stackable.tech simple-kafka
+      --type=merge --patch '{ "spec": { "version": "{{ test_scenario['values']['upgrade_new'] }}" }}'

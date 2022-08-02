@@ -35,6 +35,28 @@ spec:
           namespace: default
         autoGenerate: true
 ---
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: kafka-client-tls
+spec:
+  provider:
+    tls:
+      clientCertSecretClass: kafka-client-auth-secret
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-client-auth-secret
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-tls-kafka-client-ca
+          namespace: default
+        autoGenerate: true
+---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
@@ -45,6 +67,8 @@ spec:
   config:
     tls:
       secretClass: tls
+    clientAuthentication:
+      authenticationClass: kafka-client-tls
     internalTls:
       secretClass: kafka-internal-tls
   brokers:
