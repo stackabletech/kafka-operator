@@ -11,11 +11,11 @@ spec:
 apiVersion: authentication.stackable.tech/v1alpha1
 kind: AuthenticationClass
 metadata:
-  name: kafka-client-tls
+  name: test-kafka-client-tls
 spec:
   provider:
     tls:
-      clientCertSecretClass: kafka-client-tls
+      clientCertSecretClass: test-kafka-client-tls
 ---
 apiVersion: secrets.stackable.tech/v1alpha1
 kind: SecretClass
