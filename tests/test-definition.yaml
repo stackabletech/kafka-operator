@@ -2,14 +2,14 @@
 dimensions:
   - name: kafka
     values:
-      #- 2.7.1-stackable0
-      #- 2.8.1-stackable0
-      #- 3.1.0-stackable0
+      - 2.7.1-stackable0
+      - 2.8.1-stackable0
+      - 3.1.0-stackable0
       - 3.2.0-stackable0.1.0
   - name: zookeeper
     values:
-      #- 3.6.3-stackable0.7.1
-      #- 3.7.0-stackable0.7.1
+      - 3.6.3-stackable0.7.1
+      - 3.7.0-stackable0.7.1
       - 3.8.0-stackable0.7.1
   - name: upgrade_old
     values:
@@ -22,21 +22,23 @@ dimensions:
   - name: use-client-tls
     values:
       - "true"
-      #- "false"
+      - "false"
   - name: use-internal-tls
     values:
-      #- "true"
+      - "true"
       - "false"
 tests:
-#  - name: smoke
-#    dimensions:
-#      - kafka
-#      - zookeeper
-#  - name: upgrade
-#    dimensions:
-#      - zookeeper
-#      - upgrade_new
-#      - upgrade_old
+  - name: smoke
+    dimensions:
+      - kafka
+      - zookeeper
+      - use-client-tls
+  - name: upgrade
+    dimensions:
+      - zookeeper
+      - upgrade_new
+      - upgrade_old
+      - use-client-tls
   - name: tls
     dimensions:
       - kafka

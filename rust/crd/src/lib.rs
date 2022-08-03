@@ -38,10 +38,6 @@ pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
-// - listener
-pub const LISTENER_SECURITY_PROTOCOL_MAP: &str = "listener.security.protocol.map";
-pub const LISTENER: &str = "listeners";
-pub const ADVERTISED_LISTENER: &str = "advertised.listeners";
 // - TLS global
 pub const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
 pub const SSL_KEYSTORE_LOCATION: &str = "ssl.keystore.location";
@@ -80,8 +76,6 @@ pub const INTER_SSL_TRUSTSTORE_LOCATION: &str = "listener.name.internal.ssl.trus
 pub const INTER_SSL_TRUSTSTORE_PASSWORD: &str = "listener.name.internal.ssl.truststore.password";
 pub const INTER_SSL_TRUSTSTORE_TYPE: &str = "listener.name.internal.ssl.truststore.type";
 pub const INTER_SSL_CLIENT_AUTH: &str = "listener.name.internal.ssl.client.auth";
-pub const INTER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: &str =
-    "listener.name.internal.ssl.endpoint.identification.algorithm";
 // directories
 pub const STACKABLE_TMP_DIR: &str = "/stackable/tmp";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
@@ -151,7 +145,10 @@ pub struct GlobalKafkaConfig {
     /// This setting controls:
     /// - Which cert the servers should use to authenticate themselves against other servers
     /// - Which ca.crt to use when validating the other server
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default = "tls_secret_class_default",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub internal_tls: Option<TlsSecretClass>,
 }
 
@@ -160,7 +157,7 @@ impl Default for GlobalKafkaConfig {
         GlobalKafkaConfig {
             tls: tls_secret_class_default(),
             client_authentication: None,
-            internal_tls: None,
+            internal_tls: tls_secret_class_default(),
         }
     }
 }
@@ -463,10 +460,6 @@ impl Configuration for KafkaConfig {
                     CLIENT_AUTH_SSL_CLIENT_AUTH.to_string(),
                     Some("required".to_string()),
                 );
-                // config.insert(
-                //     SSL_ENDPOINT_IDENTIFICATION_ALGORITHM.to_string(),
-                //     Some("HTTPS".to_string()),
-                // );
             }
             // Client TLS
             else if resource.client_tls_secret_class().is_some() {
@@ -525,10 +518,6 @@ impl Configuration for KafkaConfig {
                 config.insert(
                     INTER_SSL_CLIENT_AUTH.to_string(),
                     Some("required".to_string()),
-                );
-                config.insert(
-                    INTER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM.to_string(),
-                    Some("HTTPS".to_string()),
                 );
             }
 
