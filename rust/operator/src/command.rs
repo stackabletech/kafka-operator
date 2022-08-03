@@ -38,21 +38,15 @@ pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
 }
 
 pub fn get_svc_container_cmd_args(kafka: &KafkaCluster) -> String {
-    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
-        get_node_port(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME)
-    } else if kafka.client_tls_secret_class().is_some()
-        || kafka.internal_tls_secret_class().is_some()
+    let port_name = if kafka.client_tls_secret_class().is_some()
+        || kafka.client_authentication_class().is_some()
     {
-        [
-            get_node_port(STACKABLE_TMP_DIR, CLIENT_PORT_NAME),
-            get_node_port(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME),
-        ]
-        .join(" && ")
-    }
-    // If no is TLS specified the HTTP port is sufficient
-    else {
-        get_node_port(STACKABLE_TMP_DIR, CLIENT_PORT_NAME)
-    }
+        SECURE_CLIENT_PORT_NAME
+    } else {
+        CLIENT_PORT_NAME
+    };
+
+    get_node_port(STACKABLE_TMP_DIR, port_name)
 }
 
 pub fn kcat_container_cmd_args(kafka: &KafkaCluster) -> Vec<String> {
@@ -61,7 +55,7 @@ pub fn kcat_container_cmd_args(kafka: &KafkaCluster) -> Vec<String> {
     if kafka.client_authentication_class().is_some() {
         args.push("-b".to_string());
         args.push(format!("localhost:{}", SECURE_CLIENT_PORT));
-        args.extend(kcat_client_ssl(STACKABLE_TLS_CLIENT_AUTH_DIR));
+        args.extend(kcat_client_auth_ssl(STACKABLE_TLS_CLIENT_AUTH_DIR));
     } else if kafka.client_tls_secret_class().is_some() {
         args.push("-b".to_string());
         args.push(format!("localhost:{}", SECURE_CLIENT_PORT));
@@ -75,7 +69,7 @@ pub fn kcat_container_cmd_args(kafka: &KafkaCluster) -> Vec<String> {
     args
 }
 
-fn kcat_client_ssl(cert_directory: &str) -> Vec<String> {
+fn kcat_client_auth_ssl(cert_directory: &str) -> Vec<String> {
     vec![
         "-X".to_string(),
         "security.protocol=SSL".to_string(),
@@ -83,6 +77,15 @@ fn kcat_client_ssl(cert_directory: &str) -> Vec<String> {
         format!("ssl.key.location={}/tls.key", cert_directory),
         "-X".to_string(),
         format!("ssl.certificate.location={}/tls.crt", cert_directory),
+        "-X".to_string(),
+        format!("ssl.ca.location={}/ca.crt", cert_directory),
+    ]
+}
+
+fn kcat_client_ssl(cert_directory: &str) -> Vec<String> {
+    vec![
+        "-X".to_string(),
+        "security.protocol=SSL".to_string(),
         "-X".to_string(),
         format!("ssl.ca.location={}/ca.crt", cert_directory),
     ]

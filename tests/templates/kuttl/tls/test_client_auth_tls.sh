@@ -9,7 +9,7 @@ unset BAD_TOPIC
 
 SERVER="test-kafka-broker-default-0.test-kafka-broker-default.${NAMESPACE}.svc.cluster.local:9093"
 
-echo "Start client TLS testing..."
+echo "Start client auth TLS testing..."
 ############################################################################
 # Test the secured connection
 ############################################################################
@@ -18,7 +18,7 @@ TOPIC=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo '')
 BAD_TOPIC=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo '')
 
 # write client config
-echo $'security.protocol=SSL\nssl.truststore.location=/stackable/tls_client/truststore.p12\nssl.truststore.password=changeit' > /tmp/client.config
+echo $'security.protocol=SSL\nssl.keystore.location=/stackable/tls_client_auth/keystore.p12\nssl.keystore.password=changeit\nssl.truststore.location=/stackable/tls_client_auth/truststore.p12\nssl.truststore.password=changeit' > /tmp/client.config
 
 if /stackable/kafka/bin/kafka-topics.sh --create --topic $TOPIC --bootstrap-server $SERVER --command-config /tmp/client.config
 then
@@ -58,5 +58,5 @@ else
   echo "[SUCCESS] Secure client topic creation failed with bad host name!"
 fi
 
-echo "All client TLS tests successful!"
+echo "All client auth TLS tests successful!"
 exit 0

@@ -38,7 +38,7 @@ spec:
 apiVersion: authentication.stackable.tech/v1alpha1
 kind: AuthenticationClass
 metadata:
-  name: kafka-client-tls
+  name: kafka-client-auth-tls
 spec:
   provider:
     tls:
@@ -68,7 +68,7 @@ spec:
     tls:
       secretClass: tls
     clientAuthentication:
-      authenticationClass: kafka-client-tls
+      authenticationClass: kafka-client-auth-tls
     internalTls:
       secretClass: kafka-internal-tls
   brokers:

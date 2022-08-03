@@ -454,15 +454,12 @@ impl Configuration for KafkaConfig {
                     CLIENT_AUTH_SSL_TRUSTSTORE_TYPE.to_string(),
                     Some("PKCS12".to_string()),
                 );
-
-                // Authentication
+                // client auth required
                 config.insert(
                     CLIENT_AUTH_SSL_CLIENT_AUTH.to_string(),
                     Some("required".to_string()),
                 );
-            }
-            // Client TLS
-            else if resource.client_tls_secret_class().is_some() {
+            } else if resource.client_tls_secret_class().is_some() {
                 config.insert(
                     CLIENT_SSL_KEYSTORE_LOCATION.to_string(),
                     Some(format!("{}/keystore.p12", STACKABLE_TLS_CLIENT_DIR)),
