@@ -48,7 +48,9 @@ pub async fn build_discovery_configmaps(
     svc: &Service,
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name();
-    let port_name = if kafka.client_tls_secret_class().is_some() {
+    let port_name = if kafka.client_tls_secret_class().is_some()
+        || kafka.client_authentication_class().is_some()
+    {
         SECURE_CLIENT_PORT_NAME
     } else {
         CLIENT_PORT_NAME

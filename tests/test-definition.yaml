@@ -23,6 +23,10 @@ dimensions:
     values:
       - "true"
       - "false"
+  - name: use-client-auth-tls
+    values:
+      - "true"
+      - "false"
   - name: use-internal-tls
     values:
       - "true"
@@ -39,9 +43,11 @@ tests:
       - upgrade_new
       - upgrade_old
       - use-client-tls
+      - use-client-auth-tls
   - name: tls
     dimensions:
       - kafka
       - zookeeper
       - use-client-tls
+      - use-client-auth-tls
       - use-internal-tls

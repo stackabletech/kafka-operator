@@ -6,7 +6,7 @@ metadata:
 spec:
   clusterRef:
     name: test-zk
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
+{% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
 ---
 apiVersion: authentication.stackable.tech/v1alpha1
 kind: AuthenticationClass
@@ -26,7 +26,7 @@ spec:
     autoTls:
       ca:
         secret:
-          name: secret-provisioner-tls-kafka-client-ca
+          name: secret-provisioner-tls-kafka-client-auth-ca
           namespace: default
         autoGenerate: true
 {% endif %}

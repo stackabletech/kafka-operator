@@ -16,28 +16,34 @@ spec:
           command: [sh, -euo, pipefail, -c]
           args:
             - |
-              echo "message written before upgrade" > message
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
-              kcat -b $KAFKA -X security.protocol=SSL -X ssl.key.location=/stackable/certificates/tls.key -X ssl.certificate.location=/stackable/certificates/tls.crt -X ssl.ca.location=/stackable/certificates/ca.crt -t upgrade-test-data -P message
+{% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
+              export SSL_OPTIONS="-X security.protocol=SSL -X ssl.key.location=/stackable/tls_client/tls.key -X ssl.certificate.location=/stackable/tls_client/tls.crt -X ssl.ca.location=/stackable/tls_client/ca.crt"
+{% elif test_scenario['values']['use-client-tls'] == 'true' %}
+              export SSL_OPTIONS="-X security.protocol=SSL -X ssl.ca.location=/stackable/tls_client/ca.crt"
 {% else %}
-              kcat -b $KAFKA -t upgrade-test-data -P message
+              export SSL_OPTIONS=""
 {% endif %}
+              echo "message written before upgrade" > message
+              kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -P message
           env:
             - name: KAFKA
               valueFrom:
                 configMapKeyRef:
                   name: simple-kafka
                   key: KAFKA
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
           volumeMounts:
-            - mountPath: /stackable/certificates
+            - mountPath: /stackable/tls_client
               name: tls
       volumes:
         - ephemeral:
             volumeClaimTemplate:
               metadata:
                 annotations:
+{% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
+                  secrets.stackable.tech/class: test-kafka-client-auth-tls
+{% else %}
                   secrets.stackable.tech/class: tls
+{% endif %}
                   secrets.stackable.tech/scope: pod,node
                 creationTimestamp: null
               spec:
@@ -49,5 +55,4 @@ spec:
                 storageClassName: secrets.stackable.tech
                 volumeMode: Filesystem
           name: tls
-{% endif %}
       restartPolicy: Never
