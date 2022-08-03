@@ -1,6 +1,7 @@
+pub mod listener;
+
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
-use stackable_operator::error::OperatorResult;
 use stackable_operator::memory::to_java_heap;
 use stackable_operator::{
     commons::{
@@ -8,6 +9,7 @@ use stackable_operator::{
         resources::{CpuLimits, MemoryLimits, NoRuntimeLimits, PvcConfig, Resources},
     },
     config::merge::Merge,
+    error::OperatorResult,
     k8s_openapi::{
         api::core::v1::{PersistentVolumeClaim, ResourceRequirements},
         apimachinery::pkg::api::resource::Quantity,
@@ -40,7 +42,7 @@ pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 pub const LISTENER_SECURITY_PROTOCOL_MAP: &str = "listener.security.protocol.map";
 pub const LISTENER: &str = "listeners";
 pub const ADVERTISED_LISTENER: &str = "advertised.listeners";
-// - TLS
+// - TLS global
 pub const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
 pub const SSL_KEYSTORE_LOCATION: &str = "ssl.keystore.location";
 pub const SSL_KEYSTORE_PASSWORD: &str = "ssl.keystore.password";
@@ -49,8 +51,25 @@ pub const SSL_TRUSTSTORE_LOCATION: &str = "ssl.truststore.location";
 pub const SSL_TRUSTSTORE_PASSWORD: &str = "ssl.truststore.password";
 pub const SSL_TRUSTSTORE_TYPE: &str = "ssl.truststore.type";
 pub const SSL_STORE_PASSWORD: &str = "changeit";
-pub const SSL_CLIENT_AUTH: &str = "ssl.client.auth";
-pub const SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: &str = "ssl.endpoint.identification.algorithm";
+// - TLS client
+pub const CLIENT_SSL_KEYSTORE_LOCATION: &str = "listener.name.client.ssl.keystore.location";
+pub const CLIENT_SSL_KEYSTORE_PASSWORD: &str = "listener.name.client.ssl.keystore.password";
+pub const CLIENT_SSL_KEYSTORE_TYPE: &str = "listener.name.client.ssl.keystore.type";
+pub const CLIENT_SSL_TRUSTSTORE_LOCATION: &str = "listener.name.client.ssl.truststore.location";
+pub const CLIENT_SSL_TRUSTSTORE_PASSWORD: &str = "listener.name.client.ssl.truststore.password";
+pub const CLIENT_SSL_TRUSTSTORE_TYPE: &str = "listener.name.client.ssl.truststore.type";
+// - TLS client authentication
+pub const CLIENT_AUTH_SSL_KEYSTORE_LOCATION: &str =
+    "listener.name.client_auth.ssl.keystore.location";
+pub const CLIENT_AUTH_SSL_KEYSTORE_PASSWORD: &str =
+    "listener.name.client_auth.ssl.keystore.password";
+pub const CLIENT_AUTH_SSL_KEYSTORE_TYPE: &str = "listener.name.client_auth.ssl.keystore.type";
+pub const CLIENT_AUTH_SSL_TRUSTSTORE_LOCATION: &str =
+    "listener.name.client_auth.ssl.truststore.location";
+pub const CLIENT_AUTH_SSL_TRUSTSTORE_PASSWORD: &str =
+    "listener.name.client_auth.ssl.truststore.password";
+pub const CLIENT_AUTH_SSL_TRUSTSTORE_TYPE: &str = "listener.name.client_auth.ssl.truststore.type";
+pub const CLIENT_AUTH_SSL_CLIENT_AUTH: &str = "listener.name.client_auth.ssl.client.auth";
 // - TLS internal
 pub const SECURITY_INTER_BROKER_PROTOCOL: &str = "security.inter.broker.protocol";
 pub const INTER_BROKER_LISTENER_NAME: &str = "inter.broker.listener.name";
@@ -60,7 +79,6 @@ pub const INTER_SSL_KEYSTORE_TYPE: &str = "listener.name.internal.ssl.keystore.t
 pub const INTER_SSL_TRUSTSTORE_LOCATION: &str = "listener.name.internal.ssl.truststore.location";
 pub const INTER_SSL_TRUSTSTORE_PASSWORD: &str = "listener.name.internal.ssl.truststore.password";
 pub const INTER_SSL_TRUSTSTORE_TYPE: &str = "listener.name.internal.ssl.truststore.type";
-pub const INTER_SSL_STORE_PASSWORD: &str = "changeit";
 pub const INTER_SSL_CLIENT_AUTH: &str = "listener.name.internal.ssl.client.auth";
 pub const INTER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: &str =
     "listener.name.internal.ssl.endpoint.identification.algorithm";
@@ -68,9 +86,9 @@ pub const INTER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: &str =
 pub const STACKABLE_TMP_DIR: &str = "/stackable/tmp";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
-pub const STACKABLE_TLS_CERTS_DIR: &str = "/stackable/certificates";
-pub const STACKABLE_TLS_CERTS_INTERNAL_DIR: &str = "/stackable/certificates_internal";
-pub const STACKABLE_TLS_CERTS_AUTHENTICATION_DIR: &str = "/stackable/certificates_authentication";
+pub const STACKABLE_TLS_CLIENT_DIR: &str = "/stackable/tls_client";
+pub const STACKABLE_TLS_CLIENT_AUTH_DIR: &str = "/stackable/tls_client_auth";
+pub const STACKABLE_TLS_INTERNAL_DIR: &str = "/stackable/tls_internal";
 pub const SYSTEM_TRUST_STORE_DIR: &str = "/etc/pki/java/cacerts";
 
 const JVM_HEAP_FACTOR: f32 = 0.8;
@@ -414,46 +432,79 @@ impl Configuration for KafkaConfig {
                 );
             }
 
-            // Client TLS
-            if resource.client_tls_secret_class().is_some() {
+            if resource.client_authentication_class().is_some() {
                 config.insert(
-                    SSL_KEYSTORE_LOCATION.to_string(),
-                    Some(format!("{}/keystore.p12", STACKABLE_TLS_CERTS_DIR)),
+                    CLIENT_AUTH_SSL_KEYSTORE_LOCATION.to_string(),
+                    Some(format!("{}/keystore.p12", STACKABLE_TLS_CLIENT_AUTH_DIR)),
                 );
                 config.insert(
-                    SSL_KEYSTORE_PASSWORD.to_string(),
+                    CLIENT_AUTH_SSL_KEYSTORE_PASSWORD.to_string(),
                     Some(SSL_STORE_PASSWORD.to_string()),
                 );
-                config.insert(SSL_KEYSTORE_TYPE.to_string(), Some("PKCS12".to_string()));
                 config.insert(
-                    SSL_TRUSTSTORE_LOCATION.to_string(),
-                    Some(format!("{}/truststore.p12", STACKABLE_TLS_CERTS_DIR)),
+                    CLIENT_AUTH_SSL_KEYSTORE_TYPE.to_string(),
+                    Some("PKCS12".to_string()),
                 );
                 config.insert(
-                    SSL_TRUSTSTORE_PASSWORD.to_string(),
+                    CLIENT_AUTH_SSL_TRUSTSTORE_LOCATION.to_string(),
+                    Some(format!("{}/truststore.p12", STACKABLE_TLS_CLIENT_AUTH_DIR)),
+                );
+                config.insert(
+                    CLIENT_AUTH_SSL_TRUSTSTORE_PASSWORD.to_string(),
                     Some(SSL_STORE_PASSWORD.to_string()),
                 );
-                config.insert(SSL_TRUSTSTORE_TYPE.to_string(), Some("PKCS12".to_string()));
+                config.insert(
+                    CLIENT_AUTH_SSL_TRUSTSTORE_TYPE.to_string(),
+                    Some("PKCS12".to_string()),
+                );
 
                 // Authentication
-                if resource.client_authentication_class().is_some() {
-                    config.insert(SSL_CLIENT_AUTH.to_string(), Some("required".to_string()));
-                    config.insert(
-                        SSL_ENDPOINT_IDENTIFICATION_ALGORITHM.to_string(),
-                        Some("HTTPS".to_string()),
-                    );
-                }
+                config.insert(
+                    CLIENT_AUTH_SSL_CLIENT_AUTH.to_string(),
+                    Some("required".to_string()),
+                );
+                // config.insert(
+                //     SSL_ENDPOINT_IDENTIFICATION_ALGORITHM.to_string(),
+                //     Some("HTTPS".to_string()),
+                // );
+            }
+            // Client TLS
+            else if resource.client_tls_secret_class().is_some() {
+                config.insert(
+                    CLIENT_SSL_KEYSTORE_LOCATION.to_string(),
+                    Some(format!("{}/keystore.p12", STACKABLE_TLS_CLIENT_DIR)),
+                );
+                config.insert(
+                    CLIENT_SSL_KEYSTORE_PASSWORD.to_string(),
+                    Some(SSL_STORE_PASSWORD.to_string()),
+                );
+                config.insert(
+                    CLIENT_SSL_KEYSTORE_TYPE.to_string(),
+                    Some("PKCS12".to_string()),
+                );
+                config.insert(
+                    CLIENT_SSL_TRUSTSTORE_LOCATION.to_string(),
+                    Some(format!("{}/truststore.p12", STACKABLE_TLS_CLIENT_DIR)),
+                );
+                config.insert(
+                    CLIENT_SSL_TRUSTSTORE_PASSWORD.to_string(),
+                    Some(SSL_STORE_PASSWORD.to_string()),
+                );
+                config.insert(
+                    CLIENT_SSL_TRUSTSTORE_TYPE.to_string(),
+                    Some("PKCS12".to_string()),
+                );
             }
 
             // Internal TLS
             if resource.internal_tls_secret_class().is_some() {
                 config.insert(
                     INTER_SSL_KEYSTORE_LOCATION.to_string(),
-                    Some(format!("{}/keystore.p12", STACKABLE_TLS_CERTS_INTERNAL_DIR)),
+                    Some(format!("{}/keystore.p12", STACKABLE_TLS_INTERNAL_DIR)),
                 );
                 config.insert(
                     INTER_SSL_KEYSTORE_PASSWORD.to_string(),
-                    Some(INTER_SSL_STORE_PASSWORD.to_string()),
+                    Some(SSL_STORE_PASSWORD.to_string()),
                 );
                 config.insert(
                     INTER_SSL_KEYSTORE_TYPE.to_string(),
@@ -461,14 +512,11 @@ impl Configuration for KafkaConfig {
                 );
                 config.insert(
                     INTER_SSL_TRUSTSTORE_LOCATION.to_string(),
-                    Some(format!(
-                        "{}/truststore.p12",
-                        STACKABLE_TLS_CERTS_INTERNAL_DIR
-                    )),
+                    Some(format!("{}/truststore.p12", STACKABLE_TLS_INTERNAL_DIR)),
                 );
                 config.insert(
                     INTER_SSL_TRUSTSTORE_PASSWORD.to_string(),
-                    Some(INTER_SSL_STORE_PASSWORD.to_string()),
+                    Some(SSL_STORE_PASSWORD.to_string()),
                 );
                 config.insert(
                     INTER_SSL_TRUSTSTORE_TYPE.to_string(),
@@ -487,7 +535,7 @@ impl Configuration for KafkaConfig {
             // common
             config.insert(
                 INTER_BROKER_LISTENER_NAME.to_string(),
-                Some("internal".to_string()),
+                Some(listener::KafkaListenerName::Internal.to_string()),
             );
         }
 

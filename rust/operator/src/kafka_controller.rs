@@ -2,13 +2,12 @@
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
-    KafkaCluster, KafkaRole, TlsSecretClass, APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME,
-    INTERNAL_PORT, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
-    SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME, SECURE_INTERNAL_PORT, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_TLS_CERTS_AUTHENTICATION_DIR,
-    STACKABLE_TLS_CERTS_DIR, STACKABLE_TLS_CERTS_INTERNAL_DIR, STACKABLE_TMP_DIR,
+    listener::get_kafka_listener_config, KafkaCluster, KafkaRole, TlsSecretClass, APP_NAME,
+    CLIENT_PORT, CLIENT_PORT_NAME, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
+    METRICS_PORT_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE,
+    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_TLS_CLIENT_AUTH_DIR,
+    STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR, STACKABLE_TMP_DIR,
 };
-use stackable_operator::commons::tls::TlsAuthenticationProvider;
 use stackable_operator::{
     builder::{
         ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
@@ -17,6 +16,7 @@ use stackable_operator::{
     commons::{
         authentication::{AuthenticationClass, AuthenticationClassProvider},
         opa::OpaApiVersion,
+        tls::TlsAuthenticationProvider,
     },
     k8s_openapi::{
         api::{
@@ -34,7 +34,6 @@ use stackable_operator::{
     kube::{
         api::DynamicObject,
         runtime::{controller::Action, reflector::ObjectRef},
-        ResourceExt,
     },
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
@@ -171,6 +170,10 @@ pub enum Error {
         supported: Vec<String>,
         method: String,
     },
+    #[snafu(display("invalid kafka listeners"))]
+    InvalidKafkaListeners {
+        source: stackable_kafka_crd::listener::KafkaListenerError,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -212,6 +215,7 @@ impl ReconcilerError for Error {
                 authentication_class,
                 ..
             } => Some(authentication_class.clone().erase()),
+            Error::InvalidKafkaListeners { .. } => None,
         }
     }
 }
@@ -565,43 +569,49 @@ fn build_broker_rolegroup_statefulset(
 
     let get_svc_args = get_svc_container_cmd_args(kafka);
 
-    if let Some(tls) = kafka.client_tls_secret_class() {
-        cb_prepare.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
-        cb_kafka.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
-        cb_kcat_prober.add_volume_mount("tls-certificate", STACKABLE_TLS_CERTS_DIR);
-        pod_builder.add_volume(create_tls_volume("tls-certificate", Some(tls)));
-
-        // add client authentication if required
-        if let Some(auth_class) = client_authentication_class {
-            match &auth_class.spec.provider {
-                AuthenticationClassProvider::Tls(TlsAuthenticationProvider {
-                    client_cert_secret_class: Some(secret_class),
-                }) => {
-                    cb_prepare.add_volume_mount(
-                        "client-tls-authentication-certificate",
-                        STACKABLE_TLS_CERTS_AUTHENTICATION_DIR,
-                    );
-                    pod_builder.add_volume(create_tls_volume(
-                        "client-tls-authentication-certificate",
-                        Some(&TlsSecretClass {
-                            secret_class: secret_class.clone(),
-                        }),
-                    ));
-                }
-                _ => {
-                    return Err(Error::AuthenticationMethodNotSupported {
-                        authentication_class: ObjectRef::from_obj(auth_class),
-                        supported: vec!["tls".to_string()],
-                        method: auth_class.spec.provider.to_string(),
-                    })
-                }
+    // add client authentication volumes if required
+    if let Some(auth_class) = client_authentication_class {
+        match &auth_class.spec.provider {
+            AuthenticationClassProvider::Tls(TlsAuthenticationProvider {
+                client_cert_secret_class: Some(secret_class),
+            }) => {
+                cb_prepare.add_volume_mount(
+                    "client-tls-authentication-certificate",
+                    STACKABLE_TLS_CLIENT_AUTH_DIR,
+                );
+                cb_kafka.add_volume_mount(
+                    "client-tls-authentication-certificate",
+                    STACKABLE_TLS_CLIENT_AUTH_DIR,
+                );
+                cb_kcat_prober.add_volume_mount(
+                    "client-tls-authentication-certificate",
+                    STACKABLE_TLS_CLIENT_AUTH_DIR,
+                );
+                pod_builder.add_volume(create_tls_volume(
+                    "client-tls-authentication-certificate",
+                    Some(&TlsSecretClass {
+                        secret_class: secret_class.clone(),
+                    }),
+                ));
+            }
+            _ => {
+                return Err(Error::AuthenticationMethodNotSupported {
+                    authentication_class: ObjectRef::from_obj(auth_class),
+                    supported: vec!["tls".to_string()],
+                    method: auth_class.spec.provider.to_string(),
+                })
             }
         }
+    } else if let Some(tls) = kafka.client_tls_secret_class() {
+        cb_prepare.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
+        cb_kafka.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
+        cb_kcat_prober.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
+        pod_builder.add_volume(create_tls_volume("client-tls-certificate", Some(tls)));
     }
 
     if let Some(tls_internal) = kafka.internal_tls_secret_class() {
-        cb_prepare.add_volume_mount("internal-tls-certificate", STACKABLE_TLS_CERTS_INTERNAL_DIR);
-        cb_kafka.add_volume_mount("internal-tls-certificate", STACKABLE_TLS_CERTS_INTERNAL_DIR);
+        cb_prepare.add_volume_mount("internal-tls-certificate", STACKABLE_TLS_INTERNAL_DIR);
+        cb_kafka.add_volume_mount("internal-tls-certificate", STACKABLE_TLS_INTERNAL_DIR);
         pod_builder.add_volume(create_tls_volume(
             "internal-tls-certificate",
             Some(tls_internal),
@@ -718,15 +728,16 @@ fn build_broker_rolegroup_statefulset(
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
     let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
 
-    let kafka_listeners = get_kafka_listener(kafka, rolegroup_ref)?;
-    let listeners_override = format!("--override \"listeners={}\"", kafka_listeners.listener);
+    let kafka_listeners = get_kafka_listener_config(kafka, &rolegroup_ref.object_name())
+        .context(InvalidKafkaListenersSnafu)?;
+    let listeners_override = format!("--override \"listeners={}\"", kafka_listeners.listeners());
     let advertised_listeners_override = format!(
         "--override \"advertised.listeners={}\"",
-        kafka_listeners.advertised_listener
+        kafka_listeners.advertised_listeners()
     );
     let listener_security_protocol_map_override = format!(
         "--override \"listener.security.protocol.map={}\"",
-        kafka_listeners.listener_security_protocol_map
+        kafka_listeners.listener_security_protocol_map()
     );
     let opa_url_override = opa_connect_string.map_or("".to_string(), |opa| {
         format!("--override \"opa.authorizer.url={}\"", opa)
@@ -855,6 +866,7 @@ pub fn error_policy(_error: &Error, _ctx: Arc<Ctx>) -> Action {
     Action::requeue(Duration::from_secs(5))
 }
 
+/// We only expose client HTTP / HTTPS and Metrics ports.
 fn service_ports(kafka: &KafkaCluster) -> Vec<ServicePort> {
     let mut ports = vec![ServicePort {
         name: Some(METRICS_PORT_NAME.to_string()),
@@ -863,7 +875,7 @@ fn service_ports(kafka: &KafkaCluster) -> Vec<ServicePort> {
         ..ServicePort::default()
     }];
 
-    if kafka.client_tls_secret_class().is_some() {
+    if kafka.client_tls_secret_class().is_some() || kafka.client_authentication_class().is_some() {
         ports.push(ServicePort {
             name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
             port: SECURE_CLIENT_PORT.into(),
@@ -882,6 +894,7 @@ fn service_ports(kafka: &KafkaCluster) -> Vec<ServicePort> {
     ports
 }
 
+/// We only expose client HTTP / HTTPS and Metrics ports.
 fn container_ports(kafka: &KafkaCluster) -> Vec<ContainerPort> {
     let mut ports = vec![ContainerPort {
         name: Some(METRICS_PORT_NAME.to_string()),
@@ -890,7 +903,7 @@ fn container_ports(kafka: &KafkaCluster) -> Vec<ContainerPort> {
         ..ContainerPort::default()
     }];
 
-    if kafka.client_tls_secret_class().is_some() {
+    if kafka.client_tls_secret_class().is_some() || kafka.client_authentication_class().is_some() {
         ports.push(ContainerPort {
             name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
             container_port: SECURE_CLIENT_PORT.into(),
@@ -924,64 +937,4 @@ fn create_tls_volume(volume_name: &str, tls_secret_class: Option<&TlsSecretClass
                 .build(),
         )
         .build()
-}
-
-struct KafkaListener {
-    pub listener: String,
-    pub advertised_listener: String,
-    pub listener_security_protocol_map: String,
-}
-
-/// Returns the `listener`, `advertised.listener` and `listener.security.protocol.map`  properties
-/// depending on internal and external TLS settings.
-fn get_kafka_listener(
-    kafka: &KafkaCluster,
-    rolegroup_ref: &RoleGroupRef<KafkaCluster>,
-) -> Result<KafkaListener> {
-    let pod_fqdn = format!(
-        "$POD_NAME.{}.{}.svc.cluster.local",
-        rolegroup_ref.object_name(),
-        kafka.namespace().context(ObjectHasNoNamespaceSnafu)?
-    );
-
-    if kafka.client_tls_secret_class().is_some() && kafka.internal_tls_secret_class().is_some() {
-        // If both client and internal TLS are set we do not need the HTTP port.
-        Ok(KafkaListener {
-            listener: format!("internal://0.0.0.0:{SECURE_INTERNAL_PORT},SSL://0.0.0.0:{SECURE_CLIENT_PORT}"),
-            advertised_listener: format!(
-                "internal://{pod}:{SECURE_INTERNAL_PORT},SSL://$NODE:$(cat {STACKABLE_TMP_DIR}/{SECURE_CLIENT_PORT_NAME}_nodeport)", pod = pod_fqdn
-            ),
-            listener_security_protocol_map: "internal:SSL,SSL:SSL".to_string()
-        })
-    } else if kafka.client_tls_secret_class().is_some() {
-        // If only client TLS is required we need to set the HTTPS port and keep the HTTP port
-        // for internal communications.
-        Ok(KafkaListener {
-            listener: format!("internal://0.0.0.0:{INTERNAL_PORT},SSL://0.0.0.0:{SECURE_CLIENT_PORT}"),
-            advertised_listener: format!(
-                "internal://{pod}:{INTERNAL_PORT},SSL://$NODE:$(cat {STACKABLE_TMP_DIR}/{SECURE_CLIENT_PORT_NAME}_nodeport)", pod = pod_fqdn
-            ),
-            listener_security_protocol_map: "internal:PLAINTEXT,SSL:SSL".to_string()
-        })
-    } else if kafka.internal_tls_secret_class().is_some() {
-        // If only internal TLS is required we need to set the HTTPS port and keep the HTTP port
-        // for client communications.
-        Ok(KafkaListener {
-            listener: format!("internal://0.0.0.0:{SECURE_INTERNAL_PORT},PLAINTEXT://0.0.0.0:{CLIENT_PORT}"),
-            advertised_listener: format!(
-                "internal://{pod}:{SECURE_INTERNAL_PORT},PLAINTEXT://$NODE:$(cat {STACKABLE_TMP_DIR}/{CLIENT_PORT_NAME}_nodeport)", pod = pod_fqdn
-            ),
-            listener_security_protocol_map: "internal:SSL,PLAINTEXT:PLAINTEXT".to_string()
-        })
-    } else {
-        // If no is TLS specified the HTTP port is sufficient
-        Ok(KafkaListener {
-            listener: format!("internal://0.0.0.0:{INTERNAL_PORT},PLAINTEXT://0.0.0.0:{CLIENT_PORT}"),
-            advertised_listener: format!(
-            "internal://{pod}:{INTERNAL_PORT},PLAINTEXT://$NODE:$(cat {STACKABLE_TMP_DIR}/{CLIENT_PORT_NAME}_nodeport)",
-            pod = pod_fqdn
-            ),
-            listener_security_protocol_map: "internal:PLAINTEXT,PLAINTEXT:PLAINTEXT".to_string()
-        })
-    }
 }

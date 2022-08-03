@@ -1,34 +1,34 @@
 use stackable_kafka_crd::{
     KafkaCluster, CLIENT_PORT, CLIENT_PORT_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME,
-    SSL_STORE_PASSWORD, STACKABLE_DATA_DIR, STACKABLE_TLS_CERTS_AUTHENTICATION_DIR,
-    STACKABLE_TLS_CERTS_DIR, STACKABLE_TLS_CERTS_INTERNAL_DIR, STACKABLE_TMP_DIR,
-    SYSTEM_TRUST_STORE_DIR,
+    SSL_STORE_PASSWORD, STACKABLE_DATA_DIR, STACKABLE_TLS_CLIENT_AUTH_DIR,
+    STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR, STACKABLE_TMP_DIR,
 };
 
 pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
     let mut args = vec![];
 
-    if kafka.client_tls_secret_class().is_some() {
-        // Copy system truststore to stackable truststore
-        args.push(format!("keytool -importkeystore -srckeystore {SYSTEM_TRUST_STORE_DIR} -srcstoretype jks -srcstorepass {SSL_STORE_PASSWORD} -destkeystore {STACKABLE_TLS_CERTS_DIR}/truststore.p12 -deststoretype pkcs12 -deststorepass {SSL_STORE_PASSWORD} -noprompt"));
+    if kafka.client_authentication_class().is_some() {
         args.extend(create_key_and_trust_store(
-            STACKABLE_TLS_CERTS_DIR,
-            "stackable-tls-ca-cert",
+            STACKABLE_TLS_CLIENT_AUTH_DIR,
+            "stackable-tls-client-auth-ca-cert",
         ));
-        args.extend(chown_and_chmod(STACKABLE_TLS_CERTS_DIR));
-
-        if kafka.client_authentication_class().is_some() {
-            args.push(format!("echo [{STACKABLE_TLS_CERTS_DIR}] Importing client authentication cert to truststore"));
-            args.push(format!("keytool -importcert -file {STACKABLE_TLS_CERTS_AUTHENTICATION_DIR}/ca.crt -keystore {STACKABLE_TLS_CERTS_DIR}/truststore.p12 -storetype pkcs12 -noprompt -alias stackable-tls-client-ca-cert -storepass {SSL_STORE_PASSWORD}"));
-        }
+        args.extend(chown_and_chmod(STACKABLE_TLS_CLIENT_AUTH_DIR));
+    } else if kafka.client_tls_secret_class().is_some() {
+        // Copy system truststore to stackable truststore
+        //args.push(format!("keytool -importkeystore -srckeystore {SYSTEM_TRUST_STORE_DIR} -srcstoretype jks -srcstorepass {SSL_STORE_PASSWORD} -destkeystore {STACKABLE_TLS_CLIENT_DIR}/truststore.p12 -deststoretype pkcs12 -deststorepass {SSL_STORE_PASSWORD} -noprompt"));
+        args.extend(create_key_and_trust_store(
+            STACKABLE_TLS_CLIENT_DIR,
+            "stackable-tls-client-ca-cert",
+        ));
+        args.extend(chown_and_chmod(STACKABLE_TLS_CLIENT_DIR));
     }
 
     if kafka.internal_tls_secret_class().is_some() {
         args.extend(create_key_and_trust_store(
-            STACKABLE_TLS_CERTS_INTERNAL_DIR,
-            "stackable-internal-tls-ca-cert",
+            STACKABLE_TLS_INTERNAL_DIR,
+            "stackable-tls-internal-ca-cert",
         ));
-        args.extend(chown_and_chmod(STACKABLE_TLS_CERTS_INTERNAL_DIR));
+        args.extend(chown_and_chmod(STACKABLE_TLS_INTERNAL_DIR));
     }
 
     args.extend(chown_and_chmod(STACKABLE_DATA_DIR));
@@ -58,30 +58,34 @@ pub fn get_svc_container_cmd_args(kafka: &KafkaCluster) -> String {
 pub fn kcat_container_cmd_args(kafka: &KafkaCluster) -> Vec<String> {
     let mut args = vec!["kcat".to_string()];
 
-    if kafka.client_tls_secret_class().is_some() {
+    if kafka.client_authentication_class().is_some() {
         args.push("-b".to_string());
         args.push(format!("localhost:{}", SECURE_CLIENT_PORT));
-        args.extend([
-            "-X".to_string(),
-            "security.protocol=SSL".to_string(),
-            "-X".to_string(),
-            format!("ssl.key.location={}/tls.key", STACKABLE_TLS_CERTS_DIR),
-            "-X".to_string(),
-            format!(
-                "ssl.certificate.location={}/tls.crt",
-                STACKABLE_TLS_CERTS_DIR
-            ),
-            "-X".to_string(),
-            format!("ssl.ca.location={}/ca.crt", STACKABLE_TLS_CERTS_DIR),
-        ]);
+        args.extend(kcat_client_ssl(STACKABLE_TLS_CLIENT_AUTH_DIR));
+    } else if kafka.client_tls_secret_class().is_some() {
+        args.push("-b".to_string());
+        args.push(format!("localhost:{}", SECURE_CLIENT_PORT));
+        args.extend(kcat_client_ssl(STACKABLE_TLS_CLIENT_DIR));
     } else {
         args.push("-b".to_string());
         args.push(format!("localhost:{}", CLIENT_PORT));
     }
 
     args.push("-L".to_string());
-
     args
+}
+
+fn kcat_client_ssl(cert_directory: &str) -> Vec<String> {
+    vec![
+        "-X".to_string(),
+        "security.protocol=SSL".to_string(),
+        "-X".to_string(),
+        format!("ssl.key.location={}/tls.key", cert_directory),
+        "-X".to_string(),
+        format!("ssl.certificate.location={}/tls.crt", cert_directory),
+        "-X".to_string(),
+        format!("ssl.ca.location={}/ca.crt", cert_directory),
+    ]
 }
 
 /// Generates the shell script to create key and truststores from the certificates provided
