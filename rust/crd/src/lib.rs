@@ -552,7 +552,10 @@ mod tests {
             kafka.client_tls_secret_class().unwrap().secret_class,
             TLS_DEFAULT_SECRET_CLASS.to_string()
         );
-        assert_eq!(kafka.internal_tls_secret_class(), None);
+        assert_eq!(
+            kafka.internal_tls_secret_class().unwrap().secret_class,
+            TLS_DEFAULT_SECRET_CLASS.to_string()
+        );
 
         let input = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
@@ -571,7 +574,10 @@ mod tests {
             kafka.client_tls_secret_class().unwrap().secret_class,
             "simple-kafka-client-tls".to_string()
         );
-        assert_eq!(kafka.internal_tls_secret_class(), None);
+        assert_eq!(
+            kafka.internal_tls_secret_class().unwrap().secret_class,
+            TLS_DEFAULT_SECRET_CLASS
+        );
 
         let input = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
@@ -586,7 +592,10 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(kafka.client_tls_secret_class(), None);
-        assert_eq!(kafka.internal_tls_secret_class(), None);
+        assert_eq!(
+            kafka.internal_tls_secret_class().unwrap().secret_class,
+            TLS_DEFAULT_SECRET_CLASS.to_string()
+        );
 
         let input = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
@@ -623,7 +632,10 @@ mod tests {
           zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        assert_eq!(kafka.internal_tls_secret_class(), None);
+        assert_eq!(
+            kafka.internal_tls_secret_class().unwrap().secret_class,
+            TLS_DEFAULT_SECRET_CLASS.to_string()
+        );
         assert_eq!(
             kafka.client_tls_secret_class().unwrap().secret_class,
             TLS_DEFAULT_SECRET_CLASS
@@ -664,7 +676,10 @@ mod tests {
               secretClass: simple-kafka-client-tls
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        assert_eq!(kafka.internal_tls_secret_class(), None);
+        assert_eq!(
+            kafka.internal_tls_secret_class().unwrap().secret_class,
+            TLS_DEFAULT_SECRET_CLASS.to_string()
+        );
         assert_eq!(
             kafka.client_tls_secret_class().unwrap().secret_class,
             "simple-kafka-client-tls"

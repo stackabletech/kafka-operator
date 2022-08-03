@@ -282,7 +282,7 @@ mod tests {
                 port = SECURE_CLIENT_PORT,
                 internal_name = KafkaListenerName::Internal,
                 internal_host = LISTENER_LOCAL_ADDRESS,
-                internal_port = INTERNAL_PORT,
+                internal_port = SECURE_INTERNAL_PORT,
             )
         );
 
@@ -295,7 +295,7 @@ mod tests {
                 port = node_port_cmd(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name).unwrap(),
-                internal_port = INTERNAL_PORT,
+                internal_port = SECURE_INTERNAL_PORT,
             )
         );
 
@@ -306,7 +306,7 @@ mod tests {
                 name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::Ssl,
                 internal_name = KafkaListenerName::Internal,
-                internal_protocol = KafkaListenerProtocol::Plaintext
+                internal_protocol = KafkaListenerProtocol::Ssl
             )
         );
 
@@ -321,6 +321,7 @@ mod tests {
           zookeeperConfigMapName: xyz
           config:
             tls: null
+            internalTls: null
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         let config = get_kafka_listener_config(&kafka, object_name).unwrap();
