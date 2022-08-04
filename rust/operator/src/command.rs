@@ -74,11 +74,11 @@ fn kcat_client_auth_ssl(cert_directory: &str) -> Vec<String> {
         "-X".to_string(),
         "security.protocol=SSL".to_string(),
         "-X".to_string(),
-        format!("ssl.key.location={}/tls.key", cert_directory),
+        format!("ssl.key.location={cert_directory}/tls.key"),
         "-X".to_string(),
-        format!("ssl.certificate.location={}/tls.crt", cert_directory),
+        format!("ssl.certificate.location={cert_directory}/tls.crt"),
         "-X".to_string(),
-        format!("ssl.ca.location={}/ca.crt", cert_directory),
+        format!("ssl.ca.location={cert_directory}/ca.crt"),
     ]
 }
 
@@ -87,7 +87,7 @@ fn kcat_client_ssl(cert_directory: &str) -> Vec<String> {
         "-X".to_string(),
         "security.protocol=SSL".to_string(),
         "-X".to_string(),
-        format!("ssl.ca.location={}/ca.crt", cert_directory),
+        format!("ssl.ca.location={cert_directory}/ca.crt"),
     ]
 }
 

@@ -6,17 +6,7 @@ metadata:
 spec:
   version: {{ test_scenario['values']['zookeeper'] }}
   config:
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
-    tls:
-      secretClass: tls
-    clientAuthentication:
-      authenticationClass: zk-client-tls
-{% else %}
     tls: null
-{% endif %}
-{% if test_scenario['values']['use-internal-tls'] == 'true' %}
-    internalTlsSecretClass: tls
-{% endif %}
   servers:
     roleGroups:
       default:

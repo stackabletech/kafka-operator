@@ -141,7 +141,7 @@ pub struct GlobalKafkaConfig {
     /// Defaults to `None`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_authentication: Option<ClientAuthenticationClass>,
-    /// Only affects internal communication. Use mutual verification between Trino nodes
+    /// Only affects internal communication. Use mutual verification between Kafka nodes
     /// This setting controls:
     /// - Which cert the servers should use to authenticate themselves against other servers
     /// - Which ca.crt to use when validating the other server

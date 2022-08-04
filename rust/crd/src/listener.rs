@@ -69,7 +69,7 @@ impl KafkaListenerConfig {
     pub fn listener_security_protocol_map(&self) -> String {
         self.listener_security_protocol_map
             .iter()
-            .map(|(name, protocol)| format!("{}:{}", name, protocol))
+            .map(|(name, protocol)| format!("{name}:{protocol}"))
             .collect::<Vec<String>>()
             .join(",")
     }
@@ -181,7 +181,7 @@ pub fn get_kafka_listener_config(
 }
 
 fn node_port_cmd(directory: &str, port_name: &str) -> String {
-    format!("$(cat {}/{}_nodeport)", directory, port_name)
+    format!("$(cat {directory}/{port_name}_nodeport)")
 }
 
 fn pod_fqdn(kafka: &KafkaCluster, object_name: &str) -> Result<String, KafkaListenerError> {
