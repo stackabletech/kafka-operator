@@ -63,6 +63,8 @@ spec:
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
     clientAuthentication:
       authenticationClass: test-kafka-client-auth-tls
+{% else %}
+    clientAuthentication: null
 {% endif %}
 {% if test_scenario['values']['use-internal-tls'] == 'true' %}
     internalTls:
