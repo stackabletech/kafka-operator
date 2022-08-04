@@ -20,7 +20,7 @@ BAD_TOPIC=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo '')
 # write client config
 echo $'security.protocol=SSL\nssl.keystore.location=/stackable/tls_client_auth/keystore.p12\nssl.keystore.password=changeit\nssl.truststore.location=/stackable/tls_client_auth/truststore.p12\nssl.truststore.password=changeit' > /tmp/client.config
 
-if /stackable/kafka/bin/kafka-topics.sh --create --topic $TOPIC --bootstrap-server $SERVER --command-config /tmp/client.config
+if /stackable/kafka/bin/kafka-topics.sh --create --topic "$TOPIC" --bootstrap-server "$SERVER" --command-config /tmp/client.config
 then
   echo "[SUCCESS] Secure client topic created!"
 else
@@ -28,7 +28,7 @@ else
   exit 1
 fi
 
-if /stackable/kafka/bin/kafka-topics.sh --list --topic $TOPIC --bootstrap-server $SERVER --command-config /tmp/client.config | grep $TOPIC
+if /stackable/kafka/bin/kafka-topics.sh --list --topic "$TOPIC" --bootstrap-server "$SERVER" --command-config /tmp/client.config | grep "$TOPIC"
 then
   echo "[SUCCESS] Secure client topic read!"
 else
@@ -39,7 +39,7 @@ fi
 ############################################################################
 # Test the connection without certificates
 ############################################################################
-if /stackable/kafka/bin/kafka-topics.sh --create --topic $BAD_TOPIC --bootstrap-server $SERVER &> /dev/null
+if /stackable/kafka/bin/kafka-topics.sh --create --topic "$BAD_TOPIC" --bootstrap-server "$SERVER" &> /dev/null
 then
   echo "[ERROR] Secure client topic created without certificates!"
   exit 1
@@ -50,7 +50,7 @@ fi
 ############################################################################
 # Test the connection with bad host name
 ############################################################################
-if /stackable/kafka/bin/kafka-topics.sh --create --topic $BAD_TOPIC --bootstrap-server localhost:9093 --command-config /tmp/client.config &> /dev/null
+if /stackable/kafka/bin/kafka-topics.sh --create --topic "$BAD_TOPIC" --bootstrap-server localhost:9093 --command-config /tmp/client.config &> /dev/null
 then
   echo "[ERROR] Secure client topic created with bad host name!"
   exit 1
