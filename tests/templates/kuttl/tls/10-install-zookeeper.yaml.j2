@@ -11,28 +11,3 @@ spec:
     roleGroups:
       default:
         replicas: 1
-
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
----
-apiVersion: authentication.stackable.tech/v1alpha1
-kind: AuthenticationClass
-metadata:
-  name: zk-client-tls
-spec:
-  provider:
-    tls:
-      clientCertSecretClass: zk-client-auth-secret
----
-apiVersion: secrets.stackable.tech/v1alpha1
-kind: SecretClass
-metadata:
-  name: zk-client-auth-secret
-spec:
-  backend:
-    autoTls:
-      ca:
-        secret:
-          name: secret-provisioner-tls-zk-client-ca
-          namespace: default
-        autoGenerate: true
-{% endif %}

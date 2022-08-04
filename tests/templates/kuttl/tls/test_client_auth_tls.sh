@@ -58,5 +58,17 @@ else
   echo "[SUCCESS] Secure client topic creation failed with bad host name!"
 fi
 
+############################################################################
+# Test the connection with bad certificate
+############################################################################
+echo $'security.protocol=SSL\nssl.keystore.location=/tmp/wrong_keystore.p12\nssl.keystore.password=changeit\nssl.truststore.location=/tmp/wrong_truststore.p12\nssl.truststore.password=changeit' > /tmp/client.config
+if /stackable/kafka/bin/kafka-topics.sh --create --topic "$BAD_TOPIC" --bootstrap-server "$SERVER" --command-config /tmp/client.config &> /dev/null
+then
+  echo "[ERROR] Secure client topic created with wrong certificate!"
+  exit 1
+else
+  echo "[SUCCESS] Secure client topic creation failed with wrong certificate!"
+fi
+
 echo "All client auth TLS tests successful!"
 exit 0
