@@ -253,6 +253,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .map(Cow::Borrowed)
         .unwrap_or_default();
 
+    // TODO: switch to AuthenticationClass::resolve if operator-rs is updated
     let client_authentication_class = if let Some(auth_class) = kafka.client_authentication_class()
     {
         Some(

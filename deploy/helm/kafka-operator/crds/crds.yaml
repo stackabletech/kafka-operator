@@ -296,7 +296,7 @@ spec:
                     internalTls:
                       default:
                         secretClass: tls
-                      description: "Only affects internal communication. Use mutual verification between Trino nodes This setting controls: - Which cert the servers should use to authenticate themselves against other servers - Which ca.crt to use when validating the other server"
+                      description: "Only affects internal communication. Use mutual verification between Kafka nodes This setting controls: - Which cert the servers should use to authenticate themselves against other servers - Which ca.crt to use when validating the other server"
                       nullable: true
                       properties:
                         secretClass:

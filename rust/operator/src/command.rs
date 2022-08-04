@@ -1,7 +1,7 @@
 use stackable_kafka_crd::{
-    KafkaCluster, CLIENT_PORT, CLIENT_PORT_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME,
-    SSL_STORE_PASSWORD, STACKABLE_DATA_DIR, STACKABLE_TLS_CLIENT_AUTH_DIR,
-    STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR, STACKABLE_TMP_DIR,
+    KafkaCluster, CLIENT_PORT, SECURE_CLIENT_PORT, SSL_STORE_PASSWORD, STACKABLE_DATA_DIR,
+    STACKABLE_TLS_CLIENT_AUTH_DIR, STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR,
+    STACKABLE_TMP_DIR,
 };
 
 pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
@@ -38,15 +38,7 @@ pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
 }
 
 pub fn get_svc_container_cmd_args(kafka: &KafkaCluster) -> String {
-    let port_name = if kafka.client_tls_secret_class().is_some()
-        || kafka.client_authentication_class().is_some()
-    {
-        SECURE_CLIENT_PORT_NAME
-    } else {
-        CLIENT_PORT_NAME
-    };
-
-    get_node_port(STACKABLE_TMP_DIR, port_name)
+    get_node_port(STACKABLE_TMP_DIR, kafka.client_port_name())
 }
 
 pub fn kcat_container_cmd_args(kafka: &KafkaCluster) -> Vec<String> {

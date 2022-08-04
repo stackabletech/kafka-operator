@@ -298,7 +298,7 @@ impl KafkaCluster {
             .transpose()
     }
 
-    /// Returns the provided docker image e.g. 2.8.1-stackable0.1.0
+    /// Returns the provided docker image e.g. 2.8.1-stackable0.1.0.
     pub fn image_version(&self) -> Result<&str, Error> {
         self.spec
             .version
@@ -306,7 +306,7 @@ impl KafkaCluster {
             .context(ObjectHasNoVersionSnafu)
     }
 
-    /// Returns our semver representation for product config e.g. 2.8.1
+    /// Returns our semver representation for product config e.g. 2.8.1.
     pub fn product_version(&self) -> Result<&str, Error> {
         let image_version = self.image_version()?;
         image_version
@@ -332,10 +332,30 @@ impl KafkaCluster {
             .map(|tls| tls.authentication_class.as_ref())
     }
 
-    /// Returns the secret class for internal server encryption
+    /// Returns the secret class for internal server encryption.
     pub fn internal_tls_secret_class(&self) -> Option<&TlsSecretClass> {
         let spec: &KafkaClusterSpec = &self.spec;
         spec.config.internal_tls.as_ref()
+    }
+
+    /// Returns the client port based on the security (tls) settings.
+    pub fn client_port(&self) -> u16 {
+        if self.client_tls_secret_class().is_some() || self.client_authentication_class().is_some()
+        {
+            SECURE_CLIENT_PORT
+        } else {
+            CLIENT_PORT
+        }
+    }
+
+    /// Returns the client port name based on the security (tls) settings.
+    pub fn client_port_name(&self) -> &str {
+        if self.client_tls_secret_class().is_some() || self.client_authentication_class().is_some()
+        {
+            SECURE_CLIENT_PORT_NAME
+        } else {
+            CLIENT_PORT_NAME
+        }
     }
 }
 
@@ -429,6 +449,9 @@ impl Configuration for KafkaConfig {
                 );
             }
 
+            // We set either client tls with authentication or client tls without authentication
+            // If authentication is explicitly required we do not want to have any other CAs to
+            // be trusted.
             if resource.client_authentication_class().is_some() {
                 config.insert(
                     CLIENT_AUTH_SSL_KEYSTORE_LOCATION.to_string(),
