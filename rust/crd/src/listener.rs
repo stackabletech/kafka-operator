@@ -19,7 +19,7 @@ pub enum KafkaListenerError {
 
 #[derive(strum::Display, Debug, EnumString)]
 pub enum KafkaListenerProtocol {
-    /// Unencrypted and authenticated HTTP connections
+    /// Unencrypted and unauthenticated HTTP connections
     #[strum(serialize = "PLAINTEXT")]
     Plaintext,
     /// Encrypted and server-authenticated HTTPS connections
