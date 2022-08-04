@@ -28,7 +28,7 @@ else
   exit 1
 fi
 
-if /stackable/kafka/bin/kafka-topics.sh --list --topic "$TOPIC" --bootstrap-server "$SERVER" --command-config /tmp/client.config | grep $TOPIC
+if /stackable/kafka/bin/kafka-topics.sh --list --topic "$TOPIC" --bootstrap-server "$SERVER" --command-config /tmp/client.config | grep "$TOPIC"
 then
   echo "[SUCCESS] Secure client topic read!"
 else
