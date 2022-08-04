@@ -7,6 +7,7 @@ use stackable_kafka_crd::{
     METRICS_PORT_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE,
     STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_TLS_CLIENT_AUTH_DIR,
     STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR, STACKABLE_TMP_DIR,
+    TLS_DEFAULT_SECRET_CLASS,
 };
 use stackable_operator::{
     builder::{
@@ -924,11 +925,9 @@ fn container_ports(kafka: &KafkaCluster) -> Vec<ContainerPort> {
 }
 
 fn create_tls_volume(volume_name: &str, tls_secret_class: Option<&TlsSecretClass>) -> Volume {
-    let mut secret_class_name = "tls";
-
-    if let Some(tls) = tls_secret_class {
-        secret_class_name = &tls.secret_class;
-    }
+    let secret_class_name = tls_secret_class
+        .map(|t| t.secret_class.as_ref())
+        .unwrap_or(TLS_DEFAULT_SECRET_CLASS);
 
     VolumeBuilder::new(volume_name)
         .ephemeral(
