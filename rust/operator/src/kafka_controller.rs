@@ -19,16 +19,20 @@ use stackable_operator::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
             core::v1::{
-                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, EmptyDirVolumeSource,
-                EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe,
+                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, EnvVar, EnvVarSource,
+                EphemeralVolumeSource, ExecAction, PersistentVolumeClaimSpec,
+                PersistentVolumeClaimTemplate, PodSpec, Probe, ResourceRequirements,
                 SecurityContext, Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
             },
             rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
         },
-        apimachinery::pkg::apis::meta::v1::LabelSelector,
+        apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
         Resource,
     },
-    kube::runtime::{controller::Action, reflector::ObjectRef},
+    kube::{
+        core::ObjectMeta,
+        runtime::{controller::Action, reflector::ObjectRef},
+    },
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
     product_config::{
@@ -41,7 +45,6 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     discovery::{self, build_discovery_configmaps},
-    pod_svc_controller,
     utils::{self, ObjectRefExt},
     ControllerConfig,
 };
@@ -492,33 +495,6 @@ fn build_broker_rolegroup_statefulset(
         .context(KafkaVersionParseFailureSnafu)?;
     let image = format!("docker.stackable.tech/stackable/kafka:{}", image_version);
 
-    let container_get_svc = ContainerBuilder::new("get-svc")
-        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
-        .command(vec!["bash".to_string()])
-        .args(vec![
-            "-euo".to_string(),
-            "pipefail".to_string(),
-            "-c".to_string(),
-            [
-                "kubectl get service \"$POD_NAME\" -o jsonpath='{.spec.ports[0].nodePort}'",
-                "tee /stackable/tmp/nodeport",
-            ]
-            .join(" | "),
-        ])
-        .add_env_vars(vec![EnvVar {
-            name: "POD_NAME".to_string(),
-            value_from: Some(EnvVarSource {
-                field_ref: Some(ObjectFieldSelector {
-                    api_version: Some("v1".to_string()),
-                    field_path: "metadata.name".to_string(),
-                }),
-                ..EnvVarSource::default()
-            }),
-            ..EnvVar::default()
-        }])
-        .add_volume_mount("tmp", "/stackable/tmp")
-        .build();
-
     // For most storage classes the mounts will belong to the root user and not be writeable to
     // other users.
     // Since kafka runs as the user stackable inside of the container the data directory needs to be
@@ -583,18 +559,6 @@ fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    env.push(EnvVar {
-        name: "NODE".to_string(),
-        value_from: Some(EnvVarSource {
-            field_ref: Some(ObjectFieldSelector {
-                api_version: Some("v1".to_string()),
-                field_path: "status.hostIP".to_string(),
-            }),
-            ..EnvVarSource::default()
-        }),
-        ..EnvVar::default()
-    });
-
     // add env var for log4j if set
     if kafka.spec.log4j.is_some() {
         env.push(EnvVar {
@@ -609,7 +573,7 @@ fn build_broker_rolegroup_statefulset(
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
     let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
     let advertised_listeners_override =
-        "--override \"advertised.listeners=PLAINTEXT://$NODE:$(cat /stackable/tmp/nodeport)\"";
+        "--override \"advertised.listeners=PLAINTEXT://$(cat /stackable/lb/default-address/address):$(cat /stackable/lb/default-address/ports/kafka)\"";
     let opa_url_override = opa_connect_string.map_or("".to_string(), |opa| {
         format!("--override \"opa.authorizer.url={}\"", opa)
     });
@@ -634,7 +598,7 @@ fn build_broker_rolegroup_statefulset(
         .add_container_port("metrics", METRICS_PORT.into())
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, "/stackable/data")
         .add_volume_mount("config", "/stackable/config")
-        .add_volume_mount("tmp", "/stackable/tmp")
+        .add_volume_mount("lb", "/stackable/lb")
         .resources(resources)
         .build();
 
@@ -670,10 +634,8 @@ fn build_broker_rolegroup_statefulset(
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             )
-            .with_label(pod_svc_controller::LABEL_ENABLE, "true")
         })
         .add_init_container(container_chown)
-        .add_init_container(container_get_svc)
         .add_container(container_kafka)
         .add_container(container_kcat_prober)
         .add_volume(Volume {
@@ -685,8 +647,32 @@ fn build_broker_rolegroup_statefulset(
             ..Volume::default()
         })
         .add_volume(Volume {
-            name: "tmp".to_string(),
-            empty_dir: Some(EmptyDirVolumeSource::default()),
+            name: "lb".to_string(),
+            ephemeral: Some(EphemeralVolumeSource {
+                volume_claim_template: Some(PersistentVolumeClaimTemplate {
+                    metadata: Some(ObjectMeta {
+                        annotations: Some(
+                            [(
+                                "lb.stackable.tech/lb-class".to_string(),
+                                "nodeport".to_string(),
+                            )]
+                            .into(),
+                        ),
+                        ..Default::default()
+                    }),
+                    spec: PersistentVolumeClaimSpec {
+                        access_modes: Some(vec!["ReadWriteMany".to_string()]),
+                        resources: Some(ResourceRequirements {
+                            requests: Some(
+                                [("storage".to_string(), Quantity("1".to_string()))].into(),
+                            ),
+                            ..Default::default()
+                        }),
+                        storage_class_name: Some("lb.stackable.tech".to_string()),
+                        ..Default::default()
+                    },
+                }),
+            }),
             ..Volume::default()
         })
         .build_template();

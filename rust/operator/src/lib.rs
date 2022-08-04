@@ -1,6 +1,5 @@
 mod discovery;
 mod kafka_controller;
-mod pod_svc_controller;
 mod utils;
 
 use std::sync::Arc;
@@ -12,7 +11,7 @@ use stackable_operator::{
     client::Client,
     k8s_openapi::api::{
         apps::v1::StatefulSet,
-        core::v1::{ConfigMap, Pod, Service, ServiceAccount},
+        core::v1::{ConfigMap, Service, ServiceAccount},
         rbac::v1::RoleBinding,
     },
     kube::{api::ListParams, runtime::Controller},
@@ -65,24 +64,5 @@ pub async fn create_controller(
         report_controller_reconciled(&client, "kafkacluster.kafka.stackable.tech", &res);
     });
 
-    let pod_svc_controller = Controller::new(
-        namespace.get_api::<Pod>(&client),
-        ListParams::default().labels(&format!("{}=true", pod_svc_controller::LABEL_ENABLE)),
-    )
-    .owns(namespace.get_api::<Pod>(&client), ListParams::default())
-    .shutdown_on_signal()
-    .run(
-        pod_svc_controller::reconcile_pod,
-        pod_svc_controller::error_policy,
-        Arc::new(pod_svc_controller::Ctx {
-            client: client.clone(),
-        }),
-    )
-    .map(|res| {
-        report_controller_reconciled(&client, "pod-service.kafka.stackable.tech", &res);
-    });
-
-    futures::stream::select(kafka_controller, pod_svc_controller)
-        .collect::<()>()
-        .await;
+    kafka_controller.collect::<()>().await;
 }
