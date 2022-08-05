@@ -4,7 +4,7 @@ kind: ZookeeperCluster
 metadata:
   name: test-zk
 spec:
-  version: {{ test_scenario['values']['zookeeper'] }}
+  version: {{ test_scenario['values']['zookeeper-latest'] }}
   config:
     tls: null
   servers:
