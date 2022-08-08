@@ -46,13 +46,14 @@ pub async fn build_discovery_configmaps(
     svc: &Service,
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name();
+    let port_name = kafka.client_port_name();
     Ok(vec![
-        build_discovery_configmap(&name, owner, kafka, service_hosts(svc, "kafka")?)?,
+        build_discovery_configmap(&name, owner, kafka, service_hosts(svc, port_name)?)?,
         build_discovery_configmap(
             &format!("{}-nodeport", name),
             owner,
             kafka,
-            nodeport_hosts(client, svc, "kafka").await?,
+            nodeport_hosts(client, svc, port_name).await?,
         )?,
     ])
 }

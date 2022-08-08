@@ -1,76 +1,81 @@
 = Usage
 
-After installation, the CRD for this operator must be created:
+If you are not installing the operator using Helm then after installation the CRD for this operator must be created:
 
     kubectl apply -f /etc/stackable/kafka-operator/crd/kafkacluster.crd.yaml
 
 To create an Apache Kafka (v3.2.0) cluster named `simple-kafka` assuming that you already have a Zookeeper cluster named `simple-zk`:
 
-    cat <<EOF | kubectl apply -f -
-    apiVersion: zookeeper.stackable.tech/v1alpha1
-    kind: ZookeeperZnode
-    metadata:
-      name: simple-kafka-znode
-    spec:
-      clusterRef:
-        name: simple-zk
-        namespace: default
-    ---
-    apiVersion: kafka.stackable.tech/v1alpha1
-    kind: KafkaCluster
-    metadata:
-      name: simple-kafka
-    spec:
-      version: 3.2.0-stackable0.1.0
-      zookeeperConfigMapName: simple-kafka-znode
-      brokers:
-        roleGroups:
-          default:
-            replicas: 1
-    EOF
+[source,yaml]
+----
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperZnode
+metadata:
+  name: simple-kafka-znode
+spec:
+  clusterRef:
+    name: simple-zk
+    namespace: default
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: 3.2.0-stackable0.1.0
+  zookeeperConfigMapName: simple-kafka-znode
+  brokers:
+    roleGroups:
+      default:
+        replicas: 1
+----
+If you wish to include integration with xref:opa-operator::index.adoc[Open Policy Agent] and already have an OPA cluster, then you can include an `opa` field pointing to the OPA cluster discovery `ConfigMap` and the required package. The package is optional and will default to the `metadata.name` field:
 
-If you wish to include integration with https://docs.stackable.tech/opa/index.html[Open Policy Agent] and already have an OPA cluster, then you can include an `opa` field pointing to the OPA cluster discovery `ConfigMap` and the required package. The package is optional and will default to the `metadata.name` field:
-
-    cat <<EOF | kubectl apply -f -
-    apiVersion: kafka.stackable.tech/v1alpha1
-    kind: KafkaCluster
-    metadata:
-      name: simple-kafka
-    spec:
-      version: 3.2.0-stackable0.1.0
-      zookeeperConfigMapName: simple-kafka-znode
-      opa:
-        configMapName: simple-opa
-        package: kafka/authz
-      brokers:
-        roleGroups:
-          default:
-            replicas: 1
-    EOF
+[source,yaml]
+----
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: 3.2.0-stackable0.1.0
+  zookeeperConfigMapName: simple-kafka-znode
+  opa:
+    configMapName: simple-opa
+    package: kafka
+  brokers:
+    roleGroups:
+      default:
+        replicas: 1
+----
 
 You can change some opa cache properties by overriding:
 
-    cat <<EOF | kubectl apply -f -
-    apiVersion: kafka.stackable.tech/v1alpha1
-    kind: KafkaCluster
-    metadata:
-      name: simple-kafka
-    spec:
-      version: 3.2.0-stackable0.1.0
-      zookeeperConfigMapName: simple-kafka-znode
-      opa:
-        configMapName: simple-opa
-        package: kafka/authz
-      brokers:
-        configOverrides:
-          server.properties:
-            opa.authorizer.cache.initial.capacity: "100"
-            opa.authorizer.cache.maximum.size: "100"
-            opa.authorizer.cache.expire.after.seconds: "10"
-        roleGroups:
-          default:
-            replicas: 1
-    EOF
+[source,yaml]
+----
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: 3.2.0-stackable0.1.0
+  zookeeperConfigMapName: simple-kafka-znode
+  opa:
+    configMapName: simple-opa
+    package: kafka
+  brokers:
+    configOverrides:
+      server.properties:
+        opa.authorizer.cache.initial.capacity: "100"
+        opa.authorizer.cache.maximum.size: "100"
+        opa.authorizer.cache.expire.after.seconds: "10"
+    roleGroups:
+      default:
+        replicas: 1
+----
 
 A full list of settings and their respective defaults can be found https://github.com/anderseknert/opa-kafka-plugin[here].
 
@@ -110,6 +115,105 @@ spec:
       default:
         replicas: 3
 ----
+
+== Encryption
+
+The internal and client communication can be encrypted TLS. This requires the xref:secret-operator::index.adoc[Secret Operator] to be present in order to provide certificates. The utilized certificates can be changed in a top-level config.
+
+[source,yaml]
+----
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: 3.2.0-stackable0.1.0
+  zookeeperConfigMapName: simple-kafka-znode
+  config:
+    tls:
+      secretClass: tls # <1>
+    internalTls:
+      secretClass: kafka-internal-tls # <2>
+  brokers:
+    roleGroups:
+      default:
+        replicas: 3
+----
+<1> The `tls.secretClass` refers to the client-to-server encryption. Defaults to the `tls` secret. It can be deactivated by setting `config.tls` to `null`.
+<2> The `internalTls.secretClass` refers to the broker-to-broker internal encryption. This must be explicitly set or defaults to `tls`. Can be disabled by setting `config.internalTls` to `null`.
+
+The `tls` secret is deployed from the xref:secret-operator::index.adoc[Secret Operator] and looks like this:
+
+[source,yaml]
+----
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-tls-ca
+          namespace: default
+        autoGenerate: true
+----
+
+You can create your own secrets and reference them e.g. in the `tls.secretClass` or `internalTls.secretClass` to use different certificates.
+
+== Authentication
+
+The internal or broker-to-broker communication is authenticated via TLS. In order to enforce TLS authentication for client-to-server communication, you can set an `AuthenticationClass` reference in the custom resource provided by the xref:commons-operator::index.adoc[Commons Operator].
+
+[source,yaml]
+----
+---
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: kafka-client-tls # <2>
+spec:
+  provider:
+    tls:
+      clientCertSecretClass: kafka-client-auth-secret # <3>
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-client-auth-secret # <4>
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-tls-kafka-client-ca
+          namespace: default
+        autoGenerate: true
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: 3.2.0-stackable0.1.0
+  zookeeperConfigMapName: simple-kafka-znode
+  config:
+    tls:
+      secretClass: tls
+    clientAuthentication:
+      authenticationClass: kafka-client-tls # <1>
+  brokers:
+    roleGroups:
+      default:
+        replicas: 3
+----
+<1> The `config.clientAuthentication.authenticationClass` can be set to use TLS for authentication. This is optional.
+<2> The referenced `AuthenticationClass` that references a `SecretClass` to provide certificates.
+<3> The reference to a `SecretClass`.
+<4> The `SecretClass` that is referenced by the `AuthenticationClass` in order to provide certificates.
 
 == Configuration & Environment Overrides
 

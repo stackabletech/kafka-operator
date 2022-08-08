@@ -1,0 +1,66 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 300
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: read-data
+spec:
+  template:
+    spec:
+      containers:
+        - name: read-data
+          image: edenhill/kcat:1.7.1
+          command: [sh, -euo, pipefail, -c]
+          args:
+            - |
+{% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
+              export SSL_OPTIONS="-X security.protocol=SSL -X ssl.key.location=/stackable/tls_client/tls.key -X ssl.certificate.location=/stackable/tls_client/tls.crt -X ssl.ca.location=/stackable/tls_client/ca.crt"
+{% elif test_scenario['values']['use-client-tls'] == 'true' %}
+              export SSL_OPTIONS="-X security.protocol=SSL -X ssl.ca.location=/stackable/tls_client/ca.crt"
+{% else %}
+              export SSL_OPTIONS=""
+{% endif %}
+              echo "message written after upgrade" > message
+              kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -P message
+
+              echo "message written before upgrade" > expected-messages
+              echo >> expected-messages
+              cat message >> expected-messages
+              echo >> expected-messages
+              kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -C -e > read-messages
+              diff read-messages expected-messages
+              cmp read-messages expected-messages
+          env:
+            - name: KAFKA
+              valueFrom:
+                configMapKeyRef:
+                  name: simple-kafka
+                  key: KAFKA
+          volumeMounts:
+            - mountPath: /stackable/tls_client
+              name: tls
+      volumes:
+        - ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+{% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
+                  secrets.stackable.tech/class: test-kafka-client-auth-tls
+{% else %}
+                  secrets.stackable.tech/class: tls
+{% endif %}
+                  secrets.stackable.tech/scope: pod,node
+                creationTimestamp: null
+              spec:
+                accessModes:
+                - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: "1"
+                storageClassName: secrets.stackable.tech
+                volumeMode: Filesystem
+          name: tls
+      restartPolicy: Never

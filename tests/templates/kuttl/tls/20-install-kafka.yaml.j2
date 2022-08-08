@@ -1,7 +1,11 @@
 ---
-apiVersion: kuttl.dev/v1beta1
-kind: TestStep
-timeout: 300
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperZnode
+metadata:
+  name: test-kafka-znode
+spec:
+  clusterRef:
+    name: test-zk
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
 ---
 apiVersion: authentication.stackable.tech/v1alpha1
@@ -26,14 +30,29 @@ spec:
           namespace: default
         autoGenerate: true
 {% endif %}
+{% if test_scenario['values']['use-internal-tls'] == 'true' %}
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: test-kafka-internal-tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-test-kafka-internal-tls-ca
+          namespace: default
+        autoGenerate: true
+{% endif %}
 ---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
-  name: simple-kafka
+  name: test-kafka
 spec:
-  version: {{ test_scenario['values']['upgrade_old'] }}
-  zookeeperConfigMapName: kafka-zk
+  version: {{ test_scenario['values']['kafka'] }}
+  zookeeperConfigMapName: test-kafka-znode
   config:
 {% if test_scenario['values']['use-client-tls'] == 'true' %}
     tls:
@@ -44,8 +63,16 @@ spec:
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
     clientAuthentication:
       authenticationClass: test-kafka-client-auth-tls
+{% else %}
+    clientAuthentication: null
+{% endif %}
+{% if test_scenario['values']['use-internal-tls'] == 'true' %}
+    internalTls:
+      secretClass: test-kafka-internal-tls
+{% else %}
+    internalTls: null
 {% endif %}
   brokers:
     roleGroups:
       default:
-        replicas: 1
+        replicas: 3
