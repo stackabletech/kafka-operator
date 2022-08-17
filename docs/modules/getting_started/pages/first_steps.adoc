@@ -1,0 +1,168 @@
+= First steps
+
+After going through the xref:installation.adoc[] section and having installed all the Operators, you will now deploy a Druid cluster and it's dependencies. Afterwards you can <<_verify_that_it_works, verify that it works>> by ingesting example data and subsequently query it.
+
+== Setup
+
+Three things need to be installed to have a Druid cluster:
+
+* A ZooKeeper instance for internal use by Druid
+* An HDFS instance to be used as a backend for deep storage
+* The Druid cluster itself
+
+We will create them in this order, each one is created by applying a manifest file. The Operators you just installed will then create the resources according to the manifest.
+
+=== ZooKeeper
+
+Create a file named `zookeeper.yaml` with the following content:
+
+[source,yaml]
+
+----
+include::example$code/zookeeper.yaml[]
+----
+
+Then create the resources by applying the manifest file
+
+[source,bash]
+----
+include::example$code/getting-started.sh[tag=install-zookeeper]
+----
+
+=== HDFS
+
+Create `hdfs.yaml` with the following contents:
+
+[source,yaml]
+----
+include::example$code/hdfs.yaml[]
+----
+
+And apply it:
+
+----
+include::example$code/getting-started.sh[tag=install-hdfs]
+----
+
+=== Druid
+
+Create a file named `druid.yaml` with the following contents:
+
+[source,yaml]
+----
+include::example$code/druid.yaml[]
+----
+
+And apply it:
+
+----
+include::example$code/getting-started.sh[tag=install-druid]
+----
+
+This will create the actual druid instance.
+
+== Verify that it works
+
+Next you will submit an ingestion job and then query the ingested data  - either through the web interface or the API.
+
+First, make sure that all the Pods in the StatefulSets are ready:
+
+[source,bash]
+----
+kubectl get statefulset
+----
+
+The output should show all pods ready:
+
+----
+NAME                                 READY   AGE
+simple-druid-broker-default          1/1     5m
+simple-druid-coordinator-default     1/1     5m
+simple-druid-historical-default      1/1     5m
+simple-druid-middlemanager-default   1/1     5m
+simple-druid-router-default          1/1     5m
+simple-hdfs-datanode-default         1/1     6m
+simple-hdfs-journalnode-default      1/1     6m
+simple-hdfs-namenode-default         2/2     6m
+simple-zk-server-default             3/3     7m
+----
+
+Then, create a port-forward for the Druid Router:
+
+----
+include::example$code/getting-started.sh[tag=port-forwarding]
+----
+
+=== Ingest example data
+
+Next, we will ingest some example data using the web interface. If you prefer to use the command line instead, follow the instructions in the collapsed section below.
+
+
+[#ingest-cmd-line]
+.Alternative: Using the command line
+[%collapsible]
+====
+
+If you prefer to not use the web interface and instead interact with the API, create a file `ingestion_spec.json` with the following contents:
+
+[source,json]
+include::example$code/ingestion_spec.json[]
+
+Submit the file with the following `curl` command:
+
+[source,bash]
+include::example$code/getting-started.sh[tag=submit-job]
+
+Continue with the <<_query_the_data,next section>>.
+
+====
+
+To open the web interface navigate your browser to https://localhost:8888/ to find the dashboard:
+
+image::dashboard.png[]
+
+Now load the example data:
+
+image::load_example.png[]
+
+Click through all pages of the load process. You can also follow the https://druid.apache.org/docs/latest/tutorials/index.html#step-4-load-data[Druid Quickstart Guide].
+
+Once you finished the ingestion dialog you should see the ingestion overview with the job, which will eventually show SUCCESS:
+
+image::load_success.png[]
+
+
+
+=== Query the data
+
+Query from the user interface by navigating to the  "Query" interface in the menu and query the `wikipedia` table:
+
+[#query-cmd-line]
+.Alternative: Using the command line
+[%collapsible]
+====
+
+To query from the commandline, create a file called `query.json` with the query:
+
+[source,json]
+include::example$code/query.json[]
+
+and execute it:
+
+[source,bash]
+include::example$code/getting-started.sh[tag=query-data]
+
+The result should be similar to:
+
+[source,json]
+include::example$code/expected_query_result.json[]
+
+====
+
+image::query.png[]
+
+Great! You've set up your first Druid cluster, ingested some data and queried it in the web interface!
+
+== What's next
+
+Have a look at the xref:ROOT:usage.adoc[] page to find out more about the features of the Operator, such as S3 backed deep storage or OPA based authorization.

@@ -1,0 +1,24 @@
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: 3.2.0-stackable0.1.0
+  zookeeperConfigMapName: simple-kafka-znode
+  config:
+    tls: null
+  brokers:
+    config:
+      resources:
+        storage:
+          logDirs:
+            capacity: '2Gi'
+        cpu:
+          max: '500m'
+          min: '250m'
+        memory:
+          limit: '1Gi'
+    roleGroups:
+      default:
+        replicas: 3

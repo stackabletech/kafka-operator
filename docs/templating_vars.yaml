@@ -1,0 +1,4 @@
+---
+helm:
+  repo_name: stackable-dev
+  repo_url: https://repo.stackable.tech/repository/helm-dev/
