@@ -118,4 +118,4 @@ You successfully created a Kafka cluster and produced and consumed data.
 
 == What's next
 
-Have a look at the xref:ROOT:usage.adoc[] page to find out more about the features of the Operator such as encryption and authentication or how to connect to OPA.
+Have a look at the xref:ROOT:usage.adoc[] page to find out more about the features of the Kafka Operator.
