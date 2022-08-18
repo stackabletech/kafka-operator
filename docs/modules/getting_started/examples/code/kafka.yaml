@@ -9,16 +9,6 @@ spec:
   config:
     tls: null
   brokers:
-    config:
-      resources:
-        storage:
-          logDirs:
-            capacity: '2Gi'
-        cpu:
-          max: '500m'
-          min: '250m'
-        memory:
-          limit: '1Gi'
     roleGroups:
       default:
         replicas: 3
