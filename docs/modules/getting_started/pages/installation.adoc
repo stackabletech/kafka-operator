@@ -6,13 +6,13 @@ On this page you will install the Stackable Operator for Apache Kafka and operat
 
 There are 2 ways to install Stackable Operators:
 
-1. Using xref:stackablectl::index.adoc[_stackablectl_]
+1. Using xref:stackablectl::index.adoc[stackablectl]
 
 2. Using Helm
 
 === stackablectl
 
-The _stackablectl_ command line tool is the recommended way to interact with operators and dependencies. Follow the xref:stackablectl::installation.adoc[installation steps] for your platform if you choose to work with _stackablectl_.
+The stackablectl command line tool is the recommended way to interact with operators and dependencies. Follow the xref:stackablectl::installation.adoc[installation steps] for your platform if you choose to work with stackablectl.
 
 After you have installed stackablectl, run the following command to install all operators necessary for Kafka:
 
