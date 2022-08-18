@@ -23,7 +23,7 @@ include::example$code/getting-started.sh[tag=stackablectl-install-operators]
 
 The tool will show
 
-[source,bash]
+[source]
 ----
 include::example$code/install-operator-output.txt[tag=stackablectl-install-operators-output]
 ----
