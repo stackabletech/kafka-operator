@@ -1,6 +1,6 @@
 = First steps
 
-After going through the xref:installation.adoc[] section and having installed all the operators, you will now deploy a Kafka cluster and it's dependencies. Afterwards you can <<_verify_that_it_works, verify that it works>> by ingesting example data and subsequently query it.
+After going through the xref:installation.adoc[] section and having installed all the operators, you will now deploy a Kafka cluster and the required dependencies. Afterwards you can <<_verify_that_it_works, verify that it works>> by producing test data into a topic and consuming it.
 
 == Setup
 
