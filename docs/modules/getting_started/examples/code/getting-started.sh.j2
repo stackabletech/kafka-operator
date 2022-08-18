@@ -25,16 +25,20 @@ helm repo add {{ helm.repo_name }} {{ helm.repo_url }}
 # end::helm-add-repo[]
 echo "Installing Operators with Helm"
 # tag::helm-install-operators[]
-helm install --wait commons-operator {{ helm.repo_name }}/commons-operator --devel
-helm install --wait secret-operator {{ helm.repo_name }}/secret-operator --devel
-helm install --wait zookeeper-operator {{ helm.repo_name }}/zookeeper-operator --devel
-helm install --wait kafka-operator {{ helm.repo_name }}/kafka-operator --devel
+helm install --wait commons-operator {{ helm.repo_name }}/commons-operator --version {{ versions.commons }}
+helm install --wait secret-operator {{ helm.repo_name }}/secret-operator --version {{ versions.secret }}
+helm install --wait zookeeper-operator {{ helm.repo_name }}/zookeeper-operator --version {{ versions.zookeeper }}
+helm install --wait kafka-operator {{ helm.repo_name }}/kafka-operator --version {{ versions.kafka }}
 # end::helm-install-operators[]
 ;;
 "stackablectl")
 echo "installing Operators with stackablectl"
 # tag::stackablectl-install-operators[]
-stackablectl operator install commons secret zookeeper kafka
+stackablectl operator install \
+  commons={{ versions.commons }} \
+  secret={{ versions.secret }} \
+  zookeeper={{ versions.zookeeper }} \
+  kafka={{ versions.kafka }}
 # end::stackablectl-install-operators[]
 ;;
 *)
@@ -74,9 +78,35 @@ kubectl rollout status --watch statefulset/simple-kafka-broker-default
 
 echo "Starting port-forwarding of port 9092"
 # tag::port-forwarding[]
-kubectl port-forward svc/simple-kafka-broker 9092 2>&1 >/dev/null &
+kubectl port-forward svc/simple-kafka 9092 2>&1 >/dev/null &
 # end::port-forwarding[]
 PORT_FORWARD_PID=$!
 trap "kill $PORT_FORWARD_PID" EXIT
 
 sleep 5
+
+echo "Creating test data"
+# tag::kcat-create-data[]
+echo "some test data" > data
+# end::kcat-create-data[]
+
+echo "Writing test data"
+# tag::kcat-write-data[]
+kafkacat -b localhost:9092 -t test-data-topic -P data
+# end::kcat-write-data[]
+
+echo "Reading test data"
+# tag::kcat-read-data[]
+kafkacat -b localhost:9092 -t test-data-topic -C -e > read-data
+# end::kcat-read-data[]
+
+echo "Check contents"
+# tag::kcat-check-data[]
+cat read-data | grep "some test data"
+# end::kcat-check-data[]
+
+echo "Cleanup"
+# tag::kcat-cleanup-data[]
+rm data
+rm read-data
+# end::kcat-cleanup-data[]

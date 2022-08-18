@@ -28,8 +28,7 @@ echo "Installing Operators with Helm"
 helm install --wait commons-operator stackable-dev/commons-operator --version 0.3.0-nightly
 helm install --wait secret-operator stackable-dev/secret-operator --version 0.6.0-nightly
 helm install --wait zookeeper-operator stackable-dev/zookeeper-operator --version 0.11.0-nightly
-helm install --wait hdfs-operator stackable-dev/hdfs-operator --version 0.5.0-nightly
-helm install --wait druid-operator stackable-dev/druid-operator --version 0.7.0-nightly
+helm install --wait kafka-operator stackable-dev/kafka-operator --version 0.7.0-nightly
 # end::helm-install-operators[]
 ;;
 "stackablectl")
@@ -39,12 +38,11 @@ stackablectl operator install \
   commons=0.3.0-nightly \
   secret=0.6.0-nightly \
   zookeeper=0.11.0-nightly \
-  hdfs=0.5.0-nightly \
-  druid=0.7.0-nightly
+  kafka=0.7.0-nightly
 # end::stackablectl-install-operators[]
 ;;
 *)
-echo "Need to give 'helm' or 'stackablectl' as an argument for which installation method to use!"
+echo "Need to provide 'helm' or 'stackablectl' as an argument for which installation method to use!"
 exit 1
 ;;
 esac
@@ -54,6 +52,11 @@ echo "Installing ZooKeeper from zookeeper.yaml"
 kubectl apply -f zookeeper.yaml
 # end::install-zookeeper[]
 
+echo "Installing ZNode from kafka-znode.yaml"
+# tag::install-znode[]
+kubectl apply -f kafka-znode.yaml
+# end::install-znode[]
+
 sleep 5
 
 echo "Awaiting ZooKeeper rollout finish"
@@ -61,94 +64,49 @@ echo "Awaiting ZooKeeper rollout finish"
 kubectl rollout status --watch statefulset/simple-zk-server-default
 # end::watch-zookeeper-rollout[]
 
-echo "Installing HDFS from hdfs.yaml"
-# tag::install-hdfs[]
-kubectl apply -f hdfs.yaml
-# end::install-hdfs[]
+echo "Install KafkaCluster from kafka.yaml"
+# tag::install-kafka[]
+kubectl apply -f kafka.yaml
+# end::install-kafka[]
 
 sleep 5
 
-echo "Awaiting HDFS rollout finish"
-# tag::watch-hdfs-rollout[]
-kubectl rollout status --watch statefulset/simple-hdfs-datanode-default
-kubectl rollout status --watch statefulset/simple-hdfs-journalnode-default
-kubectl rollout status --watch statefulset/simple-hdfs-namenode-default
-# end::watch-hdfs-rollout[]
+echo "Awaiting Kafka rollout finish"
+# tag::watch-kafka-rollout[]
+kubectl rollout status --watch statefulset/simple-kafka-broker-default
+# end::watch-kafka-rollout[]
 
-echo "Install DruidCluster from druid.yaml"
-# tag::install-druid[]
-kubectl apply -f druid.yaml
-# end::install-druid[]
-
-sleep 5
-
-echo "Awaiting Druid rollout finish"
-# tag::watch-druid-rollout[]
-kubectl rollout status --watch statefulset/simple-druid-broker-default
-kubectl rollout status --watch statefulset/simple-druid-coordinator-default
-kubectl rollout status --watch statefulset/simple-druid-historical-default
-kubectl rollout status --watch statefulset/simple-druid-middlemanager-default
-kubectl rollout status --watch statefulset/simple-druid-router-default
-# end::watch-druid-rollout[]
-
-echo "Starting port-forwarding of port 8888"
+echo "Starting port-forwarding of port 9092"
 # tag::port-forwarding[]
-kubectl port-forward svc/simple-druid-router 8888 2>&1 >/dev/null &
+kubectl port-forward svc/simple-kafka 9092 2>&1 >/dev/null &
 # end::port-forwarding[]
 PORT_FORWARD_PID=$!
 trap "kill $PORT_FORWARD_PID" EXIT
+
 sleep 5
 
-submit_job() {
-# tag::submit-job[]
-curl -s -X 'POST' -H 'Content-Type:application/json' -d @ingestion_spec.json http://localhost:8888/druid/indexer/v1/task
-# end::submit-job[]
-}
+echo "Creating test data"
+# tag::kcat-create-data[]
+echo "some test data" > data
+# end::kcat-create-data[]
 
-echo "Submitting job"
-task_id=$(submit_job | sed -e 's/.*":"\([^"]\+\).*/\1/g')
+echo "Writing test data"
+# tag::kcat-write-data[]
+kafkacat -b localhost:9092 -t test-data-topic -P data
+# end::kcat-write-data[]
 
-request_job_status() {
-  curl -s "http://localhost:8888/druid/indexer/v1/task/${task_id}/status" | sed -e 's/.*statusCode":"\([^"]\+\).*/\1/g'
-}
+echo "Reading test data"
+# tag::kcat-read-data[]
+kafkacat -b localhost:9092 -t test-data-topic -C -e > read-data
+# end::kcat-read-data[]
 
-while [ "$(request_job_status)" == "RUNNING" ]; do
-  echo "Task still running..."
-  sleep 5
-done
+echo "Check contents"
+# tag::kcat-check-data[]
+cat read-data | grep "some test data"
+# end::kcat-check-data[]
 
-task_status=$(request_job_status)
-
-if [ "$task_status" == "SUCCESS" ]; then
-  echo "Task finished successfully!"
-else
-  echo "Task not successful: $task_status"
-  exit 1
-fi
-
-segment_load_status() {
- curl -s http://localhost:8888/druid/coordinator/v1/loadstatus | sed -e 's/.*wikipedia":\([0-9\.]\+\).*/\1/g'
-}
-
-while [ "$(segment_load_status)" != "100.0" ]; do
-  echo "Segments still loading..."
-  sleep 5
-done
-
-query_data() {
-# tag::query-data[]
-curl -s -X 'POST' -H 'Content-Type:application/json' -d @query.json http://localhost:8888/druid/v2/sql
-# end::query-data[]
-}
-
-echo "Querying data..."
-query_result=$(query_data)
-
-if [ "$query_result" == "$(cat expected_query_result.json)" ]; then
-  echo "Query result is as expected!"
-else
-  echo "Query result differs from expected result."
-  echo "Query: $query_result"
-  echo "Expected: $(cat expected_query_result.json)"
-  exit 1
-fi
+echo "Cleanup"
+# tag::kcat-cleanup-data[]
+rm data
+rm read-data
+# end::kcat-cleanup-data[]

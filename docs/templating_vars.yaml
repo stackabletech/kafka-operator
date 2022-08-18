@@ -2,3 +2,8 @@
 helm:
   repo_name: stackable-dev
   repo_url: https://repo.stackable.tech/repository/helm-dev/
+versions:
+  commons: 0.3.0-nightly
+  secret: 0.6.0-nightly
+  zookeeper: 0.11.0-nightly
+  kafka: 0.7.0-nightly
