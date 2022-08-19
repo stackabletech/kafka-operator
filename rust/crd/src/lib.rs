@@ -123,7 +123,7 @@ pub struct KafkaClusterSpec {
     pub stopped: Option<bool>,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalKafkaConfig {
     /// Only affects client connections. This setting controls:
@@ -162,13 +162,13 @@ impl Default for GlobalKafkaConfig {
     }
 }
 
-#[derive(Clone, Default, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientAuthenticationClass {
     pub authentication_class: String,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TlsSecretClass {
     pub secret_class: String,
