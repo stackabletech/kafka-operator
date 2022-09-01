@@ -9,6 +9,7 @@ use stackable_kafka_crd::{
     STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR, STACKABLE_TMP_DIR,
     TLS_DEFAULT_SECRET_CLASS,
 };
+use stackable_operator::kube::ResourceExt;
 use stackable_operator::{
     builder::{
         ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
@@ -774,7 +775,11 @@ fn build_broker_rolegroup_statefulset(
         })
         .readiness_probe(Probe {
             exec: Some(ExecAction {
-                command: Some(kafka_container_readiness_probe(kafka)),
+                command: Some(kafka_container_readiness_probe(
+                    kafka,
+                    &rolegroup_ref.object_name(),
+                    &kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
+                )),
             }),
             timeout_seconds: Some(15),
             period_seconds: Some(5),
@@ -812,7 +817,6 @@ fn build_broker_rolegroup_statefulset(
         .build_template();
 
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
-    // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
     pod_template_spec.share_process_namespace = Some(true);
     pod_template_spec.service_account_name = Some(
         serviceaccount

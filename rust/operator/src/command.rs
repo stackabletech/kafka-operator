@@ -4,6 +4,8 @@ use stackable_kafka_crd::{
     SYSTEM_TRUST_STORE_DIR,
 };
 
+/// Generates the init command for the init container. Generates key and trust stores and makes
+/// directories accessible for the `stackable` user.
 pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
     let mut args = vec![];
 
@@ -37,11 +39,19 @@ pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
     args.join(" && ")
 }
 
+/// Generates the command for the service container
 pub fn get_svc_container_cmd_args(kafka: &KafkaCluster) -> String {
     get_node_port(STACKABLE_TMP_DIR, kafka.client_port_name())
 }
 
-pub fn kafka_container_readiness_probe(kafka: &KafkaCluster) -> Vec<String> {
+/// Generates the command for the kafka container readiness probe. Checks via the script
+/// `kafka-broker-api-versions.sh` that the broker can be accessed and at least one broker
+/// is registered over all.
+pub fn kafka_container_readiness_probe(
+    kafka: &KafkaCluster,
+    broker_role_service_name: &str,
+    namespace: &str,
+) -> Vec<String> {
     let mut args = vec![
         "/bin/bash".to_string(),
         "-euo".to_string(),
@@ -59,7 +69,11 @@ pub fn kafka_container_readiness_probe(kafka: &KafkaCluster) -> Vec<String> {
         // Pipe the command config into the kafka-broker-api-version.sh via --command-config
         args.push("|".to_string());
         // Build the kafka-broker-api-version.sh call
-        args.push(build_readiness_check_command(kafka));
+        args.push(build_readiness_check_command(
+            kafka,
+            broker_role_service_name,
+            namespace,
+        ));
     } else if kafka.client_tls_secret_class().is_some() {
         // We need to provide key and truststore to use the kafka-broker-api-version.sh
         args.push(build_command_config(
@@ -69,14 +83,24 @@ pub fn kafka_container_readiness_probe(kafka: &KafkaCluster) -> Vec<String> {
         // Pipe the command config into the kafka-broker-api-version.sh via --command-config
         args.push("|".to_string());
         // Build the kafka-broker-api-version.sh call
-        args.push(build_readiness_check_command(kafka));
+        args.push(build_readiness_check_command(
+            kafka,
+            broker_role_service_name,
+            namespace,
+        ));
     } else {
-        args.push(build_readiness_check_command(kafka));
+        args.push(build_readiness_check_command(
+            kafka,
+            broker_role_service_name,
+            namespace,
+        ));
     }
 
     args
 }
 
+/// Generates input for the `kafka-broker-api-versions.sh` argument --command-config to
+/// work with an TLS encrypted / authenticated cluster
 fn build_command_config(tls_dir: &str, store_password: &str) -> String {
     format!(
         "printf \"security.protocol=SSL\n \
@@ -87,19 +111,27 @@ fn build_command_config(tls_dir: &str, store_password: &str) -> String {
     )
 }
 
-fn build_readiness_check_command(kafka: &KafkaCluster) -> String {
+/// Generates the command and parameters for the `kafka-broker-api-versions.sh` to retrieve
+/// registered brokers
+fn build_readiness_check_command(
+    kafka: &KafkaCluster,
+    broker_role_service_name: &str,
+    namespace: &str,
+) -> String {
     let port = kafka.client_port();
 
     let mut command = vec![
         "/stackable/kafka/bin/kafka-broker-api-versions.sh".to_string(),
         "--bootstrap-server".to_string(),
-        format!("simple-kafka-broker-default-0.simple-kafka-broker-default.default.svc.cluster.local:{port}")
+        format!("$POD_NAME.{broker_role_service_name}.{namespace}.svc.cluster.local:{port}"),
     ];
 
+    // if TLS is activated, need the output from build_command_config() for TLS settings
     if kafka.client_authentication_class().is_some() || kafka.client_tls_secret_class().is_some() {
         command.extend(["--command-config".to_string(), "/dev/stdin".to_string()]);
     }
 
+    // -c to count the occurrences of id (which reflects the amount of brokers)
     command.extend([
         "|".to_string(),
         "grep".to_string(),
