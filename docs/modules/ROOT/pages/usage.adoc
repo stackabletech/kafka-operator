@@ -30,7 +30,7 @@ spec:
       default:
         replicas: 1
 ----
-If you wish to include integration with xref:opa-operator::index.adoc[Open Policy Agent] and already have an OPA cluster, then you can include an `opa` field pointing to the OPA cluster discovery `ConfigMap` and the required package. The package is optional and will default to the `metadata.name` field:
+If you wish to include integration with xref:opa::index.adoc[Open Policy Agent] and already have an OPA cluster, then you can include an `opa` field pointing to the OPA cluster discovery `ConfigMap` and the required package. The package is optional and will default to the `metadata.name` field:
 
 [source,yaml]
 ----
