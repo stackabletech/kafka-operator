@@ -25,11 +25,12 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
                 EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
-                PodSpec, Probe, Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
+                PodSpec, Probe, Service, ServiceAccount, ServicePort, ServiceSpec, TCPSocketAction,
+                Volume,
             },
             rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
         },
-        apimachinery::pkg::apis::meta::v1::LabelSelector,
+        apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
         Resource,
     },
     kube::{
@@ -52,7 +53,7 @@ use std::{
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-use crate::command::{get_svc_container_cmd_args, kcat_container_cmd_args};
+use crate::command::{get_svc_container_cmd_args, kafka_container_readiness_probe};
 use crate::{
     command,
     discovery::{self, build_discovery_configmaps},
@@ -554,7 +555,6 @@ fn build_broker_rolegroup_statefulset(
 ) -> Result<StatefulSet> {
     let mut cb_kafka = ContainerBuilder::new(APP_NAME);
     let mut cb_prepare = ContainerBuilder::new("prepare");
-    let mut cb_kcat_prober = ContainerBuilder::new("kcat-prober");
     let mut pod_builder = PodBuilder::new();
 
     let role = kafka.spec.brokers.as_ref().context(NoBrokerRoleSnafu)?;
@@ -585,10 +585,6 @@ fn build_broker_rolegroup_statefulset(
                     "client-tls-authentication-certificate",
                     STACKABLE_TLS_CLIENT_AUTH_DIR,
                 );
-                cb_kcat_prober.add_volume_mount(
-                    "client-tls-authentication-certificate",
-                    STACKABLE_TLS_CLIENT_AUTH_DIR,
-                );
                 pod_builder.add_volume(create_tls_volume(
                     "client-tls-authentication-certificate",
                     Some(&TlsSecretClass {
@@ -607,7 +603,6 @@ fn build_broker_rolegroup_statefulset(
     } else if let Some(tls) = kafka.client_tls_secret_class() {
         cb_prepare.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
         cb_kafka.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
-        cb_kcat_prober.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
         pod_builder.add_volume(create_tls_volume("client-tls-certificate", Some(tls)));
     }
 
@@ -767,26 +762,26 @@ fn build_broker_rolegroup_statefulset(
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("config", STACKABLE_CONFIG_DIR)
         .add_volume_mount("tmp", STACKABLE_TMP_DIR)
-        .resources(resources);
-
-    // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
-    // unacceptable perf overhead
-    let mut container_kcat_prober = cb_kcat_prober
-        .image("edenhill/kcat:1.7.0")
-        .command(vec!["sh".to_string()])
-        // Only allow the global load balancing service to send traffic to pods that are members of the quorum
-        // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
-        .readiness_probe(Probe {
-            exec: Some(ExecAction {
-                // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(kcat_container_cmd_args(kafka)),
+        .startup_probe(Probe {
+            tcp_socket: Some(TCPSocketAction {
+                port: IntOrString::Int(kafka.client_port().into()),
+                ..TCPSocketAction::default()
             }),
-            timeout_seconds: Some(5),
+            failure_threshold: Some(10),
             period_seconds: Some(2),
+            timeout_seconds: Some(5),
             ..Probe::default()
         })
-        .build();
-    container_kcat_prober.stdin = Some(true);
+        .readiness_probe(Probe {
+            exec: Some(ExecAction {
+                command: Some(kafka_container_readiness_probe(kafka)),
+            }),
+            timeout_seconds: Some(15),
+            period_seconds: Some(5),
+            ..Probe::default()
+        })
+        .resources(resources);
+
     let mut pod_template = pod_builder
         .metadata_builder(|m| {
             m.with_recommended_labels(
@@ -801,7 +796,6 @@ fn build_broker_rolegroup_statefulset(
         .add_init_container(cb_prepare.build())
         .add_init_container(container_get_svc)
         .add_container(cb_kafka.build())
-        .add_container(container_kcat_prober)
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {
@@ -816,6 +810,7 @@ fn build_broker_rolegroup_statefulset(
             ..Volume::default()
         })
         .build_template();
+
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
     pod_template_spec.share_process_namespace = Some(true);

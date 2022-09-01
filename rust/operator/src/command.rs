@@ -1,7 +1,7 @@
 use stackable_kafka_crd::{
-    KafkaCluster, CLIENT_PORT, SECURE_CLIENT_PORT, SSL_STORE_PASSWORD, STACKABLE_DATA_DIR,
-    STACKABLE_TLS_CLIENT_AUTH_DIR, STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR,
-    STACKABLE_TMP_DIR, SYSTEM_TRUST_STORE_DIR,
+    KafkaCluster, SSL_STORE_PASSWORD, STACKABLE_DATA_DIR, STACKABLE_TLS_CLIENT_AUTH_DIR,
+    STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR, STACKABLE_TMP_DIR,
+    SYSTEM_TRUST_STORE_DIR,
 };
 
 pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
@@ -41,46 +41,73 @@ pub fn get_svc_container_cmd_args(kafka: &KafkaCluster) -> String {
     get_node_port(STACKABLE_TMP_DIR, kafka.client_port_name())
 }
 
-pub fn kcat_container_cmd_args(kafka: &KafkaCluster) -> Vec<String> {
-    let mut args = vec!["kcat".to_string()];
+pub fn kafka_container_readiness_probe(kafka: &KafkaCluster) -> Vec<String> {
+    let mut args = vec![
+        "/bin/bash".to_string(),
+        "-euo".to_string(),
+        "pipefail".to_string(),
+        "-c".to_string(),
+    ];
 
+    // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
     if kafka.client_authentication_class().is_some() {
-        args.push("-b".to_string());
-        args.push(format!("localhost:{}", SECURE_CLIENT_PORT));
-        args.extend(kcat_client_auth_ssl(STACKABLE_TLS_CLIENT_AUTH_DIR));
+        // We need to provide key and truststore to use the kafka-broker-api-version.sh
+        args.push(build_command_config(
+            STACKABLE_TLS_CLIENT_AUTH_DIR,
+            SSL_STORE_PASSWORD,
+        ));
+        // Pipe the command config into the kafka-broker-api-version.sh via --command-config
+        args.push("|".to_string());
+        // Build the kafka-broker-api-version.sh call
+        args.push(build_readiness_check_command(kafka));
     } else if kafka.client_tls_secret_class().is_some() {
-        args.push("-b".to_string());
-        args.push(format!("localhost:{}", SECURE_CLIENT_PORT));
-        args.extend(kcat_client_ssl(STACKABLE_TLS_CLIENT_DIR));
+        // We need to provide key and truststore to use the kafka-broker-api-version.sh
+        args.push(build_command_config(
+            STACKABLE_TLS_CLIENT_DIR,
+            SSL_STORE_PASSWORD,
+        ));
+        // Pipe the command config into the kafka-broker-api-version.sh via --command-config
+        args.push("|".to_string());
+        // Build the kafka-broker-api-version.sh call
+        args.push(build_readiness_check_command(kafka));
     } else {
-        args.push("-b".to_string());
-        args.push(format!("localhost:{}", CLIENT_PORT));
+        args.push(build_readiness_check_command(kafka));
     }
 
-    args.push("-L".to_string());
     args
 }
 
-fn kcat_client_auth_ssl(cert_directory: &str) -> Vec<String> {
-    vec![
-        "-X".to_string(),
-        "security.protocol=SSL".to_string(),
-        "-X".to_string(),
-        format!("ssl.key.location={cert_directory}/tls.key"),
-        "-X".to_string(),
-        format!("ssl.certificate.location={cert_directory}/tls.crt"),
-        "-X".to_string(),
-        format!("ssl.ca.location={cert_directory}/ca.crt"),
-    ]
+fn build_command_config(tls_dir: &str, store_password: &str) -> String {
+    format!(
+        "printf \"security.protocol=SSL\n \
+             ssl.truststore.location={tls_dir}/truststore.p12\n \
+             ssl.truststore.password={store_password}\n \
+             ssl.keystore.location={tls_dir}/keystore.p12\n \
+             ssl.keystore.password={store_password}\""
+    )
 }
 
-fn kcat_client_ssl(cert_directory: &str) -> Vec<String> {
-    vec![
-        "-X".to_string(),
-        "security.protocol=SSL".to_string(),
-        "-X".to_string(),
-        format!("ssl.ca.location={cert_directory}/ca.crt"),
-    ]
+fn build_readiness_check_command(kafka: &KafkaCluster) -> String {
+    let port = kafka.client_port();
+
+    let mut command = vec![
+        "/stackable/kafka/bin/kafka-broker-api-versions.sh".to_string(),
+        "--bootstrap-server".to_string(),
+        format!("simple-kafka-broker-default-0.simple-kafka-broker-default.default.svc.cluster.local:{port}")
+    ];
+
+    if kafka.client_authentication_class().is_some() || kafka.client_tls_secret_class().is_some() {
+        command.extend(["--command-config".to_string(), "/dev/stdin".to_string()]);
+    }
+
+    command.extend([
+        "|".to_string(),
+        "grep".to_string(),
+        "-c".to_string(),
+        "id".to_string(),
+    ]);
+
+    command.join(" ")
 }
 
 /// Generates the shell script to create key and truststores from the certificates provided
