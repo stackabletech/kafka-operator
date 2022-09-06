@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: kafka-operator
     app.kubernetes.io/instance: kafka-operator
-    app.kubernetes.io/version: "0.7.0-nightly"
+    app.kubernetes.io/version: "0.7.0"
 spec:
   replicas: 1
   strategy:
@@ -26,7 +26,7 @@ spec:
       containers:
         - name: kafka-operator
           securityContext: {}
-          image: "docker.stackable.tech/stackable/kafka-operator:0.7.0-nightly"
+          image: "docker.stackable.tech/stackable/kafka-operator:0.7.0"
           imagePullPolicy: IfNotPresent
           resources: {}
           volumeMounts:
