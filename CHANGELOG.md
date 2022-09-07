@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ## [0.7.0] - 2022-09-06
 
+### Added
+
+- BREAKING: TLS encryption and authentication support for internal and client communications. This is breaking for clients because the cluster is secured per default, which results in a client port change ([#442]).
+
 ### Changed
 
 - operator-rs: 0.21.1 -> 0.22.0 ([#430]).
@@ -16,6 +20,7 @@ All notable changes to this project will be documented in this file.
 [#430]: https://github.com/stackabletech/kafka-operator/pull/430
 [#431]: https://github.com/stackabletech/kafka-operator/pull/431
 [#434]: https://github.com/stackabletech/kafka-operator/pull/434
+[#442]: https://github.com/stackabletech/kafka-operator/pull/442
 
 ## [0.6.0] - 2022-06-30
 
