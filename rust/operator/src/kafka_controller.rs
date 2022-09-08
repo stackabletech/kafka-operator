@@ -573,7 +573,7 @@ fn build_broker_rolegroup_statefulset(
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
     let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
     let advertised_listeners_override =
-        "--override \"advertised.listeners=PLAINTEXT://$(cat /stackable/lb/default-address/address):$(cat /stackable/lb/default-address/ports/kafka)\"";
+        "--override \"advertised.listeners=PLAINTEXT://$(cat /stackable/listener/default-address/address):$(cat /stackable/listener/default-address/ports/kafka)\"";
     let opa_url_override = opa_connect_string.map_or("".to_string(), |opa| {
         format!("--override \"opa.authorizer.url={}\"", opa)
     });
@@ -598,7 +598,7 @@ fn build_broker_rolegroup_statefulset(
         .add_container_port("metrics", METRICS_PORT.into())
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, "/stackable/data")
         .add_volume_mount("config", "/stackable/config")
-        .add_volume_mount("lb", "/stackable/lb")
+        .add_volume_mount("listener", "/stackable/listener")
         .resources(resources)
         .build();
 
@@ -647,13 +647,13 @@ fn build_broker_rolegroup_statefulset(
             ..Volume::default()
         })
         .add_volume(Volume {
-            name: "lb".to_string(),
+            name: "listener".to_string(),
             ephemeral: Some(EphemeralVolumeSource {
                 volume_claim_template: Some(PersistentVolumeClaimTemplate {
                     metadata: Some(ObjectMeta {
                         annotations: Some(
                             [(
-                                "lb.stackable.tech/lb-class".to_string(),
+                                "listeners.stackable.tech/listener-class".to_string(),
                                 "nodeport".to_string(),
                             )]
                             .into(),
@@ -668,7 +668,7 @@ fn build_broker_rolegroup_statefulset(
                             ),
                             ..Default::default()
                         }),
-                        storage_class_name: Some("lb.stackable.tech".to_string()),
+                        storage_class_name: Some("listener.stackable.tech".to_string()),
                         ..Default::default()
                     },
                 }),
