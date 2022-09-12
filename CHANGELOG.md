@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Change port names from `http`/`https` to `kafka`/`kafka-tls` ([#472]).
+
+[#472]: https://github.com/stackabletech/kafka-operator/pull/472
+
 ## [0.7.0] - 2022-09-06
 
 ### Added
