@@ -17,4 +17,4 @@ snafu = "0.7.1"
 strum = { version = "0.24.1", features = ["derive"] }
 
 [dev-dependencies]
-serde_yaml = "0.8.24"
+serde_yaml = "0.9.13"
