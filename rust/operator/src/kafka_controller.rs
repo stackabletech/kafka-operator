@@ -226,9 +226,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let client = &ctx.client;
 
     let validated_config = validate_all_roles_and_groups_config(
-        kafka
-            .product_version()
-            .context(KafkaVersionParseFailureSnafu)?,
+        &kafka.product_version(),
         &transform_all_roles_to_config(
             &*kafka,
             [(
@@ -374,9 +372,7 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
             .with_recommended_labels(
                 kafka,
                 APP_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
+                &kafka.product_version(),
                 CONTROLLER_NAME,
                 &role_name,
                 "global",
@@ -407,9 +403,7 @@ fn build_broker_role_serviceaccount(
             .with_recommended_labels(
                 kafka,
                 APP_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
+                &kafka.product_version(),
                 CONTROLLER_NAME,
                 &role_name,
                 "global",
@@ -427,9 +421,7 @@ fn build_broker_role_serviceaccount(
             .with_recommended_labels(
                 kafka,
                 APP_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
+                &kafka.product_version(),
                 CONTROLLER_NAME,
                 &role_name,
                 "global",
@@ -474,9 +466,7 @@ fn build_broker_rolegroup_config_map(
                 .with_recommended_labels(
                     kafka,
                     APP_NAME,
-                    kafka
-                        .image_version()
-                        .context(KafkaVersionParseFailureSnafu)?,
+                    &kafka.product_version(),
                     CONTROLLER_NAME,
                     &rolegroup.role,
                     &rolegroup.role_group,
@@ -517,9 +507,7 @@ fn build_broker_rolegroup_service(
             .with_recommended_labels(
                 kafka,
                 APP_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
+                &kafka.product_version(),
                 CONTROLLER_NAME,
                 &rolegroup.role,
                 &rolegroup.role_group,
@@ -566,10 +554,6 @@ fn build_broker_rolegroup_statefulset(
         .with_context(|| RoleGroupNotFoundSnafu {
             rolegroup: rolegroup_ref.clone(),
         })?;
-    let image_version = kafka
-        .image_version()
-        .context(KafkaVersionParseFailureSnafu)?;
-    let image = format!("docker.stackable.tech/stackable/kafka:{}", image_version);
 
     let get_svc_args = get_svc_container_cmd_args(kafka);
 
@@ -749,7 +733,7 @@ fn build_broker_rolegroup_statefulset(
     });
 
     cb_kafka
-        .image(image)
+        .image(kafka.image())
         .args(vec![
             "sh".to_string(),
             "-c".to_string(),
@@ -795,7 +779,7 @@ fn build_broker_rolegroup_statefulset(
             m.with_recommended_labels(
                 kafka,
                 APP_NAME,
-                image_version,
+                &kafka.product_version(),
                 CONTROLLER_NAME,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
@@ -838,7 +822,7 @@ fn build_broker_rolegroup_statefulset(
             .with_recommended_labels(
                 kafka,
                 APP_NAME,
-                image_version,
+                &kafka.product_version(),
                 CONTROLLER_NAME,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,

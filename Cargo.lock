@@ -841,8 +841,7 @@ dependencies = [
 [[package]]
 name = "kube"
 version = "0.74.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a527a8001a61d8d470dab27ac650889938760c243903e7cd90faaf7c60a34bdd"
+source = "git+https://github.com/sbernauer/kube.git?branch=release-0.74.0#ed443df05f9dfd34ab35799f696730e081b4742f"
 dependencies = [
  "k8s-openapi",
  "kube-client",
@@ -854,8 +853,7 @@ dependencies = [
 [[package]]
 name = "kube-client"
 version = "0.74.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0d48f42df4e8342e9f488c4b97e3759d0042c4e7ab1a853cc285adb44409480"
+source = "git+https://github.com/sbernauer/kube.git?branch=release-0.74.0#ed443df05f9dfd34ab35799f696730e081b4742f"
 dependencies = [
  "base64",
  "bytes",
@@ -891,8 +889,7 @@ dependencies = [
 [[package]]
 name = "kube-core"
 version = "0.74.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91f56027f862fdcad265d2e9616af416a355e28a1c620bb709083494753e070d"
+source = "git+https://github.com/sbernauer/kube.git?branch=release-0.74.0#ed443df05f9dfd34ab35799f696730e081b4742f"
 dependencies = [
  "chrono",
  "form_urlencoded",
@@ -909,8 +906,7 @@ dependencies = [
 [[package]]
 name = "kube-derive"
 version = "0.74.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66d74121eb41af4480052901f31142d8d9bbdf1b7c6b856da43bcb02f5b1b177"
+source = "git+https://github.com/sbernauer/kube.git?branch=release-0.74.0#ed443df05f9dfd34ab35799f696730e081b4742f"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -922,8 +918,7 @@ dependencies = [
 [[package]]
 name = "kube-runtime"
 version = "0.74.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fdcf5a20f968768e342ef1a457491bb5661fccd81119666d626c57500b16d99"
+source = "git+https://github.com/sbernauer/kube.git?branch=release-0.74.0#ed443df05f9dfd34ab35799f696730e081b4742f"
 dependencies = [
  "ahash",
  "backoff",
@@ -1713,8 +1708,8 @@ dependencies = [
 
 [[package]]
 name = "stackable-operator"
-version = "0.25.0"
-source = "git+https://github.com/stackabletech/operator-rs.git?tag=0.25.0#490ef77e05d86a0bc2b555fd5950593d9f3a5d4b"
+version = "0.25.1"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feature/product-image-selection#ce854e828b3b7900fec55661bbb805534349e506"
 dependencies = [
  "chrono",
  "clap",
@@ -1746,8 +1741,8 @@ dependencies = [
 
 [[package]]
 name = "stackable-operator-derive"
-version = "0.25.0"
-source = "git+https://github.com/stackabletech/operator-rs.git?tag=0.25.0#490ef77e05d86a0bc2b555fd5950593d9f3a5d4b"
+version = "0.25.1"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feature/product-image-selection#ce854e828b3b7900fec55661bbb805534349e506"
 dependencies = [
  "darling",
  "proc-macro2",

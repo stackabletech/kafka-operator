@@ -562,6 +562,31 @@ spec:
                     - secretClass
                     type: object
                 type: object
+              image:
+                anyOf:
+                - required:
+                  - custom
+                  - productVersion
+                - required:
+                  - productVersion
+                  - stackableVersion
+                - required:
+                  - productVersion
+                properties:
+                  custom:
+                    description: Overwrite the docker image. Specify the full docker image name, e.g. `docker.stackable.tech/stackable/superset:1.4.1-stackable2.1.0`
+                    type: string
+                  productVersion:
+                    description: Version of the product, e.g. `1.4.1`.
+                    type: string
+                  repo:
+                    description: Name of the docker repo, e.g. `docker.stackable.tech/stackable`
+                    nullable: true
+                    type: string
+                  stackableVersion:
+                    description: Stackable version of the product, e.g. 2.1.0
+                    type: string
+                type: object
               log4j:
                 nullable: true
                 type: string
@@ -579,12 +604,10 @@ spec:
               stopped:
                 nullable: true
                 type: boolean
-              version:
-                nullable: true
-                type: string
               zookeeperConfigMapName:
                 type: string
             required:
+            - image
             - zookeeperConfigMapName
             type: object
         required:

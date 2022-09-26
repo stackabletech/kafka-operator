@@ -88,9 +88,7 @@ fn build_discovery_configmap(
                 .with_recommended_labels(
                     kafka,
                     APP_NAME,
-                    kafka
-                        .image_version()
-                        .context(KafkaVersionParseFailureSnafu)?,
+                    &kafka.product_version(),
                     CONTROLLER_NAME,
                     &KafkaRole::Broker.to_string(),
                     "discovery",
