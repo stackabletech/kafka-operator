@@ -8,6 +8,8 @@ use stackable_operator::{
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
 
+use crate::kafka_controller::CONTROLLER_NAME;
+
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("object {} is missing metadata to build owner reference", kafka))]
@@ -45,7 +47,7 @@ pub async fn build_discovery_configmaps(
     kafka: &KafkaCluster,
     svc: &Service,
 ) -> Result<Vec<ConfigMap>, Error> {
-    let name = owner.name();
+    let name = owner.name_any();
     let port_name = kafka.client_port_name();
     Ok(vec![
         build_discovery_configmap(&name, owner, kafka, service_hosts(svc, port_name)?)?,
@@ -89,6 +91,7 @@ fn build_discovery_configmap(
                     kafka
                         .image_version()
                         .context(KafkaVersionParseFailureSnafu)?,
+                    CONTROLLER_NAME,
                     &KafkaRole::Broker.to_string(),
                     "discovery",
                 )

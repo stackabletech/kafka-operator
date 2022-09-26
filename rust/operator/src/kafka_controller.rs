@@ -61,7 +61,7 @@ use crate::{
     ControllerConfig,
 };
 
-const FIELD_MANAGER_SCOPE: &str = "kafkacluster";
+pub const CONTROLLER_NAME: &str = "kafka-operator";
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -292,16 +292,12 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         build_broker_role_serviceaccount(&kafka, &ctx.controller_config)?;
     let broker_role_serviceaccount_ref = ObjectRef::from_obj(&broker_role_serviceaccount);
     let broker_role_service = client
-        .apply_patch(
-            FIELD_MANAGER_SCOPE,
-            &broker_role_service,
-            &broker_role_service,
-        )
+        .apply_patch(CONTROLLER_NAME, &broker_role_service, &broker_role_service)
         .await
         .context(ApplyRoleServiceSnafu)?;
     client
         .apply_patch(
-            FIELD_MANAGER_SCOPE,
+            CONTROLLER_NAME,
             &broker_role_serviceaccount,
             &broker_role_serviceaccount,
         )
@@ -309,7 +305,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .context(ApplyRoleServiceAccountSnafu)?;
     client
         .apply_patch(
-            FIELD_MANAGER_SCOPE,
+            CONTROLLER_NAME,
             &broker_role_rolebinding,
             &broker_role_rolebinding,
         )
@@ -330,19 +326,19 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             client_authentication_class.as_ref(),
         )?;
         client
-            .apply_patch(FIELD_MANAGER_SCOPE, &rg_service, &rg_service)
+            .apply_patch(CONTROLLER_NAME, &rg_service, &rg_service)
             .await
             .with_context(|_| ApplyRoleGroupServiceSnafu {
                 rolegroup: rolegroup.clone(),
             })?;
         client
-            .apply_patch(FIELD_MANAGER_SCOPE, &rg_configmap, &rg_configmap)
+            .apply_patch(CONTROLLER_NAME, &rg_configmap, &rg_configmap)
             .await
             .with_context(|_| ApplyRoleGroupConfigSnafu {
                 rolegroup: rolegroup.clone(),
             })?;
         client
-            .apply_patch(FIELD_MANAGER_SCOPE, &rg_statefulset, &rg_statefulset)
+            .apply_patch(CONTROLLER_NAME, &rg_statefulset, &rg_statefulset)
             .await
             .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
                 rolegroup: rolegroup.clone(),
@@ -354,7 +350,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .context(BuildDiscoveryConfigSnafu)?
     {
         client
-            .apply_patch(FIELD_MANAGER_SCOPE, &discovery_cm, &discovery_cm)
+            .apply_patch(CONTROLLER_NAME, &discovery_cm, &discovery_cm)
             .await
             .context(ApplyDiscoveryConfigSnafu)?;
     }
@@ -381,6 +377,7 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
                 kafka
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
+                CONTROLLER_NAME,
                 &role_name,
                 "global",
             )
@@ -413,6 +410,7 @@ fn build_broker_role_serviceaccount(
                 kafka
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
+                CONTROLLER_NAME,
                 &role_name,
                 "global",
             )
@@ -432,6 +430,7 @@ fn build_broker_role_serviceaccount(
                 kafka
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
+                CONTROLLER_NAME,
                 &role_name,
                 "global",
             )
@@ -478,6 +477,7 @@ fn build_broker_rolegroup_config_map(
                     kafka
                         .image_version()
                         .context(KafkaVersionParseFailureSnafu)?,
+                    CONTROLLER_NAME,
                     &rolegroup.role,
                     &rolegroup.role_group,
                 )
@@ -520,6 +520,7 @@ fn build_broker_rolegroup_service(
                 kafka
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
+                CONTROLLER_NAME,
                 &rolegroup.role,
                 &rolegroup.role_group,
             )
@@ -552,9 +553,10 @@ fn build_broker_rolegroup_statefulset(
     opa_connect_string: Option<&str>,
     client_authentication_class: Option<&AuthenticationClass>,
 ) -> Result<StatefulSet> {
-    let mut cb_kafka = ContainerBuilder::new(APP_NAME);
-    let mut cb_prepare = ContainerBuilder::new("prepare");
-    let mut cb_kcat_prober = ContainerBuilder::new("kcat-prober");
+    let mut cb_kafka = ContainerBuilder::new(APP_NAME).expect("ContainerBuilder not created");
+    let mut cb_prepare = ContainerBuilder::new("prepare").expect("ContainerBuilder not created");
+    let mut cb_kcat_prober =
+        ContainerBuilder::new("kcat-prober").expect("ContainerBuilder not created");
     let mut pod_builder = PodBuilder::new();
 
     let role = kafka.spec.brokers.as_ref().context(NoBrokerRoleSnafu)?;
@@ -621,6 +623,7 @@ fn build_broker_rolegroup_statefulset(
     }
 
     let container_get_svc = ContainerBuilder::new("get-svc")
+        .expect("ContainerBuilder not created")
         .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
         .command(vec!["bash".to_string()])
         .args(vec![
@@ -793,6 +796,7 @@ fn build_broker_rolegroup_statefulset(
                 kafka,
                 APP_NAME,
                 image_version,
+                CONTROLLER_NAME,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             )
@@ -835,6 +839,7 @@ fn build_broker_rolegroup_statefulset(
                 kafka,
                 APP_NAME,
                 image_version,
+                CONTROLLER_NAME,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             )
