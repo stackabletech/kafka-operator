@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added default resource requests (memory and cpu) for Kafka pods. ([#485])
+
+[#485]: https://github.com/stackabletech/kafka-operator/pull/485
+
 ### Changed
 
 - Change port names from `http`/`https` to `kafka`/`kafka-tls` ([#472]).
