@@ -19,6 +19,9 @@ export VERSION IS_NIGHTLY DOCS_VERSION
 
 SHELL=/usr/bin/env bash -euo pipefail
 
+render-readme:
+	scripts/render_readme.sh
+
 ## Docker related targets
 docker-build:
 	docker build --force-rm --build-arg VERSION=${VERSION} -t "docker.stackable.tech/stackable/kafka-operator:${VERSION}" -f docker/Dockerfile .
