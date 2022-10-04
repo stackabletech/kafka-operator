@@ -276,7 +276,7 @@ impl KafkaCluster {
                 max: Some(Quantity("4".to_owned())),
             },
             memory: MemoryLimits {
-                limit: Some(Quantity("1Gi".to_owned())),
+                limit: Some(Quantity("2Gi".to_owned())),
                 runtime_limits: NoRuntimeLimits {},
             },
             storage: Storage {
