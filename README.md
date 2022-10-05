@@ -63,17 +63,13 @@ spec:
         replicas: 3
 ```
 
-Want to get started? Read below.
-
 ## Behind the Scenes
 
-It is written by [Stackable](https://www.stackable.tech) in Rust.
+This operator is written by [Stackable](https://www.stackable.tech) in Rust.
 
 It uses kube-rs to talk to Kubernetes.
 
 We test it [extensively](https://ci.stackable.tech/) using [Kuttl](https://kuttl.dev/)-powered integration tests on managed Kubernetes of multiple cloud platforms and our own bare-metal clusters.
-
-NEXT: generic behind the scenes
 
 ## About The Stackable Data Platform
 
@@ -89,7 +85,7 @@ Stackable GmbH is the company behind the Stackable Data Platform. Offering profe
 
 We love open-source!
 
-# Supported Platforms
+## Supported Platforms
 
 We develop and test our operators for the following cloud platforms:
 
@@ -103,7 +99,7 @@ We are currently working to support:
 
 * OpenShift
 
-### Other Operators
+## Other Operators
 
 These are the Operators currently part of the Stackable Data Platform, many of which use the Secret Operator.
 

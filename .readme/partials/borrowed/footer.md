@@ -12,7 +12,7 @@ Stackable GmbH is the company behind the Stackable Data Platform. Offering profe
 
 We love open-source!
 
-# Supported Platforms
+## Supported Platforms
 
 We develop and test our operators for the following cloud platforms:
 
@@ -26,7 +26,7 @@ We are currently working to support:
 
 * OpenShift
 
-### Other Operators
+## Other Operators
 
 These are the Operators currently part of the Stackable Data Platform, many of which use the Secret Operator.
 
