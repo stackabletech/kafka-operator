@@ -8,7 +8,8 @@ then
   exit
 fi
 
-cd $(dirname "$0")/../.readme
+SCRIPT_DIR=$(dirname "$0")
+cd "$SCRIPT_DIR/../.readme"
 jinja2 README.md.j2 -o ../README.md
 cd ..
 

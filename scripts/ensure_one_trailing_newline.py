@@ -2,12 +2,15 @@
 Given the location of a file, trims all trailing blank lines and
 places a single one. Used as post-processing step for README rendering.
 """
-
 import re
-BLANK_LINE_REGEX_PATTERN = "^\s*$"
+import unittest
+
+BLANK_LINE_REGEX_PATTERN = r"^\s*$"
+
 
 def has_trailing_newline(line):
     return line[-1:] == "\n"
+
 
 def process_lines(lines):
     trim_count = 0
@@ -18,18 +21,17 @@ def process_lines(lines):
         else:
             break
 
-    new_lines = lines[:len(lines)-trim_count]
+    cutoff_index = len(lines) - trim_count
+    new_lines = lines[:cutoff_index]
 
     # maybe add a newline character to the last sensible line
     if not has_trailing_newline(new_lines[-1]):
-        new_lines[-1] = new_lines[-1]+"\n"
+        new_lines[-1] = new_lines[-1] + "\n"
 
-    new_lines.append("") # add a trailing blank line without newline
+    # add a trailing blank line without newline
+    new_lines.append("")
     return new_lines
 
-## testing
-
-import unittest
 
 class TestCoreMethods(unittest.TestCase):
 
@@ -47,7 +49,7 @@ class TestCoreMethods(unittest.TestCase):
         self.assertFalse(has_trailing_newline(processed_lines[2]))
 
     def test_lots_of_empties(self):
-        lines = ["bla\n", "\n",  "\n",  "\n",  "\n"]
+        lines = ["bla\n", "\n", "\n", "\n", "\n"]
         processed_lines = process_lines(lines)
         self.assertEqual(len(processed_lines), 2)
         self.assertEqual(processed_lines[-1], "")
@@ -63,6 +65,7 @@ class TestCoreMethods(unittest.TestCase):
         processed_lines = process_lines(lines)
         self.assertEqual(len(processed_lines), 2)
         self.assertEqual(processed_lines[-1], "")
+
 
 if __name__ == "__main__":
     # to run tests for this script:
