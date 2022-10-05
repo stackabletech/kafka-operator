@@ -1,18 +1,14 @@
-
 <p align="center">
   <img width="150" src="./.readme/static/borrowed/Icon_Stackable.svg" alt="Stackable Logo"/>
 </p>
+
 <h1 align="center">Stackable Operator for Apache Kafka</h1>
-
-
-
 
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/stackabletech/kafka-operator/graphs/commit-activity)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-green.svg)](https://docs.stackable.tech/home/stable/contributor/index.html)
 [![License OSL3.0](https://img.shields.io/badge/license-OSL3.0-green)](./LICENSE)
 
 [Documentation](https://docs.stackable.tech/kafka-operator/stable/index.html) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/)
-
 
 This is a Kubernetes Operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
 
@@ -38,9 +34,9 @@ Otherwise, give it a try with the [stackablectl](https://docs.stackable.tech/hom
 
 ## Documentation
 
-The documentation for this operator can be found at <https://docs.stackable.tech/kafka/stable/index.html>.
+The documentation for this operator can be found [here](https://docs.stackable.tech/kafka/stable/index.html).
 
-The documentation for all Stackable products can be found at <https://docs.stackable.tech>.
+The documentation for all Stackable products can be found at [docs.stackable.tech](https://docs.stackable.tech).
 
 ## What Does This Do?
 
@@ -98,15 +94,12 @@ We love open-source!
 We develop and test our operators for the following cloud platforms:
 
 * Kubernetes 1.21-1.24
-* Amazon EKS
-* Google Kubernetes Engine (GKE) on GCP
-* Microsoft AKS
-
-We also use the following internally
-
+* EKS on Amazon Web Services (AWS)
+* GKE on Google Cloud Platform (GCP)
+* AKS on Microsoft Azure
 * k3s
 
-We are working to support
+We are currently working to support:
 
 * OpenShift
 
@@ -137,11 +130,4 @@ Contributions are welcome. Follow our [Contributors Guide](https://docs.stackabl
 
 ## Support
 
-Did we mention that you can pay the company for professional services? You can! Here is a [link](#).
-
-
-## Related Reading
-
-* [Something about Kuttl](#)
-* [Something about working with Apache Kafka](#)
-* [A cool demo using the Apache Kafka operator](#)
+You can use this project under different licenses. Get started with the community edition! If you want professional support, [we offer subscription plans](https://stackable.tech/en/plans/).

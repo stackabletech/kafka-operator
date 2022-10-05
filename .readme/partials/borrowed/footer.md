@@ -17,15 +17,12 @@ We love open-source!
 We develop and test our operators for the following cloud platforms:
 
 * Kubernetes 1.21-1.24
-* Amazon EKS
-* Google Kubernetes Engine (GKE) on GCP
-* Microsoft AKS
-
-We also use the following internally
-
+* EKS on Amazon Web Services (AWS)
+* GKE on Google Cloud Platform (GCP)
+* AKS on Microsoft Azure
 * k3s
 
-We are working to support
+We are currently working to support:
 
 * OpenShift
 
@@ -56,4 +53,4 @@ Contributions are welcome. Follow our [Contributors Guide](https://docs.stackabl
 
 ## Support
 
-Did we mention that you can pay the company for professional services? You can! Here is a [link](#).
+You can use this project under different licenses. Get started with the community edition! If you want professional support, [we offer subscription plans](https://stackable.tech/en/plans/).

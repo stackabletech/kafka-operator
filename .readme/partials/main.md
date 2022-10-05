@@ -20,11 +20,9 @@ To create a Kafka cluster with three nodes, you can follow this [tutorial](https
 
 Otherwise, give it a try with the [stackablectl](https://docs.stackable.tech/home/stable/getting_started.html) CLI tool!
 
-## Documentation
-
-The documentation for this operator can be found at <https://docs.stackable.tech/kafka/stable/index.html>.
-
-The documentation for all Stackable products can be found at <https://docs.stackable.tech>.
+{% with operator_name="kafka" -%}
+  {% include "partials/borrowed/documentation.md" %}
+{%- endwith %}
 
 ## What Does This Do?
 
@@ -51,14 +49,10 @@ spec:
         replicas: 3
 ```
 
-Want to get started? Read below.
-
 ## Behind the Scenes
 
-It is written by [Stackable](https://www.stackable.tech) in Rust.
+This operator is written by [Stackable](https://www.stackable.tech) in Rust.
 
 It uses kube-rs to talk to Kubernetes.
 
 We test it [extensively](https://ci.stackable.tech/) using [Kuttl](https://kuttl.dev/)-powered integration tests on managed Kubernetes of multiple cloud platforms and our own bare-metal clusters.
-
-NEXT: generic behind the scenes
