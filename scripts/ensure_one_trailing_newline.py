@@ -31,7 +31,7 @@ def process_lines(lines):
 
 import unittest
 
-class TestStringMethods(unittest.TestCase):
+class TestCoreMethods(unittest.TestCase):
 
     def test_trailing_new_line(self):
         self.assertTrue(has_trailing_newline("something\n"))
