@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# lots of assumptions here - working dir & installed dependencies among others
+# Check if jinja2 is there
+if ! command -v jinja2 &> /dev/null
+then
+  echo "jinja2 could not be found. Use 'pip install jinja2-cli' to install it."
+  exit
+fi
 
-cd .readme
+cd $(dirname "$0")/../.readme
 jinja2 README.md.j2 -o ../README.md
 cd ..
 
