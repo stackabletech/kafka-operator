@@ -59,7 +59,7 @@ spec:
 
 This operator is written by [Stackable](https://www.stackable.tech) in Rust.
 
-It uses kube-rs to talk to Kubernetes.
+This operator uses [kube.rs](https://kube.rs/) to interact with the Kubernetes control plane.
 
 We test it [extensively](https://ci.stackable.tech/) using [Kuttl](https://kuttl.dev/)-powered integration tests on managed Kubernetes of multiple cloud platforms and our own bare-metal clusters.
 
