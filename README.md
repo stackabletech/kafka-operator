@@ -69,7 +69,7 @@ This operator is written and maintained by [Stackable](https://www.stackable.tec
 
 ![Stackable Data Platform Overview](./.readme/static/borrowed/sdp_overview.png)
 
-Stackable makes it easy to operate data applicationsin any Kubernetes cluster.
+Stackable makes it easy to operate data applications in any Kubernetes cluster.
 
 The data platform offers many operators, new ones being added continuously. All our operators are designed and built to be easily interconnected and to be consistent to work with.
 
@@ -93,7 +93,7 @@ We are currently working to support:
 
 ## Other Operators
 
-These are the Operators currently part of the Stackable Data Platform, many of which use the Secret Operator.
+These are the Operators currently part of the Stackable Data Platform:
 
 - [Apache Airflow Operator](https://github.com/stackabletech/airflow-operator)
 - [Apache Druid Operator](https://github.com/stackabletech/druid-operator)
