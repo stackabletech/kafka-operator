@@ -1,0 +1,15 @@
+needed dependencies
+
+* jinja2
+* https://github.com/mattrobenolt/jinja2-cli
+
+jinja tags are fancy - we need them to remove empty lines
+
+* https://jinja.palletsprojects.com/en/3.0.x/templates/#whitespace-control
+
+the tags could be simplified by using
+
+* https://github.com/kolypto/j2cli#customization
+* with `trim_blocks=True` `lstrip_blocks=True`
+
+in general, empty lines being generated with little fine-grained control over them :(
