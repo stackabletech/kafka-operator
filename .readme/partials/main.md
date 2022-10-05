@@ -1,24 +1,14 @@
-This is a Kubernetes Operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
+This is a Kubernetes operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
 
-Looking to dive in? It's easy to get started with the Stackable data platform using `stackablectl`:
-
-```
-stackablectl spin up a demo
-```
-
-Read more in [link to fancy demo using stackablectl](#).
+It's built to play well with all other [Stackable operators](#other-operators), and play well with [many different Kubernetes environments](#supported-platforms).
 
 ## Installation
 
-To get the best experience, we recommended way to get started with Stackable is through the `stackablectl` tool.
-
-Read [the instructions below](#) to get started.
+You can install the operator using [stackablectl or helm](https://docs.stackable.tech/kafka/stable/getting_started/installation.html).
 
 ## Getting Started
 
-To create a Kafka cluster with three nodes, you can follow this [tutorial](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html).
-
-Otherwise, give it a try with the [stackablectl](https://docs.stackable.tech/home/stable/getting_started.html) CLI tool!
+You can follow this [tutorial](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html) to create a Kafka cluster with three replicas.
 
 {% with operator_name="kafka" -%}
   {% include "partials/borrowed/documentation.md" %}
