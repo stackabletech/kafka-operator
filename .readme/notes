@@ -13,3 +13,5 @@ the tags could be simplified by using
 * with `trim_blocks=True` `lstrip_blocks=True`
 
 in general, empty lines being generated with little fine-grained control over them :(
+
+* idea: use post-processing to make sure exactly one blank line is at the end of the final document
