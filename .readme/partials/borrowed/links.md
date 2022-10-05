@@ -1,5 +1,5 @@
-{#// note: we comment out this status for now, as jenkins is borked
-[![Build Actions Status](https://ci.stackable.tech/job/{{operator_name}}%2doperator%2dit%2dnightly/badge/icon?subject=Integration%20Tests)](https://ci.stackable.tech/job/{{operator_name}}%2doperator%2dit%2dnightly)#}
+{# // note: we comment out this status for now, as jenkins is borked
+[![Build Actions Status](https://ci.stackable.tech/job/{{operator_name}}%2doperator%2dit%2dnightly/badge/icon?subject=Integration%20Tests)](https://ci.stackable.tech/job/{{operator_name}}%2doperator%2dit%2dnightly) #}
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/stackabletech/{{operator_name}}-operator/graphs/commit-activity)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-green.svg)](https://docs.stackable.tech/home/stable/contributor/index.html)
 [![License OSL3.0](https://img.shields.io/badge/license-OSL3.0-green)](./LICENSE)
