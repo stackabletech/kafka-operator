@@ -20,7 +20,7 @@ We develop and test our operators for the following cloud platforms:
 * EKS on Amazon Web Services (AWS)
 * GKE on Google Cloud Platform (GCP)
 * AKS on Microsoft Azure
-* k3s
+* K3s
 
 We are currently working to support:
 
