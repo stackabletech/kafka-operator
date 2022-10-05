@@ -316,7 +316,7 @@ brokers:
       config:
         resources:
           memory:
-            limit: '1Gi'
+            limit: '2Gi'
           cpu:
             min: '500m'
             max: '4'
