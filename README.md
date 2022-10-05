@@ -10,27 +10,19 @@
 
 [Documentation](https://docs.stackable.tech/kafka-operator/stable/index.html) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/)
 
-This is a Kubernetes Operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
+This is a Kubernetes operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
 
-Looking to dive in? It's easy to get started with the Stackable data platform using `stackablectl`:
-
-```
-stackablectl spin up a demo
-```
-
-Read more in [link to fancy demo using stackablectl](#).
+It is part of the Stackable Data Platform, a curated selection of the best open source data apps like Kafka, Druid, Trino or Spark, [all](#other-operators) working together seamlessly. Based on Kubernetes, it runs everywhere – [on prem or in the cloud]((#supported-platforms)).
 
 ## Installation
 
-To get the best experience, we recommended way to get started with Stackable is through the `stackablectl` tool.
+You can install the operator using [stackablectl or helm](https://docs.stackable.tech/kafka/stable/getting_started/installation.html).
 
-Read [the instructions below](#) to get started.
+Read on to get started with it, or see it in action in one of our [demos](https://stackable.tech/en/demos/).
 
 ## Getting Started
 
-To create a Kafka cluster with three nodes, you can follow this [tutorial](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html).
-
-Otherwise, give it a try with the [stackablectl](https://docs.stackable.tech/home/stable/getting_started.html) CLI tool!
+You can follow this [tutorial](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html) to create a Kafka cluster with three replicas.
 
 ## Documentation
 
