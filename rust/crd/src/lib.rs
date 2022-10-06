@@ -2,7 +2,7 @@ pub mod listener;
 
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
-use stackable_operator::commons::product_image_selection::ProductImageSelection;
+use stackable_operator::commons::product_image_selection::ProductImage;
 use stackable_operator::memory::to_java_heap;
 use stackable_operator::{
     commons::{
@@ -115,7 +115,7 @@ pub enum Error {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterSpec {
-    pub image: ProductImageSelection,
+    pub image: ProductImage,
     pub brokers: Option<Role<KafkaConfig>>,
     pub zookeeper_config_map_name: String,
     pub opa: Option<OpaConfig>,
@@ -298,19 +298,6 @@ impl KafkaCluster {
             .and_then(|limits| limits.get("memory"))
             .map(|memory_limit| to_java_heap(memory_limit, JVM_HEAP_FACTOR))
             .transpose()
-    }
-
-    /// Returns the product version, e.g. `2.1.0`
-    pub fn product_version(&self) -> String {
-        self.spec
-            .image
-            .resolve(DOCKER_IMAGE_BASE_NAME)
-            .product_version
-    }
-
-    /// Returns the full image name e.g. `docker.stackable.tech/stackable/superset:1.4.1-stackable2.1.0`
-    pub fn image(&self) -> String {
-        self.spec.image.resolve(DOCKER_IMAGE_BASE_NAME).image
     }
 
     /// Returns the secret class for client connection encryption. Defaults to `tls`.

@@ -1709,7 +1709,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.25.1"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feature/product-image-selection#ce854e828b3b7900fec55661bbb805534349e506"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feature/product-image-selection#51897a74101a92a258de163439c323c86353e97b"
 dependencies = [
  "chrono",
  "clap",
@@ -1742,7 +1742,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator-derive"
 version = "0.25.1"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feature/product-image-selection#ce854e828b3b7900fec55661bbb805534349e506"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feature/product-image-selection#51897a74101a92a258de163439c323c86353e97b"
 dependencies = [
  "darling",
  "proc-macro2",

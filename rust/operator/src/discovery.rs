@@ -4,6 +4,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{KafkaCluster, KafkaRole, APP_NAME};
 use stackable_operator::{
     builder::{ConfigMapBuilder, ObjectMetaBuilder},
+    commons::product_image_selection::ResolvedProductImage,
     k8s_openapi::api::core::v1::{ConfigMap, Endpoints, Service, ServicePort},
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
@@ -46,16 +47,24 @@ pub async fn build_discovery_configmaps(
     owner: &impl Resource<DynamicType = ()>,
     kafka: &KafkaCluster,
     svc: &Service,
+    resolved_product_image: &ResolvedProductImage,
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name_any();
     let port_name = kafka.client_port_name();
     Ok(vec![
-        build_discovery_configmap(&name, owner, kafka, service_hosts(svc, port_name)?)?,
+        build_discovery_configmap(
+            &name,
+            owner,
+            kafka,
+            service_hosts(svc, port_name)?,
+            resolved_product_image,
+        )?,
         build_discovery_configmap(
             &format!("{}-nodeport", name),
             owner,
             kafka,
             nodeport_hosts(client, svc, port_name).await?,
+            resolved_product_image,
         )?,
     ])
 }
@@ -68,6 +77,7 @@ fn build_discovery_configmap(
     owner: &impl Resource<DynamicType = ()>,
     kafka: &KafkaCluster,
     hosts: impl IntoIterator<Item = (impl Into<String>, u16)>,
+    resolved_product_image: &ResolvedProductImage,
 ) -> Result<ConfigMap, Error> {
     // Write a list of bootstrap servers in the format that Kafka clients:
     // "{host1}:{port1},{host2:port2},..."
@@ -88,7 +98,7 @@ fn build_discovery_configmap(
                 .with_recommended_labels(
                     kafka,
                     APP_NAME,
-                    &kafka.product_version(),
+                    &resolved_product_image.product_version,
                     CONTROLLER_NAME,
                     &KafkaRole::Broker.to_string(),
                     "discovery",
