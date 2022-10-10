@@ -1,14 +1,12 @@
-{% with title="Stackable Operator for Apache Kafka" -%}
-  {% include "partials/borrowed/header.md.j2" %}
-{%- endwith %}
-{% with operator_name="kafka" -%}
-  {% include "partials/borrowed/links.md.j2" %}
-{%- endwith %}
+{%- set title="Stackable Operator for Apache Kafka" -%}
+{%- set operator_name="kafka" -%}
+{%- set related_reading_links=[] -%}
+
+{% include "partials/borrowed/header.md.j2" %}
+{% include "partials/borrowed/links.md.j2" %}
 
 {% include "partials/main.md.j2" %}
 
 {% include "partials/borrowed/footer.md.j2" %}
 
-{% with related_reading_links=[] -%}
-  {%- include "partials/borrowed/related_reading.md.j2" -%}
-{%- endwith %}
+{% include "partials/borrowed/related_reading.md.j2" %}
