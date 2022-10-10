@@ -32,11 +32,11 @@ The documentation for all Stackable products can be found at [docs.stackable.tec
 
 ## What Does This Do?
 
-Operator looks at custom resources in the cluster, and makes sure apps are started according to those custom resources.
+This operator is managing Kafka in Kubernetes. It is part of the Stackable Data Platform, a 
 
-If those resources change, the operator makes sure that the right actions are taken so the app is the way you want it to be.
+Operators observe custom resources in a Kubernetes cluster, and manages the application it's responsible for according to the desired state specified in those custom resources.
 
-Here's what a custom resource for a Kafka cluster can look like:
+Here's an example how a custom resource to bring up a 3-replica Kafka cluster can look like:
 
 ```
 ---
@@ -55,11 +55,11 @@ spec:
         replicas: 3
 ```
 
+If you want to find out more about it, take a look at this [getting started guide](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html).
+
 ## Behind the Scenes
 
-This operator is written by [Stackable](https://www.stackable.tech) in Rust.
-
-This operator uses [kube.rs](https://kube.rs/) to interact with the Kubernetes control plane.
+This operator is written by [Stackable](https://www.stackable.tech). It uses [kube.rs](https://kube.rs/) to interact with the Kubernetes control plane.
 
 We test it [extensively](https://ci.stackable.tech/) using [Kuttl](https://kuttl.dev/)-powered integration tests on managed Kubernetes of multiple cloud platforms and our own bare-metal clusters.
 
