@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Support for Kafka 3.3.1 ([#xxx])
+
+[#xxx]: https://github.com/stackabletech/kafka-operator/pull/xxx
+
 ## [0.7.0] - 2022-09-06
 
 ### Changed
