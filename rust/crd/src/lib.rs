@@ -24,9 +24,9 @@ use strum::{Display, EnumIter, EnumString};
 
 pub const APP_NAME: &str = "kafka";
 // ports
-pub const CLIENT_PORT_NAME: &str = "http";
+pub const CLIENT_PORT_NAME: &str = "kafka";
 pub const CLIENT_PORT: u16 = 9092;
-pub const SECURE_CLIENT_PORT_NAME: &str = "https";
+pub const SECURE_CLIENT_PORT_NAME: &str = "kafka-tls";
 pub const SECURE_CLIENT_PORT: u16 = 9093;
 pub const INTERNAL_PORT: u16 = 19092;
 pub const SECURE_INTERNAL_PORT: u16 = 19093;
@@ -272,11 +272,11 @@ impl KafkaCluster {
     fn default_resources() -> Resources<Storage, NoRuntimeLimits> {
         Resources {
             cpu: CpuLimits {
-                min: None,
-                max: None,
+                min: Some(Quantity("500m".to_owned())),
+                max: Some(Quantity("4".to_owned())),
             },
             memory: MemoryLimits {
-                limit: None,
+                limit: Some(Quantity("2Gi".to_owned())),
                 runtime_limits: NoRuntimeLimits {},
             },
             storage: Storage {
