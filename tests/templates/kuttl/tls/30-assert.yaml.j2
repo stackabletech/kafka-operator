@@ -3,6 +3,7 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 metadata:
   name: test-tls
+timeout: 300
 commands:
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
   - script: kubectl exec -n $NAMESPACE test-kafka-broker-default-0 -- /tmp/test_client_auth_tls.sh $NAMESPACE
