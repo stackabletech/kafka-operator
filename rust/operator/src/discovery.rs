@@ -98,8 +98,8 @@ fn build_discovery_configmap(
                     kafka
                         .image_version()
                         .context(KafkaVersionParseFailureSnafu)?,
-                    &KafkaRole::Broker.to_string(),
                     app_managed_by,
+                    &KafkaRole::Broker.to_string(),
                     "discovery",
                 )
                 .build(),

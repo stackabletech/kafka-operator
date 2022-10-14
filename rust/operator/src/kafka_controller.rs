@@ -396,8 +396,8 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
                 RESOURCE_SCOPE,
-                "global",
                 &role_name,
+                "global",
             )
             .build(),
         spec: Some(ServiceSpec {
@@ -429,8 +429,8 @@ fn build_broker_role_serviceaccount(
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
                 RESOURCE_SCOPE,
-                "global",
                 &role_name,
+                "global",
             )
             .build(),
         ..ServiceAccount::default()
@@ -449,8 +449,8 @@ fn build_broker_role_serviceaccount(
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
                 RESOURCE_SCOPE,
-                "global",
                 &role_name,
+                "global",
             )
             .build(),
         role_ref: RoleRef {
@@ -496,8 +496,8 @@ fn build_broker_rolegroup_config_map(
                         .image_version()
                         .context(KafkaVersionParseFailureSnafu)?,
                     RESOURCE_SCOPE,
-                    "global",
                     &rolegroup.role,
+                    "global",
                 )
                 .build(),
         )
@@ -539,8 +539,8 @@ fn build_broker_rolegroup_service(
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
                 RESOURCE_SCOPE,
-                &rolegroup.role_group,
                 &rolegroup.role,
+                &rolegroup.role_group,
             )
             .with_label("prometheus.io/scrape", "true")
             .build(),
@@ -822,8 +822,8 @@ fn build_broker_rolegroup_statefulset(
                 APP_NAME,
                 image_version,
                 RESOURCE_SCOPE,
-                &rolegroup_ref.role_group,
                 &rolegroup_ref.role,
+                &rolegroup_ref.role_group,
             )
             .with_label(pod_svc_controller::LABEL_ENABLE, "true")
         })
@@ -865,8 +865,8 @@ fn build_broker_rolegroup_statefulset(
                 APP_NAME,
                 image_version,
                 RESOURCE_SCOPE,
-                &rolegroup_ref.role_group,
                 &rolegroup_ref.role,
+                &rolegroup_ref.role_group,
             )
             .build(),
         spec: Some(StatefulSetSpec {
