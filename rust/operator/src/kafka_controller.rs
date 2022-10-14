@@ -62,6 +62,7 @@ use crate::{
 };
 
 const FIELD_MANAGER_SCOPE: &str = "kafkacluster";
+const RESOURCE_SCOPE: &str = "kafka-operator_kafkacluster";
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -175,6 +176,11 @@ pub enum Error {
     InvalidKafkaListeners {
         source: stackable_kafka_crd::listener::KafkaListenerError,
     },
+    #[snafu(display("invalid container name [{name}]"))]
+    InvalidContainerName {
+        name: String,
+        source: stackable_operator::error::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -217,6 +223,7 @@ impl ReconcilerError for Error {
                 ..
             } => Some(authentication_class.clone().erase()),
             Error::InvalidKafkaListeners { .. } => None,
+            Error::InvalidContainerName { .. } => None,
         }
     }
 }
@@ -349,9 +356,15 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             })?;
     }
 
-    for discovery_cm in build_discovery_configmaps(client, &*kafka, &kafka, &broker_role_service)
-        .await
-        .context(BuildDiscoveryConfigSnafu)?
+    for discovery_cm in build_discovery_configmaps(
+        client,
+        &*kafka,
+        &kafka,
+        &broker_role_service,
+        RESOURCE_SCOPE,
+    )
+    .await
+    .context(BuildDiscoveryConfigSnafu)?
     {
         client
             .apply_patch(FIELD_MANAGER_SCOPE, &discovery_cm, &discovery_cm)
@@ -383,6 +396,7 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
                     .context(KafkaVersionParseFailureSnafu)?,
                 &role_name,
                 "global",
+                RESOURCE_SCOPE,
             )
             .build(),
         spec: Some(ServiceSpec {
@@ -415,6 +429,7 @@ fn build_broker_role_serviceaccount(
                     .context(KafkaVersionParseFailureSnafu)?,
                 &role_name,
                 "global",
+                RESOURCE_SCOPE,
             )
             .build(),
         ..ServiceAccount::default()
@@ -434,6 +449,7 @@ fn build_broker_role_serviceaccount(
                     .context(KafkaVersionParseFailureSnafu)?,
                 &role_name,
                 "global",
+                RESOURCE_SCOPE,
             )
             .build(),
         role_ref: RoleRef {
@@ -480,6 +496,7 @@ fn build_broker_rolegroup_config_map(
                         .context(KafkaVersionParseFailureSnafu)?,
                     &rolegroup.role,
                     &rolegroup.role_group,
+                    RESOURCE_SCOPE,
                 )
                 .build(),
         )
@@ -522,6 +539,7 @@ fn build_broker_rolegroup_service(
                     .context(KafkaVersionParseFailureSnafu)?,
                 &rolegroup.role,
                 &rolegroup.role_group,
+                RESOURCE_SCOPE,
             )
             .with_label("prometheus.io/scrape", "true")
             .build(),
@@ -552,9 +570,15 @@ fn build_broker_rolegroup_statefulset(
     opa_connect_string: Option<&str>,
     client_authentication_class: Option<&AuthenticationClass>,
 ) -> Result<StatefulSet> {
-    let mut cb_kafka = ContainerBuilder::new(APP_NAME);
-    let mut cb_prepare = ContainerBuilder::new("prepare");
-    let mut cb_kcat_prober = ContainerBuilder::new("kcat-prober");
+    let mut cb_kafka =
+        ContainerBuilder::new(APP_NAME).context(InvalidContainerNameSnafu { name: APP_NAME })?;
+    let mut cb_prepare = ContainerBuilder::new("prepare").context(InvalidContainerNameSnafu {
+        name: "prepare".to_string(),
+    })?;
+    let mut cb_kcat_prober =
+        ContainerBuilder::new("kcat-prober").context(InvalidContainerNameSnafu {
+            name: "kcat-prober".to_string(),
+        })?;
     let mut pod_builder = PodBuilder::new();
 
     let role = kafka.spec.brokers.as_ref().context(NoBrokerRoleSnafu)?;
@@ -621,6 +645,9 @@ fn build_broker_rolegroup_statefulset(
     }
 
     let container_get_svc = ContainerBuilder::new("get-svc")
+        .context(InvalidContainerNameSnafu {
+            name: "get-svc".to_string(),
+        })?
         .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
         .command(vec!["bash".to_string()])
         .args(vec![
@@ -795,6 +822,7 @@ fn build_broker_rolegroup_statefulset(
                 image_version,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
+                RESOURCE_SCOPE,
             )
             .with_label(pod_svc_controller::LABEL_ENABLE, "true")
         })
@@ -837,6 +865,7 @@ fn build_broker_rolegroup_statefulset(
                 image_version,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
+                RESOURCE_SCOPE,
             )
             .build(),
         spec: Some(StatefulSetSpec {

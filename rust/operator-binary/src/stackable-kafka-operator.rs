@@ -4,7 +4,7 @@ use stackable_kafka_operator::ControllerConfig;
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
     client, error,
-    kube::CustomResourceExt,
+    CustomResourceExt,
 };
 
 mod built_info {
@@ -31,7 +31,7 @@ struct KafkaRun {
 async fn main() -> Result<(), error::Error> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => println!("{}", serde_yaml::to_string(&KafkaCluster::crd())?),
+        Command::Crd => KafkaCluster::print_yaml_schema()?,
         Command::Run(KafkaRun {
             kafka_broker_clusterrole,
             common:
