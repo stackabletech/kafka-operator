@@ -3,8 +3,7 @@ use stackable_kafka_crd::{KafkaCluster, APP_NAME};
 use stackable_kafka_operator::ControllerConfig;
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
-    client, error,
-    CustomResourceExt,
+    client, error, CustomResourceExt,
 };
 
 mod built_info {

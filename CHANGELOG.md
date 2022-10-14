@@ -8,11 +8,11 @@ All notable changes to this project will be documented in this file.
 
 - Added default resource requests (memory and cpu) for Kafka pods. ([#485])
 - Support for Kafka 3.3.1 ([#492])
-- Orphaned resources are deleted ([#xxx])
+- Orphaned resources are deleted ([#495])
 
 [#485]: https://github.com/stackabletech/kafka-operator/pull/485
 [#492]: https://github.com/stackabletech/kafka-operator/pull/492
-[#xxx]: https://github.com/stackabletech/kafka-operator/pull/xxx
+[#495]: https://github.com/stackabletech/kafka-operator/pull/495
 
 ### Changed
 
