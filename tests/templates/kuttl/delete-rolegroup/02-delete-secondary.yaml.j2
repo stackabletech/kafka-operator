@@ -1,0 +1,24 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: delete-secondary
+timeout: 300
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: {{ test_scenario['values']['kafka'] }}
+  zookeeperConfigMapName: kafka-zk
+  config:
+{% if test_scenario['values']['use-internal-tls'] == 'true' %}
+    internalTls:
+      secretClass: test-kafka-internal-tls
+{% endif %}
+  brokers:
+    roleGroups:
+      default:
+        replicas: 1
+      secondary: null

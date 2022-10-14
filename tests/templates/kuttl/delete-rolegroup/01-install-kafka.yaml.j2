@@ -1,0 +1,40 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: install-kafka
+timeout: 300
+{% if test_scenario['values']['use-internal-tls'] == 'true' %}
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: test-kafka-internal-tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-test-kafka-internal-tls-ca
+          namespace: default
+        autoGenerate: true
+{% endif %}
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  version: {{ test_scenario['values']['kafka'] }}
+  zookeeperConfigMapName: kafka-zk
+  config:
+{% if test_scenario['values']['use-internal-tls'] == 'true' %}
+    internalTls:
+      secretClass: test-kafka-internal-tls
+{% endif %}
+  brokers:
+    roleGroups:
+      default:
+        replicas: 1
+      secondary:
+        replicas: 1
