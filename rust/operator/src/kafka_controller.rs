@@ -14,6 +14,7 @@ use stackable_operator::{
         ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
         SecretOperatorVolumeSourceBuilder, SecurityContextBuilder, VolumeBuilder,
     },
+    cluster_resources::ClusterResources,
     commons::{
         authentication::{AuthenticationClass, AuthenticationClassProvider},
         opa::OpaApiVersion,
@@ -27,14 +28,14 @@ use stackable_operator::{
                 EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
                 PodSpec, Probe, Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
             },
-            rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
+            rbac::v1::{RoleBinding, RoleRef, Subject},
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
-        Resource,
     },
     kube::{
         api::DynamicObject,
         runtime::{controller::Action, reflector::ObjectRef},
+        Resource,
     },
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
@@ -61,7 +62,6 @@ use crate::{
     ControllerConfig,
 };
 
-const FIELD_MANAGER_SCOPE: &str = "kafkacluster";
 const RESOURCE_SCOPE: &str = "kafka-operator_kafkacluster";
 
 pub struct Ctx {
@@ -181,6 +181,10 @@ pub enum Error {
         name: String,
         source: stackable_operator::error::Error,
     },
+    #[snafu(display("failed to delete orphaned resources"))]
+    DeleteOrphans {
+        source: stackable_operator::error::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -224,6 +228,7 @@ impl ReconcilerError for Error {
             } => Some(authentication_class.clone().erase()),
             Error::InvalidKafkaListeners { .. } => None,
             Error::InvalidContainerName { .. } => None,
+            Error::DeleteOrphans { .. } => None,
         }
     }
 }
@@ -231,6 +236,9 @@ impl ReconcilerError for Error {
 pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<Action> {
     tracing::info!("Starting reconcile");
     let client = &ctx.client;
+
+    let mut cluster_resources =
+        ClusterResources::new(APP_NAME, RESOURCE_SCOPE, &kafka.object_ref(&())).unwrap();
 
     let validated_config = validate_all_roles_and_groups_config(
         kafka
@@ -298,28 +306,16 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let (broker_role_serviceaccount, broker_role_rolebinding) =
         build_broker_role_serviceaccount(&kafka, &ctx.controller_config)?;
     let broker_role_serviceaccount_ref = ObjectRef::from_obj(&broker_role_serviceaccount);
-    let broker_role_service = client
-        .apply_patch(
-            FIELD_MANAGER_SCOPE,
-            &broker_role_service,
-            &broker_role_service,
-        )
+    let broker_role_service = cluster_resources
+        .add(client, &broker_role_service)
         .await
         .context(ApplyRoleServiceSnafu)?;
-    client
-        .apply_patch(
-            FIELD_MANAGER_SCOPE,
-            &broker_role_serviceaccount,
-            &broker_role_serviceaccount,
-        )
+    cluster_resources
+        .add(client, &broker_role_serviceaccount)
         .await
         .context(ApplyRoleServiceAccountSnafu)?;
-    client
-        .apply_patch(
-            FIELD_MANAGER_SCOPE,
-            &broker_role_rolebinding,
-            &broker_role_rolebinding,
-        )
+    cluster_resources
+        .add(client, &broker_role_rolebinding)
         .await
         .context(ApplyRoleRoleBindingSnafu)?;
 
@@ -336,20 +332,20 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             opa_connect.as_deref(),
             client_authentication_class.as_ref(),
         )?;
-        client
-            .apply_patch(FIELD_MANAGER_SCOPE, &rg_service, &rg_service)
+        cluster_resources
+            .add(client, &rg_service)
             .await
             .with_context(|_| ApplyRoleGroupServiceSnafu {
                 rolegroup: rolegroup.clone(),
             })?;
-        client
-            .apply_patch(FIELD_MANAGER_SCOPE, &rg_configmap, &rg_configmap)
+        cluster_resources
+            .add(client, &rg_configmap)
             .await
             .with_context(|_| ApplyRoleGroupConfigSnafu {
                 rolegroup: rolegroup.clone(),
             })?;
-        client
-            .apply_patch(FIELD_MANAGER_SCOPE, &rg_statefulset, &rg_statefulset)
+        cluster_resources
+            .add(client, &rg_statefulset)
             .await
             .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
                 rolegroup: rolegroup.clone(),
@@ -366,11 +362,16 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     .await
     .context(BuildDiscoveryConfigSnafu)?
     {
-        client
-            .apply_patch(FIELD_MANAGER_SCOPE, &discovery_cm, &discovery_cm)
+        cluster_resources
+            .add(client, &discovery_cm)
             .await
             .context(ApplyDiscoveryConfigSnafu)?;
     }
+
+    cluster_resources
+        .delete_orphaned_resources(client)
+        .await
+        .context(DeleteOrphansSnafu)?;
 
     Ok(Action::await_change())
 }
@@ -453,13 +454,13 @@ fn build_broker_role_serviceaccount(
             )
             .build(),
         role_ref: RoleRef {
-            api_group: ClusterRole::GROUP.to_string(),
-            kind: ClusterRole::KIND.to_string(),
+            api_group: "rbac.authorization.k8s.io".to_string(), // k8s_openapi 1.24 has made ClusterRole::GROUP crate private
+            kind: "ClusterRole".to_string(),
             name: controller_config.broker_clusterrole.clone(),
         },
         subjects: Some(vec![Subject {
-            api_group: Some(ServiceAccount::GROUP.to_string()),
-            kind: ServiceAccount::KIND.to_string(),
+            api_group: Some("".to_string()),
+            kind: "ServiceAccount".to_string(),
             name: sa_name,
             namespace: sa.metadata.namespace.clone(),
         }]),
