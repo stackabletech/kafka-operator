@@ -13,10 +13,6 @@ spec:
   version: {{ test_scenario['values']['kafka'] }}
   zookeeperConfigMapName: kafka-zk
   config:
-{% if test_scenario['values']['use-internal-tls'] == 'true' %}
-    internalTls:
-      secretClass: test-kafka-internal-tls
-{% endif %}
   brokers:
     roleGroups:
       default:

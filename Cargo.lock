@@ -1674,7 +1674,6 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "serde_yaml 0.8.26",
  "snafu",
  "stackable-operator",
  "strum",
@@ -1701,7 +1700,6 @@ version = "0.8.0-nightly"
 dependencies = [
  "built",
  "clap",
- "serde_yaml 0.8.26",
  "stackable-kafka-crd",
  "stackable-kafka-operator",
  "stackable-operator",
