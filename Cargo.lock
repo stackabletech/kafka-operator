@@ -1674,6 +1674,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "serde_yaml 0.9.13",
  "snafu",
  "stackable-operator",
  "strum",
