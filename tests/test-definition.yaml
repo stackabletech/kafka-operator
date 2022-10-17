@@ -54,3 +54,7 @@ tests:
       - use-client-tls
       - use-client-auth-tls
       - use-internal-tls
+  - name: delete-rolegroup
+    dimensions:
+      - kafka
+      - zookeeper-latest
