@@ -4,7 +4,5 @@ kind: TestStep
 metadata:
   name: kafka-tests
 commands:
-  - script: kubectl cp -n $NAMESPACE ./requirements.txt python-0:/tmp
   - script: kubectl cp -n $NAMESPACE ./metrics.py python-0:/tmp
-  - script: kubectl exec -n $NAMESPACE python-0 -- pip install --user -r /tmp/requirements.txt
   - script: kubectl cp -n $NAMESPACE ./test_heap.sh simple-kafka-broker-default-0:/tmp

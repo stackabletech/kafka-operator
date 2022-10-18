@@ -1,3 +1,4 @@
+mod command;
 mod discovery;
 mod kafka_controller;
 mod utils;
