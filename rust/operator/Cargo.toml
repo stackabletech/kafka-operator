@@ -6,6 +6,7 @@ license = "OSL-3.0"
 name = "stackable-kafka-operator"
 repository = "https://github.com/stackabletech/kafka-operator"
 version = "0.8.0-nightly"
+publish = false
 
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
