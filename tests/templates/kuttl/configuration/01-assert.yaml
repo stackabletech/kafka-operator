@@ -27,11 +27,11 @@ spec:
               memory: 1Gi
         - name: kcat-prober
   volumeClaimTemplates:
-  - metadata:
-      name: log-dirs
-    spec:
-      resources:
-        requests:
-          # value set in the role configuration and overridden in
-          # the rolegroup configuration
-          storage: 2Gi
+    - metadata:
+        name: log-dirs
+      spec:
+        resources:
+          requests:
+            # value set in the role configuration and overridden in
+            # the rolegroup configuration
+            storage: 2Gi
