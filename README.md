@@ -13,7 +13,7 @@
 
 This is a Kubernetes operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
 
-It is part of the Stackable Data Platform, a curated selection of the best open source data apps like Kafka, Druid, Trino or Spark, [all](#other-operators) working together seamlessly. Based on Kubernetes, it runs everywhere – [on prem or in the cloud]((#supported-platforms)).
+It is part of the Stackable Data Platform, a curated selection of the best open source data apps like Kafka, Druid, Trino or Spark, [all](#other-operators) working together seamlessly. Based on Kubernetes, it runs everywhere – [on prem or in the cloud](#supported-platforms).
 
 ## Installation
 
@@ -83,11 +83,12 @@ We love open-source!
 
 We develop and test our operators on the following cloud platforms:
 
-* Kubernetes 1.21-1.24
+* AKS on Microsoft Azure
 * EKS on Amazon Web Services (AWS)
 * GKE on Google Cloud Platform (GCP)
-* AKS on Microsoft Azure
+* [IONOS Cloud Managed Kubernetes](https://cloud.ionos.com/managed/kubernetes)
 * K3s
+* Kubernetes 1.21-1.24
 
 We are currently working to support:
 
