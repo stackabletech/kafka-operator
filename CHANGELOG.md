@@ -10,9 +10,15 @@ All notable changes to this project will be documented in this file.
 - Support for Kafka 3.3.1 ([#492])
 - Orphaned resources are deleted ([#495])
 
+### Changed
+
+- Role and rolegroup configurations are merged correctly ([#499]).
+- operator-rs: 0.22.0 -> 0.26.0 ([#495], [#499]).
+
 [#485]: https://github.com/stackabletech/kafka-operator/pull/485
 [#492]: https://github.com/stackabletech/kafka-operator/pull/492
 [#495]: https://github.com/stackabletech/kafka-operator/pull/495
+[#499]: https://github.com/stackabletech/kafka-operator/pull/499
 
 ### Changed
 
