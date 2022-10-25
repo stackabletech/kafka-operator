@@ -3,16 +3,17 @@
 </p>
 
 <h1 align="center">Stackable Operator for Apache Kafka</h1>
+
 [![Build Actions Status](https://ci.stackable.tech/job/kafka%2doperator%2dit%2dnightly/badge/icon?subject=Integration%20Tests)](https://ci.stackable.tech/job/kafka%2doperator%2dit%2dnightly)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/stackabletech/kafka-operator/graphs/commit-activity)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-green.svg)](https://docs.stackable.tech/home/stable/contributor/index.html)
 [![License OSL3.0](https://img.shields.io/badge/license-OSL3.0-green)](./LICENSE)
 
-[Documentation](https://docs.stackable.tech/kafka-operator/stable/index.html) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/)
+[Documentation](https://docs.stackable.tech/kafka-operator/stable/index.html) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/) | [Discussions](https://github.com/orgs/stackabletech/discussions)
 
 This is a Kubernetes operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
 
-It is part of the Stackable Data Platform, a curated selection of the best open source data apps like Kafka, Druid, Trino or Spark, [all](#other-operators) working together seamlessly. Based on Kubernetes, it runs everywhere – [on prem or in the cloud]((#supported-platforms)).
+It is part of the Stackable Data Platform, a curated selection of the best open source data apps like Kafka, Druid, Trino or Spark, [all](#other-operators) working together seamlessly. Based on Kubernetes, it runs everywhere – [on prem or in the cloud](#supported-platforms).
 
 ## Installation
 
@@ -30,6 +31,8 @@ The stable documentation for this operator can be found [here](https://docs.stac
 If you are interested in the most recent state of this repository, check out the [nightly docs](https://docs.stackable.tech/kafka/nightly/index.html) instead.
 
 The documentation for all Stackable products can be found at [docs.stackable.tech](https://docs.stackable.tech).
+
+If you have a question about the Stackable Data Platform contact us via our [homepage](https://stackable.tech/) or ask a public questions in our [Discussions forum](https://github.com/orgs/stackabletech/discussions).
 
 ## What Does This Do?
 
@@ -82,11 +85,12 @@ We love open-source!
 
 We develop and test our operators on the following cloud platforms:
 
-* Kubernetes 1.21-1.24
+* AKS on Microsoft Azure
 * EKS on Amazon Web Services (AWS)
 * GKE on Google Cloud Platform (GCP)
-* AKS on Microsoft Azure
+* [IONOS Cloud Managed Kubernetes](https://cloud.ionos.com/managed/kubernetes)
 * K3s
+* Kubernetes 1.21-1.24
 
 We are currently working to support:
 
@@ -96,24 +100,24 @@ We are currently working to support:
 
 These are the operators that are currently part of the Stackable Data Platform:
 
-- [Stackable Operator for Apache Airflow](https://github.com/stackabletech/airflow-operator)
-- [Stackable Operator for Apache Druid](https://github.com/stackabletech/druid-operator)
-- [Stackable Operator for Apache HBase](https://github.com/stackabletech/hbase-operator)
-- [Stackable Operator for Apache Hadoop HDFS](https://github.com/stackabletech/hdfs-operator)
-- [Stackable Operator for Apache Hive](https://github.com/stackabletech/hive-operator)
-- [Stackable Operator for Apache Kafka](https://github.com/stackabletech/kafka-operator)
-- [Stackable Operator for Apache NiFi](https://github.com/stackabletech/nifi-operator)
-- [Stackable Operator for Apache Spark](https://github.com/stackabletech/spark-k8s-operator)
-- [Stackable Operator for Apache Superset](https://github.com/stackabletech/superset-operator)
-- [Stackable Operator for Trino](https://github.com/stackabletech/trino-operator)
-- [Stackable Operator for Apache ZooKeeper](https://github.com/stackabletech/zookeeper-operator)
+* [Stackable Operator for Apache Airflow](https://github.com/stackabletech/airflow-operator)
+* [Stackable Operator for Apache Druid](https://github.com/stackabletech/druid-operator)
+* [Stackable Operator for Apache HBase](https://github.com/stackabletech/hbase-operator)
+* [Stackable Operator for Apache Hadoop HDFS](https://github.com/stackabletech/hdfs-operator)
+* [Stackable Operator for Apache Hive](https://github.com/stackabletech/hive-operator)
+* [Stackable Operator for Apache Kafka](https://github.com/stackabletech/kafka-operator)
+* [Stackable Operator for Apache NiFi](https://github.com/stackabletech/nifi-operator)
+* [Stackable Operator for Apache Spark](https://github.com/stackabletech/spark-k8s-operator)
+* [Stackable Operator for Apache Superset](https://github.com/stackabletech/superset-operator)
+* [Stackable Operator for Trino](https://github.com/stackabletech/trino-operator)
+* [Stackable Operator for Apache ZooKeeper](https://github.com/stackabletech/zookeeper-operator)
 
 And our internal operators:
 
-- [Commons Operator](https://github.com/stackabletech/commons-operator)
-- [Listener Operator](https://github.com/stackabletech/listener-operator)
-- [OpenPolicyAgent Operator](https://github.com/stackabletech/opa-operator)
-- [Secret Operator](https://github.com/stackabletech/secret-operator)
+* [Commons Operator](https://github.com/stackabletech/commons-operator)
+* [Listener Operator](https://github.com/stackabletech/listener-operator)
+* [OpenPolicyAgent Operator](https://github.com/stackabletech/opa-operator)
+* [Secret Operator](https://github.com/stackabletech/secret-operator)
 
 ## Contributing
 

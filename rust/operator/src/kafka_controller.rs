@@ -2,8 +2,8 @@
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
-    listener::get_kafka_listener_config, KafkaCluster, KafkaRole, TlsSecretClass, APP_NAME,
-    CLIENT_PORT, CLIENT_PORT_NAME, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
+    listener::get_kafka_listener_config, KafkaCluster, KafkaConfig, KafkaRole, TlsSecretClass,
+    APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
     METRICS_PORT_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE,
     STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_DIR,
     STACKABLE_TLS_CLIENT_AUTH_DIR, STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR,
@@ -20,6 +20,7 @@ use stackable_operator::{
         opa::OpaApiVersion,
         tls::TlsAuthenticationProvider,
     },
+    config::fragment::ValidationError,
     k8s_openapi::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
@@ -144,6 +145,11 @@ pub enum Error {
     RoleGroupNotFound {
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
+    #[snafu(display("failed to validate configuration of rolegroup {rolegroup}"))]
+    RoleGroupValidation {
+        rolegroup: RoleGroupRef<KafkaCluster>,
+        source: ValidationError,
+    },
     #[snafu(display("invalid ServiceAccount"))]
     InvalidServiceAccount {
         source: utils::NamespaceMismatchError,
@@ -215,6 +221,7 @@ impl ReconcilerError for Error {
             Error::BuildDiscoveryConfig { .. } => None,
             Error::ApplyDiscoveryConfig { .. } => None,
             Error::RoleGroupNotFound { .. } => None,
+            Error::RoleGroupValidation { .. } => None,
             Error::InvalidServiceAccount { .. } => None,
             Error::InvalidOpaConfig { .. } => None,
             Error::InvalidJavaHeapConfig { .. } => None,
@@ -270,12 +277,10 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .map(Cow::Borrowed)
         .unwrap_or_default();
 
-    // TODO: switch to AuthenticationClass::resolve if operator-rs is updated
     let client_authentication_class = if let Some(auth_class) = kafka.client_authentication_class()
     {
         Some(
-            client
-                .get::<AuthenticationClass>(auth_class, None) // AuthenticationClass has ClusterScope
+            AuthenticationClass::resolve(client, auth_class)
                 .await
                 .context(AuthenticationClassRetrievalSnafu {
                     authentication_class: ObjectRef::<AuthenticationClass>::new(auth_class),
@@ -321,35 +326,48 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .context(ApplyRoleRoleBindingSnafu)?;
 
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
-        let rolegroup = kafka.broker_rolegroup_ref(rolegroup_name);
+        let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
+        let (role, rolegroup) =
+            kafka
+                .rolegroup(&rolegroup_ref)
+                .with_context(|| RoleGroupNotFoundSnafu {
+                    rolegroup: rolegroup_ref.clone(),
+                })?;
+        let rolegroup_typed_config = rolegroup
+            .validate_config::<KafkaConfig>(role, &KafkaCluster::broker_default_config())
+            .with_context(|_| RoleGroupValidationSnafu {
+                rolegroup: rolegroup_ref.clone(),
+            })?;
 
-        let rg_service = build_broker_rolegroup_service(&rolegroup, &kafka)?;
-        let rg_configmap = build_broker_rolegroup_config_map(&rolegroup, &kafka, rolegroup_config)?;
+        let rg_service = build_broker_rolegroup_service(&rolegroup_ref, &kafka)?;
+        let rg_configmap =
+            build_broker_rolegroup_config_map(&rolegroup_ref, &kafka, rolegroup_config)?;
         let rg_statefulset = build_broker_rolegroup_statefulset(
-            &rolegroup,
+            &rolegroup_ref,
             &kafka,
             rolegroup_config,
             &broker_role_serviceaccount_ref,
             opa_connect.as_deref(),
             client_authentication_class.as_ref(),
+            &rolegroup_typed_config,
         )?;
         cluster_resources
             .add(client, &rg_service)
             .await
             .with_context(|_| ApplyRoleGroupServiceSnafu {
-                rolegroup: rolegroup.clone(),
+                rolegroup: rolegroup_ref.clone(),
             })?;
         cluster_resources
             .add(client, &rg_configmap)
             .await
             .with_context(|_| ApplyRoleGroupConfigSnafu {
-                rolegroup: rolegroup.clone(),
+                rolegroup: rolegroup_ref.clone(),
             })?;
         cluster_resources
             .add(client, &rg_statefulset)
             .await
             .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
-                rolegroup: rolegroup.clone(),
+                rolegroup: rolegroup_ref.clone(),
             })?;
     }
 
@@ -571,6 +589,7 @@ fn build_broker_rolegroup_statefulset(
     serviceaccount: &ObjectRef<ServiceAccount>,
     opa_connect_string: Option<&str>,
     client_authentication_class: Option<&AuthenticationClass>,
+    rolegroup_typed_config: &KafkaConfig,
 ) -> Result<StatefulSet> {
     let mut cb_kafka =
         ContainerBuilder::new(APP_NAME).context(InvalidContainerNameSnafu { name: APP_NAME })?;
@@ -657,7 +676,9 @@ fn build_broker_rolegroup_statefulset(
         .add_volume_mount("listener", STACKABLE_LISTENER_DIR)
         .security_context(SecurityContextBuilder::run_as_root());
 
-    let (pvc, resources) = kafka.resources(rolegroup_ref);
+    let resources = rolegroup_typed_config.resources.clone();
+    let pvcs = resources.storage.build_pvcs();
+    let container_resources: ResourceRequirements = resources.into();
 
     let mut env = broker_config
         .get(&PropertyNameKind::Env)
@@ -671,7 +692,7 @@ fn build_broker_rolegroup_statefulset(
         .collect::<Vec<_>>();
 
     if let Some(heap_limits) = kafka
-        .heap_limits(&resources)
+        .heap_limits(&container_resources)
         .context(InvalidJavaHeapConfigSnafu)?
     {
         env.push(EnvVar {
@@ -757,7 +778,7 @@ fn build_broker_rolegroup_statefulset(
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("config", STACKABLE_CONFIG_DIR)
         .add_volume_mount("listener", STACKABLE_LISTENER_DIR)
-        .resources(resources);
+        .resources(container_resources);
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
@@ -871,14 +892,14 @@ fn build_broker_rolegroup_statefulset(
             },
             service_name: rolegroup_ref.object_name(),
             template: pod_template,
-            volume_claim_templates: Some(pvc),
+            volume_claim_templates: Some(pvcs),
             ..StatefulSetSpec::default()
         }),
         status: None,
     })
 }
 
-pub fn error_policy(_error: &Error, _ctx: Arc<Ctx>) -> Action {
+pub fn error_policy(_obj: Arc<KafkaCluster>, _error: &Error, _ctx: Arc<Ctx>) -> Action {
     Action::requeue(Duration::from_secs(5))
 }
 

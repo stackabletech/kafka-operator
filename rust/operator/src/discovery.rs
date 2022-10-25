@@ -149,7 +149,10 @@ async fn nodeport_hosts(
     let endpoints = client
         .get::<Endpoints>(
             svc.metadata.name.as_deref().context(NoNameSnafu)?,
-            svc.metadata.namespace.as_deref(),
+            svc.metadata
+                .namespace
+                .as_deref()
+                .context(NoNamespaceSnafu)?,
         )
         .await
         .with_context(|_| FindEndpointsSnafu {
