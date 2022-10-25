@@ -11,8 +11,9 @@ use stackable_kafka_crd::{
 };
 use stackable_operator::{
     builder::{
-        ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
-        SecretOperatorVolumeSourceBuilder, SecurityContextBuilder, VolumeBuilder,
+        ConfigMapBuilder, ContainerBuilder, ListenerOperatorVolumeSourceBuilder, ListenerReference,
+        ObjectMetaBuilder, PodBuilder, SecretOperatorVolumeSourceBuilder, SecurityContextBuilder,
+        VolumeBuilder,
     },
     cluster_resources::ClusterResources,
     commons::{
@@ -26,17 +27,15 @@ use stackable_operator::{
             apps::v1::{StatefulSet, StatefulSetSpec},
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar,
-                EnvVarSource, EphemeralVolumeSource, ExecAction, ObjectFieldSelector,
-                PersistentVolumeClaimSpec, PersistentVolumeClaimTemplate, PodSpec, Probe,
+                EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe,
                 ResourceRequirements, Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
             },
             rbac::v1::{RoleBinding, RoleRef, Subject},
         },
-        apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
+        apimachinery::pkg::apis::meta::v1::LabelSelector,
     },
     kube::{
         api::DynamicObject,
-        core::ObjectMeta,
         runtime::{controller::Action, reflector::ObjectRef},
         Resource,
     },
@@ -822,31 +821,12 @@ fn build_broker_rolegroup_statefulset(
         })
         .add_volume(Volume {
             name: "listener".to_string(),
-            ephemeral: Some(EphemeralVolumeSource {
-                volume_claim_template: Some(PersistentVolumeClaimTemplate {
-                    metadata: Some(ObjectMeta {
-                        annotations: Some(
-                            [(
-                                "listeners.stackable.tech/listener-class".to_string(),
-                                "nodeport".to_string(),
-                            )]
-                            .into(),
-                        ),
-                        ..Default::default()
-                    }),
-                    spec: PersistentVolumeClaimSpec {
-                        access_modes: Some(vec!["ReadWriteMany".to_string()]),
-                        resources: Some(ResourceRequirements {
-                            requests: Some(
-                                [("storage".to_string(), Quantity("1".to_string()))].into(),
-                            ),
-                            ..Default::default()
-                        }),
-                        storage_class_name: Some("listeners.stackable.tech".to_string()),
-                        ..Default::default()
-                    },
-                }),
-            }),
+            ephemeral: Some(
+                ListenerOperatorVolumeSourceBuilder::new(&ListenerReference::ListenerClass(
+                    "nodeport".into(),
+                ))
+                .build(),
+            ),
             ..Volume::default()
         })
         .build_template();
