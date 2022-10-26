@@ -11,9 +11,8 @@ use stackable_kafka_crd::{
 };
 use stackable_operator::{
     builder::{
-        ConfigMapBuilder, ContainerBuilder, ListenerOperatorVolumeSourceBuilder, ListenerReference,
-        ObjectMetaBuilder, PodBuilder, SecretOperatorVolumeSourceBuilder, SecurityContextBuilder,
-        VolumeBuilder,
+        ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
+        SecretOperatorVolumeSourceBuilder, SecurityContextBuilder, VolumeBuilder,
     },
     cluster_resources::ClusterResources,
     commons::{
@@ -819,16 +818,7 @@ fn build_broker_rolegroup_statefulset(
             }),
             ..Volume::default()
         })
-        .add_volume(Volume {
-            name: "listener".to_string(),
-            ephemeral: Some(
-                ListenerOperatorVolumeSourceBuilder::new(&ListenerReference::ListenerClass(
-                    "nodeport".into(),
-                ))
-                .build(),
-            ),
-            ..Volume::default()
-        })
+        .add_listener_volume_by_listener_class("listener", "nodeport")
         .build_template();
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
