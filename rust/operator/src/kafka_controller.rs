@@ -3,11 +3,11 @@
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, KafkaCluster, KafkaConfig, KafkaRole, TlsSecretClass,
-    APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
-    METRICS_PORT_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_TLS_CLIENT_AUTH_DIR,
-    STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR, STACKABLE_TMP_DIR,
-    TLS_DEFAULT_SECRET_CLASS, DOCKER_IMAGE_BASE_NAME,
+    APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
+    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, SECURE_CLIENT_PORT,
+    SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
+    STACKABLE_TLS_CLIENT_AUTH_DIR, STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR,
+    STACKABLE_TMP_DIR, TLS_DEFAULT_SECRET_CLASS,
 };
 use stackable_operator::{
     builder::{
@@ -340,9 +340,14 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
                 rolegroup: rolegroup_ref.clone(),
             })?;
 
-        let rg_service = build_broker_rolegroup_service(&rolegroup_ref, &kafka, &resolved_product_image)?;
-        let rg_configmap =
-            build_broker_rolegroup_config_map(&rolegroup_ref, &kafka, rolegroup_config, &resolved_product_image)?;
+        let rg_service =
+            build_broker_rolegroup_service(&rolegroup_ref, &kafka, &resolved_product_image)?;
+        let rg_configmap = build_broker_rolegroup_config_map(
+            &rolegroup_ref,
+            &kafka,
+            rolegroup_config,
+            &resolved_product_image,
+        )?;
         let rg_statefulset = build_broker_rolegroup_statefulset(
             &rolegroup_ref,
             &kafka,

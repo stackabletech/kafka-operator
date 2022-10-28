@@ -5,9 +5,10 @@ use snafu::{OptionExt, Snafu};
 use stackable_operator::commons::{
     product_image_selection::ProductImage,
     resources::{
-    CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimitsFragment, PvcConfigFragment,
-    ResourcesFragment,
-}};
+        CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimitsFragment, PvcConfigFragment,
+        ResourcesFragment,
+    },
+};
 use stackable_operator::config::fragment::{Fragment, ValidationError};
 use stackable_operator::memory::to_java_heap;
 use stackable_operator::role_utils::RoleGroup;
