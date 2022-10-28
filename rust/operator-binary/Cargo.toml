@@ -7,6 +7,7 @@ license = "OSL-3.0"
 name = "stackable-kafka-operator-binary"
 repository = "https://github.com/stackabletech/kafka-operator"
 version = "0.8.0-nightly"
+publish = false
 
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
@@ -14,7 +15,6 @@ stackable-kafka-operator = { path = "../operator" }
 stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "feature/product-image-selection" }
 
 clap = { version = "3.2.22", features = ["derive", "env"] }
-serde_yaml = "0.8.24"
 tokio = { version = "1.21.1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.36"
 

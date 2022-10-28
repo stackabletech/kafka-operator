@@ -6,6 +6,7 @@ license = "OSL-3.0"
 name = "stackable-kafka-crd"
 repository = "https://github.com/stackabletech/kafka-operator"
 version = "0.8.0-nightly"
+publish = false
 
 [dependencies]
 stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "feature/product-image-selection" }
@@ -17,4 +18,4 @@ snafu = "0.7.1"
 strum = { version = "0.24.1", features = ["derive"] }
 
 [dev-dependencies]
-serde_yaml = "0.8.24"
+serde_yaml = "0.9"

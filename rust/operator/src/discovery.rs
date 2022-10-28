@@ -9,8 +9,6 @@ use stackable_operator::{
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
 
-use crate::kafka_controller::CONTROLLER_NAME;
-
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("object {} is missing metadata to build owner reference", kafka))]
@@ -48,8 +46,9 @@ pub async fn build_discovery_configmaps(
     kafka: &KafkaCluster,
     svc: &Service,
     resolved_product_image: &ResolvedProductImage,
+    app_managed_by: &str,
 ) -> Result<Vec<ConfigMap>, Error> {
-    let name = owner.name_any();
+    let name = owner.name_unchecked();
     let port_name = kafka.client_port_name();
     Ok(vec![
         build_discovery_configmap(
@@ -58,6 +57,7 @@ pub async fn build_discovery_configmaps(
             kafka,
             service_hosts(svc, port_name)?,
             resolved_product_image,
+            app_managed_by,
         )?,
         build_discovery_configmap(
             &format!("{}-nodeport", name),
@@ -65,6 +65,7 @@ pub async fn build_discovery_configmaps(
             kafka,
             nodeport_hosts(client, svc, port_name).await?,
             resolved_product_image,
+            app_managed_by,
         )?,
     ])
 }
@@ -78,6 +79,7 @@ fn build_discovery_configmap(
     kafka: &KafkaCluster,
     hosts: impl IntoIterator<Item = (impl Into<String>, u16)>,
     resolved_product_image: &ResolvedProductImage,
+    app_managed_by: &str,
 ) -> Result<ConfigMap, Error> {
     // Write a list of bootstrap servers in the format that Kafka clients:
     // "{host1}:{port1},{host2:port2},..."
@@ -99,7 +101,7 @@ fn build_discovery_configmap(
                     kafka,
                     APP_NAME,
                     &resolved_product_image.product_version,
-                    CONTROLLER_NAME,
+                    app_managed_by,
                     &KafkaRole::Broker.to_string(),
                     "discovery",
                 )
@@ -150,7 +152,10 @@ async fn nodeport_hosts(
     let endpoints = client
         .get::<Endpoints>(
             svc.metadata.name.as_deref().context(NoNameSnafu)?,
-            svc.metadata.namespace.as_deref(),
+            svc.metadata
+                .namespace
+                .as_deref()
+                .context(NoNamespaceSnafu)?,
         )
         .await
         .with_context(|_| FindEndpointsSnafu {

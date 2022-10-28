@@ -2,12 +2,19 @@ pub mod listener;
 
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
-use stackable_operator::commons::product_image_selection::ProductImage;
+use stackable_operator::commons::{
+    product_image_selection::ProductImage,
+    resources::{
+    CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimitsFragment, PvcConfigFragment,
+    ResourcesFragment,
+}};
+use stackable_operator::config::fragment::{Fragment, ValidationError};
 use stackable_operator::memory::to_java_heap;
+use stackable_operator::role_utils::RoleGroup;
 use stackable_operator::{
     commons::{
         opa::OpaConfig,
-        resources::{CpuLimits, MemoryLimits, NoRuntimeLimits, PvcConfig, Resources},
+        resources::{NoRuntimeLimits, PvcConfig, Resources},
     },
     config::merge::Merge,
     error::OperatorResult,
@@ -97,6 +104,11 @@ pub enum Error {
     NoNamespace,
     #[snafu(display("object defines no version"))]
     ObjectHasNoVersion,
+    #[snafu(display("failed to validate config of rolegroup {rolegroup}"))]
+    RoleGroupValidation {
+        rolegroup: RoleGroupRef<KafkaCluster>,
+        source: ValidationError,
+    },
 }
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
@@ -116,7 +128,7 @@ pub enum Error {
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterSpec {
     pub image: ProductImage,
-    pub brokers: Option<Role<KafkaConfig>>,
+    pub brokers: Option<Role<KafkaConfigFragment>>,
     pub zookeeper_config_map_name: String,
     pub opa: Option<OpaConfig>,
     pub log4j: Option<String>,
@@ -200,6 +212,19 @@ impl KafkaCluster {
         }
     }
 
+    pub fn rolegroup(
+        &self,
+        rolegroup_ref: &RoleGroupRef<KafkaCluster>,
+    ) -> Option<(&Role<KafkaConfigFragment>, &RoleGroup<KafkaConfigFragment>)> {
+        match rolegroup_ref.role.parse().ok()? {
+            KafkaRole::Broker => {
+                let role = &self.spec.brokers.as_ref()?;
+                let rg = role.role_groups.get(&rolegroup_ref.role_group)?;
+                Some((role, rg))
+            }
+        }
+    }
+
     /// List all pods expected to form the cluster
     ///
     /// We try to predict the pods here rather than looking at the current cluster state in order to
@@ -225,67 +250,23 @@ impl KafkaCluster {
             }))
     }
 
-    /// Build the [`PersistentVolumeClaim`]s and [`ResourceRequirements`] for the given `rolegroup_ref`.
-    /// These can be defined at the role or rolegroup level and as usual, the
-    /// following precedence rules are implemented:
-    /// 1. group pvc
-    /// 2. role pvc
-    /// 3. a default PVC with 1Gi capacity
-    pub fn resources(
-        &self,
-        rolegroup_ref: &RoleGroupRef<KafkaCluster>,
-    ) -> (Vec<PersistentVolumeClaim>, ResourceRequirements) {
-        let mut role_resources = self.role_resources();
-        role_resources.merge(&Self::default_resources());
-        let mut resources = self.rolegroup_resources(rolegroup_ref);
-        resources.merge(&role_resources);
-
-        let data_pvc = resources
-            .storage
-            .log_dirs
-            .build_pvc(LOG_DIRS_VOLUME_NAME, Some(vec!["ReadWriteOnce"]));
-        let pod_resources = resources.clone().into();
-
-        (vec![data_pvc], pod_resources)
-    }
-
-    fn rolegroup_resources(
-        &self,
-        rolegroup_ref: &RoleGroupRef<KafkaCluster>,
-    ) -> Resources<Storage, NoRuntimeLimits> {
-        let spec: &KafkaClusterSpec = &self.spec;
-
-        spec.brokers
-            .as_ref()
-            .map(|brokers| &brokers.role_groups)
-            .and_then(|role_groups| role_groups.get(&rolegroup_ref.role_group))
-            .map(|role_group| role_group.config.config.resources.clone())
-            .unwrap_or_default()
-    }
-
-    fn role_resources(&self) -> Resources<Storage, NoRuntimeLimits> {
-        let spec: &KafkaClusterSpec = &self.spec;
-        spec.brokers
-            .as_ref()
-            .map(|brokers| brokers.config.config.resources.clone())
-            .unwrap_or_default()
-    }
-
-    fn default_resources() -> Resources<Storage, NoRuntimeLimits> {
-        Resources {
-            cpu: CpuLimits {
-                min: None,
-                max: None,
-            },
-            memory: MemoryLimits {
-                limit: None,
-                runtime_limits: NoRuntimeLimits {},
-            },
-            storage: Storage {
-                log_dirs: PvcConfig {
-                    capacity: Some(Quantity("1Gi".to_owned())),
-                    storage_class: None,
-                    selectors: None,
+    pub fn broker_default_config() -> KafkaConfigFragment {
+        KafkaConfigFragment {
+            resources: ResourcesFragment {
+                cpu: CpuLimitsFragment {
+                    min: Some(Quantity("500m".to_owned())),
+                    max: Some(Quantity("4".to_owned())),
+                },
+                memory: MemoryLimitsFragment {
+                    limit: Some(Quantity("2Gi".to_owned())),
+                    runtime_limits: NoRuntimeLimitsFragment {},
+                },
+                storage: StorageFragment {
+                    log_dirs: PvcConfigFragment {
+                        capacity: Some(Quantity("1Gi".to_owned())),
+                        storage_class: None,
+                        selectors: None,
+                    },
                 },
             },
         }
@@ -345,6 +326,7 @@ impl KafkaCluster {
 /// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
 ///
 /// Used for service discovery.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KafkaPodRef {
     pub namespace: String,
     pub role_group_service_name: String,
@@ -378,21 +360,54 @@ pub enum KafkaRole {
     Broker,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Merge, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Default, PartialEq, Fragment, JsonSchema)]
+#[fragment_attrs(
+    derive(
+        Clone,
+        Debug,
+        Default,
+        Deserialize,
+        JsonSchema,
+        Merge,
+        PartialEq,
+        Serialize
+    ),
+    serde(rename_all = "camelCase")
+)]
 pub struct Storage {
-    #[serde(default)]
+    #[fragment_attrs(serde(default))]
     pub log_dirs: PvcConfig,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
+impl Storage {
+    pub fn build_pvcs(&self) -> Vec<PersistentVolumeClaim> {
+        let data_pvc = self
+            .log_dirs
+            .build_pvc(LOG_DIRS_VOLUME_NAME, Some(vec!["ReadWriteOnce"]));
+        vec![data_pvc]
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Fragment, JsonSchema)]
+#[fragment_attrs(
+    derive(
+        Clone,
+        Debug,
+        Default,
+        Deserialize,
+        JsonSchema,
+        Merge,
+        PartialEq,
+        Serialize
+    ),
+    serde(rename_all = "camelCase")
+)]
 pub struct KafkaConfig {
-    #[serde(default)]
+    #[fragment_attrs(serde(default))]
     pub resources: Resources<Storage, NoRuntimeLimits>,
 }
 
-impl Configuration for KafkaConfig {
+impl Configuration for KafkaConfigFragment {
     type Configurable = KafkaCluster;
 
     fn compute_env(
