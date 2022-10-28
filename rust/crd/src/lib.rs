@@ -563,7 +563,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
@@ -582,7 +584,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             tls:
@@ -604,7 +608,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             tls: null
@@ -622,7 +628,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             internalTls:
@@ -647,7 +655,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
@@ -666,7 +676,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             internalTls:
@@ -688,7 +700,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             tls:
