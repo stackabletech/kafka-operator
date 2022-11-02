@@ -163,8 +163,6 @@ pub enum Error {
     InvalidJavaHeapConfig {
         source: stackable_operator::error::Error,
     },
-    #[snafu(display("failed to parse Kafka version/image"))]
-    KafkaVersionParseFailure { source: stackable_kafka_crd::Error },
     #[snafu(display("failed to retrieve {}", authentication_class))]
     AuthenticationClassRetrieval {
         source: stackable_operator::error::Error,
@@ -226,7 +224,6 @@ impl ReconcilerError for Error {
             Error::InvalidServiceAccount { .. } => None,
             Error::InvalidOpaConfig { .. } => None,
             Error::InvalidJavaHeapConfig { .. } => None,
-            Error::KafkaVersionParseFailure { .. } => None,
             Error::AuthenticationClassRetrieval {
                 authentication_class,
                 ..

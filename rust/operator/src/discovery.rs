@@ -35,8 +35,6 @@ pub enum Error {
     BuildConfigMap {
         source: stackable_operator::error::Error,
     },
-    #[snafu(display("failed to parse Kafka version/image"))]
-    KafkaVersionParseFailure { source: stackable_kafka_crd::Error },
 }
 
 /// Builds discovery [`ConfigMap`]s for connecting to a [`KafkaCluster`] for all expected scenarios
