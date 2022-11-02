@@ -240,10 +240,10 @@ impl ReconcilerError for Error {
 }
 
 pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<Action> {
-    let resolved_product_image = kafka.spec.image.resolve(DOCKER_IMAGE_BASE_NAME);
-
     tracing::info!("Starting reconcile");
     let client = &ctx.client;
+
+    let resolved_product_image = kafka.spec.image.resolve(DOCKER_IMAGE_BASE_NAME);
 
     let mut cluster_resources =
         ClusterResources::new(APP_NAME, RESOURCE_SCOPE, &kafka.object_ref(&())).unwrap();
