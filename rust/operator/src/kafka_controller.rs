@@ -668,7 +668,7 @@ fn build_broker_rolegroup_statefulset(
         .context(InvalidContainerNameSnafu {
             name: "get-svc".to_string(),
         })?
-        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
+        .image_from_product_image(resolved_product_image)
         .command(vec!["bash".to_string()])
         .args(vec![
             "-euo".to_string(),
@@ -691,7 +691,7 @@ fn build_broker_rolegroup_statefulset(
         .build();
 
     cb_prepare
-        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
+        .image_from_product_image(resolved_product_image)
         .command(vec![
             "/bin/bash".to_string(),
             "-euo".to_string(),
