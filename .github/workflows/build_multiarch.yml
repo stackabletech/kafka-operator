@@ -187,7 +187,7 @@ jobs:
       - name: log
         run: echo All tests have passed!
 
-  package_and_publish:
+  package_and_publish_docker:
     name: Package Charts, Build Docker Image and publish them
     needs:
       - tests_passed
@@ -223,6 +223,6 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         run: python/cargo_version.py -m pr${{ github.event.pull_request.number }}
 
-      - name: Build Docker image
+      - name: Build and push multi-arch Docker images
         if: env.NEXUS_PASSWORD != null # pragma: allowlist secret
-        run: make docker
+        run: make docker-multiarch
