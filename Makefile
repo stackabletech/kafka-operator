@@ -39,6 +39,15 @@ docker: docker-build docker-publish
 
 docker-release: docker-build-latest docker-publish
 
+docker-build-and-publish-multiarch:
+	# the creation and removal of the builder is here due to my laziness (Vlad)
+	docker buildx create --name builder --use
+	echo "${NEXUS_PASSWORD}" | docker login --username github --password-stdin docker.stackable.tech
+	docker buildx build --force-rm --build-arg ORG_NAME=stackable-experimental --build-arg VERSION=${VERSION} -t "docker.stackable.tech/stackable-experimental/kafka-operator:${VERSION}" -f docker/Dockerfile --platform linux/amd64,linux/arm64 --push .
+	docker buildx remove builder
+
+docker-multiarch: docker-build-and-publish-multiarch
+
 ## Chart related targets
 compile-chart: version crds config
 
