@@ -188,7 +188,7 @@ jobs:
         run: echo All tests have passed!
 
   package_and_publish_docker:
-    name: Package Charts, Build Docker Image and publish them
+    name: Build Docker Image and publish it
     needs:
       - tests_passed
     runs-on: ubuntu-latest
