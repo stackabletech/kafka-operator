@@ -26,7 +26,7 @@ RUN microdnf install -y yum \
 
 COPY LICENSE /licenses/LICENSE
 
-COPY --from=builder /app/stackable-kafka-operator /
+COPY --from=builder /app/stackable-kafka-operator* /
 COPY deploy/config-spec/properties.yaml /etc/stackable/kafka-operator/config-spec/properties.yaml
 
 RUN groupadd -g 1000 stackable && adduser -u 1000 -g stackable -c 'Stackable Operator' stackable
