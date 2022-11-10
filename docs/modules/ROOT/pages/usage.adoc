@@ -23,7 +23,7 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: 3.2.0-stackable0.1.0
+  version: 3.2.0-stackable0.2.0
   zookeeperConfigMapName: simple-kafka-znode
   brokers:
     roleGroups:
@@ -40,7 +40,7 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: 3.2.0-stackable0.1.0
+  version: 3.2.0-stackable0.2.0
   zookeeperConfigMapName: simple-kafka-znode
   opa:
     configMapName: simple-opa
@@ -61,7 +61,7 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: 3.2.0-stackable0.1.0
+  version: 3.2.0-stackable0.2.0
   zookeeperConfigMapName: simple-kafka-znode
   opa:
     configMapName: simple-opa
@@ -96,7 +96,7 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: 3.2.0-stackable0.1.0
+  version: 3.2.0-stackable0.2.0
   zookeeperConfigMapName: simple-kafka-znode
   log4j: |-
     log4j.rootLogger=INFO, stdout, kafkaAppender
@@ -128,7 +128,7 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: 3.2.0-stackable0.1.0
+  version: 3.2.0-stackable0.2.0
   zookeeperConfigMapName: simple-kafka-znode
   config:
     tls:
@@ -198,7 +198,7 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: 3.2.0-stackable0.1.0
+  version: 3.2.0-stackable0.2.0
   zookeeperConfigMapName: simple-kafka-znode
   config:
     tls:
