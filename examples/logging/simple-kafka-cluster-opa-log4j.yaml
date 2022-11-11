@@ -136,10 +136,10 @@ spec:
     log4j.additivity.kafka.authorizer.logger=false
 
     log4j.logger.org.openpolicyagent=DEBUG, authorizerAppender
-  configOverrides:
-    server.properties:
-      opa.authorizer.cache.expire.after.seconds: "10"
   brokers:
+    configOverrides:
+      server.properties:
+        opa.authorizer.cache.expire.after.seconds: "10"  
     roleGroups:
       default:
         replicas: 3
