@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated stackable image versions ([#513])
+
+[#513]: https://github.com/stackabletech/kafka-operator/pull/513
+
 ## [0.8.0] - 2022-11-07
 
 ### Added
