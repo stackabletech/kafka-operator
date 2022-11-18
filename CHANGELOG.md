@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Updated stackable image versions ([#513]).
-- operator-rs: 0.26.0 -> 0.27.1 ([#519]). 
+- operator-rs: 0.26.0 -> 0.27.1 ([#519]).
 
 [#513]: https://github.com/stackabletech/kafka-operator/pull/513
 [#519]: https://github.com/stackabletech/kafka-operator/pull/519
