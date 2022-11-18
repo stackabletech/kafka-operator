@@ -1,7 +1,8 @@
 use crate::utils::build_recommended_labels;
+use crate::KAFKA_CONTROLLER_NAME;
 
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{KafkaCluster, KafkaRole, APP_NAME};
+use stackable_kafka_crd::{KafkaCluster, KafkaRole};
 use stackable_operator::{
     builder::{ConfigMapBuilder, ObjectMetaBuilder},
     k8s_openapi::api::core::v1::{ConfigMap, Endpoints, Service, ServicePort},
@@ -86,7 +87,7 @@ fn build_discovery_configmap(
                 })?
                 .with_recommended_labels(build_recommended_labels(
                     kafka,
-                    APP_NAME,
+                    KAFKA_CONTROLLER_NAME,
                     kafka
                         .image_version()
                         .context(KafkaVersionParseFailureSnafu)?,
