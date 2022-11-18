@@ -11,10 +11,10 @@ use stackable_operator::{
 use std::{sync::Arc, time::Duration};
 use strum::{EnumDiscriminants, IntoStaticStr};
 
+pub const POD_SERVICE_CONTROLLER_NAME: &str = "pod-service";
 pub const LABEL_ENABLE: &str = "kafka.stackable.tech/pod-service";
-const LABEL_STS_POD_NAME: &str = "statefulset.kubernetes.io/pod-name";
 
-const FIELD_MANAGER_SCOPE: &str = "pod-service";
+const LABEL_STS_POD_NAME: &str = "statefulset.kubernetes.io/pod-name";
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -89,7 +89,7 @@ pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Arc<Ctx>) -> Result<Action> {
         ..Service::default()
     };
     ctx.client
-        .apply_patch(FIELD_MANAGER_SCOPE, &svc, &svc)
+        .apply_patch(POD_SERVICE_CONTROLLER_NAME, &svc, &svc)
         .await
         .context(ApplyServiceFailedSnafu)?;
     Ok(Action::await_change())

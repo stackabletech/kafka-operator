@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, convert::TryInto, num::TryFromIntError};
+use crate::utils::build_recommended_labels;
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{KafkaCluster, KafkaRole, APP_NAME};
@@ -7,6 +7,7 @@ use stackable_operator::{
     k8s_openapi::api::core::v1::{ConfigMap, Endpoints, Service, ServicePort},
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
+use std::{collections::BTreeSet, convert::TryInto, num::TryFromIntError};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -40,28 +41,20 @@ pub enum Error {
 
 /// Builds discovery [`ConfigMap`]s for connecting to a [`KafkaCluster`] for all expected scenarios
 pub async fn build_discovery_configmaps(
-    client: &stackable_operator::client::Client,
-    owner: &impl Resource<DynamicType = ()>,
     kafka: &KafkaCluster,
+    owner: &impl Resource<DynamicType = ()>,
+    client: &stackable_operator::client::Client,
     svc: &Service,
-    app_managed_by: &str,
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name_unchecked();
     let port_name = kafka.client_port_name();
     Ok(vec![
+        build_discovery_configmap(kafka, owner, &name, service_hosts(svc, port_name)?)?,
         build_discovery_configmap(
-            &name,
-            owner,
             kafka,
-            service_hosts(svc, port_name)?,
-            app_managed_by,
-        )?,
-        build_discovery_configmap(
+            owner,
             &format!("{}-nodeport", name),
-            owner,
-            kafka,
             nodeport_hosts(client, svc, port_name).await?,
-            app_managed_by,
         )?,
     ])
 }
@@ -70,11 +63,10 @@ pub async fn build_discovery_configmaps(
 ///
 /// `hosts` will usually come from either [`service_hosts`] or [`nodeport_hosts`].
 fn build_discovery_configmap(
-    name: &str,
-    owner: &impl Resource<DynamicType = ()>,
     kafka: &KafkaCluster,
+    owner: &impl Resource<DynamicType = ()>,
+    name: &str,
     hosts: impl IntoIterator<Item = (impl Into<String>, u16)>,
-    app_managed_by: &str,
 ) -> Result<ConfigMap, Error> {
     // Write a list of bootstrap servers in the format that Kafka clients:
     // "{host1}:{port1},{host2:port2},..."
@@ -92,16 +84,15 @@ fn build_discovery_configmap(
                 .with_context(|_| ObjectMissingMetadataForOwnerRefSnafu {
                     kafka: ObjectRef::from_obj(kafka),
                 })?
-                .with_recommended_labels(
+                .with_recommended_labels(build_recommended_labels(
                     kafka,
                     APP_NAME,
                     kafka
                         .image_version()
                         .context(KafkaVersionParseFailureSnafu)?,
-                    app_managed_by,
                     &KafkaRole::Broker.to_string(),
                     "discovery",
-                )
+                ))
                 .build(),
         )
         .add_data("KAFKA", bootstrap_servers)

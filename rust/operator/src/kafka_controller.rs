@@ -4,10 +4,10 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, KafkaCluster, KafkaConfig, KafkaRole, TlsSecretClass,
     APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
-    METRICS_PORT_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_TLS_CLIENT_AUTH_DIR,
-    STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR, STACKABLE_TMP_DIR,
-    TLS_DEFAULT_SECRET_CLASS,
+    METRICS_PORT_NAME, OPERATOR_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME,
+    SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
+    STACKABLE_TLS_CLIENT_AUTH_DIR, STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR,
+    STACKABLE_TMP_DIR, TLS_DEFAULT_SECRET_CLASS,
 };
 use stackable_operator::{
     builder::{
@@ -55,16 +55,15 @@ use std::{
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-use crate::command::{get_svc_container_cmd_args, kcat_container_cmd_args};
 use crate::{
-    command,
+    command::{self, get_svc_container_cmd_args, kcat_container_cmd_args},
     discovery::{self, build_discovery_configmaps},
     pod_svc_controller,
-    utils::{self, ObjectRefExt},
+    utils::{self, build_recommended_labels, ObjectRefExt},
     ControllerConfig,
 };
 
-const RESOURCE_SCOPE: &str = "kafka-operator_kafkacluster";
+pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -245,8 +244,13 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     tracing::info!("Starting reconcile");
     let client = &ctx.client;
 
-    let mut cluster_resources =
-        ClusterResources::new(APP_NAME, RESOURCE_SCOPE, &kafka.object_ref(&())).unwrap();
+    let mut cluster_resources = ClusterResources::new(
+        APP_NAME,
+        OPERATOR_NAME,
+        KAFKA_CONTROLLER_NAME,
+        &kafka.object_ref(&()),
+    )
+    .unwrap();
 
     let validated_config = validate_all_roles_and_groups_config(
         kafka
@@ -371,15 +375,9 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             })?;
     }
 
-    for discovery_cm in build_discovery_configmaps(
-        client,
-        &*kafka,
-        &kafka,
-        &broker_role_service,
-        RESOURCE_SCOPE,
-    )
-    .await
-    .context(BuildDiscoveryConfigSnafu)?
+    for discovery_cm in build_discovery_configmaps(&kafka, &*kafka, client, &broker_role_service)
+        .await
+        .context(BuildDiscoveryConfigSnafu)?
     {
         cluster_resources
             .add(client, &discovery_cm)
@@ -408,16 +406,15 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
             .name(&role_svc_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
+                KAFKA_CONTROLLER_NAME,
                 kafka
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
-                RESOURCE_SCOPE,
                 &role_name,
                 "global",
-            )
+            ))
             .build(),
         spec: Some(ServiceSpec {
             ports: Some(service_ports(kafka)),
@@ -441,16 +438,15 @@ fn build_broker_role_serviceaccount(
             .name(&sa_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
+                KAFKA_CONTROLLER_NAME,
                 kafka
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
-                RESOURCE_SCOPE,
                 &role_name,
                 "global",
-            )
+            ))
             .build(),
         ..ServiceAccount::default()
     };
@@ -461,16 +457,15 @@ fn build_broker_role_serviceaccount(
             .name(binding_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
+                KAFKA_CONTROLLER_NAME,
                 kafka
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
-                RESOURCE_SCOPE,
                 &role_name,
                 "global",
-            )
+            ))
             .build(),
         role_ref: RoleRef {
             api_group: "rbac.authorization.k8s.io".to_string(), // k8s_openapi 1.24 has made ClusterRole::GROUP crate private
@@ -508,16 +503,15 @@ fn build_broker_rolegroup_config_map(
                 .name(rolegroup.object_name())
                 .ownerreference_from_resource(kafka, None, Some(true))
                 .context(ObjectMissingMetadataForOwnerRefSnafu)?
-                .with_recommended_labels(
+                .with_recommended_labels(build_recommended_labels(
                     kafka,
-                    APP_NAME,
+                    KAFKA_CONTROLLER_NAME,
                     kafka
                         .image_version()
                         .context(KafkaVersionParseFailureSnafu)?,
-                    RESOURCE_SCOPE,
                     &rolegroup.role,
                     "global",
-                )
+                ))
                 .build(),
         )
         .add_data(
@@ -551,16 +545,15 @@ fn build_broker_rolegroup_service(
             .name(&rolegroup.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
+                KAFKA_CONTROLLER_NAME,
                 kafka
                     .image_version()
                     .context(KafkaVersionParseFailureSnafu)?,
-                RESOURCE_SCOPE,
                 &rolegroup.role,
                 &rolegroup.role_group,
-            )
+            ))
             .with_label("prometheus.io/scrape", "true")
             .build(),
         spec: Some(ServiceSpec {
@@ -839,14 +832,13 @@ fn build_broker_rolegroup_statefulset(
     container_kcat_prober.stdin = Some(true);
     let mut pod_template = pod_builder
         .metadata_builder(|m| {
-            m.with_recommended_labels(
+            m.with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
+                KAFKA_CONTROLLER_NAME,
                 image_version,
-                RESOURCE_SCOPE,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
-            )
+            ))
             .with_label(pod_svc_controller::LABEL_ENABLE, "true")
         })
         .add_init_container(cb_prepare.build())
@@ -882,14 +874,13 @@ fn build_broker_rolegroup_statefulset(
             .name(&rolegroup_ref.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
+                KAFKA_CONTROLLER_NAME,
                 image_version,
-                RESOURCE_SCOPE,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
-            )
+            ))
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
