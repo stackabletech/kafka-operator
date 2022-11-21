@@ -29,6 +29,7 @@ use std::collections::BTreeMap;
 use strum::{Display, EnumIter, EnumString};
 
 pub const APP_NAME: &str = "kafka";
+pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
 // ports
 pub const CLIENT_PORT_NAME: &str = "kafka";
 pub const CLIENT_PORT: u16 = 9092;

@@ -1,5 +1,5 @@
 use clap::Parser;
-use stackable_kafka_crd::{KafkaCluster, APP_NAME};
+use stackable_kafka_crd::{KafkaCluster, APP_NAME, OPERATOR_NAME};
 use stackable_kafka_operator::ControllerConfig;
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
@@ -60,7 +60,7 @@ async fn main() -> Result<(), error::Error> {
                 "deploy/config-spec/properties.yaml",
                 "/etc/stackable/kafka-operator/config-spec/properties.yaml",
             ])?;
-            let client = client::create_client(Some("kafka.stackable.tech".to_string())).await?;
+            let client = client::create_client(Some(OPERATOR_NAME.to_string())).await?;
             stackable_kafka_operator::create_controller(
                 client,
                 controller_config,

@@ -6,17 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Updated stackable image versions ([#513])
+- Updated stackable image versions ([#513]).
+- operator-rs: 0.26.0 -> 0.27.1 ([#519]).
 
 [#513]: https://github.com/stackabletech/kafka-operator/pull/513
+[#519]: https://github.com/stackabletech/kafka-operator/pull/519
 
 ## [0.8.0] - 2022-11-07
 
 ### Added
 
-- Added default resource requests (memory and cpu) for Kafka pods. ([#485])
-- Support for Kafka 3.3.1 ([#492])
-- Orphaned resources are deleted ([#495])
+- Added default resource requests (memory and cpu) for Kafka pods ([#485]).
+- Support for Kafka 3.3.1 ([#492]).
+- Orphaned resources are deleted ([#495]).
 
 ### Changed
 
@@ -44,7 +46,7 @@ All notable changes to this project will be documented in this file.
 
 - operator-rs: 0.21.1 -> 0.22.0 ([#430]).
 - Include chart name when installing with a custom release name ([#429], [#431]).
-- Kafka init container now uses Stackable tools rather than Bitnami kubectl ([#434])
+- Kafka init container now uses Stackable tools rather than Bitnami kubectl ([#434]).
 
 [#429]: https://github.com/stackabletech/kafka-operator/pull/429
 [#430]: https://github.com/stackabletech/kafka-operator/pull/430
