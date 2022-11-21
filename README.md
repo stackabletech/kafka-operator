@@ -36,9 +36,7 @@ If you have a question about the Stackable Data Platform contact us via our [hom
 
 ## What Does This Do?
 
-This operator is managing Kafka in Kubernetes. It is part of the Stackable Data Platform, a 
-
-Operators observe custom resources in a Kubernetes cluster, and manages the application it's responsible for according to the desired state specified in those custom resources.
+This operator is managing Kafka in Kubernetes. An operator observes custom resources in a Kubernetes cluster, and manages the application it's responsible for according to the desired state specified in those custom resources.
 
 Here's an example how a custom resource to bring up a 3-replica Kafka cluster can look like:
 
