@@ -8,11 +8,12 @@ kind: ZookeeperCluster
 metadata:
   name: kafka-zk
 spec:
+  image:
+    productVersion: "{{ test_scenario['values']['zookeeper'].split('-stackable')[0] }}"
+    stackableVersion: "{{ test_scenario['values']['zookeeper'].split('-stackable')[1] }}"
   servers:
     roleGroups:
       default:
         replicas: 1
         config:
           myidOffset: 10
-  version: {{ test_scenario['values']['zookeeper'] }}
-  stopped: false
