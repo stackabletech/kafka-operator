@@ -12,7 +12,7 @@ use stackable_kafka_crd::{
 use stackable_operator::{
     builder::{
         ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
-        SecretOperatorVolumeSourceBuilder, SecurityContextBuilder, VolumeBuilder,
+        SecretOperatorVolumeSourceBuilder, VolumeBuilder,
     },
     cluster_resources::ClusterResources,
     commons::{
@@ -27,8 +27,8 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
                 EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
-                PodSpec, Probe, ResourceRequirements, Service, ServiceAccount, ServicePort,
-                ServiceSpec, Volume,
+                PodSecurityContext, PodSpec, Probe, ResourceRequirements, Service, ServiceAccount,
+                ServicePort, ServiceSpec, Volume,
             },
             rbac::v1::{RoleBinding, RoleRef, Subject},
         },
@@ -694,8 +694,7 @@ fn build_broker_rolegroup_statefulset(
         ])
         .args(vec![command::prepare_container_cmd_args(kafka)])
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
-        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
-        .security_context(SecurityContextBuilder::run_as_root());
+        .add_volume_mount("tmp", STACKABLE_TMP_DIR);
 
     let resources = rolegroup_typed_config.resources.clone();
     let pvcs = resources.storage.build_pvcs();
@@ -857,6 +856,12 @@ fn build_broker_rolegroup_statefulset(
             name: "tmp".to_string(),
             empty_dir: Some(EmptyDirVolumeSource::default()),
             ..Volume::default()
+        })
+        .security_context(PodSecurityContext {
+            run_as_user: Some(1000),
+            run_as_group: Some(1000),
+            fs_group: Some(1000),
+            ..PodSecurityContext::default()
         })
         .build_template();
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);

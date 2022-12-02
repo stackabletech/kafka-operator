@@ -1,5 +1,5 @@
 use stackable_kafka_crd::{
-    KafkaCluster, CLIENT_PORT, SECURE_CLIENT_PORT, SSL_STORE_PASSWORD, STACKABLE_DATA_DIR,
+    KafkaCluster, CLIENT_PORT, SECURE_CLIENT_PORT, SSL_STORE_PASSWORD,
     STACKABLE_TLS_CLIENT_AUTH_DIR, STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR,
     STACKABLE_TMP_DIR, SYSTEM_TRUST_STORE_DIR,
 };
@@ -12,7 +12,6 @@ pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
             STACKABLE_TLS_CLIENT_AUTH_DIR,
             "stackable-tls-client-auth-ca-cert",
         ));
-        args.extend(chown_and_chmod(STACKABLE_TLS_CLIENT_AUTH_DIR));
     } else if kafka.client_tls_secret_class().is_some() {
         // Copy system truststore to stackable truststore
         args.push(format!("keytool -importkeystore -srckeystore {SYSTEM_TRUST_STORE_DIR} -srcstoretype jks -srcstorepass {SSL_STORE_PASSWORD} -destkeystore {STACKABLE_TLS_CLIENT_DIR}/truststore.p12 -deststoretype pkcs12 -deststorepass {SSL_STORE_PASSWORD} -noprompt"));
@@ -20,7 +19,6 @@ pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
             STACKABLE_TLS_CLIENT_DIR,
             "stackable-tls-client-ca-cert",
         ));
-        args.extend(chown_and_chmod(STACKABLE_TLS_CLIENT_DIR));
     }
 
     if kafka.internal_tls_secret_class().is_some() {
@@ -28,11 +26,7 @@ pub fn prepare_container_cmd_args(kafka: &KafkaCluster) -> String {
             STACKABLE_TLS_INTERNAL_DIR,
             "stackable-tls-internal-ca-cert",
         ));
-        args.extend(chown_and_chmod(STACKABLE_TLS_INTERNAL_DIR));
     }
-
-    args.extend(chown_and_chmod(STACKABLE_DATA_DIR));
-    args.extend(chown_and_chmod(STACKABLE_TMP_DIR));
 
     args.join(" && ")
 }
@@ -95,15 +89,6 @@ fn create_key_and_trust_store(directory: &str, alias_name: &str) -> Vec<String> 
         format!("echo [{dir}] Creating keystore", dir = directory),
         format!("openssl pkcs12 -export -in {dir}/chain.crt -inkey {dir}/tls.key -out {dir}/keystore.p12 --passout pass:{password}",
                 dir = directory, password = SSL_STORE_PASSWORD),
-    ]
-}
-
-/// Generates a shell script to chown and chmod the provided directory.
-fn chown_and_chmod(directory: &str) -> Vec<String> {
-    vec![
-        format!("echo chown and chmod {dir}", dir = directory),
-        format!("chown -R stackable:stackable {dir}", dir = directory),
-        format!("chmod -R a=,u=rwX {dir}", dir = directory),
     ]
 }
 
