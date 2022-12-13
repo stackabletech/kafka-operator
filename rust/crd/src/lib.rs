@@ -2,9 +2,12 @@ pub mod listener;
 
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
-use stackable_operator::commons::resources::{
-    CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimitsFragment, PvcConfigFragment,
-    ResourcesFragment,
+use stackable_operator::commons::{
+    product_image_selection::ProductImage,
+    resources::{
+        CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimitsFragment, PvcConfigFragment,
+        ResourcesFragment,
+    },
 };
 use stackable_operator::config::fragment::{Fragment, ValidationError};
 use stackable_operator::memory::to_java_heap;
@@ -28,6 +31,7 @@ use stackable_operator::{
 use std::collections::BTreeMap;
 use strum::{Display, EnumIter, EnumString};
 
+pub const DOCKER_IMAGE_BASE_NAME: &str = "kafka";
 pub const APP_NAME: &str = "kafka";
 pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
 // ports
@@ -125,7 +129,7 @@ pub enum Error {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterSpec {
-    pub version: Option<String>,
+    pub image: ProductImage,
     pub brokers: Option<Role<KafkaConfigFragment>>,
     pub zookeeper_config_map_name: String,
     pub opa: Option<OpaConfig>,
@@ -277,25 +281,6 @@ impl KafkaCluster {
             .and_then(|limits| limits.get("memory"))
             .map(|memory_limit| to_java_heap(memory_limit, JVM_HEAP_FACTOR))
             .transpose()
-    }
-
-    /// Returns the provided docker image e.g. 2.8.1-stackable0.1.0.
-    pub fn image_version(&self) -> Result<&str, Error> {
-        self.spec
-            .version
-            .as_deref()
-            .context(ObjectHasNoVersionSnafu)
-    }
-
-    /// Returns our semver representation for product config e.g. 2.8.1.
-    pub fn product_version(&self) -> Result<&str, Error> {
-        let image_version = self.image_version()?;
-        image_version
-            .split('-')
-            .next()
-            .with_context(|| KafkaProductVersionSnafu {
-                image_version: image_version.to_string(),
-            })
     }
 
     /// Returns the secret class for client connection encryption. Defaults to `tls`.
@@ -579,7 +564,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
@@ -598,7 +585,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             tls:
@@ -620,7 +609,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             tls: null
@@ -638,7 +629,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             internalTls:
@@ -663,7 +656,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
@@ -682,7 +677,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             internalTls:
@@ -704,7 +701,9 @@ mod tests {
         metadata:
           name: simple-kafka
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             tls:

@@ -9,7 +9,9 @@ All notable changes to this project will be documented in this file.
 - Updated stackable image versions ([#513]).
 - operator-rs: 0.26.0 -> 0.27.1 ([#519]).
 - Don't run init container as root and avoid chmod and chowning ([#524]).
+- [BREAKING] Use Product image selection instead of version. `spec.version` has been replaced by `spec.image` ([#482]).
 
+[#482]: https://github.com/stackabletech/kafka-operator/pull/482
 [#513]: https://github.com/stackabletech/kafka-operator/pull/513
 [#519]: https://github.com/stackabletech/kafka-operator/pull/519
 [#524]: https://github.com/stackabletech/kafka-operator/pull/524

@@ -10,7 +10,9 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: {{ test_scenario['values']['kafka-latest'] }}
+  image:
+    productVersion: "{{ test_scenario['values']['kafka-latest'].split('-stackable')[0] }}"
+    stackableVersion: "{{ test_scenario['values']['kafka-latest'].split('-stackable')[1] }}"
   zookeeperConfigMapName: kafka-zk
   brokers:
     config:

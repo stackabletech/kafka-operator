@@ -5,10 +5,11 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{KafkaCluster, KafkaRole};
 use stackable_operator::{
     builder::{ConfigMapBuilder, ObjectMetaBuilder},
+    commons::product_image_selection::ResolvedProductImage,
     k8s_openapi::api::core::v1::{ConfigMap, Endpoints, Service, ServicePort},
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
-use std::{collections::BTreeSet, convert::TryInto, num::TryFromIntError};
+use std::{collections::BTreeSet, num::TryFromIntError};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -36,24 +37,30 @@ pub enum Error {
     BuildConfigMap {
         source: stackable_operator::error::Error,
     },
-    #[snafu(display("failed to parse Kafka version/image"))]
-    KafkaVersionParseFailure { source: stackable_kafka_crd::Error },
 }
 
 /// Builds discovery [`ConfigMap`]s for connecting to a [`KafkaCluster`] for all expected scenarios
 pub async fn build_discovery_configmaps(
     kafka: &KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
+    resolved_product_image: &ResolvedProductImage,
     client: &stackable_operator::client::Client,
     svc: &Service,
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name_unchecked();
     let port_name = kafka.client_port_name();
     Ok(vec![
-        build_discovery_configmap(kafka, owner, &name, service_hosts(svc, port_name)?)?,
         build_discovery_configmap(
             kafka,
             owner,
+            resolved_product_image,
+            &name,
+            service_hosts(svc, port_name)?,
+        )?,
+        build_discovery_configmap(
+            kafka,
+            owner,
+            resolved_product_image,
             &format!("{}-nodeport", name),
             nodeport_hosts(client, svc, port_name).await?,
         )?,
@@ -66,6 +73,7 @@ pub async fn build_discovery_configmaps(
 fn build_discovery_configmap(
     kafka: &KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
+    resolved_product_image: &ResolvedProductImage,
     name: &str,
     hosts: impl IntoIterator<Item = (impl Into<String>, u16)>,
 ) -> Result<ConfigMap, Error> {
@@ -88,9 +96,7 @@ fn build_discovery_configmap(
                 .with_recommended_labels(build_recommended_labels(
                     kafka,
                     KAFKA_CONTROLLER_NAME,
-                    kafka
-                        .image_version()
-                        .context(KafkaVersionParseFailureSnafu)?,
+                    &resolved_product_image.product_version,
                     &KafkaRole::Broker.to_string(),
                     "discovery",
                 ))

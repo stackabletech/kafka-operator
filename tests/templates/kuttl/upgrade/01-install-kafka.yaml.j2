@@ -32,7 +32,9 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: {{ test_scenario['values']['upgrade_old'] }}
+  image:
+    productVersion: "{{ test_scenario['values']['upgrade_old'].split('-stackable')[0] }}"
+    stackableVersion: "{{ test_scenario['values']['upgrade_old'].split('-stackable')[1] }}"
   zookeeperConfigMapName: kafka-zk
   config:
 {% if test_scenario['values']['use-client-tls'] == 'true' %}

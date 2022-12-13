@@ -207,7 +207,9 @@ mod tests {
           name: simple-kafka
           namespace: default
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             tls:
@@ -264,7 +266,9 @@ mod tests {
           name: simple-kafka
           namespace: default
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             tls:
@@ -317,7 +321,9 @@ mod tests {
           name: simple-kafka
           namespace: default
         spec:
-          version: abc
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
           config:
             tls: null

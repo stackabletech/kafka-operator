@@ -28,7 +28,9 @@ kind: OpaCluster
 metadata:
   name: simple-opa
 spec:
-  version: 0.45.0-stackable0.2.0
+  image:
+    productVersion: 0.45.0
+    stackableVersion: 0.2.0
   servers:
     roleGroups:
       default:
@@ -55,7 +57,9 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: 3.2.0-stackable0.2.0
+  image:
+    productVersion: 3.3.1
+    stackableVersion: 0.1.0
   zookeeperConfigMapName: simple-kafka-znode
   opa:
     configMapName: simple-opa
