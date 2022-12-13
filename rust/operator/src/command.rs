@@ -36,7 +36,7 @@ pub fn get_svc_container_cmd_args(kafka: &KafkaCluster) -> String {
 }
 
 pub fn kcat_container_cmd_args(kafka: &KafkaCluster) -> Vec<String> {
-    let mut args = vec!["kcat".to_string()];
+    let mut args = vec!["/stackable/kcat".to_string()];
 
     if kafka.client_authentication_class().is_some() {
         args.push("-b".to_string());

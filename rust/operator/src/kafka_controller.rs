@@ -663,7 +663,7 @@ fn build_broker_rolegroup_statefulset(
         .context(InvalidContainerNameSnafu {
             name: "get-svc".to_string(),
         })?
-        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.4.0")
+        .image_from_product_image(resolved_product_image)
         .command(vec!["bash".to_string()])
         .args(vec![
             "-euo".to_string(),
@@ -686,7 +686,7 @@ fn build_broker_rolegroup_statefulset(
         .build();
 
     cb_prepare
-        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.4.0")
+        .image_from_product_image(resolved_product_image)
         .command(vec![
             "/bin/bash".to_string(),
             "-euo".to_string(),
@@ -814,9 +814,9 @@ fn build_broker_rolegroup_statefulset(
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
-    let mut container_kcat_prober = cb_kcat_prober
-        .image("edenhill/kcat:1.7.0")
-        .command(vec!["sh".to_string()])
+    let container_kcat_prober = cb_kcat_prober
+        .image_from_product_image(resolved_product_image)
+        .command(vec!["sleep".to_string(), "infinity".to_string()])
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum
         // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
         .readiness_probe(Probe {
@@ -829,7 +829,6 @@ fn build_broker_rolegroup_statefulset(
             ..Probe::default()
         })
         .build();
-    container_kcat_prober.stdin = Some(true);
     let mut pod_template = pod_builder
         .metadata_builder(|m| {
             m.with_recommended_labels(build_recommended_labels(
