@@ -80,8 +80,6 @@ pub enum Error {
     ObjectHasNoName,
     #[snafu(display("object has no namespace"))]
     ObjectHasNoNamespace,
-    #[snafu(display("object defines no version"))]
-    ObjectHasNoVersion,
     #[snafu(display("object defines no broker role"))]
     NoBrokerRole,
     #[snafu(display("failed to calculate global service name"))]
@@ -202,7 +200,6 @@ impl ReconcilerError for Error {
         match self {
             Error::ObjectHasNoName => None,
             Error::ObjectHasNoNamespace => None,
-            Error::ObjectHasNoVersion => None,
             Error::NoBrokerRole => None,
             Error::GlobalServiceNameNotFound => None,
             Error::ApplyRoleService { .. } => None,
@@ -244,8 +241,6 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
 
     let resolved_product_image = kafka.spec.image.resolve(DOCKER_IMAGE_BASE_NAME);
 
-    let mut cluster_resources =
-        ClusterResources::new(APP_NAME, RESOURCE_SCOPE, &kafka.object_ref(&())).unwrap();
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
         OPERATOR_NAME,
@@ -314,7 +309,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
 
     let broker_role_service = build_broker_role_service(&kafka, &resolved_product_image)?;
     let (broker_role_serviceaccount, broker_role_rolebinding) =
-        build_broker_role_serviceaccount(&kafka, &ctx.controller_config, &resolved_product_image)?;
+        build_broker_role_serviceaccount(&kafka, &resolved_product_image, &ctx.controller_config)?;
     let broker_role_serviceaccount_ref = ObjectRef::from_obj(&broker_role_serviceaccount);
     let broker_role_service = cluster_resources
         .add(client, &broker_role_service)
@@ -344,22 +339,22 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             })?;
 
         let rg_service =
-            build_broker_rolegroup_service(&rolegroup_ref, &kafka, &resolved_product_image)?;
+            build_broker_rolegroup_service(&kafka, &resolved_product_image, &rolegroup_ref)?;
         let rg_configmap = build_broker_rolegroup_config_map(
-            &rolegroup_ref,
             &kafka,
-            rolegroup_config,
             &resolved_product_image,
+            &rolegroup_ref,
+            rolegroup_config,
         )?;
         let rg_statefulset = build_broker_rolegroup_statefulset(
-            &rolegroup_ref,
             &kafka,
+            &resolved_product_image,
+            &rolegroup_ref,
             rolegroup_config,
             &broker_role_serviceaccount_ref,
             opa_connect.as_deref(),
             client_authentication_class.as_ref(),
             &rolegroup_typed_config,
-            &resolved_product_image,
         )?;
         cluster_resources
             .add(client, &rg_service)
@@ -382,12 +377,11 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     }
 
     for discovery_cm in build_discovery_configmaps(
-        client,
-        &*kafka,
         &kafka,
-        &broker_role_service,
+        &*kafka,
         &resolved_product_image,
-        RESOURCE_SCOPE,
+        client,
+        &broker_role_service,
     )
     .await
     .context(BuildDiscoveryConfigSnafu)?
@@ -425,12 +419,7 @@ pub fn build_broker_role_service(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
-                APP_NAME,
                 &resolved_product_image.product_version,
-                RESOURCE_SCOPE,
                 &role_name,
                 "global",
             ))
@@ -447,8 +436,8 @@ pub fn build_broker_role_service(
 
 fn build_broker_role_serviceaccount(
     kafka: &KafkaCluster,
-    controller_config: &ControllerConfig,
     resolved_product_image: &ResolvedProductImage,
+    controller_config: &ControllerConfig,
 ) -> Result<(ServiceAccount, RoleBinding)> {
     let role_name = KafkaRole::Broker.to_string();
     let sa_name = format!("{}-{}", kafka.metadata.name.as_ref().unwrap(), role_name);
@@ -461,12 +450,7 @@ fn build_broker_role_serviceaccount(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
-                APP_NAME,
                 &resolved_product_image.product_version,
-                RESOURCE_SCOPE,
                 &role_name,
                 "global",
             ))
@@ -483,12 +467,7 @@ fn build_broker_role_serviceaccount(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
-                APP_NAME,
                 &resolved_product_image.product_version,
-                RESOURCE_SCOPE,
                 &role_name,
                 "global",
             ))
@@ -510,10 +489,10 @@ fn build_broker_role_serviceaccount(
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
 fn build_broker_rolegroup_config_map(
-    rolegroup: &RoleGroupRef<KafkaCluster>,
     kafka: &KafkaCluster,
-    broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     resolved_product_image: &ResolvedProductImage,
+    rolegroup: &RoleGroupRef<KafkaCluster>,
+    broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
 ) -> Result<ConfigMap> {
     let server_cfg = broker_config
         .get(&PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()))
@@ -533,12 +512,7 @@ fn build_broker_rolegroup_config_map(
                 .with_recommended_labels(build_recommended_labels(
                     kafka,
                     KAFKA_CONTROLLER_NAME,
-                    kafka
-                        .image_version()
-                        .context(KafkaVersionParseFailureSnafu)?,
-                    APP_NAME,
                     &resolved_product_image.product_version,
-                    RESOURCE_SCOPE,
                     &rolegroup.role,
                     "global",
                 ))
@@ -566,9 +540,9 @@ fn build_broker_rolegroup_config_map(
 ///
 /// This is mostly useful for internal communication between peers, or for clients that perform client-side load balancing.
 fn build_broker_rolegroup_service(
-    rolegroup: &RoleGroupRef<KafkaCluster>,
     kafka: &KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
+    rolegroup: &RoleGroupRef<KafkaCluster>,
 ) -> Result<Service> {
     Ok(Service {
         metadata: ObjectMetaBuilder::new()
@@ -579,12 +553,7 @@ fn build_broker_rolegroup_service(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
-                APP_NAME,
                 &resolved_product_image.product_version,
-                RESOURCE_SCOPE,
                 &rolegroup.role,
                 &rolegroup.role_group,
             ))
@@ -611,14 +580,14 @@ fn build_broker_rolegroup_service(
 /// The [`Pod`](`stackable_operator::k8s_openapi::api::core::v1::Pod`)s are accessible through the corresponding [`Service`] (from [`build_broker_rolegroup_service`]).
 #[allow(clippy::too_many_arguments)]
 fn build_broker_rolegroup_statefulset(
-    rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     kafka: &KafkaCluster,
+    resolved_product_image: &ResolvedProductImage,
+    rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     serviceaccount: &ObjectRef<ServiceAccount>,
     opa_connect_string: Option<&str>,
     client_authentication_class: Option<&AuthenticationClass>,
     rolegroup_typed_config: &KafkaConfig,
-    resolved_product_image: &ResolvedProductImage,
 ) -> Result<StatefulSet> {
     let mut cb_kafka =
         ContainerBuilder::new(APP_NAME).context(InvalidContainerNameSnafu { name: APP_NAME })?;
@@ -866,10 +835,7 @@ fn build_broker_rolegroup_statefulset(
             m.with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                image_version,
-                APP_NAME,
                 &resolved_product_image.product_version,
-                RESOURCE_SCOPE,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             ))
@@ -918,10 +884,7 @@ fn build_broker_rolegroup_statefulset(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                image_version,
-                APP_NAME,
                 &resolved_product_image.product_version,
-                RESOURCE_SCOPE,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             ))

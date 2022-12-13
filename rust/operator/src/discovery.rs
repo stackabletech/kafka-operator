@@ -1,13 +1,15 @@
 use crate::utils::build_recommended_labels;
 use crate::KAFKA_CONTROLLER_NAME;
+
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{KafkaCluster, KafkaRole, APP_NAME};
+use stackable_kafka_crd::{KafkaCluster, KafkaRole};
 use stackable_operator::{
     builder::{ConfigMapBuilder, ObjectMetaBuilder},
     commons::product_image_selection::ResolvedProductImage,
     k8s_openapi::api::core::v1::{ConfigMap, Endpoints, Service, ServicePort},
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
+use std::{collections::BTreeSet, num::TryFromIntError};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -41,29 +43,26 @@ pub enum Error {
 pub async fn build_discovery_configmaps(
     kafka: &KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
+    resolved_product_image: &ResolvedProductImage,
     client: &stackable_operator::client::Client,
     svc: &Service,
-    resolved_product_image: &ResolvedProductImage,
-    app_managed_by: &str,
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name_unchecked();
     let port_name = kafka.client_port_name();
     Ok(vec![
         build_discovery_configmap(
-            &name,
-            owner,
             kafka,
-            service_hosts(svc, port_name)?,
+            owner,
             resolved_product_image,
-            app_managed_by,
+            &name,
+            service_hosts(svc, port_name)?,
         )?,
         build_discovery_configmap(
-            &format!("{}-nodeport", name),
-            owner,
             kafka,
-            nodeport_hosts(client, svc, port_name).await?,
+            owner,
             resolved_product_image,
-            app_managed_by,
+            &format!("{}-nodeport", name),
+            nodeport_hosts(client, svc, port_name).await?,
         )?,
     ])
 }
@@ -74,10 +73,9 @@ pub async fn build_discovery_configmaps(
 fn build_discovery_configmap(
     kafka: &KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
+    resolved_product_image: &ResolvedProductImage,
     name: &str,
     hosts: impl IntoIterator<Item = (impl Into<String>, u16)>,
-    resolved_product_image: &ResolvedProductImage,
-    app_managed_by: &str,
 ) -> Result<ConfigMap, Error> {
     // Write a list of bootstrap servers in the format that Kafka clients:
     // "{host1}:{port1},{host2:port2},..."
@@ -97,13 +95,8 @@ fn build_discovery_configmap(
                 })?
                 .with_recommended_labels(build_recommended_labels(
                     kafka,
-                    APP_NAME,
-                    &resolved_product_image.product_version,
-                    app_managed_by,
                     KAFKA_CONTROLLER_NAME,
-                    kafka
-                        .image_version()
-                        .context(KafkaVersionParseFailureSnafu)?,
+                    &resolved_product_image.product_version,
                     &KafkaRole::Broker.to_string(),
                     "discovery",
                 ))
