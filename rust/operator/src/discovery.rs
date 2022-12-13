@@ -1,5 +1,5 @@
-use std::{collections::BTreeSet, convert::TryInto, num::TryFromIntError};
-
+use crate::utils::build_recommended_labels;
+use crate::KAFKA_CONTROLLER_NAME;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{KafkaCluster, KafkaRole, APP_NAME};
 use stackable_operator::{
@@ -39,9 +39,9 @@ pub enum Error {
 
 /// Builds discovery [`ConfigMap`]s for connecting to a [`KafkaCluster`] for all expected scenarios
 pub async fn build_discovery_configmaps(
-    client: &stackable_operator::client::Client,
-    owner: &impl Resource<DynamicType = ()>,
     kafka: &KafkaCluster,
+    owner: &impl Resource<DynamicType = ()>,
+    client: &stackable_operator::client::Client,
     svc: &Service,
     resolved_product_image: &ResolvedProductImage,
     app_managed_by: &str,
@@ -72,9 +72,9 @@ pub async fn build_discovery_configmaps(
 ///
 /// `hosts` will usually come from either [`service_hosts`] or [`nodeport_hosts`].
 fn build_discovery_configmap(
-    name: &str,
-    owner: &impl Resource<DynamicType = ()>,
     kafka: &KafkaCluster,
+    owner: &impl Resource<DynamicType = ()>,
+    name: &str,
     hosts: impl IntoIterator<Item = (impl Into<String>, u16)>,
     resolved_product_image: &ResolvedProductImage,
     app_managed_by: &str,
@@ -95,14 +95,18 @@ fn build_discovery_configmap(
                 .with_context(|_| ObjectMissingMetadataForOwnerRefSnafu {
                     kafka: ObjectRef::from_obj(kafka),
                 })?
-                .with_recommended_labels(
+                .with_recommended_labels(build_recommended_labels(
                     kafka,
                     APP_NAME,
                     &resolved_product_image.product_version,
                     app_managed_by,
+                    KAFKA_CONTROLLER_NAME,
+                    kafka
+                        .image_version()
+                        .context(KafkaVersionParseFailureSnafu)?,
                     &KafkaRole::Broker.to_string(),
                     "discovery",
-                )
+                ))
                 .build(),
         )
         .add_data("KAFKA", bootstrap_servers)

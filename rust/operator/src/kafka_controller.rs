@@ -4,7 +4,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, KafkaCluster, KafkaConfig, KafkaRole, TlsSecretClass,
     APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
-    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, SECURE_CLIENT_PORT,
+    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SECURE_CLIENT_PORT,
     SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
     STACKABLE_TLS_CLIENT_AUTH_DIR, STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR,
     STACKABLE_TMP_DIR, TLS_DEFAULT_SECRET_CLASS,
@@ -12,7 +12,7 @@ use stackable_kafka_crd::{
 use stackable_operator::{
     builder::{
         ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
-        SecretOperatorVolumeSourceBuilder, SecurityContextBuilder, VolumeBuilder,
+        SecretOperatorVolumeSourceBuilder, VolumeBuilder,
     },
     cluster_resources::ClusterResources,
     commons::{
@@ -28,8 +28,8 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
                 EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
-                PodSpec, Probe, ResourceRequirements, Service, ServiceAccount, ServicePort,
-                ServiceSpec, Volume,
+                PodSecurityContext, PodSpec, Probe, ResourceRequirements, Service, ServiceAccount,
+                ServicePort, ServiceSpec, Volume,
             },
             rbac::v1::{RoleBinding, RoleRef, Subject},
         },
@@ -56,16 +56,15 @@ use std::{
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-use crate::command::{get_svc_container_cmd_args, kcat_container_cmd_args};
 use crate::{
-    command,
+    command::{self, get_svc_container_cmd_args, kcat_container_cmd_args},
     discovery::{self, build_discovery_configmaps},
     pod_svc_controller,
-    utils::{self, ObjectRefExt},
+    utils::{self, build_recommended_labels, ObjectRefExt},
     ControllerConfig,
 };
 
-const RESOURCE_SCOPE: &str = "kafka-operator_kafkacluster";
+pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -247,6 +246,13 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
 
     let mut cluster_resources =
         ClusterResources::new(APP_NAME, RESOURCE_SCOPE, &kafka.object_ref(&())).unwrap();
+    let mut cluster_resources = ClusterResources::new(
+        APP_NAME,
+        OPERATOR_NAME,
+        KAFKA_CONTROLLER_NAME,
+        &kafka.object_ref(&()),
+    )
+    .unwrap();
 
     let validated_config = validate_all_roles_and_groups_config(
         &resolved_product_image.product_version,
@@ -416,14 +422,18 @@ pub fn build_broker_role_service(
             .name(&role_svc_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
+                KAFKA_CONTROLLER_NAME,
+                kafka
+                    .image_version()
+                    .context(KafkaVersionParseFailureSnafu)?,
                 APP_NAME,
                 &resolved_product_image.product_version,
                 RESOURCE_SCOPE,
                 &role_name,
                 "global",
-            )
+            ))
             .build(),
         spec: Some(ServiceSpec {
             ports: Some(service_ports(kafka)),
@@ -448,14 +458,18 @@ fn build_broker_role_serviceaccount(
             .name(&sa_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
+                KAFKA_CONTROLLER_NAME,
+                kafka
+                    .image_version()
+                    .context(KafkaVersionParseFailureSnafu)?,
                 APP_NAME,
                 &resolved_product_image.product_version,
                 RESOURCE_SCOPE,
                 &role_name,
                 "global",
-            )
+            ))
             .build(),
         ..ServiceAccount::default()
     };
@@ -466,14 +480,18 @@ fn build_broker_role_serviceaccount(
             .name(binding_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
+                KAFKA_CONTROLLER_NAME,
+                kafka
+                    .image_version()
+                    .context(KafkaVersionParseFailureSnafu)?,
                 APP_NAME,
                 &resolved_product_image.product_version,
                 RESOURCE_SCOPE,
                 &role_name,
                 "global",
-            )
+            ))
             .build(),
         role_ref: RoleRef {
             api_group: "rbac.authorization.k8s.io".to_string(), // k8s_openapi 1.24 has made ClusterRole::GROUP crate private
@@ -512,14 +530,18 @@ fn build_broker_rolegroup_config_map(
                 .name(rolegroup.object_name())
                 .ownerreference_from_resource(kafka, None, Some(true))
                 .context(ObjectMissingMetadataForOwnerRefSnafu)?
-                .with_recommended_labels(
+                .with_recommended_labels(build_recommended_labels(
                     kafka,
+                    KAFKA_CONTROLLER_NAME,
+                    kafka
+                        .image_version()
+                        .context(KafkaVersionParseFailureSnafu)?,
                     APP_NAME,
                     &resolved_product_image.product_version,
                     RESOURCE_SCOPE,
                     &rolegroup.role,
                     "global",
-                )
+                ))
                 .build(),
         )
         .add_data(
@@ -554,14 +576,18 @@ fn build_broker_rolegroup_service(
             .name(&rolegroup.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
+                KAFKA_CONTROLLER_NAME,
+                kafka
+                    .image_version()
+                    .context(KafkaVersionParseFailureSnafu)?,
                 APP_NAME,
                 &resolved_product_image.product_version,
                 RESOURCE_SCOPE,
                 &rolegroup.role,
                 &rolegroup.role_group,
-            )
+            ))
             .with_label("prometheus.io/scrape", "true")
             .build(),
         spec: Some(ServiceSpec {
@@ -668,7 +694,7 @@ fn build_broker_rolegroup_statefulset(
         .context(InvalidContainerNameSnafu {
             name: "get-svc".to_string(),
         })?
-        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
+        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.4.0")
         .command(vec!["bash".to_string()])
         .args(vec![
             "-euo".to_string(),
@@ -691,7 +717,7 @@ fn build_broker_rolegroup_statefulset(
         .build();
 
     cb_prepare
-        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
+        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.4.0")
         .command(vec![
             "/bin/bash".to_string(),
             "-euo".to_string(),
@@ -700,8 +726,7 @@ fn build_broker_rolegroup_statefulset(
         ])
         .args(vec![command::prepare_container_cmd_args(kafka)])
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
-        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
-        .security_context(SecurityContextBuilder::run_as_root());
+        .add_volume_mount("tmp", STACKABLE_TMP_DIR);
 
     let resources = rolegroup_typed_config.resources.clone();
     let pvcs = resources.storage.build_pvcs();
@@ -838,14 +863,16 @@ fn build_broker_rolegroup_statefulset(
     container_kcat_prober.stdin = Some(true);
     let mut pod_template = pod_builder
         .metadata_builder(|m| {
-            m.with_recommended_labels(
+            m.with_recommended_labels(build_recommended_labels(
                 kafka,
+                KAFKA_CONTROLLER_NAME,
+                image_version,
                 APP_NAME,
                 &resolved_product_image.product_version,
                 RESOURCE_SCOPE,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
-            )
+            ))
             .with_label(pod_svc_controller::LABEL_ENABLE, "true")
         })
         .image_pull_secrets_from_product_image(resolved_product_image)
@@ -866,6 +893,12 @@ fn build_broker_rolegroup_statefulset(
             empty_dir: Some(EmptyDirVolumeSource::default()),
             ..Volume::default()
         })
+        .security_context(PodSecurityContext {
+            run_as_user: Some(1000),
+            run_as_group: Some(1000),
+            fs_group: Some(1000),
+            ..PodSecurityContext::default()
+        })
         .build_template();
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
@@ -882,14 +915,16 @@ fn build_broker_rolegroup_statefulset(
             .name(&rolegroup_ref.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
+                KAFKA_CONTROLLER_NAME,
+                image_version,
                 APP_NAME,
                 &resolved_product_image.product_version,
                 RESOURCE_SCOPE,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
-            )
+            ))
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),

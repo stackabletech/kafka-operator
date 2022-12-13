@@ -9,7 +9,7 @@ version = "0.9.0-nightly"
 publish = false
 
 [dependencies]
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "feature/product-image-selection" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.27.1" }
 
 semver = "1.0.14"
 serde = { version = "1.0.147", features = ["derive"] }
