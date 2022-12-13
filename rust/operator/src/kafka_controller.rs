@@ -419,7 +419,7 @@ pub fn build_broker_role_service(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.product_version,
+                &resolved_product_image.app_version_label,
                 &role_name,
                 "global",
             ))
@@ -450,7 +450,7 @@ fn build_broker_role_serviceaccount(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.product_version,
+                &resolved_product_image.app_version_label,
                 &role_name,
                 "global",
             ))
@@ -467,7 +467,7 @@ fn build_broker_role_serviceaccount(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.product_version,
+                &resolved_product_image.app_version_label,
                 &role_name,
                 "global",
             ))
@@ -512,7 +512,7 @@ fn build_broker_rolegroup_config_map(
                 .with_recommended_labels(build_recommended_labels(
                     kafka,
                     KAFKA_CONTROLLER_NAME,
-                    &resolved_product_image.product_version,
+                    &resolved_product_image.app_version_label,
                     &rolegroup.role,
                     "global",
                 ))
@@ -553,7 +553,7 @@ fn build_broker_rolegroup_service(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.product_version,
+                &resolved_product_image.app_version_label,
                 &rolegroup.role,
                 &rolegroup.role_group,
             ))
@@ -835,7 +835,7 @@ fn build_broker_rolegroup_statefulset(
             m.with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.product_version,
+                &resolved_product_image.app_version_label,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             ))
@@ -884,7 +884,7 @@ fn build_broker_rolegroup_statefulset(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.product_version,
+                &resolved_product_image.app_version_label,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             ))
