@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Fixed the RoleGroup `selector`. It was not used before. ([#530])
 - Updated stackable image versions ([#513]).
-- operator-rs: 0.26.0 -> 0.27.1 ([#519]).
+- operator-rs: 0.26.0 -> 0.30.1 ([#519], [#530]).
 - Don't run init container as root and avoid chmod and chowning ([#524]).
 - [BREAKING] Use Product image selection instead of version. `spec.version` has been replaced by `spec.image` ([#482]).
 - [BREAKING]: Removed tools image for init and get-svc container and replaced with Kafka product image. This means the latest stackable version has to be used in the product image selection ([#527])
