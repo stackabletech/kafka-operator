@@ -6,8 +6,8 @@ metadata:
 spec:
   image:
     productVersion: 3.8.0
-    stackableVersion: 0.8.0
+    stackableVersion: 0.9.0
   servers:
     roleGroups:
       default:
-        replicas: 3
+        replicas: 1
