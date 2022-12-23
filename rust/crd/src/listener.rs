@@ -102,12 +102,12 @@ pub fn get_kafka_listener_config(
         listeners.push(KafkaListener {
             name: KafkaListenerName::ClientAuth,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: KafkaSecurity::SECURE_CLIENT_PORT.to_string(),
+            port: kafka_security.client_port().to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::ClientAuth,
             host: LISTENER_NODE_ADDRESS.to_string(),
-            port: node_port_cmd(STACKABLE_TMP_DIR, KafkaSecurity::SECURE_CLIENT_PORT_NAME),
+            port: node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::ClientAuth, KafkaListenerProtocol::Ssl);
@@ -116,12 +116,12 @@ pub fn get_kafka_listener_config(
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: KafkaSecurity::SECURE_CLIENT_PORT.to_string(),
+            port: kafka_security.client_port().to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_NODE_ADDRESS.to_string(),
-            port: node_port_cmd(STACKABLE_TMP_DIR, KafkaSecurity::SECURE_CLIENT_PORT_NAME),
+            port: node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::Ssl);
@@ -135,7 +135,7 @@ pub fn get_kafka_listener_config(
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_NODE_ADDRESS.to_string(),
-            port: node_port_cmd(STACKABLE_TMP_DIR, KafkaSecurity::CLIENT_PORT_NAME),
+            port: node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::Plaintext);
@@ -146,12 +146,12 @@ pub fn get_kafka_listener_config(
         listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: KafkaSecurity::SECURE_INTERNAL_PORT.to_string(),
+            port: kafka_security.internal_port().to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: pod_fqdn,
-            port: KafkaSecurity::SECURE_INTERNAL_PORT.to_string(),
+            port: kafka_security.internal_port().to_string(),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
@@ -160,12 +160,12 @@ pub fn get_kafka_listener_config(
         listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: KafkaSecurity::INTERNAL_PORT.to_string(),
+            port: kafka_security.internal_port().to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: pod_fqdn,
-            port: KafkaSecurity::INTERNAL_PORT.to_string(),
+            port: kafka_security.internal_port().to_string(),
         });
         listener_security_protocol_map.insert(
             KafkaListenerName::Internal,
