@@ -1,25 +1,19 @@
 //! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
 
 use snafu::{OptionExt, ResultExt, Snafu};
+use stackable_kafka_crd::security::KafkaSecurity;
 use stackable_kafka_crd::{
-    listener::get_kafka_listener_config, KafkaCluster, KafkaConfig, KafkaRole, TlsSecretClass,
-    APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
-    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SECURE_CLIENT_PORT,
-    SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
-    STACKABLE_TLS_CLIENT_AUTH_DIR, STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR,
-    STACKABLE_TMP_DIR, TLS_DEFAULT_SECRET_CLASS,
+    listener::get_kafka_listener_config, KafkaCluster, KafkaConfig, KafkaRole, APP_NAME,
+    DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
+    OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
+    STACKABLE_TMP_DIR,
 };
 use stackable_operator::{
-    builder::{
-        ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
-        SecretOperatorVolumeSourceBuilder, VolumeBuilder,
-    },
+    builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     cluster_resources::ClusterResources,
     commons::{
-        authentication::{AuthenticationClass, AuthenticationClassProvider},
-        opa::OpaApiVersion,
+        authentication::AuthenticationClass, opa::OpaApiVersion,
         product_image_selection::ResolvedProductImage,
-        tls::TlsAuthenticationProvider,
     },
     config::fragment::ValidationError,
     k8s_openapi::{
@@ -57,7 +51,6 @@ use std::{
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
-    command::{self, get_svc_container_cmd_args, kcat_container_cmd_args},
     discovery::{self, build_discovery_configmaps},
     pod_svc_controller,
     utils::{self, build_recommended_labels, ObjectRefExt},
@@ -188,6 +181,10 @@ pub enum Error {
     DeleteOrphans {
         source: stackable_operator::error::Error,
     },
+    #[snafu(display("failed to initialize security context"))]
+    FailedToInitializeSecurityContext {
+        source: stackable_kafka_crd::security::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -231,6 +228,7 @@ impl ReconcilerError for Error {
             Error::InvalidKafkaListeners { .. } => None,
             Error::InvalidContainerName { .. } => None,
             Error::DeleteOrphans { .. } => None,
+            Error::FailedToInitializeSecurityContext { .. } => None,
         }
     }
 }
@@ -276,22 +274,13 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .map(Cow::Borrowed)
         .unwrap_or_default();
 
-    let client_authentication_class = if let Some(auth_class) = kafka.client_authentication_class()
-    {
-        Some(
-            AuthenticationClass::resolve(client, auth_class)
-                .await
-                .context(AuthenticationClassRetrievalSnafu {
-                    authentication_class: ObjectRef::<AuthenticationClass>::new(auth_class),
-                })?,
-        )
-    } else {
-        None
-    };
+    let kafka_security = KafkaSecurity::new_from_kafka_cluster(client, &kafka)
+        .await
+        .context(FailedToInitializeSecurityContextSnafu)?;
 
     // Assemble the OPA connection string from the discovery and the given path if provided
     // Will be passed as --override parameter in the cli in the state ful set
-    let opa_connect = if let Some(opa_spec) = &kafka.spec.opa {
+    let opa_connect = if let Some(opa_spec) = &kafka.spec.cluster_config.opa {
         Some(
             opa_spec
                 .full_document_url_from_config_map(
@@ -307,7 +296,8 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         None
     };
 
-    let broker_role_service = build_broker_role_service(&kafka, &resolved_product_image)?;
+    let broker_role_service =
+        build_broker_role_service(&kafka, &resolved_product_image, &kafka_security)?;
     let (broker_role_serviceaccount, broker_role_rolebinding) =
         build_broker_role_serviceaccount(&kafka, &resolved_product_image, &ctx.controller_config)?;
     let broker_role_serviceaccount_ref = ObjectRef::from_obj(&broker_role_serviceaccount);
@@ -338,11 +328,16 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
                 rolegroup: rolegroup_ref.clone(),
             })?;
 
-        let rg_service =
-            build_broker_rolegroup_service(&kafka, &resolved_product_image, &rolegroup_ref)?;
+        let rg_service = build_broker_rolegroup_service(
+            &kafka,
+            &resolved_product_image,
+            &kafka_security,
+            &rolegroup_ref,
+        )?;
         let rg_configmap = build_broker_rolegroup_config_map(
             &kafka,
             &resolved_product_image,
+            &kafka_security,
             &rolegroup_ref,
             rolegroup_config,
         )?;
@@ -353,7 +348,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             rolegroup_config,
             &broker_role_serviceaccount_ref,
             opa_connect.as_deref(),
-            client_authentication_class.as_ref(),
+            &kafka_security,
             &rolegroup_typed_config,
         )?;
         cluster_resources
@@ -381,6 +376,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         &*kafka,
         &resolved_product_image,
         client,
+        &kafka_security,
         &broker_role_service,
     )
     .await
@@ -405,6 +401,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
 pub fn build_broker_role_service(
     kafka: &KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
+    kafka_security: &KafkaSecurity,
 ) -> Result<Service> {
     let role_name = KafkaRole::Broker.to_string();
     let role_svc_name = kafka
@@ -425,7 +422,7 @@ pub fn build_broker_role_service(
             ))
             .build(),
         spec: Some(ServiceSpec {
-            ports: Some(service_ports(kafka)),
+            ports: Some(service_ports(kafka_security)),
             selector: Some(role_selector_labels(kafka, APP_NAME, &role_name)),
             type_: Some("NodePort".to_string()),
             ..ServiceSpec::default()
@@ -491,13 +488,17 @@ fn build_broker_role_serviceaccount(
 fn build_broker_rolegroup_config_map(
     kafka: &KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
+    kafka_security: &KafkaSecurity,
     rolegroup: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
 ) -> Result<ConfigMap> {
-    let server_cfg = broker_config
+    let mut server_cfg = broker_config
         .get(&PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()))
         .cloned()
         .unwrap_or_default();
+
+    server_cfg.extend(kafka_security.config_settings());
+
     let server_cfg = server_cfg
         .into_iter()
         .map(|(k, v)| (k, Some(v)))
@@ -528,7 +529,12 @@ fn build_broker_rolegroup_config_map(
         )
         .add_data(
             "log4j.properties",
-            kafka.spec.log4j.as_ref().unwrap_or(&"".to_string()),
+            kafka
+                .spec
+                .cluster_config
+                .log4j
+                .as_ref()
+                .unwrap_or(&"".to_string()),
         )
         .build()
         .with_context(|_| BuildRoleGroupConfigSnafu {
@@ -542,6 +548,7 @@ fn build_broker_rolegroup_config_map(
 fn build_broker_rolegroup_service(
     kafka: &KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
+    kafka_security: &KafkaSecurity,
     rolegroup: &RoleGroupRef<KafkaCluster>,
 ) -> Result<Service> {
     Ok(Service {
@@ -561,7 +568,7 @@ fn build_broker_rolegroup_service(
             .build(),
         spec: Some(ServiceSpec {
             cluster_ip: Some("None".to_string()),
-            ports: Some(service_ports(kafka)),
+            ports: Some(service_ports(kafka_security)),
             selector: Some(role_group_selector_labels(
                 kafka,
                 APP_NAME,
@@ -586,7 +593,7 @@ fn build_broker_rolegroup_statefulset(
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     serviceaccount: &ObjectRef<ServiceAccount>,
     opa_connect_string: Option<&str>,
-    client_authentication_class: Option<&AuthenticationClass>,
+    kafka_security: &KafkaSecurity,
     rolegroup_typed_config: &KafkaConfig,
 ) -> Result<StatefulSet> {
     let mut cb_kafka =
@@ -608,56 +615,13 @@ fn build_broker_rolegroup_statefulset(
             rolegroup: rolegroup_ref.clone(),
         })?;
 
-    let get_svc_args = get_svc_container_cmd_args(kafka);
-
-    // add client authentication volumes if required
-    if let Some(auth_class) = client_authentication_class {
-        match &auth_class.spec.provider {
-            AuthenticationClassProvider::Tls(TlsAuthenticationProvider {
-                client_cert_secret_class: Some(secret_class),
-            }) => {
-                cb_prepare.add_volume_mount(
-                    "client-tls-authentication-certificate",
-                    STACKABLE_TLS_CLIENT_AUTH_DIR,
-                );
-                cb_kafka.add_volume_mount(
-                    "client-tls-authentication-certificate",
-                    STACKABLE_TLS_CLIENT_AUTH_DIR,
-                );
-                cb_kcat_prober.add_volume_mount(
-                    "client-tls-authentication-certificate",
-                    STACKABLE_TLS_CLIENT_AUTH_DIR,
-                );
-                pod_builder.add_volume(create_tls_volume(
-                    "client-tls-authentication-certificate",
-                    Some(&TlsSecretClass {
-                        secret_class: secret_class.clone(),
-                    }),
-                ));
-            }
-            _ => {
-                return Err(Error::AuthenticationMethodNotSupported {
-                    authentication_class: ObjectRef::from_obj(auth_class),
-                    supported: vec!["tls".to_string()],
-                    method: auth_class.spec.provider.to_string(),
-                })
-            }
-        }
-    } else if let Some(tls) = kafka.client_tls_secret_class() {
-        cb_prepare.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
-        cb_kafka.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
-        cb_kcat_prober.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
-        pod_builder.add_volume(create_tls_volume("client-tls-certificate", Some(tls)));
-    }
-
-    if let Some(tls_internal) = kafka.internal_tls_secret_class() {
-        cb_prepare.add_volume_mount("internal-tls-certificate", STACKABLE_TLS_INTERNAL_DIR);
-        cb_kafka.add_volume_mount("internal-tls-certificate", STACKABLE_TLS_INTERNAL_DIR);
-        pod_builder.add_volume(create_tls_volume(
-            "internal-tls-certificate",
-            Some(tls_internal),
-        ));
-    }
+    // Add TLS related volumes and volume mounts
+    kafka_security.add_volume_and_volume_mounts(
+        &mut pod_builder,
+        &mut cb_prepare,
+        &mut cb_kcat_prober,
+        &mut cb_kafka,
+    );
 
     let container_get_svc = ContainerBuilder::new("get-svc")
         .context(InvalidContainerNameSnafu {
@@ -669,7 +633,7 @@ fn build_broker_rolegroup_statefulset(
             "-euo".to_string(),
             "pipefail".to_string(),
             "-c".to_string(),
-            get_svc_args,
+            kafka_security.svc_container_commands(),
         ])
         .add_env_vars(vec![EnvVar {
             name: "POD_NAME".to_string(),
@@ -693,7 +657,9 @@ fn build_broker_rolegroup_statefulset(
             "pipefail".to_string(),
             "-c".to_string(),
         ])
-        .args(vec![command::prepare_container_cmd_args(kafka)])
+        .args(vec![kafka_security
+            .prepare_container_command_args()
+            .join(" && ")])
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("tmp", STACKABLE_TMP_DIR);
 
@@ -727,7 +693,7 @@ fn build_broker_rolegroup_statefulset(
         name: "ZOOKEEPER".to_string(),
         value_from: Some(EnvVarSource {
             config_map_key_ref: Some(ConfigMapKeySelector {
-                name: Some(kafka.spec.zookeeper_config_map_name.clone()),
+                name: Some(kafka.spec.cluster_config.zookeeper_config_map_name.clone()),
                 key: "ZOOKEEPER".to_string(),
                 ..ConfigMapKeySelector::default()
             }),
@@ -760,7 +726,7 @@ fn build_broker_rolegroup_statefulset(
     });
 
     // add env var for log4j if set
-    if kafka.spec.log4j.is_some() {
+    if kafka.spec.cluster_config.log4j.is_some() {
         env.push(EnvVar {
             name: "KAFKA_LOG4J_OPTS".to_string(),
             value: Some(
@@ -771,42 +737,19 @@ fn build_broker_rolegroup_statefulset(
     }
 
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
-    let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
-
-    let kafka_listeners = get_kafka_listener_config(kafka, &rolegroup_ref.object_name())
-        .context(InvalidKafkaListenersSnafu)?;
-    let listeners_override = format!("--override \"listeners={}\"", kafka_listeners.listeners());
-    let advertised_listeners_override = format!(
-        "--override \"advertised.listeners={}\"",
-        kafka_listeners.advertised_listeners()
-    );
-    let listener_security_protocol_map_override = format!(
-        "--override \"listener.security.protocol.map={}\"",
-        kafka_listeners.listener_security_protocol_map()
-    );
-    let opa_url_override = opa_connect_string.map_or("".to_string(), |opa| {
-        format!("--override \"opa.authorizer.url={}\"", opa)
-    });
+    let kafka_listeners =
+        get_kafka_listener_config(kafka, kafka_security, &rolegroup_ref.object_name())
+            .context(InvalidKafkaListenersSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
-        .args(vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            [
-                "bin/kafka-server-start.sh",
-                &format!("/stackable/config/{}", SERVER_PROPERTIES_FILE),
-                zookeeper_override,
-                &listeners_override,
-                &advertised_listeners_override,
-                &listener_security_protocol_map_override,
-                &opa_url_override,
-            ]
-            .join(" "),
-        ])
+        .command(vec!["sh".to_string(), "-c".to_string()])
+        .args(vec![kafka_security
+            .kafka_container_commands(&kafka_listeners, opa_connect_string)
+            .join(" ")])
         .add_env_vars(env)
         .add_env_var("EXTRA_ARGS", jvm_args)
-        .add_container_ports(container_ports(kafka))
+        .add_container_ports(container_ports(kafka_security))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("config", STACKABLE_CONFIG_DIR)
         .add_volume_mount("tmp", STACKABLE_TMP_DIR)
@@ -822,7 +765,7 @@ fn build_broker_rolegroup_statefulset(
         .readiness_probe(Probe {
             exec: Some(ExecAction {
                 // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(kcat_container_cmd_args(kafka)),
+                command: Some(kafka_security.kcat_prober_container_commands()),
             }),
             timeout_seconds: Some(5),
             period_seconds: Some(2),
@@ -919,72 +862,37 @@ pub fn error_policy(_obj: Arc<KafkaCluster>, _error: &Error, _ctx: Arc<Ctx>) -> 
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
-fn service_ports(kafka: &KafkaCluster) -> Vec<ServicePort> {
-    let mut ports = vec![ServicePort {
-        name: Some(METRICS_PORT_NAME.to_string()),
-        port: METRICS_PORT.into(),
-        protocol: Some("TCP".to_string()),
-        ..ServicePort::default()
-    }];
-
-    if kafka.client_tls_secret_class().is_some() || kafka.client_authentication_class().is_some() {
-        ports.push(ServicePort {
-            name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
-            port: SECURE_CLIENT_PORT.into(),
+fn service_ports(kafka_security: &KafkaSecurity) -> Vec<ServicePort> {
+    vec![
+        ServicePort {
+            name: Some(METRICS_PORT_NAME.to_string()),
+            port: METRICS_PORT.into(),
             protocol: Some("TCP".to_string()),
             ..ServicePort::default()
-        });
-    } else {
-        ports.push(ServicePort {
-            name: Some(CLIENT_PORT_NAME.to_string()),
-            port: CLIENT_PORT.into(),
+        },
+        ServicePort {
+            name: Some(kafka_security.client_port_name().to_string()),
+            port: kafka_security.client_port().into(),
             protocol: Some("TCP".to_string()),
             ..ServicePort::default()
-        });
-    }
-
-    ports
+        },
+    ]
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
-fn container_ports(kafka: &KafkaCluster) -> Vec<ContainerPort> {
-    let mut ports = vec![ContainerPort {
-        name: Some(METRICS_PORT_NAME.to_string()),
-        container_port: METRICS_PORT.into(),
-        protocol: Some("TCP".to_string()),
-        ..ContainerPort::default()
-    }];
-
-    if kafka.client_tls_secret_class().is_some() || kafka.client_authentication_class().is_some() {
-        ports.push(ContainerPort {
-            name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
-            container_port: SECURE_CLIENT_PORT.into(),
+fn container_ports(kafka_security: &KafkaSecurity) -> Vec<ContainerPort> {
+    vec![
+        ContainerPort {
+            name: Some(METRICS_PORT_NAME.to_string()),
+            container_port: METRICS_PORT.into(),
             protocol: Some("TCP".to_string()),
             ..ContainerPort::default()
-        });
-    } else {
-        ports.push(ContainerPort {
-            name: Some(CLIENT_PORT_NAME.to_string()),
-            container_port: CLIENT_PORT.into(),
+        },
+        ContainerPort {
+            name: Some(kafka_security.client_port_name().to_string()),
+            container_port: kafka_security.client_port().into(),
             protocol: Some("TCP".to_string()),
             ..ContainerPort::default()
-        });
-    }
-
-    ports
-}
-
-fn create_tls_volume(volume_name: &str, tls_secret_class: Option<&TlsSecretClass>) -> Volume {
-    let secret_class_name = tls_secret_class
-        .map(|t| t.secret_class.as_ref())
-        .unwrap_or(TLS_DEFAULT_SECRET_CLASS);
-
-    VolumeBuilder::new(volume_name)
-        .ephemeral(
-            SecretOperatorVolumeSourceBuilder::new(secret_class_name)
-                .with_pod_scope()
-                .with_node_scope()
-                .build(),
-        )
-        .build()
+        },
+    ]
 }
