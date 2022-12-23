@@ -35,17 +35,17 @@ spec:
   image:
     productVersion: "{{ test_scenario['values']['upgrade_old'].split('-stackable')[0] }}"
     stackableVersion: "{{ test_scenario['values']['upgrade_old'].split('-stackable')[1] }}"
-  zookeeperConfigMapName: kafka-zk
-  config:
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
+  clusterConfig:
+    zookeeperConfigMapName: kafka-zk
     tls:
-      secretClass: tls
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+      serverSecretClass: tls
 {% else %}
-    tls: null
+      serverSecretClass: null
 {% endif %}
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
-    clientAuthentication:
-      authenticationClass: test-kafka-client-auth-tls
+    authentication:
+      - authenticationClass: test-kafka-client-auth-tls
 {% endif %}
   brokers:
     roleGroups:

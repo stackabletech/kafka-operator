@@ -13,7 +13,8 @@ spec:
   image:
     productVersion: "{{ test_scenario['values']['kafka-latest'].split('-stackable')[0] }}"
     stackableVersion: "{{ test_scenario['values']['kafka-latest'].split('-stackable')[1] }}"
-  zookeeperConfigMapName: kafka-zk
+  clusterConfig:
+    zookeeperConfigMapName: kafka-zk
   brokers:
     config:
       resources:

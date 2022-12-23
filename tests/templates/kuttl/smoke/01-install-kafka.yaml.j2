@@ -13,13 +13,13 @@ spec:
   image:
     productVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[0] }}"
     stackableVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[1] }}"
-  zookeeperConfigMapName: kafka-zk
-  config:
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
+  clusterConfig:
+    zookeeperConfigMapName: kafka-zk
     tls:
-      secretClass: tls
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+      serverSecretClass: tls
 {% else %}
-    tls: null
+      serverSecretClass: null
 {% endif %}
   brokers:
     config:
