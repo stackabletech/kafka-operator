@@ -86,6 +86,18 @@ impl KafkaSecurity {
     const STACKABLE_TLS_INTERNAL_DIR: &'static str = "/stackable/tls_internal";
     const SYSTEM_TRUST_STORE_DIR: &'static str = "/etc/pki/java/cacerts";
 
+    pub fn new(
+        resolved_authentication_classes: ResolvedAuthenticationClasses,
+        internal_secret_class: String,
+        server_secret_class: Option<String>,
+    ) -> Self {
+        Self {
+            resolved_authentication_classes,
+            internal_secret_class,
+            server_secret_class,
+        }
+    }
+
     /// Create a `KafkaSecurity` struct from the Kafka custom resource and resolve
     /// all provided `AuthenticationClass` references.
     pub async fn new_from_kafka_cluster(
@@ -243,6 +255,7 @@ impl KafkaSecurity {
         args
     }
 
+    /// Returns the commands to start the main Kafka container
     pub fn kafka_container_commands(
         &self,
         kafka_listeners: &KafkaListenerConfig,

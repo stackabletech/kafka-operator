@@ -195,12 +195,19 @@ fn pod_fqdn(kafka: &KafkaCluster, object_name: &str) -> Result<String, KafkaList
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::authentication::ResolvedAuthenticationClasses;
+
+    use stackable_operator::builder::ObjectMetaBuilder;
+    use stackable_operator::commons::authentication::{
+        AuthenticationClass, AuthenticationClassProvider, AuthenticationClassSpec,
+    };
+    use stackable_operator::commons::tls::TlsAuthenticationProvider;
 
     #[test]
     fn test_get_kafka_listeners_config() {
         let object_name = "simple-kafka-broker-default";
 
-        let input = r#"
+        let kafka_cluster = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
         kind: KafkaCluster
         metadata:
@@ -210,17 +217,28 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
-          config:
+          clusterConfig:
+            authentication:
+              - authenticationClass: kafka-client-tls
             tls:
-              secretClass: tls
-            clientAuthentication:
-              authenticationClass: kafka-client-tls
-            internalTls:
-              secretClass: internalTls
+              internalSecretClass: internalTls
+              serverSecretClass: tls
+            zookeeperConfigMapName: xyz
         "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        let config = get_kafka_listener_config(&kafka, object_name).unwrap();
+        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
+        let kafka_security = KafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![AuthenticationClass {
+                metadata: ObjectMetaBuilder::new().name("auth-class").build(),
+                spec: AuthenticationClassSpec {
+                    provider: AuthenticationClassProvider::Tls(TlsAuthenticationProvider {
+                        client_cert_secret_class: Some("client-auth-secret-class".to_string()),
+                    }),
+                },
+            }]),
+            "internalTls".to_string(),
+            Some("tls".to_string()),
+        );
+        let config = get_kafka_listener_config(&kafka, &kafka_security, object_name).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -228,10 +246,10 @@ mod tests {
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::ClientAuth,
                 host = LISTENER_LOCAL_ADDRESS,
-                port = SECURE_CLIENT_PORT,
+                port = kafka_security.client_port(),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = LISTENER_LOCAL_ADDRESS,
-                internal_port = SECURE_INTERNAL_PORT,
+                internal_port = kafka_security.internal_port(),
             )
         );
 
@@ -241,10 +259,10 @@ mod tests {
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::ClientAuth,
                 host = LISTENER_NODE_ADDRESS,
-                port = node_port_cmd(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME),
+                port = node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name).unwrap(),
-                internal_port = SECURE_INTERNAL_PORT,
+                internal_port = kafka_security.internal_port(),
             )
         );
 
@@ -269,13 +287,18 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
-          config:
+          clusterConfig:
             tls:
-              secretClass: tls
+              serverSecretClass: tls
+            zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        let config = get_kafka_listener_config(&kafka, object_name).unwrap();
+        let kafka_security = KafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![]),
+            "tls".to_string(),
+            Some("tls".to_string()),
+        );
+        let config = get_kafka_listener_config(&kafka, &kafka_security, object_name).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -283,10 +306,10 @@ mod tests {
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
                 host = LISTENER_LOCAL_ADDRESS,
-                port = SECURE_CLIENT_PORT,
+                port = kafka_security.client_port(),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = LISTENER_LOCAL_ADDRESS,
-                internal_port = SECURE_INTERNAL_PORT,
+                internal_port = kafka_security.internal_port(),
             )
         );
 
@@ -296,10 +319,10 @@ mod tests {
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
                 host = LISTENER_NODE_ADDRESS,
-                port = node_port_cmd(STACKABLE_TMP_DIR, SECURE_CLIENT_PORT_NAME),
+                port = node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name).unwrap(),
-                internal_port = SECURE_INTERNAL_PORT,
+                internal_port = kafka_security.internal_port(),
             )
         );
 
@@ -325,12 +348,19 @@ mod tests {
             productVersion: 42.0.0
             stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
-          config:
-            tls: null
-            internalTls: null
+          clusterConfig:
+            tls:
+              internalSecretClass: null
+              serverSecretClass: null
+            zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        let config = get_kafka_listener_config(&kafka, object_name).unwrap();
+        let kafka_security = KafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![]),
+            "".to_string(),
+            None,
+        );
+        let config = get_kafka_listener_config(&kafka, &kafka_security, object_name).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -338,10 +368,10 @@ mod tests {
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
                 host = LISTENER_LOCAL_ADDRESS,
-                port = CLIENT_PORT,
+                port = kafka_security.client_port(),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = LISTENER_LOCAL_ADDRESS,
-                internal_port = INTERNAL_PORT,
+                internal_port = kafka_security.internal_port(),
             )
         );
 
@@ -351,10 +381,10 @@ mod tests {
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
                 host = LISTENER_NODE_ADDRESS,
-                port = node_port_cmd(STACKABLE_TMP_DIR, CLIENT_PORT_NAME),
+                port = node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name).unwrap(),
-                internal_port = INTERNAL_PORT,
+                internal_port = kafka_security.internal_port(),
             )
         );
 

@@ -51,6 +51,12 @@ pub struct ResolvedAuthenticationClasses {
 }
 
 impl ResolvedAuthenticationClasses {
+    pub fn new(resolved_authentication_classes: Vec<AuthenticationClass>) -> Self {
+        Self {
+            resolved_authentication_classes,
+        }
+    }
+
     /// Return the (first) TLS `AuthenticationClass` if available
     pub fn get_tls_authentication_class(&self) -> Option<&AuthenticationClass> {
         self.resolved_authentication_classes

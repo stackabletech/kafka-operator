@@ -329,6 +329,26 @@ impl Configuration for KafkaConfigFragment {
 mod tests {
     use super::*;
 
+    fn get_server_secret_class(kafka: &KafkaCluster) -> Option<String> {
+        kafka
+            .spec
+            .cluster_config
+            .tls
+            .as_ref()
+            .and_then(|tls| tls.server_secret_class.clone())
+    }
+
+    fn get_internal_secret_class(kafka: &KafkaCluster) -> String {
+        kafka
+            .spec
+            .cluster_config
+            .tls
+            .as_ref()
+            .unwrap()
+            .internal_secret_class
+            .clone()
+    }
+
     #[test]
     fn test_client_tls() {
         let input = r#"
@@ -340,16 +360,14 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
+          clusterConfig:  
+            zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
-        );
-        assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
+            get_internal_secret_class(&kafka),
+            tls::internal_tls_default()
         );
 
         let input = r#"
@@ -361,19 +379,41 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
-          config:
+          clusterConfig:
             tls:
-              secretClass: simple-kafka-client-tls
+              serverSecretClass: simple-kafka-server-tls  
+            zookeeperConfigMapName: xyz
+          
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            "simple-kafka-client-tls".to_string()
+            get_server_secret_class(&kafka).unwrap(),
+            "simple-kafka-server-tls".to_string()
         );
         assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS
+            get_internal_secret_class(&kafka),
+            tls::internal_tls_default()
+        );
+
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
+          clusterConfig:
+            tls:
+              serverSecretClass: null  
+            zookeeperConfigMapName: xyz            
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(get_server_secret_class(&kafka), None);
+        assert_eq!(
+            get_internal_secret_class(&kafka),
+            tls::internal_tls_default()
         );
 
         let input = r#"
@@ -386,38 +426,16 @@ mod tests {
             productVersion: 42.0.0
             stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
-          config:
-            tls: null
+          clusterConfig:
+            tls:
+              internalSecretClass: simple-kafka-internal-tls  
+            zookeeperConfigMapName: xyz          
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        assert_eq!(kafka.client_tls_secret_class(), None);
+        assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
-        );
-
-        let input = r#"
-        apiVersion: kafka.stackable.tech/v1alpha1
-        kind: KafkaCluster
-        metadata:
-          name: simple-kafka
-        spec:
-          image:
-            productVersion: 42.0.0
-            stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
-          config:
-            internalTls:
-              secretClass: simple-kafka-internal-tls
-        "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
-        );
-        assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            "simple-kafka-internal-tls"
+            get_internal_secret_class(&kafka),
+            "simple-kafka-internal-tls".to_string()
         );
     }
 
@@ -432,16 +450,14 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
+          clusterConfig:
+            zookeeperConfigMapName: xyz              
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
-        );
-        assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS
+            get_internal_secret_class(&kafka),
+            tls::internal_tls_default()
         );
 
         let input = r#"
@@ -453,20 +469,17 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
-          config:
-            internalTls:
-              secretClass: simple-kafka-internal-tls
+          clusterConfig:
+            tls:
+              internalSecretClass: simple-kafka-internal-tls  
+            zookeeperConfigMapName: xyz              
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
+            get_internal_secret_class(&kafka),
             "simple-kafka-internal-tls".to_string()
         );
-        assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS
-        );
 
         let input = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
@@ -477,19 +490,19 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
-          config:
+          clusterConfig:
             tls:
-              secretClass: simple-kafka-client-tls
+              serverSecretClass: simple-kafka-server-tls  
+            zookeeperConfigMapName: xyz              
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
+            get_server_secret_class(&kafka),
+            Some("simple-kafka-server-tls".to_string())
         );
         assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            "simple-kafka-client-tls"
+            get_internal_secret_class(&kafka),
+            tls::internal_tls_default()
         );
     }
 }
