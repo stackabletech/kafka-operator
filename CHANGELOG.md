@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Don't run init container as root and avoid chmod and chowning ([#524]).
 - [BREAKING] Use Product image selection instead of version. `spec.version` has been replaced by `spec.image` ([#482]).
 - [BREAKING]: Removed tools image for init and get-svc container and replaced with Kafka product image. This means the latest stackable version has to be used in the product image selection ([#527])
+- [BREAKING] Consolidated top-level configuration. Split up TLS encryption and authentication. Moved all top-level fields except `spec.image` below `spec.clusterConfig` ([#532]).
 
 [#530]: https://github.com/stackabletech/kafka-operator/pull/530
 [#482]: https://github.com/stackabletech/kafka-operator/pull/482
@@ -19,6 +20,7 @@ All notable changes to this project will be documented in this file.
 [#519]: https://github.com/stackabletech/kafka-operator/pull/519
 [#524]: https://github.com/stackabletech/kafka-operator/pull/524
 [#527]: https://github.com/stackabletech/kafka-operator/pull/527
+[#532]: https://github.com/stackabletech/kafka-operator/pull/532
 
 ## [0.8.0] - 2022-11-07
 
