@@ -153,8 +153,8 @@ spec:
       default:
         replicas: 3
 ----
-<1> The `tls.serverSecretClass` refers to the client-to-server encryption. Defaults to the `tls` secret. It can be deactivated by setting `config.tls` to `null`.
-<2> The `tls.internalSecretClass` refers to the broker-to-broker internal encryption. This must be explicitly set or defaults to `tls`. Can be disabled by setting `config.internalTls` to `null`.
+<1> The `spec.clusterConfig.tls.serverSecretClass` refers to the client-to-server encryption. Defaults to the `tls` secret. Can be deactivated by setting `serverSecretClass` to `null`.
+<2> The `spec.clusterConfig.tls.internalSecretClass` refers to the broker-to-broker internal encryption. This must be explicitly set or defaults to `tls`. May be disabled by setting `internalSecretClass` to `null`.
 
 The `tls` secret is deployed from the xref:secret-operator::index.adoc[Secret Operator] and looks like this:
 
@@ -175,7 +175,7 @@ spec:
         autoGenerate: true
 ----
 
-You can create your own secrets and reference them e.g. in the `tls.secretClass` or `internalTls.secretClass` to use different certificates.
+You can create your own secrets and reference them e.g. in the `spec.clusterConfig.tls.serverSecretClass` or `spec.clusterConfig.tls.internalSecretClass` to use different certificates.
 
 == Authentication
 
