@@ -9,7 +9,7 @@ use stackable_operator::{
     schemars::{self, JsonSchema},
 };
 
-const SUPPORTED_AUTHENTICATION_CLASS_PROVIDER: [&str; 1] = ["TLS"];
+const SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS: [&str; 1] = ["TLS"];
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -19,10 +19,10 @@ pub enum Error {
         authentication_class: ObjectRef<AuthenticationClass>,
     },
     // TODO: Adapt message if multiple authentication classes are supported
-    #[snafu(display("only one authentication class provider is currently supported. Possible Authentication class providers are {SUPPORTED_AUTHENTICATION_CLASS_PROVIDER:?}"))]
+    #[snafu(display("only one authentication class is currently supported. Possible Authentication class providers are {SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS:?}"))]
     MultipleAuthenticationClassesProvided,
     #[snafu(display(
-        "failed to use authentication provider [{provider}] for authentication class [{authentication_class}] - supported providers: {SUPPORTED_AUTHENTICATION_CLASS_PROVIDER:?}",
+        "failed to use authentication provider [{provider}] for authentication class [{authentication_class}] - supported providers: {SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS:?}",
     ))]
     AuthenticationProviderNotSupported {
         authentication_class: ObjectRef<AuthenticationClass>,
