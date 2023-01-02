@@ -159,14 +159,14 @@ pub enum Error {
         authentication_class: ObjectRef<AuthenticationClass>,
     },
     #[snafu(display(
-        "failed to use authentication mechanism {} - supported methods: {:?}",
-        method,
+        "failed to use authentication provider {} - supported methods: {:?}",
+        provider,
         supported
     ))]
-    AuthenticationMethodNotSupported {
+    AuthenticationProviderNotSupported {
         authentication_class: ObjectRef<AuthenticationClass>,
         supported: Vec<String>,
-        method: String,
+        provider: String,
     },
     #[snafu(display("invalid kafka listeners"))]
     InvalidKafkaListeners {
@@ -221,7 +221,7 @@ impl ReconcilerError for Error {
                 authentication_class,
                 ..
             } => Some(authentication_class.clone().erase()),
-            Error::AuthenticationMethodNotSupported {
+            Error::AuthenticationProviderNotSupported {
                 authentication_class,
                 ..
             } => Some(authentication_class.clone().erase()),
@@ -280,7 +280,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
 
     // Assemble the OPA connection string from the discovery and the given path if provided
     // Will be passed as --override parameter in the cli in the state ful set
-    let opa_connect = if let Some(opa_spec) = &kafka.spec.cluster_config.opa {
+    let opa_connect = if let Some(opa_spec) = &kafka.spec.cluster_config.authorization.opa {
         Some(
             opa_spec
                 .full_document_url_from_config_map(

@@ -47,10 +47,11 @@ spec:
     productVersion: 3.3.1
     stackableVersion: 0.3.0
   clusterConfig:
+    authorization:
+      opa:
+        configMapName: simple-opa
+        package: kafka
     zookeeperConfigMapName: simple-kafka-znode
-    opa:
-      configMapName: simple-opa
-      package: kafka
   brokers:
     roleGroups:
       default:
@@ -71,10 +72,11 @@ spec:
     productVersion: 3.3.1
     stackableVersion: 0.3.0
   clusterConfig:
+    authorization:
+      opa:
+        configMapName: simple-opa
+        package: kafka
     zookeeperConfigMapName: simple-kafka-znode
-    opa:
-      configMapName: simple-opa
-      package: kafka
   brokers:
     configOverrides:
       server.properties:

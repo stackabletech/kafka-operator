@@ -1,16 +1,17 @@
 pub mod authentication;
+pub mod authorization;
 pub mod listener;
 pub mod security;
 pub mod tls;
 
 use crate::authentication::KafkaAuthentication;
+use crate::authorization::KafkaAuthorization;
 use crate::tls::KafkaTls;
 
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
 use stackable_operator::{
     commons::{
-        opa::OpaConfig,
         product_image_selection::ProductImage,
         resources::{
             CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
@@ -95,9 +96,11 @@ pub struct KafkaClusterConfig {
     /// Authentication class settings for Kafka like mTLS authentication.
     #[serde(default)]
     pub authentication: Vec<KafkaAuthentication>,
+    /// Authorization settings for Kafka like OPA.
+    #[serde(default)]
+    pub authorization: KafkaAuthorization,
+    /// Log4j configuration
     pub log4j: Option<String>,
-    /// OPA discovery config map name and package (optional) selection.
-    pub opa: Option<OpaConfig>,
     /// TLS encryption settings for Kafka (server, internal).
     #[serde(
         default = "tls::default_kafka_tls",
@@ -309,7 +312,7 @@ impl Configuration for KafkaConfigFragment {
 
         if file == SERVER_PROPERTIES_FILE {
             // OPA
-            if resource.spec.cluster_config.opa.is_some() {
+            if resource.spec.cluster_config.authorization.opa.is_some() {
                 config.insert(
                     "authorizer.class.name".to_string(),
                     Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),

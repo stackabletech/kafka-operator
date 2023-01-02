@@ -536,7 +536,7 @@ spec:
                             description: |-
                               The AuthenticationClass <https://docs.stackable.tech/home/nightly/concepts/authenticationclass.html> to use.
 
-                              ## mTLS
+                              ## TLS provider
 
                               Only affects client connections. This setting controls: - If clients need to authenticate themselves against the broker via TLS - Which ca.crt to use when validating the provided client certs This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
                             type: string
@@ -544,21 +544,27 @@ spec:
                           - authenticationClass
                         type: object
                       type: array
+                    authorization:
+                      default:
+                        opa: null
+                      description: Authorization settings for Kafka like OPA.
+                      properties:
+                        opa:
+                          nullable: true
+                          properties:
+                            configMapName:
+                              type: string
+                            package:
+                              nullable: true
+                              type: string
+                          required:
+                            - configMapName
+                          type: object
+                      type: object
                     log4j:
+                      description: Log4j configuration
                       nullable: true
                       type: string
-                    opa:
-                      description: OPA discovery config map name and package (optional) selection.
-                      nullable: true
-                      properties:
-                        configMapName:
-                          type: string
-                        package:
-                          nullable: true
-                          type: string
-                      required:
-                        - configMapName
-                      type: object
                     tls:
                       default:
                         internalSecretClass: tls

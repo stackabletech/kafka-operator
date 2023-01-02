@@ -35,7 +35,7 @@ pub enum Error {
 pub struct KafkaAuthentication {
     /// The AuthenticationClass <https://docs.stackable.tech/home/nightly/concepts/authenticationclass.html> to use.
     ///
-    /// ## mTLS
+    /// ## TLS provider
     ///
     /// Only affects client connections. This setting controls:
     /// - If clients need to authenticate themselves against the broker via TLS
@@ -92,7 +92,7 @@ impl ResolvedAuthenticationClasses {
     /// Validates the resolved AuthenticationClasses.
     /// Currently errors out if:
     /// - More than one AuthenticationClass was provided
-    /// - AuthenticationClass mechanism was not supported
+    /// - AuthenticationClass provider was not supported
     pub fn validate(&self) -> Result<Self, Error> {
         if self.resolved_authentication_classes.len() > 1 {
             return Err(Error::MultipleAuthenticationClassesProvided);

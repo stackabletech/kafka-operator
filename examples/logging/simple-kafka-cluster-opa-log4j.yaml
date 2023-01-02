@@ -61,9 +61,10 @@ spec:
     productVersion: 3.3.1
     stackableVersion: 0.3.0
   clusterConfig:
-    opa:
-      configMapName: simple-opa
-      package: kafka/authz
+    authorization:
+      opa:
+        configMapName: simple-opa
+        package: kafka/authz
     zookeeperConfigMapName: simple-kafka-znode
     log4j: |-
       log4j.rootLogger=INFO, stdout, kafkaAppender
