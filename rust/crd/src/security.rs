@@ -27,13 +27,13 @@ pub enum Error {
 }
 
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
-pub struct KafkaSecurity {
+pub struct KafkaTlsSecurity {
     resolved_authentication_classes: ResolvedAuthenticationClasses,
     internal_secret_class: String,
     server_secret_class: Option<String>,
 }
 
-impl KafkaSecurity {
+impl KafkaTlsSecurity {
     // ports
     pub const CLIENT_PORT_NAME: &'static str = "kafka";
     pub const CLIENT_PORT: u16 = 9092;
@@ -104,7 +104,7 @@ impl KafkaSecurity {
         client: &Client,
         kafka: &KafkaCluster,
     ) -> Result<Self, Error> {
-        Ok(KafkaSecurity {
+        Ok(KafkaTlsSecurity {
             resolved_authentication_classes:
                 authentication::ResolvedAuthenticationClasses::from_references(
                     client,

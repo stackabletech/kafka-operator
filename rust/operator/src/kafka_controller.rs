@@ -1,7 +1,7 @@
 //! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
 
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::security::KafkaSecurity;
+use stackable_kafka_crd::security::KafkaTlsSecurity;
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, KafkaCluster, KafkaConfig, KafkaRole, APP_NAME,
     DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
@@ -274,7 +274,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .map(Cow::Borrowed)
         .unwrap_or_default();
 
-    let kafka_security = KafkaSecurity::new_from_kafka_cluster(client, &kafka)
+    let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, &kafka)
         .await
         .context(FailedToInitializeSecurityContextSnafu)?;
 
@@ -401,7 +401,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
 pub fn build_broker_role_service(
     kafka: &KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
-    kafka_security: &KafkaSecurity,
+    kafka_security: &KafkaTlsSecurity,
 ) -> Result<Service> {
     let role_name = KafkaRole::Broker.to_string();
     let role_svc_name = kafka
@@ -488,7 +488,7 @@ fn build_broker_role_serviceaccount(
 fn build_broker_rolegroup_config_map(
     kafka: &KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
-    kafka_security: &KafkaSecurity,
+    kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
 ) -> Result<ConfigMap> {
@@ -548,7 +548,7 @@ fn build_broker_rolegroup_config_map(
 fn build_broker_rolegroup_service(
     kafka: &KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
-    kafka_security: &KafkaSecurity,
+    kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<KafkaCluster>,
 ) -> Result<Service> {
     Ok(Service {
@@ -593,7 +593,7 @@ fn build_broker_rolegroup_statefulset(
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     serviceaccount: &ObjectRef<ServiceAccount>,
     opa_connect_string: Option<&str>,
-    kafka_security: &KafkaSecurity,
+    kafka_security: &KafkaTlsSecurity,
     rolegroup_typed_config: &KafkaConfig,
 ) -> Result<StatefulSet> {
     let mut cb_kafka =
@@ -862,7 +862,7 @@ pub fn error_policy(_obj: Arc<KafkaCluster>, _error: &Error, _ctx: Arc<Ctx>) -> 
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
-fn service_ports(kafka_security: &KafkaSecurity) -> Vec<ServicePort> {
+fn service_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ServicePort> {
     vec![
         ServicePort {
             name: Some(METRICS_PORT_NAME.to_string()),
@@ -880,7 +880,7 @@ fn service_ports(kafka_security: &KafkaSecurity) -> Vec<ServicePort> {
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
-fn container_ports(kafka_security: &KafkaSecurity) -> Vec<ContainerPort> {
+fn container_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ContainerPort> {
     vec![
         ContainerPort {
             name: Some(METRICS_PORT_NAME.to_string()),

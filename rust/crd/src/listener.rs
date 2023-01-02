@@ -1,6 +1,6 @@
 use crate::{KafkaCluster, STACKABLE_TMP_DIR};
 
-use crate::security::KafkaSecurity;
+use crate::security::KafkaTlsSecurity;
 use snafu::{OptionExt, Snafu};
 use stackable_operator::kube::ResourceExt;
 use std::collections::BTreeMap;
@@ -89,7 +89,7 @@ impl Display for KafkaListener {
 
 pub fn get_kafka_listener_config(
     kafka: &KafkaCluster,
-    kafka_security: &KafkaSecurity,
+    kafka_security: &KafkaTlsSecurity,
     object_name: &str,
 ) -> Result<KafkaListenerConfig, KafkaListenerError> {
     let pod_fqdn = pod_fqdn(kafka, object_name)?;
@@ -130,7 +130,7 @@ pub fn get_kafka_listener_config(
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: KafkaSecurity::CLIENT_PORT.to_string(),
+            port: KafkaTlsSecurity::CLIENT_PORT.to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
@@ -226,7 +226,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
-        let kafka_security = KafkaSecurity::new(
+        let kafka_security = KafkaTlsSecurity::new(
             ResolvedAuthenticationClasses::new(vec![AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),
                 spec: AuthenticationClassSpec {
@@ -293,7 +293,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        let kafka_security = KafkaSecurity::new(
+        let kafka_security = KafkaTlsSecurity::new(
             ResolvedAuthenticationClasses::new(vec![]),
             "tls".to_string(),
             Some("tls".to_string()),
@@ -355,7 +355,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        let kafka_security = KafkaSecurity::new(
+        let kafka_security = KafkaTlsSecurity::new(
             ResolvedAuthenticationClasses::new(vec![]),
             "".to_string(),
             None,

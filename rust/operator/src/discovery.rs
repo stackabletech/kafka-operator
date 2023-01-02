@@ -2,7 +2,7 @@ use crate::utils::build_recommended_labels;
 use crate::KAFKA_CONTROLLER_NAME;
 
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{security::KafkaSecurity, KafkaCluster, KafkaRole};
+use stackable_kafka_crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole};
 use stackable_operator::{
     builder::{ConfigMapBuilder, ObjectMetaBuilder},
     commons::product_image_selection::ResolvedProductImage,
@@ -45,7 +45,7 @@ pub async fn build_discovery_configmaps(
     owner: &impl Resource<DynamicType = ()>,
     resolved_product_image: &ResolvedProductImage,
     client: &stackable_operator::client::Client,
-    kafka_security: &KafkaSecurity,
+    kafka_security: &KafkaTlsSecurity,
     svc: &Service,
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name_unchecked();
