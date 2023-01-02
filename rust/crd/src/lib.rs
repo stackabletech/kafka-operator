@@ -1,22 +1,24 @@
+pub mod authentication;
+pub mod authorization;
 pub mod listener;
+pub mod security;
+pub mod tls;
+
+use crate::authentication::KafkaAuthentication;
+use crate::authorization::KafkaAuthorization;
+use crate::tls::KafkaTls;
 
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
-use stackable_operator::commons::{
-    product_image_selection::ProductImage,
-    resources::{
-        CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimitsFragment, PvcConfigFragment,
-        ResourcesFragment,
-    },
-};
-use stackable_operator::config::fragment::{Fragment, ValidationError};
-use stackable_operator::memory::to_java_heap;
-use stackable_operator::role_utils::RoleGroup;
 use stackable_operator::{
     commons::{
-        opa::OpaConfig,
-        resources::{NoRuntimeLimits, PvcConfig, Resources},
+        product_image_selection::ProductImage,
+        resources::{
+            CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
+            PvcConfig, PvcConfigFragment, Resources, ResourcesFragment,
+        },
     },
+    config::fragment::{Fragment, ValidationError},
     config::merge::Merge,
     error::OperatorResult,
     k8s_openapi::{
@@ -24,8 +26,9 @@ use stackable_operator::{
         apimachinery::pkg::api::resource::Quantity,
     },
     kube::{runtime::reflector::ObjectRef, CustomResource},
+    memory::to_java_heap,
     product_config_utils::{ConfigError, Configuration},
-    role_utils::{Role, RoleGroupRef},
+    role_utils::{Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
 };
 use std::collections::BTreeMap;
@@ -34,13 +37,7 @@ use strum::{Display, EnumIter, EnumString};
 pub const DOCKER_IMAGE_BASE_NAME: &str = "kafka";
 pub const APP_NAME: &str = "kafka";
 pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
-// ports
-pub const CLIENT_PORT_NAME: &str = "kafka";
-pub const CLIENT_PORT: u16 = 9092;
-pub const SECURE_CLIENT_PORT_NAME: &str = "kafka-tls";
-pub const SECURE_CLIENT_PORT: u16 = 9093;
-pub const INTERNAL_PORT: u16 = 19092;
-pub const SECURE_INTERNAL_PORT: u16 = 19093;
+// metrics
 pub const METRICS_PORT_NAME: &str = "metrics";
 pub const METRICS_PORT: u16 = 9606;
 // config files
@@ -49,52 +46,10 @@ pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
-// - TLS global
-pub const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
-pub const SSL_KEYSTORE_LOCATION: &str = "ssl.keystore.location";
-pub const SSL_KEYSTORE_PASSWORD: &str = "ssl.keystore.password";
-pub const SSL_KEYSTORE_TYPE: &str = "ssl.keystore.type";
-pub const SSL_TRUSTSTORE_LOCATION: &str = "ssl.truststore.location";
-pub const SSL_TRUSTSTORE_PASSWORD: &str = "ssl.truststore.password";
-pub const SSL_TRUSTSTORE_TYPE: &str = "ssl.truststore.type";
-pub const SSL_STORE_PASSWORD: &str = "changeit";
-// - TLS client
-pub const CLIENT_SSL_KEYSTORE_LOCATION: &str = "listener.name.client.ssl.keystore.location";
-pub const CLIENT_SSL_KEYSTORE_PASSWORD: &str = "listener.name.client.ssl.keystore.password";
-pub const CLIENT_SSL_KEYSTORE_TYPE: &str = "listener.name.client.ssl.keystore.type";
-pub const CLIENT_SSL_TRUSTSTORE_LOCATION: &str = "listener.name.client.ssl.truststore.location";
-pub const CLIENT_SSL_TRUSTSTORE_PASSWORD: &str = "listener.name.client.ssl.truststore.password";
-pub const CLIENT_SSL_TRUSTSTORE_TYPE: &str = "listener.name.client.ssl.truststore.type";
-// - TLS client authentication
-pub const CLIENT_AUTH_SSL_KEYSTORE_LOCATION: &str =
-    "listener.name.client_auth.ssl.keystore.location";
-pub const CLIENT_AUTH_SSL_KEYSTORE_PASSWORD: &str =
-    "listener.name.client_auth.ssl.keystore.password";
-pub const CLIENT_AUTH_SSL_KEYSTORE_TYPE: &str = "listener.name.client_auth.ssl.keystore.type";
-pub const CLIENT_AUTH_SSL_TRUSTSTORE_LOCATION: &str =
-    "listener.name.client_auth.ssl.truststore.location";
-pub const CLIENT_AUTH_SSL_TRUSTSTORE_PASSWORD: &str =
-    "listener.name.client_auth.ssl.truststore.password";
-pub const CLIENT_AUTH_SSL_TRUSTSTORE_TYPE: &str = "listener.name.client_auth.ssl.truststore.type";
-pub const CLIENT_AUTH_SSL_CLIENT_AUTH: &str = "listener.name.client_auth.ssl.client.auth";
-// - TLS internal
-pub const SECURITY_INTER_BROKER_PROTOCOL: &str = "security.inter.broker.protocol";
-pub const INTER_BROKER_LISTENER_NAME: &str = "inter.broker.listener.name";
-pub const INTER_SSL_KEYSTORE_LOCATION: &str = "listener.name.internal.ssl.keystore.location";
-pub const INTER_SSL_KEYSTORE_PASSWORD: &str = "listener.name.internal.ssl.keystore.password";
-pub const INTER_SSL_KEYSTORE_TYPE: &str = "listener.name.internal.ssl.keystore.type";
-pub const INTER_SSL_TRUSTSTORE_LOCATION: &str = "listener.name.internal.ssl.truststore.location";
-pub const INTER_SSL_TRUSTSTORE_PASSWORD: &str = "listener.name.internal.ssl.truststore.password";
-pub const INTER_SSL_TRUSTSTORE_TYPE: &str = "listener.name.internal.ssl.truststore.type";
-pub const INTER_SSL_CLIENT_AUTH: &str = "listener.name.internal.ssl.client.auth";
 // directories
 pub const STACKABLE_TMP_DIR: &str = "/stackable/tmp";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
-pub const STACKABLE_TLS_CLIENT_DIR: &str = "/stackable/tls_client";
-pub const STACKABLE_TLS_CLIENT_AUTH_DIR: &str = "/stackable/tls_client_auth";
-pub const STACKABLE_TLS_INTERNAL_DIR: &str = "/stackable/tls_internal";
-pub const SYSTEM_TRUST_STORE_DIR: &str = "/etc/pki/java/cacerts";
 
 const JVM_HEAP_FACTOR: f32 = 0.8;
 
@@ -131,69 +86,29 @@ pub enum Error {
 pub struct KafkaClusterSpec {
     pub image: ProductImage,
     pub brokers: Option<Role<KafkaConfigFragment>>,
-    pub zookeeper_config_map_name: String,
-    pub opa: Option<OpaConfig>,
-    pub log4j: Option<String>,
-    #[serde(default)]
-    pub config: GlobalKafkaConfig,
+    pub cluster_config: KafkaClusterConfig,
     pub stopped: Option<bool>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GlobalKafkaConfig {
-    /// Only affects client connections. This setting controls:
-    /// - If TLS encryption is used at all
-    /// - Which cert the servers should use to authenticate themselves against the client
-    /// Defaults to `TlsSecretClass` { secret_class: "tls".to_string() }.
+pub struct KafkaClusterConfig {
+    /// Authentication class settings for Kafka like mTLS authentication.
+    #[serde(default)]
+    pub authentication: Vec<KafkaAuthentication>,
+    /// Authorization settings for Kafka like OPA.
+    #[serde(default)]
+    pub authorization: KafkaAuthorization,
+    /// Log4j configuration
+    pub log4j: Option<String>,
+    /// TLS encryption settings for Kafka (server, internal).
     #[serde(
-        default = "tls_secret_class_default",
+        default = "tls::default_kafka_tls",
         skip_serializing_if = "Option::is_none"
     )]
-    pub tls: Option<TlsSecretClass>,
-    /// Only affects client connections. This setting controls:
-    /// - If clients need to authenticate themselves against the server via TLS
-    /// - Which ca.crt to use when validating the provided client certs
-    /// Defaults to `None`
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_authentication: Option<ClientAuthenticationClass>,
-    /// Only affects internal communication. Use mutual verification between Kafka nodes
-    /// This setting controls:
-    /// - Which cert the servers should use to authenticate themselves against other servers
-    /// - Which ca.crt to use when validating the other server
-    #[serde(
-        default = "tls_secret_class_default",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub internal_tls: Option<TlsSecretClass>,
-}
-
-impl Default for GlobalKafkaConfig {
-    fn default() -> Self {
-        GlobalKafkaConfig {
-            tls: tls_secret_class_default(),
-            client_authentication: None,
-            internal_tls: tls_secret_class_default(),
-        }
-    }
-}
-
-#[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClientAuthenticationClass {
-    pub authentication_class: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TlsSecretClass {
-    pub secret_class: String,
-}
-
-fn tls_secret_class_default() -> Option<TlsSecretClass> {
-    Some(TlsSecretClass {
-        secret_class: TLS_DEFAULT_SECRET_CLASS.to_string(),
-    })
+    pub tls: Option<KafkaTls>,
+    /// ZooKeeper discovery config map name.
+    pub zookeeper_config_map_name: String,
 }
 
 impl KafkaCluster {
@@ -281,47 +196,6 @@ impl KafkaCluster {
             .and_then(|limits| limits.get("memory"))
             .map(|memory_limit| to_java_heap(memory_limit, JVM_HEAP_FACTOR))
             .transpose()
-    }
-
-    /// Returns the secret class for client connection encryption. Defaults to `tls`.
-    pub fn client_tls_secret_class(&self) -> Option<&TlsSecretClass> {
-        let spec: &KafkaClusterSpec = &self.spec;
-        spec.config.tls.as_ref()
-    }
-
-    /// Returns the authentication class used for client authentication
-    pub fn client_authentication_class(&self) -> Option<&str> {
-        let spec: &KafkaClusterSpec = &self.spec;
-        spec.config
-            .client_authentication
-            .as_ref()
-            .map(|tls| tls.authentication_class.as_ref())
-    }
-
-    /// Returns the secret class for internal server encryption.
-    pub fn internal_tls_secret_class(&self) -> Option<&TlsSecretClass> {
-        let spec: &KafkaClusterSpec = &self.spec;
-        spec.config.internal_tls.as_ref()
-    }
-
-    /// Returns the client port based on the security (tls) settings.
-    pub fn client_port(&self) -> u16 {
-        if self.client_tls_secret_class().is_some() || self.client_authentication_class().is_some()
-        {
-            SECURE_CLIENT_PORT
-        } else {
-            CLIENT_PORT
-        }
-    }
-
-    /// Returns the client port name based on the security (tls) settings.
-    pub fn client_port_name(&self) -> &str {
-        if self.client_tls_secret_class().is_some() || self.client_authentication_class().is_some()
-        {
-            SECURE_CLIENT_PORT_NAME
-        } else {
-            CLIENT_PORT_NAME
-        }
     }
 }
 
@@ -438,7 +312,7 @@ impl Configuration for KafkaConfigFragment {
 
         if file == SERVER_PROPERTIES_FILE {
             // OPA
-            if resource.spec.opa.is_some() {
+            if resource.spec.cluster_config.authorization.opa.is_some() {
                 config.insert(
                     "authorizer.class.name".to_string(),
                     Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),
@@ -448,104 +322,6 @@ impl Configuration for KafkaConfigFragment {
                     Some("true".to_string()),
                 );
             }
-
-            // We set either client tls with authentication or client tls without authentication
-            // If authentication is explicitly required we do not want to have any other CAs to
-            // be trusted.
-            if resource.client_authentication_class().is_some() {
-                config.insert(
-                    CLIENT_AUTH_SSL_KEYSTORE_LOCATION.to_string(),
-                    Some(format!("{}/keystore.p12", STACKABLE_TLS_CLIENT_AUTH_DIR)),
-                );
-                config.insert(
-                    CLIENT_AUTH_SSL_KEYSTORE_PASSWORD.to_string(),
-                    Some(SSL_STORE_PASSWORD.to_string()),
-                );
-                config.insert(
-                    CLIENT_AUTH_SSL_KEYSTORE_TYPE.to_string(),
-                    Some("PKCS12".to_string()),
-                );
-                config.insert(
-                    CLIENT_AUTH_SSL_TRUSTSTORE_LOCATION.to_string(),
-                    Some(format!("{}/truststore.p12", STACKABLE_TLS_CLIENT_AUTH_DIR)),
-                );
-                config.insert(
-                    CLIENT_AUTH_SSL_TRUSTSTORE_PASSWORD.to_string(),
-                    Some(SSL_STORE_PASSWORD.to_string()),
-                );
-                config.insert(
-                    CLIENT_AUTH_SSL_TRUSTSTORE_TYPE.to_string(),
-                    Some("PKCS12".to_string()),
-                );
-                // client auth required
-                config.insert(
-                    CLIENT_AUTH_SSL_CLIENT_AUTH.to_string(),
-                    Some("required".to_string()),
-                );
-            } else if resource.client_tls_secret_class().is_some() {
-                config.insert(
-                    CLIENT_SSL_KEYSTORE_LOCATION.to_string(),
-                    Some(format!("{}/keystore.p12", STACKABLE_TLS_CLIENT_DIR)),
-                );
-                config.insert(
-                    CLIENT_SSL_KEYSTORE_PASSWORD.to_string(),
-                    Some(SSL_STORE_PASSWORD.to_string()),
-                );
-                config.insert(
-                    CLIENT_SSL_KEYSTORE_TYPE.to_string(),
-                    Some("PKCS12".to_string()),
-                );
-                config.insert(
-                    CLIENT_SSL_TRUSTSTORE_LOCATION.to_string(),
-                    Some(format!("{}/truststore.p12", STACKABLE_TLS_CLIENT_DIR)),
-                );
-                config.insert(
-                    CLIENT_SSL_TRUSTSTORE_PASSWORD.to_string(),
-                    Some(SSL_STORE_PASSWORD.to_string()),
-                );
-                config.insert(
-                    CLIENT_SSL_TRUSTSTORE_TYPE.to_string(),
-                    Some("PKCS12".to_string()),
-                );
-            }
-
-            // Internal TLS
-            if resource.internal_tls_secret_class().is_some() {
-                config.insert(
-                    INTER_SSL_KEYSTORE_LOCATION.to_string(),
-                    Some(format!("{}/keystore.p12", STACKABLE_TLS_INTERNAL_DIR)),
-                );
-                config.insert(
-                    INTER_SSL_KEYSTORE_PASSWORD.to_string(),
-                    Some(SSL_STORE_PASSWORD.to_string()),
-                );
-                config.insert(
-                    INTER_SSL_KEYSTORE_TYPE.to_string(),
-                    Some("PKCS12".to_string()),
-                );
-                config.insert(
-                    INTER_SSL_TRUSTSTORE_LOCATION.to_string(),
-                    Some(format!("{}/truststore.p12", STACKABLE_TLS_INTERNAL_DIR)),
-                );
-                config.insert(
-                    INTER_SSL_TRUSTSTORE_PASSWORD.to_string(),
-                    Some(SSL_STORE_PASSWORD.to_string()),
-                );
-                config.insert(
-                    INTER_SSL_TRUSTSTORE_TYPE.to_string(),
-                    Some("PKCS12".to_string()),
-                );
-                config.insert(
-                    INTER_SSL_CLIENT_AUTH.to_string(),
-                    Some("required".to_string()),
-                );
-            }
-
-            // common
-            config.insert(
-                INTER_BROKER_LISTENER_NAME.to_string(),
-                Some(listener::KafkaListenerName::Internal.to_string()),
-            );
         }
 
         Ok(config)
@@ -555,6 +331,26 @@ impl Configuration for KafkaConfigFragment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn get_server_secret_class(kafka: &KafkaCluster) -> Option<String> {
+        kafka
+            .spec
+            .cluster_config
+            .tls
+            .as_ref()
+            .and_then(|tls| tls.server_secret_class.clone())
+    }
+
+    fn get_internal_secret_class(kafka: &KafkaCluster) -> String {
+        kafka
+            .spec
+            .cluster_config
+            .tls
+            .as_ref()
+            .unwrap()
+            .internal_secret_class
+            .clone()
+    }
 
     #[test]
     fn test_client_tls() {
@@ -567,16 +363,14 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
+          clusterConfig:  
+            zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
-        );
-        assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
+            get_internal_secret_class(&kafka),
+            tls::internal_tls_default()
         );
 
         let input = r#"
@@ -588,19 +382,41 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
-          config:
+          clusterConfig:
             tls:
-              secretClass: simple-kafka-client-tls
+              serverSecretClass: simple-kafka-server-tls  
+            zookeeperConfigMapName: xyz
+          
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            "simple-kafka-client-tls".to_string()
+            get_server_secret_class(&kafka).unwrap(),
+            "simple-kafka-server-tls".to_string()
         );
         assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS
+            get_internal_secret_class(&kafka),
+            tls::internal_tls_default()
+        );
+
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          image:
+            productVersion: 42.0.0
+            stackableVersion: 0.42.0
+          clusterConfig:
+            tls:
+              serverSecretClass: null  
+            zookeeperConfigMapName: xyz            
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(get_server_secret_class(&kafka), None);
+        assert_eq!(
+            get_internal_secret_class(&kafka),
+            tls::internal_tls_default()
         );
 
         let input = r#"
@@ -613,38 +429,16 @@ mod tests {
             productVersion: 42.0.0
             stackableVersion: 0.42.0
           zookeeperConfigMapName: xyz
-          config:
-            tls: null
+          clusterConfig:
+            tls:
+              internalSecretClass: simple-kafka-internal-tls  
+            zookeeperConfigMapName: xyz          
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        assert_eq!(kafka.client_tls_secret_class(), None);
+        assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
-        );
-
-        let input = r#"
-        apiVersion: kafka.stackable.tech/v1alpha1
-        kind: KafkaCluster
-        metadata:
-          name: simple-kafka
-        spec:
-          image:
-            productVersion: 42.0.0
-            stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
-          config:
-            internalTls:
-              secretClass: simple-kafka-internal-tls
-        "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
-        );
-        assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            "simple-kafka-internal-tls"
+            get_internal_secret_class(&kafka),
+            "simple-kafka-internal-tls".to_string()
         );
     }
 
@@ -659,16 +453,14 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
+          clusterConfig:
+            zookeeperConfigMapName: xyz              
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
-        );
-        assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS
+            get_internal_secret_class(&kafka),
+            tls::internal_tls_default()
         );
 
         let input = r#"
@@ -680,20 +472,17 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
-          config:
-            internalTls:
-              secretClass: simple-kafka-internal-tls
+          clusterConfig:
+            tls:
+              internalSecretClass: simple-kafka-internal-tls  
+            zookeeperConfigMapName: xyz              
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
+            get_internal_secret_class(&kafka),
             "simple-kafka-internal-tls".to_string()
         );
-        assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS
-        );
 
         let input = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
@@ -704,19 +493,19 @@ mod tests {
           image:
             productVersion: 42.0.0
             stackableVersion: 0.42.0
-          zookeeperConfigMapName: xyz
-          config:
+          clusterConfig:
             tls:
-              secretClass: simple-kafka-client-tls
+              serverSecretClass: simple-kafka-server-tls  
+            zookeeperConfigMapName: xyz              
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(
-            kafka.internal_tls_secret_class().unwrap().secret_class,
-            TLS_DEFAULT_SECRET_CLASS.to_string()
+            get_server_secret_class(&kafka),
+            Some("simple-kafka-server-tls".to_string())
         );
         assert_eq!(
-            kafka.client_tls_secret_class().unwrap().secret_class,
-            "simple-kafka-client-tls"
+            get_internal_secret_class(&kafka),
+            tls::internal_tls_default()
         );
     }
 }

@@ -6,15 +6,11 @@ metadata:
 spec:
   image:
     productVersion: 3.8.0
-    stackableVersion: 0.8.0
+    stackableVersion: 0.9.0
   servers:
     roleGroups:
       default:
-        selector:
-          matchLabels:
-            kubernetes.io/os: linux
         replicas: 3
-        config: {}
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperZnode
@@ -67,14 +63,13 @@ spec:
   image:
     productVersion: 3.3.1
     stackableVersion: 0.3.0
-  zookeeperConfigMapName: simple-kafka-znode
-  config:
+  clusterConfig:
+    authentication:
+      - authenticationClass: kafka-client-auth-tls
     tls:
-      secretClass: tls
-    clientAuthentication:
-      authenticationClass: kafka-client-auth-tls
-    internalTls:
-      secretClass: kafka-internal-tls
+      internalSecretClass: kafka-internal-tls
+      serverSecretClass: tls
+    zookeeperConfigMapName: simple-kafka-znode
   brokers:
     roleGroups:
       default:

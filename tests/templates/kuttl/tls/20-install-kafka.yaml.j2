@@ -30,21 +30,6 @@ spec:
           namespace: default
         autoGenerate: true
 {% endif %}
-{% if test_scenario['values']['use-internal-tls'] == 'true' %}
----
-apiVersion: secrets.stackable.tech/v1alpha1
-kind: SecretClass
-metadata:
-  name: test-kafka-internal-tls
-spec:
-  backend:
-    autoTls:
-      ca:
-        secret:
-          name: secret-provisioner-test-kafka-internal-tls-ca
-          namespace: default
-        autoGenerate: true
-{% endif %}
 ---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
@@ -54,25 +39,17 @@ spec:
   image:
     productVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[0] }}"
     stackableVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[1] }}"
-  zookeeperConfigMapName: test-kafka-znode
-  config:
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
+  clusterConfig:
+    zookeeperConfigMapName: test-kafka-znode
     tls:
-      secretClass: tls
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+      serverSecretClass: tls
 {% else %}
-    tls: null
+      serverSecretClass: null
 {% endif %}
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
-    clientAuthentication:
-      authenticationClass: test-kafka-client-auth-tls
-{% else %}
-    clientAuthentication: null
-{% endif %}
-{% if test_scenario['values']['use-internal-tls'] == 'true' %}
-    internalTls:
-      secretClass: test-kafka-internal-tls
-{% else %}
-    internalTls: null
+    authentication:
+      - authenticationClass: test-kafka-client-auth-tls
 {% endif %}
   brokers:
     roleGroups:

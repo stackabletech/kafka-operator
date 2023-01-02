@@ -526,44 +526,68 @@ spec:
                   required:
                     - roleGroups
                   type: object
-                config:
-                  default:
-                    tls:
-                      secretClass: tls
-                    internalTls:
-                      secretClass: tls
+                clusterConfig:
                   properties:
-                    clientAuthentication:
-                      description: 'Only affects client connections. This setting controls: - If clients need to authenticate themselves against the server via TLS - Which ca.crt to use when validating the provided client certs Defaults to `None`'
-                      nullable: true
-                      properties:
-                        authenticationClass:
-                          type: string
-                      required:
-                        - authenticationClass
-                      type: object
-                    internalTls:
+                    authentication:
+                      default: []
+                      description: Authentication class settings for Kafka like mTLS authentication.
+                      items:
+                        properties:
+                          authenticationClass:
+                            description: |-
+                              The AuthenticationClass <https://docs.stackable.tech/home/nightly/concepts/authenticationclass.html> to use.
+
+                              ## TLS provider
+
+                              Only affects client connections. This setting controls: - If clients need to authenticate themselves against the broker via TLS - Which ca.crt to use when validating the provided client certs This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
+                            type: string
+                        required:
+                          - authenticationClass
+                        type: object
+                      type: array
+                    authorization:
                       default:
-                        secretClass: tls
-                      description: 'Only affects internal communication. Use mutual verification between Kafka nodes This setting controls: - Which cert the servers should use to authenticate themselves against other servers - Which ca.crt to use when validating the other server'
-                      nullable: true
+                        opa: null
+                      description: Authorization settings for Kafka like OPA.
                       properties:
-                        secretClass:
-                          type: string
-                      required:
-                        - secretClass
+                        opa:
+                          nullable: true
+                          properties:
+                            configMapName:
+                              type: string
+                            package:
+                              nullable: true
+                              type: string
+                          required:
+                            - configMapName
+                          type: object
                       type: object
+                    log4j:
+                      description: Log4j configuration
+                      nullable: true
+                      type: string
                     tls:
                       default:
-                        secretClass: tls
-                      description: 'Only affects client connections. This setting controls: - If TLS encryption is used at all - Which cert the servers should use to authenticate themselves against the client Defaults to `TlsSecretClass` { secret_class: "tls".to_string() }.'
+                        internalSecretClass: tls
+                        serverSecretClass: tls
+                      description: TLS encryption settings for Kafka (server, internal).
                       nullable: true
                       properties:
-                        secretClass:
+                        internalSecretClass:
+                          default: tls
+                          description: 'The <https://docs.stackable.tech/secret-operator/stable/secretclass.html> to use for internal broker communication. Use mutual verification between brokers (mandatory). This setting controls: - Which cert the brokers should use to authenticate themselves against other brokers - Which ca.crt to use when validating the other brokers Defaults to `tls`'
                           type: string
-                      required:
-                        - secretClass
+                        serverSecretClass:
+                          default: tls
+                          description: 'The <https://docs.stackable.tech/secret-operator/stable/secretclass.html> to use for client connections. This setting controls: - If TLS encryption is used at all - Which cert the servers should use to authenticate themselves against the client Defaults to `tls`.'
+                          nullable: true
+                          type: string
                       type: object
+                    zookeeperConfigMapName:
+                      description: ZooKeeper discovery config map name.
+                      type: string
+                  required:
+                    - zookeeperConfigMapName
                   type: object
                 image:
                   anyOf:
@@ -607,28 +631,12 @@ spec:
                       description: Stackable version of the product, e.g. 2.1.0
                       type: string
                   type: object
-                log4j:
-                  nullable: true
-                  type: string
-                opa:
-                  nullable: true
-                  properties:
-                    configMapName:
-                      type: string
-                    package:
-                      nullable: true
-                      type: string
-                  required:
-                    - configMapName
-                  type: object
                 stopped:
                   nullable: true
                   type: boolean
-                zookeeperConfigMapName:
-                  type: string
               required:
+                - clusterConfig
                 - image
-                - zookeeperConfigMapName
               type: object
           required:
             - spec
