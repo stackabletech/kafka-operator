@@ -533,8 +533,8 @@ fn build_broker_rolegroup_config_map(
                 .spec
                 .cluster_config
                 .log4j
-                .as_ref()
-                .unwrap_or(&"".to_string()),
+                .as_deref()
+                .unwrap_or_default(),
         )
         .build()
         .with_context(|_| BuildRoleGroupConfigSnafu {

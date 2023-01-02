@@ -9,7 +9,7 @@ use stackable_operator::{
     schemars::{self, JsonSchema},
 };
 
-const SUPPORTED_AUTHENTICATION_CLASS: [&str; 1] = ["TLS"];
+const SUPPORTED_AUTHENTICATION_CLASS_PROVIDER: [&str; 1] = ["TLS"];
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -19,14 +19,14 @@ pub enum Error {
         authentication_class: ObjectRef<AuthenticationClass>,
     },
     // TODO: Adapt message if multiple authentication classes are supported
-    #[snafu(display("only one authentication class is currently supported. Possible Authentication classes are {SUPPORTED_AUTHENTICATION_CLASS:?}"))]
+    #[snafu(display("only one authentication class provider is currently supported. Possible Authentication class providers are {SUPPORTED_AUTHENTICATION_CLASS_PROVIDER:?}"))]
     MultipleAuthenticationClassesProvided,
     #[snafu(display(
-        "failed to use authentication method [{method}] for authentication class [{authentication_class}] - supported mechanisms: {SUPPORTED_AUTHENTICATION_CLASS:?}",
+        "failed to use authentication provider [{provider}] for authentication class [{authentication_class}] - supported providers: {SUPPORTED_AUTHENTICATION_CLASS_PROVIDER:?}",
     ))]
-    AuthenticationMethodNotSupported {
+    AuthenticationProviderNotSupported {
         authentication_class: ObjectRef<AuthenticationClass>,
-        method: String,
+        provider: String,
     },
 }
 
@@ -57,6 +57,31 @@ impl ResolvedAuthenticationClasses {
         }
     }
 
+    /// Resolve provided AuthenticationClasses via API calls and validate the contents.
+    /// Currently errors out if:
+    /// - AuthenticationClass could not be resolved
+    /// - Validation failed
+    pub async fn from_references(
+        client: &Client,
+        auth_classes: &Vec<KafkaAuthentication>,
+    ) -> Result<ResolvedAuthenticationClasses, Error> {
+        let mut resolved_authentication_classes: Vec<AuthenticationClass> = vec![];
+
+        for auth_class in auth_classes {
+            resolved_authentication_classes.push(
+                AuthenticationClass::resolve(client, &auth_class.authentication_class)
+                    .await
+                    .context(AuthenticationClassRetrievalSnafu {
+                        authentication_class: ObjectRef::<AuthenticationClass>::new(
+                            &auth_class.authentication_class,
+                        ),
+                    })?,
+            );
+        }
+
+        ResolvedAuthenticationClasses::new(resolved_authentication_classes).validate()
+    }
+
     /// Return the (first) TLS `AuthenticationClass` if available
     pub fn get_tls_authentication_class(&self) -> Option<&AuthenticationClass> {
         self.resolved_authentication_classes
@@ -77,9 +102,9 @@ impl ResolvedAuthenticationClasses {
             match &auth_class.spec.provider {
                 AuthenticationClassProvider::Tls(_) => {}
                 _ => {
-                    return Err(Error::AuthenticationMethodNotSupported {
+                    return Err(Error::AuthenticationProviderNotSupported {
                         authentication_class: ObjectRef::from_obj(auth_class),
-                        method: auth_class.spec.provider.to_string(),
+                        provider: auth_class.spec.provider.to_string(),
                     })
                 }
             }
@@ -87,32 +112,4 @@ impl ResolvedAuthenticationClasses {
 
         Ok(self.clone())
     }
-}
-
-/// Resolve provided AuthenticationClasses via API calls and validate the contents.
-/// Currently errors out if:
-/// - AuthenticationClass could not be resolved
-/// - Validation failed
-pub async fn resolve_authentication_classes(
-    client: &Client,
-    auth_classes: &Vec<KafkaAuthentication>,
-) -> Result<ResolvedAuthenticationClasses, Error> {
-    let mut resolved_authentication_classes: Vec<AuthenticationClass> = vec![];
-
-    for auth_class in auth_classes {
-        resolved_authentication_classes.push(
-            AuthenticationClass::resolve(client, &auth_class.authentication_class)
-                .await
-                .context(AuthenticationClassRetrievalSnafu {
-                    authentication_class: ObjectRef::<AuthenticationClass>::new(
-                        &auth_class.authentication_class,
-                    ),
-                })?,
-        );
-    }
-
-    ResolvedAuthenticationClasses {
-        resolved_authentication_classes,
-    }
-    .validate()
 }

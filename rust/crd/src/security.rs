@@ -105,12 +105,13 @@ impl KafkaSecurity {
         kafka: &KafkaCluster,
     ) -> Result<Self, Error> {
         Ok(KafkaSecurity {
-            resolved_authentication_classes: authentication::resolve_authentication_classes(
-                client,
-                &kafka.spec.cluster_config.authentication,
-            )
-            .await
-            .context(InvalidAuthenticationClassConfigurationSnafu)?,
+            resolved_authentication_classes:
+                authentication::ResolvedAuthenticationClasses::from_references(
+                    client,
+                    &kafka.spec.cluster_config.authentication,
+                )
+                .await
+                .context(InvalidAuthenticationClassConfigurationSnafu)?,
             internal_secret_class: kafka
                 .spec
                 .cluster_config
@@ -150,7 +151,6 @@ impl KafkaSecurity {
 
     /// Retrieve the mandatory internal `SecretClass`.
     pub fn tls_internal_secret_class(&self) -> Option<&str> {
-        // TODO: which check here - this can/should not be happening?
         if !self.internal_secret_class.is_empty() {
             Some(self.internal_secret_class.as_str())
         } else {
