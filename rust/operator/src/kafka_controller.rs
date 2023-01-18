@@ -250,7 +250,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let validated_config = validate_all_roles_and_groups_config(
         &resolved_product_image.product_version,
         &transform_all_roles_to_config(
-            &*kafka,
+            kafka.as_ref(),
             [(
                 KafkaRole::Broker.to_string(),
                 (
