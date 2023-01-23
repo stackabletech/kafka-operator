@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [23.1.0] - 2023-01-23
+
 ### Changed
 
 - Fixed the RoleGroup `selector`. It was not used before. ([#530])

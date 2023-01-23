@@ -6,7 +6,7 @@ edition = "2021"
 license = "OSL-3.0"
 name = "stackable-kafka-operator-binary"
 repository = "https://github.com/stackabletech/kafka-operator"
-version = "0.9.0-nightly"
+version = "23.1.0"
 publish = false
 
 [dependencies]

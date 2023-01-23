@@ -1746,7 +1746,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-crd"
-version = "0.9.0-nightly"
+version = "23.1.0"
 dependencies = [
  "semver",
  "serde",
@@ -1759,7 +1759,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-operator"
-version = "0.9.0-nightly"
+version = "23.1.0"
 dependencies = [
  "futures",
  "serde",
@@ -1774,7 +1774,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-operator-binary"
-version = "0.9.0-nightly"
+version = "23.1.0"
 dependencies = [
  "built",
  "clap",
