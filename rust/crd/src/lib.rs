@@ -20,13 +20,10 @@ use stackable_operator::{
     },
     config::fragment::{Fragment, ValidationError},
     config::merge::Merge,
-    error::OperatorResult,
     k8s_openapi::{
-        api::core::v1::{PersistentVolumeClaim, ResourceRequirements},
-        apimachinery::pkg::api::resource::Quantity,
+        api::core::v1::PersistentVolumeClaim, apimachinery::pkg::api::resource::Quantity,
     },
     kube::{runtime::reflector::ObjectRef, CustomResource},
-    memory::to_java_heap,
     product_config_utils::{ConfigError, Configuration},
     role_utils::{Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
@@ -51,11 +48,9 @@ pub const STACKABLE_TMP_DIR: &str = "/stackable/tmp";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 
-const JVM_HEAP_FACTOR: f32 = 0.8;
-
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("could not parse product version from image: [{image_version}]. Expected format e.g. [2.8.0-stackable0.1.0]"))]
+    #[snafu(display("could not parse product version from image: [{image_version}]. Expected format e.g. [2.8.0-stackable23.1.0]"))]
     KafkaProductVersion { image_version: String },
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
@@ -187,15 +182,6 @@ impl KafkaCluster {
                 },
             },
         }
-    }
-
-    pub fn heap_limits(&self, resources: &ResourceRequirements) -> OperatorResult<Option<String>> {
-        resources
-            .limits
-            .as_ref()
-            .and_then(|limits| limits.get("memory"))
-            .map(|memory_limit| to_java_heap(memory_limit, JVM_HEAP_FACTOR))
-            .transpose()
     }
 }
 
