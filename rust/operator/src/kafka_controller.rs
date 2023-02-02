@@ -901,6 +901,7 @@ fn build_broker_rolegroup_statefulset(
             ..PodSecurityContext::default()
         });
 
+    // Add vector container after kafka container to keep the defaulting into kafka container
     if merged_config.logging.enable_vector_agent {
         pod_builder.add_container(product_logging::framework::vector_container(
             resolved_product_image,

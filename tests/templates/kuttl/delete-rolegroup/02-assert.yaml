@@ -1,14 +1,20 @@
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
-metadata:
-  name: delete-rolegroup
 timeout: 300
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: simple-kafka-broker-default
+  name: test-kafka-broker-default
+status:
+  readyReplicas: 1
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-secondary
 status:
   readyReplicas: 1
   replicas: 1

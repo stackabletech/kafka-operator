@@ -6,7 +6,7 @@ timeout: 300
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: kafka-zk-server-default
+  name: test-kafka-broker-default
 status:
   readyReplicas: 1
   replicas: 1

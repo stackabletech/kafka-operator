@@ -1,22 +1,12 @@
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
-metadata:
-  name: install-kafka-zk
 timeout: 300
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: simple-kafka-broker-default
-status:
-  readyReplicas: 1
-  replicas: 1
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: simple-kafka-broker-secondary
+  name: test-zk-server-default
 status:
   readyReplicas: 1
   replicas: 1
