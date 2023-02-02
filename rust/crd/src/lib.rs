@@ -50,8 +50,6 @@ pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("could not parse product version from image: [{image_version}]. Expected format e.g. [2.8.0-stackable23.1.0]"))]
-    KafkaProductVersion { image_version: String },
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
     #[snafu(display("object defines no version"))]
