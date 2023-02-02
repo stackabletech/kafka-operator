@@ -151,10 +151,6 @@ pub enum Error {
     InvalidOpaConfig {
         source: stackable_operator::error::Error,
     },
-    #[snafu(display("invalid java heap config: {source}"))]
-    InvalidJavaHeapConfig {
-        source: stackable_operator::error::Error,
-    },
     #[snafu(display("failed to retrieve {}", authentication_class))]
     AuthenticationClassRetrieval {
         source: stackable_operator::error::Error,
@@ -222,7 +218,6 @@ impl ReconcilerError for Error {
             Error::RoleGroupValidation { .. } => None,
             Error::InvalidServiceAccount { .. } => None,
             Error::InvalidOpaConfig { .. } => None,
-            Error::InvalidJavaHeapConfig { .. } => None,
             Error::AuthenticationClassRetrieval {
                 authentication_class,
                 ..

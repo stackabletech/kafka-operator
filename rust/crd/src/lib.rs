@@ -52,8 +52,6 @@ pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub enum Error {
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
-    #[snafu(display("object defines no version"))]
-    ObjectHasNoVersion,
     #[snafu(display("failed to validate config of rolegroup {rolegroup}"))]
     RoleGroupValidation {
         rolegroup: RoleGroupRef<KafkaCluster>,
