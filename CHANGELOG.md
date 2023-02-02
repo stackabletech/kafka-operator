@@ -8,8 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - operator-rs: 0.30.1 -> 0.33.0 ([#545]).
 - Bumped stackable versions to "23.4.0-rc1" ([#545]).
+- Enabled logging and log aggregation ([#547])
 
 [#545]: https://github.com/stackabletech/kafka-operator/pull/545
+[#547]: https://github.com/stackabletech/kafka-operator/pull/547
 
 ## [23.1.0] - 2023-01-23
 
