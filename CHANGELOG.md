@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- operator-rs: 0.30.1 -> 0.33.0 ([#545]).
+- Bumped stackable versions to "23.4.0-rc1" ([#545]).
+
+[#545]: https://github.com/stackabletech/kafka-operator/pull/545
+
+## [23.1.0] - 2023-01-23
+
+### Changed
+
 - Fixed the RoleGroup `selector`. It was not used before. ([#530])
 - Updated stackable image versions ([#513]).
 - operator-rs: 0.26.0 -> 0.30.1 ([#519], [#530]).

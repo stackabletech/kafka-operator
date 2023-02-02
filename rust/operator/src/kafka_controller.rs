@@ -8,6 +8,7 @@ use stackable_kafka_crd::{
     OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
     STACKABLE_TMP_DIR,
 };
+use stackable_operator::memory::{BinaryMultiple, MemoryQuantity};
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     cluster_resources::ClusterResources,
@@ -22,8 +23,8 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
                 EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
-                PodSecurityContext, PodSpec, Probe, ResourceRequirements, Service, ServiceAccount,
-                ServicePort, ServiceSpec, Volume,
+                PodSecurityContext, PodSpec, Probe, Service, ServiceAccount, ServicePort,
+                ServiceSpec, Volume,
             },
             rbac::v1::{RoleBinding, RoleRef, Subject},
         },
@@ -58,6 +59,7 @@ use crate::{
 };
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
+const JAVA_HEAP_RATIO: f32 = 0.8;
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -185,6 +187,10 @@ pub enum Error {
     FailedToInitializeSecurityContext {
         source: stackable_kafka_crd::security::Error,
     },
+    #[snafu(display("invalid memory resource configuration"))]
+    InvalidHeapConfig {
+        source: stackable_operator::error::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -229,6 +235,7 @@ impl ReconcilerError for Error {
             Error::InvalidContainerName { .. } => None,
             Error::DeleteOrphans { .. } => None,
             Error::FailedToInitializeSecurityContext { .. } => None,
+            Error::InvalidHeapConfig { .. } => None,
         }
     }
 }
@@ -665,7 +672,6 @@ fn build_broker_rolegroup_statefulset(
 
     let resources = rolegroup_typed_config.resources.clone();
     let pvcs = resources.storage.build_pvcs();
-    let container_resources: ResourceRequirements = resources.into();
 
     let mut env = broker_config
         .get(&PropertyNameKind::Env)
@@ -678,13 +684,20 @@ fn build_broker_rolegroup_statefulset(
         })
         .collect::<Vec<_>>();
 
-    if let Some(heap_limits) = kafka
-        .heap_limits(&container_resources)
-        .context(InvalidJavaHeapConfigSnafu)?
-    {
+    if let Some(memory_limit) = resources.memory.limit.as_ref() {
+        let heap_size = MemoryQuantity::try_from(memory_limit)
+            .context(InvalidHeapConfigSnafu)?
+            .scale_to(BinaryMultiple::Mebi)
+            * JAVA_HEAP_RATIO;
+
         env.push(EnvVar {
             name: KAFKA_HEAP_OPTS.to_string(),
-            value: Some(heap_limits),
+            value: Some(format!(
+                "-Xmx{heap}",
+                heap = heap_size
+                    .format_for_java()
+                    .context(InvalidHeapConfigSnafu)?
+            )),
             ..EnvVar::default()
         });
     }
@@ -753,7 +766,7 @@ fn build_broker_rolegroup_statefulset(
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("config", STACKABLE_CONFIG_DIR)
         .add_volume_mount("tmp", STACKABLE_TMP_DIR)
-        .resources(container_resources);
+        .resources(resources.into());
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
