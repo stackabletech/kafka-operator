@@ -2,64 +2,64 @@
 dimensions:
   - name: kafka
     values:
-#      - 2.8.1-stackable23.4.0-rc1
-#      - 3.1.0-stackable23.4.0-rc1
-#      - 3.2.0-stackable23.4.0-rc1
+      - 2.8.1-stackable23.4.0-rc1
+      - 3.1.0-stackable23.4.0-rc1
+      - 3.2.0-stackable23.4.0-rc1
       - 3.3.1-stackable23.4.0-rc2
   - name: kafka-latest
     values:
       - 3.3.1-stackable23.4.0-rc2
   - name: zookeeper
     values:
-#      - 3.6.3-stackable23.4.0-rc1
-#      - 3.7.0-stackable23.4.0-rc1
+      - 3.6.3-stackable23.4.0-rc1
+      - 3.7.0-stackable23.4.0-rc1
       - 3.8.0-stackable23.4.0-rc1
   - name: zookeeper-latest
     values:
       - 3.8.0-stackable23.4.0-rc1
   - name: upgrade_old
     values:
-#      - 2.8.1-stackable23.4.0-rc1
-#      - 3.1.0-stackable23.4.0-rc1
+      - 2.8.1-stackable23.4.0-rc1
+      - 3.1.0-stackable23.4.0-rc1
       - 3.2.0-stackable23.4.0-rc1
   - name: upgrade_new
     values:
       - 3.3.1-stackable23.4.0-rc1
   - name: use-client-tls
     values:
-#      - "true"
+      - "true"
       - "false"
   - name: use-client-auth-tls
     values:
-#      - "true"
+      - "true"
       - "false"
 tests:
-#  - name: smoke
-#    dimensions:
-#      - kafka
-#      - zookeeper
-#      - use-client-tls
-#  - name: configuration
-#    dimensions:
-#      - kafka-latest
-#      - zookeeper-latest
-#  - name: upgrade
-#    dimensions:
-#      - zookeeper
-#      - upgrade_new
-#      - upgrade_old
-#      - use-client-tls
-#      - use-client-auth-tls
-#  - name: tls
-#    dimensions:
-#      - kafka
-#      - zookeeper-latest
-#      - use-client-tls
-#      - use-client-auth-tls
-#  - name: delete-rolegroup
-#    dimensions:
-#      - kafka
-#      - zookeeper-latest
+  - name: smoke
+    dimensions:
+      - kafka
+      - zookeeper
+      - use-client-tls
+  - name: configuration
+    dimensions:
+      - kafka-latest
+      - zookeeper-latest
+  - name: upgrade
+    dimensions:
+      - zookeeper
+      - upgrade_new
+      - upgrade_old
+      - use-client-tls
+      - use-client-auth-tls
+  - name: tls
+    dimensions:
+      - kafka
+      - zookeeper-latest
+      - use-client-tls
+      - use-client-auth-tls
+  - name: delete-rolegroup
+    dimensions:
+      - kafka
+      - zookeeper-latest
   - name: logging
     dimensions:
       - kafka
