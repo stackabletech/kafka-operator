@@ -802,7 +802,7 @@ fn build_broker_rolegroup_statefulset(
         .add_env_var("EXTRA_ARGS", jvm_args)
         .add_env_var(
             "KAFKA_LOG4J_OPTS",
-            format!("-Dlog4j.configuration=file:{STACKABLE_CONFIG_DIR}/{LOG4J_CONFIG_FILE}"),
+            format!("-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J_CONFIG_FILE}"),
         )
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
@@ -856,16 +856,7 @@ fn build_broker_rolegroup_statefulset(
         });
     }
 
-    if merged_config.logging.enable_vector_agent {
-        pod_builder.add_container(product_logging::framework::vector_container(
-            resolved_product_image,
-            "config",
-            "log",
-            merged_config.logging.containers.get(&Container::Vector),
-        ));
-    }
-
-    let mut pod_template = pod_builder
+    pod_builder
         .metadata_builder(|m| {
             m.with_recommended_labels(build_recommended_labels(
                 kafka,
@@ -908,8 +899,18 @@ fn build_broker_rolegroup_statefulset(
             run_as_group: Some(1000),
             fs_group: Some(1000),
             ..PodSecurityContext::default()
-        })
-        .build_template();
+        });
+
+    if merged_config.logging.enable_vector_agent {
+        pod_builder.add_container(product_logging::framework::vector_container(
+            resolved_product_image,
+            "config",
+            "log",
+            merged_config.logging.containers.get(&Container::Vector),
+        ));
+    }
+
+    let mut pod_template = pod_builder.build_template();
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
     pod_template_spec.share_process_namespace = Some(true);
