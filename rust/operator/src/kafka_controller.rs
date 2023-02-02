@@ -1,14 +1,22 @@
 //! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
+use crate::product_logging::{
+    extend_role_group_config_map, resolve_vector_aggregator_address, STACKABLE_LOG_DIR,
+};
+use crate::{
+    discovery::{self, build_discovery_configmaps},
+    pod_svc_controller,
+    product_logging::{LOG4J_CONFIG_FILE, LOG_VOLUME_SIZE_IN_MIB},
+    utils::{self, build_recommended_labels, ObjectRefExt},
+    ControllerConfig,
+};
 
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::security::KafkaTlsSecurity;
 use stackable_kafka_crd::{
-    listener::get_kafka_listener_config, KafkaCluster, KafkaConfig, KafkaRole, APP_NAME,
-    DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
-    OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
-    STACKABLE_TMP_DIR,
+    listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
+    KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
+    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
+    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
-use stackable_operator::memory::{BinaryMultiple, MemoryQuantity};
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     cluster_resources::ClusterResources,
@@ -16,7 +24,6 @@ use stackable_operator::{
         authentication::AuthenticationClass, opa::OpaApiVersion,
         product_image_selection::ResolvedProductImage,
     },
-    config::fragment::ValidationError,
     k8s_openapi::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
@@ -28,7 +35,7 @@ use stackable_operator::{
             },
             rbac::v1::{RoleBinding, RoleRef, Subject},
         },
-        apimachinery::pkg::apis::meta::v1::LabelSelector,
+        apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
     },
     kube::{
         api::DynamicObject,
@@ -37,10 +44,18 @@ use stackable_operator::{
     },
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
+    memory::{BinaryMultiple, MemoryQuantity},
     product_config::{
         types::PropertyNameKind, writer::to_java_properties_string, ProductConfigManager,
     },
     product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
+    product_logging::{
+        self,
+        spec::{
+            ConfigMapLogConfig, ContainerLogConfig, ContainerLogConfigChoice,
+            CustomContainerLogConfig,
+        },
+    },
     role_utils::RoleGroupRef,
 };
 use std::{
@@ -50,13 +65,6 @@ use std::{
     time::Duration,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
-
-use crate::{
-    discovery::{self, build_discovery_configmaps},
-    pod_svc_controller,
-    utils::{self, build_recommended_labels, ObjectRefExt},
-    ControllerConfig,
-};
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
 const JAVA_HEAP_RATIO: f32 = 0.8;
@@ -138,11 +146,6 @@ pub enum Error {
     RoleGroupNotFound {
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
-    #[snafu(display("failed to validate configuration of rolegroup {rolegroup}"))]
-    RoleGroupValidation {
-        rolegroup: RoleGroupRef<KafkaCluster>,
-        source: ValidationError,
-    },
     #[snafu(display("invalid ServiceAccount"))]
     InvalidServiceAccount {
         source: utils::NamespaceMismatchError,
@@ -187,6 +190,21 @@ pub enum Error {
     InvalidHeapConfig {
         source: stackable_operator::error::Error,
     },
+    #[snafu(display("failed to create cluster resources"))]
+    CreateClusterResources {
+        source: stackable_operator::error::Error,
+    },
+    #[snafu(display("failed to resolve and merge config for role and role group"))]
+    FailedToResolveConfig { source: stackable_kafka_crd::Error },
+    #[snafu(display("failed to resolve the Vector aggregator address"))]
+    ResolveVectorAggregatorAddress {
+        source: crate::product_logging::Error,
+    },
+    #[snafu(display("failed to add the logging configuration to the ConfigMap [{cm_name}]"))]
+    InvalidLoggingConfig {
+        source: crate::product_logging::Error,
+        cm_name: String,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -215,7 +233,6 @@ impl ReconcilerError for Error {
             Error::BuildDiscoveryConfig { .. } => None,
             Error::ApplyDiscoveryConfig { .. } => None,
             Error::RoleGroupNotFound { .. } => None,
-            Error::RoleGroupValidation { .. } => None,
             Error::InvalidServiceAccount { .. } => None,
             Error::InvalidOpaConfig { .. } => None,
             Error::AuthenticationClassRetrieval {
@@ -231,6 +248,10 @@ impl ReconcilerError for Error {
             Error::DeleteOrphans { .. } => None,
             Error::FailedToInitializeSecurityContext { .. } => None,
             Error::InvalidHeapConfig { .. } => None,
+            Error::CreateClusterResources { .. } => None,
+            Error::FailedToResolveConfig { .. } => None,
+            Error::ResolveVectorAggregatorAddress { .. } => None,
+            Error::InvalidLoggingConfig { .. } => None,
         }
     }
 }
@@ -247,7 +268,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         KAFKA_CONTROLLER_NAME,
         &kafka.object_ref(&()),
     )
-    .unwrap();
+    .context(CreateClusterResourcesSnafu)?;
 
     let validated_config = validate_all_roles_and_groups_config(
         &resolved_product_image.product_version,
@@ -303,6 +324,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let (broker_role_serviceaccount, broker_role_rolebinding) =
         build_broker_role_serviceaccount(&kafka, &resolved_product_image, &ctx.controller_config)?;
     let broker_role_serviceaccount_ref = ObjectRef::from_obj(&broker_role_serviceaccount);
+
     let broker_role_service = cluster_resources
         .add(client, &broker_role_service)
         .await
@@ -316,19 +338,16 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .await
         .context(ApplyRoleRoleBindingSnafu)?;
 
+    let vector_aggregator_address = resolve_vector_aggregator_address(&kafka, client)
+        .await
+        .context(ResolveVectorAggregatorAddressSnafu)?;
+
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
-        let (role, rolegroup) =
-            kafka
-                .rolegroup(&rolegroup_ref)
-                .with_context(|| RoleGroupNotFoundSnafu {
-                    rolegroup: rolegroup_ref.clone(),
-                })?;
-        let rolegroup_typed_config = rolegroup
-            .validate_config::<KafkaConfig>(role, &KafkaCluster::broker_default_config())
-            .with_context(|_| RoleGroupValidationSnafu {
-                rolegroup: rolegroup_ref.clone(),
-            })?;
+
+        let merged_config = kafka
+            .merged_config(&KafkaRole::Broker, rolegroup_name)
+            .context(FailedToResolveConfigSnafu)?;
 
         let rg_service = build_broker_rolegroup_service(
             &kafka,
@@ -342,6 +361,8 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             &kafka_security,
             &rolegroup_ref,
             rolegroup_config,
+            &merged_config,
+            vector_aggregator_address.as_deref(),
         )?;
         let rg_statefulset = build_broker_rolegroup_statefulset(
             &kafka,
@@ -351,7 +372,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             &broker_role_serviceaccount_ref,
             opa_connect.as_deref(),
             &kafka_security,
-            &rolegroup_typed_config,
+            &merged_config,
         )?;
         cluster_resources
             .add(client, &rg_service)
@@ -493,6 +514,8 @@ fn build_broker_rolegroup_config_map(
     kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
+    merged_config: &KafkaConfig,
+    vector_aggregator_address: Option<&str>,
 ) -> Result<ConfigMap> {
     let mut server_cfg = broker_config
         .get(&PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()))
@@ -505,7 +528,9 @@ fn build_broker_rolegroup_config_map(
         .into_iter()
         .map(|(k, v)| (k, Some(v)))
         .collect::<Vec<_>>();
-    ConfigMapBuilder::new()
+
+    let mut cm_builder = ConfigMapBuilder::new();
+    cm_builder
         .metadata(
             ObjectMetaBuilder::new()
                 .name_and_namespace(kafka)
@@ -528,16 +553,19 @@ fn build_broker_rolegroup_config_map(
                     rolegroup: rolegroup.clone(),
                 },
             )?,
-        )
-        .add_data(
-            "log4j.properties",
-            kafka
-                .spec
-                .cluster_config
-                .log4j
-                .as_deref()
-                .unwrap_or_default(),
-        )
+        );
+
+    extend_role_group_config_map(
+        rolegroup,
+        vector_aggregator_address,
+        &merged_config.logging,
+        &mut cm_builder,
+    )
+    .context(InvalidLoggingConfigSnafu {
+        cm_name: rolegroup.object_name(),
+    })?;
+
+    cm_builder
         .build()
         .with_context(|_| BuildRoleGroupConfigSnafu {
             rolegroup: rolegroup.clone(),
@@ -596,26 +624,44 @@ fn build_broker_rolegroup_statefulset(
     serviceaccount: &ObjectRef<ServiceAccount>,
     opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
-    rolegroup_typed_config: &KafkaConfig,
+    merged_config: &KafkaConfig,
 ) -> Result<StatefulSet> {
-    let mut cb_kafka =
-        ContainerBuilder::new(APP_NAME).context(InvalidContainerNameSnafu { name: APP_NAME })?;
-    let mut cb_prepare = ContainerBuilder::new("prepare").context(InvalidContainerNameSnafu {
-        name: "prepare".to_string(),
-    })?;
-    let mut cb_kcat_prober =
-        ContainerBuilder::new("kcat-prober").context(InvalidContainerNameSnafu {
-            name: "kcat-prober".to_string(),
+    let prepare_container_name = Container::Prepare.to_string();
+    let mut cb_prepare =
+        ContainerBuilder::new(&prepare_container_name).context(InvalidContainerNameSnafu {
+            name: prepare_container_name.clone(),
         })?;
-    let mut pod_builder = PodBuilder::new();
 
-    let role = kafka.spec.brokers.as_ref().context(NoBrokerRoleSnafu)?;
-    let rolegroup = role
+    let get_svc_container_name = Container::GetService.to_string();
+    let mut cb_get_svc =
+        ContainerBuilder::new(&get_svc_container_name).context(InvalidContainerNameSnafu {
+            name: get_svc_container_name.clone(),
+        })?;
+
+    let kcat_prober_container_name = Container::KcatProber.to_string();
+    let mut cb_kcat_prober =
+        ContainerBuilder::new(&kcat_prober_container_name).context(InvalidContainerNameSnafu {
+            name: kcat_prober_container_name.clone(),
+        })?;
+
+    let kafka_container_name = Container::Kafka.to_string();
+    let mut cb_kafka =
+        ContainerBuilder::new(&kafka_container_name).context(InvalidContainerNameSnafu {
+            name: kafka_container_name.clone(),
+        })?;
+
+    let rolegroup = kafka
+        .spec
+        .brokers
+        .as_ref()
+        .context(NoBrokerRoleSnafu)?
         .role_groups
         .get(&rolegroup_ref.role_group)
         .with_context(|| RoleGroupNotFoundSnafu {
             rolegroup: rolegroup_ref.clone(),
         })?;
+
+    let mut pod_builder = PodBuilder::new();
 
     // Add TLS related volumes and volume mounts
     kafka_security.add_volume_and_volume_mounts(
@@ -625,10 +671,7 @@ fn build_broker_rolegroup_statefulset(
         &mut cb_kafka,
     );
 
-    let container_get_svc = ContainerBuilder::new("get-svc")
-        .context(InvalidContainerNameSnafu {
-            name: "get-svc".to_string(),
-        })?
+    cb_get_svc
         .image_from_product_image(resolved_product_image)
         .command(vec!["bash".to_string()])
         .args(vec![
@@ -648,8 +691,22 @@ fn build_broker_rolegroup_statefulset(
             }),
             ..EnvVar::default()
         }])
-        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
-        .build();
+        .add_volume_mount("tmp", STACKABLE_TMP_DIR);
+
+    let mut prepare_container_args = vec![];
+
+    if let Some(ContainerLogConfig {
+        choice: Some(ContainerLogConfigChoice::Automatic(log_config)),
+    }) = merged_config.logging.containers.get(&Container::Prepare)
+    {
+        prepare_container_args.push(product_logging::framework::capture_shell_output(
+            STACKABLE_LOG_DIR,
+            &prepare_container_name,
+            log_config,
+        ));
+    }
+
+    prepare_container_args.extend(kafka_security.prepare_container_command_args());
 
     cb_prepare
         .image_from_product_image(resolved_product_image)
@@ -659,14 +716,12 @@ fn build_broker_rolegroup_statefulset(
             "pipefail".to_string(),
             "-c".to_string(),
         ])
-        .args(vec![kafka_security
-            .prepare_container_command_args()
-            .join(" && ")])
+        .args(vec![prepare_container_args.join(" && ")])
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
-        .add_volume_mount("tmp", STACKABLE_TMP_DIR);
+        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
+        .add_volume_mount("log", STACKABLE_LOG_DIR);
 
-    let resources = rolegroup_typed_config.resources.clone();
-    let pvcs = resources.storage.build_pvcs();
+    let pvcs = merged_config.resources.storage.build_pvcs();
 
     let mut env = broker_config
         .get(&PropertyNameKind::Env)
@@ -679,7 +734,7 @@ fn build_broker_rolegroup_statefulset(
         })
         .collect::<Vec<_>>();
 
-    if let Some(memory_limit) = resources.memory.limit.as_ref() {
+    if let Some(memory_limit) = merged_config.resources.memory.limit.as_ref() {
         let heap_size = MemoryQuantity::try_from(memory_limit)
             .context(InvalidHeapConfigSnafu)?
             .scale_to(BinaryMultiple::Mebi)
@@ -733,17 +788,6 @@ fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    // add env var for log4j if set
-    if kafka.spec.cluster_config.log4j.is_some() {
-        env.push(EnvVar {
-            name: "KAFKA_LOG4J_OPTS".to_string(),
-            value: Some(
-                "-Dlog4j.configuration=file:/stackable/config/log4j.properties".to_string(),
-            ),
-            ..EnvVar::default()
-        });
-    }
-
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
     let kafka_listeners =
         get_kafka_listener_config(kafka, kafka_security, &rolegroup_ref.object_name())
@@ -755,17 +799,23 @@ fn build_broker_rolegroup_statefulset(
         .args(vec![kafka_security
             .kafka_container_commands(&kafka_listeners, opa_connect_string)
             .join(" ")])
-        .add_env_vars(env)
         .add_env_var("EXTRA_ARGS", jvm_args)
+        .add_env_var(
+            "KAFKA_LOG4J_OPTS",
+            format!("-Dlog4j.configuration=file:{STACKABLE_CONFIG_DIR}/{LOG4J_CONFIG_FILE}"),
+        )
+        .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("config", STACKABLE_CONFIG_DIR)
         .add_volume_mount("tmp", STACKABLE_TMP_DIR)
-        .resources(resources.into());
+        .add_volume_mount("log-config", STACKABLE_LOG_CONFIG_DIR)
+        .add_volume_mount("log", STACKABLE_LOG_DIR)
+        .resources(merged_config.resources.clone().into());
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
-    let container_kcat_prober = cb_kcat_prober
+    cb_kcat_prober
         .image_from_product_image(resolved_product_image)
         .command(vec!["sleep".to_string(), "infinity".to_string()])
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum
@@ -778,8 +828,43 @@ fn build_broker_rolegroup_statefulset(
             timeout_seconds: Some(5),
             period_seconds: Some(2),
             ..Probe::default()
-        })
-        .build();
+        });
+
+    if let Some(ContainerLogConfig {
+        choice:
+            Some(ContainerLogConfigChoice::Custom(CustomContainerLogConfig {
+                custom: ConfigMapLogConfig { config_map },
+            })),
+    }) = merged_config.logging.containers.get(&Container::Kafka)
+    {
+        pod_builder.add_volume(Volume {
+            name: "log-config".to_string(),
+            config_map: Some(ConfigMapVolumeSource {
+                name: Some(config_map.into()),
+                ..ConfigMapVolumeSource::default()
+            }),
+            ..Volume::default()
+        });
+    } else {
+        pod_builder.add_volume(Volume {
+            name: "log-config".to_string(),
+            config_map: Some(ConfigMapVolumeSource {
+                name: Some(rolegroup_ref.object_name()),
+                ..ConfigMapVolumeSource::default()
+            }),
+            ..Volume::default()
+        });
+    }
+
+    if merged_config.logging.enable_vector_agent {
+        pod_builder.add_container(product_logging::framework::vector_container(
+            resolved_product_image,
+            "config",
+            "log",
+            merged_config.logging.containers.get(&Container::Vector),
+        ));
+    }
+
     let mut pod_template = pod_builder
         .metadata_builder(|m| {
             m.with_recommended_labels(build_recommended_labels(
@@ -793,9 +878,9 @@ fn build_broker_rolegroup_statefulset(
         })
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_init_container(cb_prepare.build())
-        .add_init_container(container_get_svc)
+        .add_init_container(cb_get_svc.build())
         .add_container(cb_kafka.build())
-        .add_container(container_kcat_prober)
+        .add_container(cb_kcat_prober.build())
         .node_selector_opt(rolegroup.selector.clone())
         .add_volume(Volume {
             name: "config".to_string(),
@@ -808,6 +893,14 @@ fn build_broker_rolegroup_statefulset(
         .add_volume(Volume {
             name: "tmp".to_string(),
             empty_dir: Some(EmptyDirVolumeSource::default()),
+            ..Volume::default()
+        })
+        .add_volume(Volume {
+            name: "log".to_string(),
+            empty_dir: Some(EmptyDirVolumeSource {
+                medium: None,
+                size_limit: Some(Quantity(format!("{LOG_VOLUME_SIZE_IN_MIB}Mi"))),
+            }),
             ..Volume::default()
         })
         .security_context(PodSecurityContext {
