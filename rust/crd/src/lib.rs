@@ -10,6 +10,7 @@ use crate::tls::KafkaTls;
 
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
+use stackable_operator::product_logging::spec::Logging;
 use stackable_operator::{
     commons::{
         product_image_selection::ProductImage,
@@ -25,6 +26,7 @@ use stackable_operator::{
     },
     kube::{runtime::reflector::ObjectRef, CustomResource},
     product_config_utils::{ConfigError, Configuration},
+    product_logging,
     role_utils::{Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
 };
@@ -160,6 +162,7 @@ impl KafkaCluster {
 
     pub fn broker_default_config() -> KafkaConfigFragment {
         KafkaConfigFragment {
+            logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {
                     min: Some(Quantity("500m".to_owned())),
@@ -246,6 +249,28 @@ impl Storage {
     }
 }
 
+#[derive(
+    Clone,
+    Debug,
+    Deserialize,
+    Display,
+    Eq,
+    EnumIter,
+    JsonSchema,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum Container {
+    Prepare,
+    Vector,
+    Kcat,
+    Kafka,
+}
+
 #[derive(Debug, Default, PartialEq, Fragment, JsonSchema)]
 #[fragment_attrs(
     derive(
@@ -261,6 +286,8 @@ impl Storage {
     serde(rename_all = "camelCase")
 )]
 pub struct KafkaConfig {
+    #[fragment_attrs(serde(default))]
+    pub logging: Logging<Container>,
     #[fragment_attrs(serde(default))]
     pub resources: Resources<Storage, NoRuntimeLimits>,
 }
