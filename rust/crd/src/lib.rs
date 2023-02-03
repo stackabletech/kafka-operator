@@ -413,7 +413,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:  
             zookeeperConfigMapName: xyz
         "#;
@@ -432,7 +432,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls  
@@ -457,7 +457,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
               serverSecretClass: null  
@@ -478,7 +478,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
@@ -503,7 +503,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:
             zookeeperConfigMapName: xyz              
         "#;
@@ -522,7 +522,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls  
@@ -543,7 +543,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls  

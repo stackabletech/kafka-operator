@@ -49,7 +49,7 @@ metadata:
 spec:
   image:
     productVersion: 3.3.1
-    stackableVersion: "23.4.0-rc1"
+    stackableVersion: "23.4.0-rc2"
   clusterConfig:
     zookeeperConfigMapName: simple-kafka-znode
     tls:
