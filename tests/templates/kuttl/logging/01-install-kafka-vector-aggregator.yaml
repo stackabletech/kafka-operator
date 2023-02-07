@@ -12,6 +12,6 @@ commands:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: vector-aggregator-discovery
+  name: kafka-vector-aggregator-discovery
 data:
   ADDRESS: kafka-vector-aggregator:6123
