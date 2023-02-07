@@ -9,7 +9,7 @@ use crate::authorization::KafkaAuthorization;
 use crate::tls::KafkaTls;
 
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::{
         product_image_selection::ProductImage,
@@ -18,13 +18,14 @@ use stackable_operator::{
             PvcConfig, PvcConfigFragment, Resources, ResourcesFragment,
         },
     },
-    config::fragment::{Fragment, ValidationError},
+    config::fragment::{self, Fragment, ValidationError},
     config::merge::Merge,
     k8s_openapi::{
         api::core::v1::PersistentVolumeClaim, apimachinery::pkg::api::resource::Quantity,
     },
     kube::{runtime::reflector::ObjectRef, CustomResource},
     product_config_utils::{ConfigError, Configuration},
+    product_logging::{self, spec::Logging},
     role_utils::{Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
 };
@@ -47,18 +48,23 @@ pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 pub const STACKABLE_TMP_DIR: &str = "/stackable/tmp";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
+pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
-    #[snafu(display("object defines no version"))]
-    ObjectHasNoVersion,
     #[snafu(display("failed to validate config of rolegroup {rolegroup}"))]
     RoleGroupValidation {
         rolegroup: RoleGroupRef<KafkaCluster>,
         source: ValidationError,
     },
+    #[snafu(display("the Kafka role [{role}] is missing from spec"))]
+    MissingKafkaRole { role: String },
+    #[snafu(display("the Kafka node role group [{role_group}] is missing from spec"))]
+    MissingKafkaRoleGroup { role_group: String },
+    #[snafu(display("fragment validation failure"))]
+    FragmentValidationFailure { source: ValidationError },
 }
 
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
@@ -92,14 +98,16 @@ pub struct KafkaClusterConfig {
     /// Authorization settings for Kafka like OPA.
     #[serde(default)]
     pub authorization: KafkaAuthorization,
-    /// Log4j configuration
-    pub log4j: Option<String>,
     /// TLS encryption settings for Kafka (server, internal).
     #[serde(
         default = "tls::default_kafka_tls",
         skip_serializing_if = "Option::is_none"
     )]
     pub tls: Option<KafkaTls>,
+    /// Name of the Vector aggregator discovery ConfigMap.
+    /// It must contain the key `ADDRESS` with the address of the Vector aggregator.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_aggregator_config_map_name: Option<String>,
     /// ZooKeeper discovery config map name.
     pub zookeeper_config_map_name: String,
 }
@@ -160,26 +168,35 @@ impl KafkaCluster {
             }))
     }
 
-    pub fn broker_default_config() -> KafkaConfigFragment {
-        KafkaConfigFragment {
-            resources: ResourcesFragment {
-                cpu: CpuLimitsFragment {
-                    min: Some(Quantity("500m".to_owned())),
-                    max: Some(Quantity("4".to_owned())),
-                },
-                memory: MemoryLimitsFragment {
-                    limit: Some(Quantity("2Gi".to_owned())),
-                    runtime_limits: NoRuntimeLimitsFragment {},
-                },
-                storage: StorageFragment {
-                    log_dirs: PvcConfigFragment {
-                        capacity: Some(Quantity("1Gi".to_owned())),
-                        storage_class: None,
-                        selectors: None,
-                    },
-                },
-            },
-        }
+    /// Retrieve and merge resource configs for role and role groups
+    pub fn merged_config(&self, role: &KafkaRole, role_group: &str) -> Result<KafkaConfig, Error> {
+        // Initialize the result with all default values as baseline
+        let conf_defaults = KafkaConfig::default_config();
+
+        let role = self.spec.brokers.as_ref().context(MissingKafkaRoleSnafu {
+            role: role.to_string(),
+        })?;
+
+        // Retrieve role resource config
+        let mut conf_role = role.config.config.to_owned();
+
+        // Retrieve rolegroup specific resource config
+        let mut conf_rolegroup = role
+            .role_groups
+            .get(role_group)
+            .map(|rg| rg.config.config.clone())
+            .unwrap_or_default();
+
+        // Merge more specific configs into default config
+        // Hierarchy is:
+        // 1. RoleGroup
+        // 2. Role
+        // 3. Default
+        conf_role.merge(&conf_defaults);
+        conf_rolegroup.merge(&conf_role);
+
+        tracing::debug!("Merged config: {:?}", conf_rolegroup);
+        fragment::validate(conf_rolegroup).context(FragmentValidationFailureSnafu)
     }
 }
 
@@ -248,6 +265,29 @@ impl Storage {
     }
 }
 
+#[derive(
+    Clone,
+    Debug,
+    Deserialize,
+    Display,
+    Eq,
+    EnumIter,
+    JsonSchema,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum Container {
+    Prepare,
+    Vector,
+    KcatProber,
+    GetService,
+    Kafka,
+}
+
 #[derive(Debug, Default, PartialEq, Fragment, JsonSchema)]
 #[fragment_attrs(
     derive(
@@ -264,7 +304,34 @@ impl Storage {
 )]
 pub struct KafkaConfig {
     #[fragment_attrs(serde(default))]
+    pub logging: Logging<Container>,
+    #[fragment_attrs(serde(default))]
     pub resources: Resources<Storage, NoRuntimeLimits>,
+}
+
+impl KafkaConfig {
+    pub fn default_config() -> KafkaConfigFragment {
+        KafkaConfigFragment {
+            logging: product_logging::spec::default_logging(),
+            resources: ResourcesFragment {
+                cpu: CpuLimitsFragment {
+                    min: Some(Quantity("500m".to_owned())),
+                    max: Some(Quantity("4".to_owned())),
+                },
+                memory: MemoryLimitsFragment {
+                    limit: Some(Quantity("2Gi".to_owned())),
+                    runtime_limits: NoRuntimeLimitsFragment {},
+                },
+                storage: StorageFragment {
+                    log_dirs: PvcConfigFragment {
+                        capacity: Some(Quantity("1Gi".to_owned())),
+                        storage_class: None,
+                        selectors: None,
+                    },
+                },
+            },
+        }
+    }
 }
 
 impl Configuration for KafkaConfigFragment {
@@ -346,7 +413,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:  
             zookeeperConfigMapName: xyz
         "#;
@@ -365,7 +432,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls  
@@ -390,7 +457,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
               serverSecretClass: null  
@@ -411,7 +478,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
@@ -436,7 +503,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:
             zookeeperConfigMapName: xyz              
         "#;
@@ -455,7 +522,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls  
@@ -476,7 +543,7 @@ mod tests {
         spec:
           image:
             productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc1"
+            stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls  
