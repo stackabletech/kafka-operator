@@ -1,5 +1,0 @@
-* xref:dependencies.adoc[]
-* xref:configuration.adoc[]
-* xref:usage.adoc[]
-* Concepts
-** xref:discovery.adoc[]

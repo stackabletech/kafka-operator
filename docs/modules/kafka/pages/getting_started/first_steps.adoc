@@ -1,6 +1,6 @@
 = First steps
 
-After going through the xref:installation.adoc[] section and having installed all the operators, you will now deploy a Kafka cluster and the required dependencies. Afterwards you can <<_verify_that_it_works, verify that it works>> by producing test data into a topic and consuming it.
+After going through the xref:getting_started/installation.adoc[] section and having installed all the operators, you will now deploy a Kafka cluster and the required dependencies. Afterwards you can <<_verify_that_it_works, verify that it works>> by producing test data into a topic and consuming it.
 
 == Setup
 
@@ -18,28 +18,28 @@ Create a file named `zookeeper.yaml` with the following content:
 [source,yaml]
 
 ----
-include::example$code/zookeeper.yaml[]
+include::example$getting_started/zookeeper.yaml[]
 ----
 
 and apply it:
 
 [source,bash]
 ----
-include::example$code/getting-started.sh[tag=install-zookeeper]
+include::example$getting_started/getting-started.sh[tag=install-zookeeper]
 ----
 
 Create a file `kafka-znode.yaml` with the following content:
 
 [source,bash]
 ----
-include::example$code/kafka-znode.yaml[]
+include::example$getting_started/kafka-znode.yaml[]
 ----
 
 and apply it:
 
 [source,bash]
 ----
-include::example$code/getting-started.sh[tag=install-znode]
+include::example$getting_started/getting-started.sh[tag=install-znode]
 ----
 
 === Kafka
@@ -48,13 +48,13 @@ Create a file named `kafka.yaml` with the following contents:
 
 [source,yaml]
 ----
-include::example$code/kafka.yaml[]
+include::example$getting_started/kafka.yaml[]
 ----
 
 and apply it:
 
 ----
-include::example$code/getting-started.sh[tag=install-kafka]
+include::example$getting_started/getting-started.sh[tag=install-kafka]
 ----
 
 This will create the actual Kafka instance.
@@ -81,41 +81,41 @@ simple-zk-server-default             3/3     7m
 Then, create a port-forward for the Kafka Broker:
 
 ----
-include::example$code/getting-started.sh[tag=port-forwarding]
+include::example$getting_started/getting-started.sh[tag=port-forwarding]
 ----
 
 Create a file containing some data:
 
 ----
-include::example$code/getting-started.sh[tag=kcat-create-data]
+include::example$getting_started/getting-started.sh[tag=kcat-create-data]
 ----
 
 Write that data:
 
 ----
-include::example$code/getting-started.sh[tag=kcat-write-data]
+include::example$getting_started/getting-started.sh[tag=kcat-write-data]
 ----
 
 Read that data:
 
 ----
-include::example$code/getting-started.sh[tag=kcat-read-data]
+include::example$getting_started/getting-started.sh[tag=kcat-read-data]
 ----
 
 Check the content:
 
 ----
-include::example$code/getting-started.sh[tag=kcat-check-data]
+include::example$getting_started/getting-started.sh[tag=kcat-check-data]
 ----
 
 And clean up:
 
 ----
-include::example$code/getting-started.sh[tag=kcat-cleanup-data]
+include::example$getting_started/getting-started.sh[tag=kcat-cleanup-data]
 ----
 
 You successfully created a Kafka cluster and produced and consumed data.
 
 == What's next
 
-Have a look at the xref:ROOT:usage.adoc[] page to find out more about the features of the Kafka Operator.
+Have a look at the xref:usage.adoc[] page to find out more about the features of the Kafka Operator.
