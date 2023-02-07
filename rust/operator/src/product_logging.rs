@@ -51,7 +51,7 @@ const CONSOLE_CONVERSION_PATTERN: &str = "[%d] %p %m (%c)%n";
 /// Return the address of the Vector aggregator if the corresponding ConfigMap name is given in the
 /// cluster spec
 pub async fn resolve_vector_aggregator_address(
-    nifi: &KafkaCluster,
+    kafka: &KafkaCluster,
     client: &Client,
 ) -> Result<Option<String>> {
     let vector_aggregator_address = if let Some(vector_aggregator_config_map_name) = &nifi
