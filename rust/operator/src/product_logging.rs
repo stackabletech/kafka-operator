@@ -54,7 +54,7 @@ pub async fn resolve_vector_aggregator_address(
     kafka: &KafkaCluster,
     client: &Client,
 ) -> Result<Option<String>> {
-    let vector_aggregator_address = if let Some(vector_aggregator_config_map_name) = &nifi
+    let vector_aggregator_address = if let Some(vector_aggregator_config_map_name) = &kafka
         .spec
         .cluster_config
         .vector_aggregator_config_map_name
@@ -63,7 +63,8 @@ pub async fn resolve_vector_aggregator_address(
         let vector_aggregator_address = client
             .get::<ConfigMap>(
                 vector_aggregator_config_map_name,
-                nifi.namespace()
+                kafka
+                    .namespace()
                     .as_deref()
                     .context(ObjectHasNoNamespaceSnafu)?,
             )
