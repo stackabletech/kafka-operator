@@ -4,11 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Enabled logging and log aggregation ([#547]).
+
 ### Changed
 
 - operator-rs: 0.30.1 -> 0.33.0 ([#545]).
 - Bumped stackable versions to "23.4.0-rc1" ([#545]).
-- Enabled logging and log aggregation ([#547]).
 - Bumped kafka stackable versions to "23.4.0-rc2" ([#547]).
 
 [#545]: https://github.com/stackabletech/kafka-operator/pull/545
