@@ -1,12 +1,12 @@
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
-timeout: 300
+timeout: 600
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-kafka-broker-default
+  name: test-kafka-broker-automatic-log-config
 status:
   readyReplicas: 1
   replicas: 1
@@ -14,7 +14,7 @@ status:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-kafka-broker-secondary
+  name: test-kafka-broker-custom-log-config
 status:
   readyReplicas: 1
   replicas: 1

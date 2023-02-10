@@ -40,18 +40,24 @@ spec:
     productVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[0] }}"
     stackableVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[1] }}"
   clusterConfig:
-    zookeeperConfigMapName: test-kafka-znode
+{% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
+    authentication:
+      - authenticationClass: test-kafka-client-auth-tls
+{% endif %}
     tls:
 {% if test_scenario['values']['use-client-tls'] == 'true' %}
       serverSecretClass: tls
 {% else %}
       serverSecretClass: null
 {% endif %}
-{% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
-    authentication:
-      - authenticationClass: test-kafka-client-auth-tls
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
+    zookeeperConfigMapName: test-kafka-znode
   brokers:
+    config:
+      logging:
+        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
     roleGroups:
       default:
         replicas: 3

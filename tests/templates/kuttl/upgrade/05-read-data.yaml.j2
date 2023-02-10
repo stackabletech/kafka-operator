@@ -6,12 +6,12 @@ timeout: 300
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: write-data
+  name: read-data
 spec:
   template:
     spec:
       containers:
-        - name: write-data
+        - name: read-data
           image: edenhill/kcat:1.7.1
           command: [sh, -euo, pipefail, -c]
           args:
@@ -23,13 +23,21 @@ spec:
 {% else %}
               export SSL_OPTIONS=""
 {% endif %}
-              echo "message written before upgrade" > message
+              echo "message written after upgrade" > message
               kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -P message
+
+              echo "message written before upgrade" > expected-messages
+              echo >> expected-messages
+              cat message >> expected-messages
+              echo >> expected-messages
+              kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -C -e > read-messages
+              diff read-messages expected-messages
+              cmp read-messages expected-messages
           env:
             - name: KAFKA
               valueFrom:
                 configMapKeyRef:
-                  name: simple-kafka
+                  name: test-kafka
                   key: KAFKA
           volumeMounts:
             - mountPath: /stackable/tls_client
