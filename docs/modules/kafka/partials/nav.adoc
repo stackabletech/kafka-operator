@@ -1,0 +1,8 @@
+* xref:kafka:getting_started/index.adoc[]
+** xref:kafka:getting_started/installation.adoc[]
+** xref:kafka:getting_started/first_steps.adoc[]
+* xref:kafka:dependencies.adoc[]
+* xref:kafka:configuration.adoc[]
+* xref:kafka:usage.adoc[]
+* Concepts
+** xref:kafka:discovery.adoc[]

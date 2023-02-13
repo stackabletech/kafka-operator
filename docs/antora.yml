@@ -1,7 +1,3 @@
-name: kafka
+---
+name: home
 version: "nightly"
-title: Stackable Operator for Apache Kafka
-nav:
-  - modules/getting_started/nav.adoc
-  - modules/ROOT/nav.adoc
-prerelease: true
