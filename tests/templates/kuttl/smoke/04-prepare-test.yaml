@@ -5,4 +5,4 @@ metadata:
   name: kafka-tests
 commands:
   - script: kubectl cp -n $NAMESPACE ./metrics.py python-0:/tmp
-  - script: kubectl cp -n $NAMESPACE ./test_heap.sh simple-kafka-broker-default-0:/tmp
+  - script: kubectl cp -n $NAMESPACE ./test_heap.sh test-kafka-broker-default-0:/tmp

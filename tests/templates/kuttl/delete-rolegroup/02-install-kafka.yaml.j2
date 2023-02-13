@@ -1,22 +1,27 @@
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
-metadata:
-  name: delete-secondary
 timeout: 300
 ---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
-  name: simple-kafka
+  name: test-kafka
 spec:
   image:
     productVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[0] }}"
     stackableVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[1] }}"
   clusterConfig:
-    zookeeperConfigMapName: kafka-zk
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
+{% endif %}
+    zookeeperConfigMapName: test-zk
   brokers:
+    config:
+      logging:
+        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
     roleGroups:
       default:
         replicas: 1
-      secondary: null
+      secondary:
+        replicas: 1

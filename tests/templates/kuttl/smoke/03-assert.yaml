@@ -2,7 +2,13 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 metadata:
-  name: metrics
-commands:
-  - script: kubectl exec -n $NAMESPACE python-0 -- python /tmp/metrics.py
-  - script: kubectl exec -n $NAMESPACE simple-kafka-broker-default-0 -- /tmp/test_heap.sh
+  name: install-test-container
+timeout: 300
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: python
+status:
+  readyReplicas: 1
+  replicas: 1

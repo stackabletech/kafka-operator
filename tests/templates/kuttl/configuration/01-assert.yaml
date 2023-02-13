@@ -1,37 +1,12 @@
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
-metadata:
-  name: install-kafka-zk
 timeout: 300
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: simple-kafka-broker-default
-spec:
-  template:
-    spec:
-      containers:
-        - name: kafka
-          resources:
-            limits:
-              # value set in the role configuration
-              cpu: '1'
-              # value set in the rolegroup configuration
-              memory: 1Gi
-            requests:
-              # default value set by the operator
-              cpu: 500m
-              # value set in the rolegroup configuration
-              memory: 1Gi
-        - name: kcat-prober
-  volumeClaimTemplates:
-    - metadata:
-        name: log-dirs
-      spec:
-        resources:
-          requests:
-            # value set in the role configuration and overridden in
-            # the rolegroup configuration
-            storage: 2Gi
+  name: test-zk-server-default
+status:
+  readyReplicas: 1
+  replicas: 1

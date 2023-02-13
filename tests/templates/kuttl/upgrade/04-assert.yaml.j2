@@ -6,7 +6,7 @@ timeout: 300
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: simple-kafka-broker-default
+  name: test-kafka-broker-default
   labels:
     app.kubernetes.io/version: "{{ test_scenario['values']['upgrade_new'] }}"
 status:

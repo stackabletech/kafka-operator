@@ -25,7 +25,7 @@ metadata:
 spec:
   image:
     productVersion: 3.3.1
-    stackableVersion: "23.4.0-rc1"
+    stackableVersion: "23.4.0-rc2"
   clusterConfig:
     zookeeperConfigMapName: simple-kafka-znode
   brokers:
@@ -45,7 +45,7 @@ metadata:
 spec:
   image:
     productVersion: 3.3.1
-    stackableVersion: "23.4.0-rc1"
+    stackableVersion: "23.4.0-rc2"
   clusterConfig:
     authorization:
       opa:
@@ -70,7 +70,7 @@ metadata:
 spec:
   image:
     productVersion: 3.3.1
-    stackableVersion: "23.4.0-rc1"
+    stackableVersion: "23.4.0-rc2"
   clusterConfig:
     authorization:
       opa:
@@ -95,40 +95,24 @@ A full list of settings and their respective defaults can be found https://githu
 The managed Kafka instances are automatically configured to export Prometheus metrics. See
 xref:home:operators:monitoring.adoc[] for more details.
 
-== Provide log4j.properties
+== Log aggregation
 
-Per default, the `log4j.properties` from the kafka package is used. However, you can provide your own `log4j.properties` via the custom resource:
+The logs can be forwarded to a Vector log aggregator by providing a discovery
+ConfigMap for the aggregator and by enabling the log agent:
 
 [source,yaml]
 ----
----
-apiVersion: kafka.stackable.tech/v1alpha1
-kind: KafkaCluster
-metadata:
-  name: simple-kafka
 spec:
-  image:
-    productVersion: 3.3.1
-    stackableVersion: "23.4.0-rc1"
   clusterConfig:
-    zookeeperConfigMapName: simple-kafka-znode
-    log4j: |-
-      log4j.rootLogger=INFO, stdout, kafkaAppender
-
-      log4j.appender.stdout=org.apache.log4j.ConsoleAppender
-      log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
-      log4j.appender.stdout.layout.ConversionPattern=[%d] %p %m (%c)%n
-
-      log4j.appender.kafkaAppender=org.apache.log4j.DailyRollingFileAppender
-      log4j.appender.kafkaAppender.DatePattern='.'yyyy-MM-dd-HH
-      log4j.appender.kafkaAppender.File=${kafka.logs.dir}/server.log
-      log4j.appender.kafkaAppender.layout=org.apache.log4j.PatternLayout
-      log4j.appender.kafkaAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
   brokers:
-    roleGroups:
-      default:
-        replicas: 3
+    config:
+      logging:
+        enableVectorAgent: true
 ----
+
+Further information on how to configure logging, can be found in
+xref:home:concepts:logging.adoc[].
 
 == Encryption
 
@@ -144,7 +128,7 @@ metadata:
 spec:
   image:
     productVersion: 3.3.1
-    stackableVersion: "23.4.0-rc1"
+    stackableVersion: "23.4.0-rc2"
   clusterConfig:
     zookeeperConfigMapName: simple-kafka-znode
     tls:
@@ -215,7 +199,7 @@ metadata:
 spec:
   image:
     productVersion: 3.3.1
-    stackableVersion: "23.4.0-rc1"
+    stackableVersion: "23.4.0-rc2"
   clusterConfig:
     authentication:
       - authenticationClass: kafka-client-tls # <1>
