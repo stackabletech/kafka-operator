@@ -1,0 +1,3 @@
+= Stackable Operator for Apache Kafka
+
+The docs can now be found at: xref:home:kafka:index.adoc[]
