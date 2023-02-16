@@ -12,9 +12,7 @@ use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::{
-        affinities::{
-            anti_affinity_between_role_pods, StackableAffinity, StackableAffinityFragment,
-        },
+        affinities::{affinity_between_role_pods, StackableAffinity, StackableAffinityFragment},
         product_image_selection::ProductImage,
         resources::{
             CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
@@ -351,7 +349,7 @@ impl KafkaConfig {
                 pod_affinity: None,
                 pod_anti_affinity: Some(PodAntiAffinity {
                     preferred_during_scheduling_ignored_during_execution: Some(vec![
-                        anti_affinity_between_role_pods(APP_NAME, cluster_name, role, 70),
+                        affinity_between_role_pods(APP_NAME, cluster_name, role, 70),
                     ]),
                     required_during_scheduling_ignored_during_execution: None,
                 }),
