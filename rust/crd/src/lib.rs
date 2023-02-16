@@ -175,8 +175,7 @@ impl KafkaCluster {
     /// Retrieve and merge resource configs for role and role groups
     pub fn merged_config(&self, role: &KafkaRole, role_group: &str) -> Result<KafkaConfig, Error> {
         // Initialize the result with all default values as baseline
-        let conf_defaults =
-            KafkaConfig::default_config(APP_NAME, &self.name_any(), &role.to_string());
+        let conf_defaults = KafkaConfig::default_config(&self.name_any(), &role.to_string());
 
         let role = self.spec.brokers.as_ref().context(MissingKafkaRoleSnafu {
             role: role.to_string(),
@@ -317,7 +316,7 @@ pub struct KafkaConfig {
 }
 
 impl KafkaConfig {
-    pub fn default_config(app_name: &str, cluster_name: &str, role: &str) -> KafkaConfigFragment {
+    pub fn default_config(cluster_name: &str, role: &str) -> KafkaConfigFragment {
         KafkaConfigFragment {
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
@@ -341,7 +340,7 @@ impl KafkaConfig {
                 pod_affinity: None,
                 pod_anti_affinity: Some(PodAntiAffinity {
                     preferred_during_scheduling_ignored_during_execution: Some(vec![
-                        anti_affinity_between_role_pods(app_name, cluster_name, role, 70),
+                        anti_affinity_between_role_pods(APP_NAME, cluster_name, role, 70),
                     ]),
                     required_during_scheduling_ignored_during_execution: None,
                 }),
