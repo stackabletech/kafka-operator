@@ -872,7 +872,7 @@ fn build_broker_rolegroup_statefulset(
         .add_init_container(cb_get_svc.build())
         .add_container(cb_kafka.build())
         .add_container(cb_kcat_prober.build())
-        .node_selector_opt(rolegroup.selector.clone())
+        .affinity(&merged_config.affinity)
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {

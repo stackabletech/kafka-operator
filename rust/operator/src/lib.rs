@@ -97,3 +97,77 @@ pub async fn create_controller(
         .collect::<()>()
         .await;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::collections::BTreeMap;
+
+    use stackable_kafka_crd::KafkaRole;
+    use stackable_operator::{
+        commons::affinities::StackableAffinity,
+        k8s_openapi::{
+            api::core::v1::{PodAffinityTerm, PodAntiAffinity, WeightedPodAffinityTerm},
+            apimachinery::pkg::apis::meta::v1::LabelSelector,
+        },
+    };
+
+    #[test]
+    fn test_affinity_defaults() {
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          image:
+            productVersion: 3.3.1
+            stackableVersion: "23.4.0-rc2"
+          clusterConfig:
+            zookeeperConfigMapName: xyz
+          brokers:
+            roleGroups:
+              default:
+                replicas: 1
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        let merged_config = kafka.merged_config(&KafkaRole::Broker, "default").unwrap();
+
+        assert_eq!(
+            merged_config.affinity,
+            StackableAffinity {
+                pod_affinity: None,
+                pod_anti_affinity: Some(PodAntiAffinity {
+                    preferred_during_scheduling_ignored_during_execution: Some(vec![
+                        WeightedPodAffinityTerm {
+                            pod_affinity_term: PodAffinityTerm {
+                                label_selector: Some(LabelSelector {
+                                    match_expressions: None,
+                                    match_labels: Some(BTreeMap::from([
+                                        ("app.kubernetes.io/name".to_string(), "kafka".to_string(),),
+                                        (
+                                            "app.kubernetes.io/instance".to_string(),
+                                            "simple-kafka".to_string(),
+                                        ),
+                                        (
+                                            "app.kubernetes.io/component".to_string(),
+                                            "broker".to_string(),
+                                        )
+                                    ]))
+                                }),
+                                namespace_selector: None,
+                                namespaces: None,
+                                topology_key: "kubernetes.io/hostname".to_string(),
+                            },
+                            weight: 70
+                        }
+                    ]),
+                    required_during_scheduling_ignored_during_execution: None,
+                }),
+                node_affinity: None,
+                node_selector: None,
+            }
+        );
+    }
+}
