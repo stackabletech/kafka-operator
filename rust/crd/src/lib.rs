@@ -1,3 +1,4 @@
+pub mod affinity;
 pub mod authentication;
 pub mod authorization;
 pub mod listener;
@@ -8,11 +9,12 @@ use crate::authentication::KafkaAuthentication;
 use crate::authorization::KafkaAuthorization;
 use crate::tls::KafkaTls;
 
+use affinity::get_affinity;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::{
-        affinities::{affinity_between_role_pods, StackableAffinity, StackableAffinityFragment},
+        affinities::StackableAffinity,
         product_image_selection::ProductImage,
         resources::{
             CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
@@ -22,8 +24,7 @@ use stackable_operator::{
     config::fragment::{self, Fragment, ValidationError},
     config::merge::Merge,
     k8s_openapi::{
-        api::core::v1::{PersistentVolumeClaim, PodAntiAffinity},
-        apimachinery::pkg::api::resource::Quantity,
+        api::core::v1::PersistentVolumeClaim, apimachinery::pkg::api::resource::Quantity,
     },
     kube::{runtime::reflector::ObjectRef, CustomResource, ResourceExt},
     product_config_utils::{ConfigError, Configuration},
@@ -173,7 +174,7 @@ impl KafkaCluster {
     /// Retrieve and merge resource configs for role and role groups
     pub fn merged_config(&self, role: &KafkaRole, role_group: &str) -> Result<KafkaConfig, Error> {
         // Initialize the result with all default values as baseline
-        let conf_defaults = KafkaConfig::default_config(&self.name_any(), &role.to_string());
+        let conf_defaults = KafkaConfig::default_config(&self.name_any(), role);
 
         let role = self.spec.brokers.as_ref().context(MissingKafkaRoleSnafu {
             role: role.to_string(),
@@ -325,7 +326,7 @@ pub struct KafkaConfig {
 }
 
 impl KafkaConfig {
-    pub fn default_config(cluster_name: &str, role: &str) -> KafkaConfigFragment {
+    pub fn default_config(cluster_name: &str, role: &KafkaRole) -> KafkaConfigFragment {
         KafkaConfigFragment {
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
@@ -345,17 +346,7 @@ impl KafkaConfig {
                     },
                 },
             },
-            affinity: StackableAffinityFragment {
-                pod_affinity: None,
-                pod_anti_affinity: Some(PodAntiAffinity {
-                    preferred_during_scheduling_ignored_during_execution: Some(vec![
-                        affinity_between_role_pods(APP_NAME, cluster_name, role, 70),
-                    ]),
-                    required_during_scheduling_ignored_during_execution: None,
-                }),
-                node_affinity: None,
-                node_selector: None,
-            },
+            affinity: get_affinity(cluster_name, role),
         }
     }
 }
