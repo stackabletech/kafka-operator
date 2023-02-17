@@ -1,5 +1,5 @@
 use stackable_operator::{
-    commons::affinities::{affinity_between_role_pods, StackableAffinityFragment},
+    commons::affinity::{affinity_between_role_pods, StackableAffinityFragment},
     k8s_openapi::api::core::v1::PodAntiAffinity,
 };
 
@@ -27,7 +27,7 @@ mod tests {
 
     use crate::KafkaCluster;
     use stackable_operator::{
-        commons::affinities::{StackableAffinity, StackableNodeSelector},
+        commons::affinity::{StackableAffinity, StackableNodeSelector},
         k8s_openapi::{
             api::core::v1::{
                 NodeAffinity, NodeSelector, NodeSelectorRequirement, NodeSelectorTerm,
