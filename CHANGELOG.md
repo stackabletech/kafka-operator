@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Enabled logging and log aggregation ([#547]).
+- Deploy default and support custom affinities ([#557]).
 
 ### Changed
 
@@ -16,6 +17,7 @@ All notable changes to this project will be documented in this file.
 
 [#545]: https://github.com/stackabletech/kafka-operator/pull/545
 [#547]: https://github.com/stackabletech/kafka-operator/pull/547
+[#557]: https://github.com/stackabletech/kafka-operator/pull/557
 
 ## [23.1.0] - 2023-01-23
 

@@ -1,3 +1,4 @@
+pub mod affinity;
 pub mod authentication;
 pub mod authorization;
 pub mod listener;
@@ -8,10 +9,12 @@ use crate::authentication::KafkaAuthentication;
 use crate::authorization::KafkaAuthorization;
 use crate::tls::KafkaTls;
 
+use affinity::get_affinity;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::{
+        affinity::StackableAffinity,
         product_image_selection::ProductImage,
         resources::{
             CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
@@ -23,7 +26,7 @@ use stackable_operator::{
     k8s_openapi::{
         api::core::v1::PersistentVolumeClaim, apimachinery::pkg::api::resource::Quantity,
     },
-    kube::{runtime::reflector::ObjectRef, CustomResource},
+    kube::{runtime::reflector::ObjectRef, CustomResource, ResourceExt},
     product_config_utils::{ConfigError, Configuration},
     product_logging::{self, spec::Logging},
     role_utils::{Role, RoleGroup, RoleGroupRef},
@@ -171,7 +174,7 @@ impl KafkaCluster {
     /// Retrieve and merge resource configs for role and role groups
     pub fn merged_config(&self, role: &KafkaRole, role_group: &str) -> Result<KafkaConfig, Error> {
         // Initialize the result with all default values as baseline
-        let conf_defaults = KafkaConfig::default_config();
+        let conf_defaults = KafkaConfig::default_config(&self.name_any(), role);
 
         let role = self.spec.brokers.as_ref().context(MissingKafkaRoleSnafu {
             role: role.to_string(),
@@ -186,6 +189,17 @@ impl KafkaCluster {
             .get(role_group)
             .map(|rg| rg.config.config.clone())
             .unwrap_or_default();
+
+        if let Some(RoleGroup {
+            selector: Some(selector),
+            ..
+        }) = role.role_groups.get(role_group)
+        {
+            // Migrate old `selector` attribute, see ADR 26 affinities.
+            // TODO Can be removed after support for the old `selector` field is dropped.
+            #[allow(deprecated)]
+            conf_rolegroup.affinity.add_legacy_selector(selector);
+        }
 
         // Merge more specific configs into default config
         // Hierarchy is:
@@ -307,10 +321,12 @@ pub struct KafkaConfig {
     pub logging: Logging<Container>,
     #[fragment_attrs(serde(default))]
     pub resources: Resources<Storage, NoRuntimeLimits>,
+    #[fragment_attrs(serde(default))]
+    pub affinity: StackableAffinity,
 }
 
 impl KafkaConfig {
-    pub fn default_config() -> KafkaConfigFragment {
+    pub fn default_config(cluster_name: &str, role: &KafkaRole) -> KafkaConfigFragment {
         KafkaConfigFragment {
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
@@ -330,6 +346,7 @@ impl KafkaConfig {
                     },
                 },
             },
+            affinity: get_affinity(cluster_name, role),
         }
     }
 }
@@ -414,7 +431,7 @@ mod tests {
           image:
             productVersion: 3.3.1
             stackableVersion: "23.4.0-rc2"
-          clusterConfig:  
+          clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
@@ -435,9 +452,9 @@ mod tests {
             stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
-              serverSecretClass: simple-kafka-server-tls  
+              serverSecretClass: simple-kafka-server-tls
             zookeeperConfigMapName: xyz
-          
+
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(
@@ -460,8 +477,8 @@ mod tests {
             stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
-              serverSecretClass: null  
-            zookeeperConfigMapName: xyz            
+              serverSecretClass: null
+            zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), None);
@@ -482,8 +499,8 @@ mod tests {
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
-              internalSecretClass: simple-kafka-internal-tls  
-            zookeeperConfigMapName: xyz          
+              internalSecretClass: simple-kafka-internal-tls
+            zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
@@ -505,7 +522,7 @@ mod tests {
             productVersion: 3.3.1
             stackableVersion: "23.4.0-rc2"
           clusterConfig:
-            zookeeperConfigMapName: xyz              
+            zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
@@ -525,8 +542,8 @@ mod tests {
             stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
-              internalSecretClass: simple-kafka-internal-tls  
-            zookeeperConfigMapName: xyz              
+              internalSecretClass: simple-kafka-internal-tls
+            zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
@@ -546,8 +563,8 @@ mod tests {
             stackableVersion: "23.4.0-rc2"
           clusterConfig:
             tls:
-              serverSecretClass: simple-kafka-server-tls  
-            zookeeperConfigMapName: xyz              
+              serverSecretClass: simple-kafka-server-tls
+            zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(
