@@ -326,7 +326,7 @@ brokers:
 
 === Pod Placement
 
-You can configure Pod placement for Kafka brokers as described in xref:home:concepts:pod_placement.adoc[].
+You can configure Pod placement for Kafka brokers as described in xref:concepts:pod_placement.adoc[].
 
 By default, the operator configures the following Pod placement constraints:
 
