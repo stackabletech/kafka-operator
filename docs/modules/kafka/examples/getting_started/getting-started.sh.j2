@@ -99,16 +99,16 @@ kafkacat -b localhost:9092 -t test-data-topic -P data
 
 echo "Reading test data"
 # tag::kcat-read-data[]
-kafkacat -b localhost:9092 -t test-data-topic -C -e > read-data
+kafkacat -b localhost:9092 -t test-data-topic -C -e > read-data.out
 # end::kcat-read-data[]
 
 echo "Check contents"
 # tag::kcat-check-data[]
-cat read-data | grep "some test data"
+grep "some test data" read-data.out
 # end::kcat-check-data[]
 
 echo "Cleanup"
 # tag::kcat-cleanup-data[]
 rm data
-rm read-data
+rm read-data.out
 # end::kcat-cleanup-data[]
