@@ -59,7 +59,7 @@ echo "Installing ZNode from kafka-znode.yaml"
 kubectl apply -f kafka-znode.yaml
 # end::install-znode[]
 
-sleep 5
+sleep 15
 
 echo "Awaiting ZooKeeper rollout finish"
 # tag::watch-zookeeper-rollout[]
@@ -71,7 +71,7 @@ echo "Install KafkaCluster from kafka.yaml"
 kubectl apply -f kafka.yaml
 # end::install-kafka[]
 
-sleep 5
+sleep 15
 
 echo "Awaiting Kafka rollout finish"
 # tag::watch-kafka-rollout[]
@@ -85,7 +85,7 @@ kubectl port-forward svc/simple-kafka 9092 2>&1 >/dev/null &
 PORT_FORWARD_PID=$!
 trap "kill $PORT_FORWARD_PID" EXIT
 
-sleep 5
+sleep 15
 
 echo "Creating test data"
 # tag::kcat-create-data[]
