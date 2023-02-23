@@ -65,7 +65,7 @@ sleep 15
 
 echo "Awaiting ZooKeeper rollout finish"
 # tag::watch-zookeeper-rollout[]
-kubectl rollout status --watch statefulset/simple-zk-server-default
+kubectl rollout status --watch --timeout=5m statefulset/simple-zk-server-default
 # end::watch-zookeeper-rollout[]
 
 echo "Install KafkaCluster from kafka.yaml"
@@ -77,7 +77,7 @@ sleep 15
 
 echo "Awaiting Kafka rollout finish"
 # tag::watch-kafka-rollout[]
-kubectl rollout status --watch statefulset/simple-kafka-broker-default
+kubectl rollout status --watch --timeout=5m statefulset/simple-kafka-broker-default
 # end::watch-kafka-rollout[]
 
 echo "Starting port-forwarding of port 9092"
