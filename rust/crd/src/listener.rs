@@ -105,7 +105,7 @@ pub fn get_kafka_listener_config(
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::ClientAuth,
-            host: node_cmd(STACKABLE_LISTENER_DIR),
+            host: node_address_cmd(STACKABLE_LISTENER_DIR),
             port: node_port_cmd(STACKABLE_LISTENER_DIR, kafka_security.client_port_name()),
         });
         listener_security_protocol_map
@@ -119,7 +119,7 @@ pub fn get_kafka_listener_config(
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
-            host: node_cmd(STACKABLE_LISTENER_DIR),
+            host: node_address_cmd(STACKABLE_LISTENER_DIR),
             port: node_port_cmd(STACKABLE_LISTENER_DIR, kafka_security.client_port_name()),
         });
         listener_security_protocol_map
@@ -133,7 +133,7 @@ pub fn get_kafka_listener_config(
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
-            host: node_cmd(STACKABLE_LISTENER_DIR),
+            host: node_address_cmd(STACKABLE_LISTENER_DIR),
             port: node_port_cmd(STACKABLE_LISTENER_DIR, kafka_security.client_port_name()),
         });
         listener_security_protocol_map
@@ -179,7 +179,7 @@ pub fn get_kafka_listener_config(
     })
 }
 
-fn node_cmd(directory: &str) -> String {
+fn node_address_cmd(directory: &str) -> String {
     format!("$(cat {directory}/default-address/address)")
 }
 
@@ -261,7 +261,7 @@ mod tests {
             format!(
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::ClientAuth,
-                host = node_cmd(STACKABLE_LISTENER_DIR),
+                host = node_address_cmd(STACKABLE_LISTENER_DIR),
                 port = node_port_cmd(STACKABLE_LISTENER_DIR, kafka_security.client_port_name()),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name).unwrap(),
@@ -321,7 +321,7 @@ mod tests {
             format!(
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
-                host = node_cmd(STACKABLE_LISTENER_DIR),
+                host = node_address_cmd(STACKABLE_LISTENER_DIR),
                 port = node_port_cmd(STACKABLE_LISTENER_DIR, kafka_security.client_port_name()),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name).unwrap(),
@@ -383,7 +383,7 @@ mod tests {
             format!(
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
-                host = node_cmd(STACKABLE_LISTENER_DIR),
+                host = node_address_cmd(STACKABLE_LISTENER_DIR),
                 port = node_port_cmd(STACKABLE_LISTENER_DIR, kafka_security.client_port_name()),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name).unwrap(),
