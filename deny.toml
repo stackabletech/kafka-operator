@@ -52,9 +52,6 @@ license-files = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = [
-    "https://github.com//stackabletech/operator-rs",
-]
 
 [sources.allow-org]
 github = ["stackabletech"]
