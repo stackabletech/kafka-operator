@@ -1,13 +1,12 @@
-mod command;
 mod discovery;
 mod kafka_controller;
+mod product_logging;
 mod utils;
 
-use std::sync::Arc;
+use crate::kafka_controller::KAFKA_CONTROLLER_NAME;
 
 use futures::StreamExt;
-use stackable_kafka_crd::KafkaCluster;
-use stackable_operator::namespace::WatchNamespace;
+use stackable_kafka_crd::{KafkaCluster, OPERATOR_NAME};
 use stackable_operator::{
     client::Client,
     k8s_openapi::api::{
@@ -17,8 +16,10 @@ use stackable_operator::{
     },
     kube::{api::ListParams, runtime::Controller},
     logging::controller::report_controller_reconciled,
+    namespace::WatchNamespace,
     product_config::ProductConfigManager,
 };
+use std::sync::Arc;
 
 pub struct ControllerConfig {
     pub broker_clusterrole: String,
@@ -62,7 +63,11 @@ pub async fn create_controller(
         }),
     )
     .map(|res| {
-        report_controller_reconciled(&client, "kafkacluster.kafka.stackable.tech", &res);
+        report_controller_reconciled(
+            &client,
+            &format!("{KAFKA_CONTROLLER_NAME}.{OPERATOR_NAME}"),
+            &res,
+        );
     });
 
     kafka_controller.collect::<()>().await;

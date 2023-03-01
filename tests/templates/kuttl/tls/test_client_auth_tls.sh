@@ -18,7 +18,7 @@ TOPIC=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo '')
 BAD_TOPIC=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo '')
 
 # write client config
-echo $'security.protocol=SSL\nssl.keystore.location=/stackable/tls_client_auth/keystore.p12\nssl.keystore.password=changeit\nssl.truststore.location=/stackable/tls_client_auth/truststore.p12\nssl.truststore.password=changeit' > /tmp/client.config
+echo $'security.protocol=SSL\nssl.keystore.location=/stackable/tls_server/keystore.p12\nssl.keystore.password=changeit\nssl.truststore.location=/stackable/tls_server/truststore.p12\nssl.truststore.password=changeit' > /tmp/client.config
 
 if /stackable/kafka/bin/kafka-topics.sh --create --topic "$TOPIC" --bootstrap-server "$SERVER" --command-config /tmp/client.config
 then

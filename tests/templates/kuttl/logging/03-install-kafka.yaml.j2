@@ -1,0 +1,67 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-log-config
+data:
+  log4j.properties: |
+    log4j.rootLogger=INFO, CONSOLE, FILE
+
+    log4j.appender.CONSOLE=org.apache.log4j.ConsoleAppender
+    log4j.appender.CONSOLE.Threshold=INFO
+    log4j.appender.CONSOLE.layout=org.apache.log4j.PatternLayout
+    log4j.appender.CONSOLE.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+    log4j.appender.FILE=org.apache.log4j.RollingFileAppender
+    log4j.appender.FILE.Threshold=INFO
+    log4j.appender.FILE.File=/stackable/log/kafka/kafka.log4j.xml
+    log4j.appender.FILE.MaxFileSize=5MB
+    log4j.appender.FILE.MaxBackupIndex=1
+    log4j.appender.FILE.layout=org.apache.log4j.xml.XMLLayout
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+spec:
+  image:
+    productVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[0] }}"
+    stackableVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[1] }}"
+  clusterConfig:
+    tls:
+      serverSecretClass: null
+    vectorAggregatorConfigMapName: kafka-vector-aggregator-discovery
+    zookeeperConfigMapName: test-kafka-znode
+  brokers:
+    roleGroups:
+      automatic-log-config:
+        replicas: 1
+        config:
+          logging:
+            enableVectorAgent: true
+            containers:
+              kafka:
+                console:
+                  level: INFO
+                file:
+                  level: INFO
+                loggers:
+                  ROOT:
+                    level: INFO
+              vector:
+                console:
+                  level: INFO
+                file:
+                  level: INFO
+                loggers:
+                  ROOT:
+                    level: INFO
+      custom-log-config:
+        replicas: 1
+        config:
+          logging:
+            enableVectorAgent: true
+            containers:
+              kafka:
+                custom:
+                  configMap: kafka-log-config

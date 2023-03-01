@@ -4,12 +4,12 @@
 
 <h1 align="center">Stackable Operator for Apache Kafka</h1>
 
-[![Build Actions Status](https://ci.stackable.tech/job/kafka%2doperator%2dit%2dnightly/badge/icon?subject=Integration%20Tests)](https://ci.stackable.tech/job/kafka%2doperator%2dit%2dnightly)
+![Build Actions Status](https://ci.stackable.tech/buildStatus/icon?job=kafka%2doperator%2dit%2dnightly&subject=Integration%20Tests)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/stackabletech/kafka-operator/graphs/commit-activity)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-green.svg)](https://docs.stackable.tech/home/stable/contributor/index.html)
 [![License OSL3.0](https://img.shields.io/badge/license-OSL3.0-green)](./LICENSE)
 
-[Documentation](https://docs.stackable.tech/kafka-operator/stable/index.html) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/) | [Discussions](https://github.com/orgs/stackabletech/discussions)
+[Documentation](https://docs.stackable.tech/kafka/stable/index.html) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/) | [Discussions](https://github.com/orgs/stackabletech/discussions)
 
 This is a Kubernetes operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
 
@@ -36,9 +36,7 @@ If you have a question about the Stackable Data Platform contact us via our [hom
 
 ## What Does This Do?
 
-This operator is managing Kafka in Kubernetes. It is part of the Stackable Data Platform, a 
-
-Operators observe custom resources in a Kubernetes cluster, and manages the application it's responsible for according to the desired state specified in those custom resources.
+This operator is managing Kafka in Kubernetes. An operator observes custom resources in a Kubernetes cluster, and manages the application it's responsible for according to the desired state specified in those custom resources.
 
 Here's an example how a custom resource to bring up a 3-replica Kafka cluster can look like:
 
@@ -49,10 +47,13 @@ kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
-  version: 3.2.0-stackable0.1.0
-  zookeeperConfigMapName: simple-kafka-znode
-  config:
-    tls: null
+  image:
+    productVersion: 3.3.1
+    stackableVersion: "23.4.0-rc2"
+  clusterConfig:
+    zookeeperConfigMapName: simple-kafka-znode
+    tls:
+      serverSecretClass: null
   brokers:
     roleGroups:
       default:
@@ -90,7 +91,7 @@ We develop and test our operators on the following cloud platforms:
 * GKE on Google Cloud Platform (GCP)
 * [IONOS Cloud Managed Kubernetes](https://cloud.ionos.com/managed/kubernetes)
 * K3s
-* Kubernetes 1.21-1.24
+* Kubernetes 1.21-1.25
 
 We are currently working to support:
 

@@ -1,0 +1,22 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka-test-runner
+  labels:
+    app: kafka-test-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-test-runner
+  template:
+    metadata:
+      labels:
+        app: kafka-test-runner
+    spec:
+      containers:
+        - name: kafka-test-runner
+          image: docker.stackable.tech/stackable/testing-tools:0.1.0-stackable0.1.0
+          stdin: true
+          tty: true

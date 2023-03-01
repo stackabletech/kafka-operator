@@ -6,9 +6,46 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Added default resource requests (memory and cpu) for Kafka pods. ([#485])
-- Support for Kafka 3.3.1 ([#492])
-- Orphaned resources are deleted ([#495])
+- Enabled logging and log aggregation ([#547]).
+- Deploy default and support custom affinities ([#557]).
+
+### Changed
+
+- operator-rs: 0.30.1 -> 0.33.0 ([#545]).
+- Bumped stackable versions to "23.4.0-rc1" ([#545]).
+- Bumped kafka stackable versions to "23.4.0-rc2" ([#547]).
+
+[#545]: https://github.com/stackabletech/kafka-operator/pull/545
+[#547]: https://github.com/stackabletech/kafka-operator/pull/547
+[#557]: https://github.com/stackabletech/kafka-operator/pull/557
+
+## [23.1.0] - 2023-01-23
+
+### Changed
+
+- Fixed the RoleGroup `selector`. It was not used before. ([#530])
+- Updated stackable image versions ([#513]).
+- operator-rs: 0.26.0 -> 0.30.1 ([#519], [#530]).
+- Don't run init container as root and avoid chmod and chowning ([#524]).
+- [BREAKING] Use Product image selection instead of version. `spec.version` has been replaced by `spec.image` ([#482]).
+- [BREAKING]: Removed tools image for init and get-svc container and replaced with Kafka product image. This means the latest stackable version has to be used in the product image selection ([#527])
+- [BREAKING] Consolidated top-level configuration. Split up TLS encryption and authentication. Moved all top-level fields except `spec.image` below `spec.clusterConfig` ([#532]).
+
+[#530]: https://github.com/stackabletech/kafka-operator/pull/530
+[#482]: https://github.com/stackabletech/kafka-operator/pull/482
+[#513]: https://github.com/stackabletech/kafka-operator/pull/513
+[#519]: https://github.com/stackabletech/kafka-operator/pull/519
+[#524]: https://github.com/stackabletech/kafka-operator/pull/524
+[#527]: https://github.com/stackabletech/kafka-operator/pull/527
+[#532]: https://github.com/stackabletech/kafka-operator/pull/532
+
+## [0.8.0] - 2022-11-07
+
+### Added
+
+- Added default resource requests (memory and cpu) for Kafka pods ([#485]).
+- Support for Kafka 3.3.1 ([#492]).
+- Orphaned resources are deleted ([#495]).
 
 ### Changed
 
@@ -36,7 +73,7 @@ All notable changes to this project will be documented in this file.
 
 - operator-rs: 0.21.1 -> 0.22.0 ([#430]).
 - Include chart name when installing with a custom release name ([#429], [#431]).
-- Kafka init container now uses Stackable tools rather than Bitnami kubectl ([#434])
+- Kafka init container now uses Stackable tools rather than Bitnami kubectl ([#434]).
 
 [#429]: https://github.com/stackabletech/kafka-operator/pull/429
 [#430]: https://github.com/stackabletech/kafka-operator/pull/430

@@ -1,0 +1,17 @@
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  image:
+    productVersion: 3.3.1
+    stackableVersion: "23.4.0-rc2"
+  clusterConfig:
+    tls:
+      serverSecretClass: null
+    zookeeperConfigMapName: simple-kafka-znode
+  brokers:
+    roleGroups:
+      default:
+        replicas: 3

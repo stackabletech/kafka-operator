@@ -1,37 +1,41 @@
 //! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
+use crate::product_logging::{
+    extend_role_group_config_map, resolve_vector_aggregator_address, STACKABLE_LOG_DIR,
+};
+use crate::{
+    discovery::{self, build_discovery_configmaps},
+    product_logging::{LOG4J_CONFIG_FILE, LOG_VOLUME_SIZE_IN_MIB},
+    utils::{self, build_recommended_labels, ObjectRefExt},
+    ControllerConfig,
+};
 
 use snafu::{OptionExt, ResultExt, Snafu};
+use stackable_kafka_crd::STACKABLE_LISTENER_DIR;
 use stackable_kafka_crd::{
-    listener::get_kafka_listener_config, KafkaCluster, KafkaConfig, KafkaRole, TlsSecretClass,
-    APP_NAME, CLIENT_PORT, CLIENT_PORT_NAME, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
-    METRICS_PORT_NAME, SECURE_CLIENT_PORT, SECURE_CLIENT_PORT_NAME, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_DIR,
-    STACKABLE_TLS_CLIENT_AUTH_DIR, STACKABLE_TLS_CLIENT_DIR, STACKABLE_TLS_INTERNAL_DIR,
-    TLS_DEFAULT_SECRET_CLASS,
+    listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
+    KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
+    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
+    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR,
 };
 use stackable_operator::{
-    builder::{
-        ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
-        SecretOperatorVolumeSourceBuilder, SecurityContextBuilder, VolumeBuilder,
-    },
+    builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     cluster_resources::ClusterResources,
     commons::{
-        authentication::{AuthenticationClass, AuthenticationClassProvider},
-        opa::OpaApiVersion,
-        tls::TlsAuthenticationProvider,
+        authentication::AuthenticationClass, opa::OpaApiVersion,
+        product_image_selection::ResolvedProductImage,
     },
-    config::fragment::ValidationError,
     k8s_openapi::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
             core::v1::{
-                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar,
-                EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe,
-                ResourceRequirements, Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
+                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
+                EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
+                PodSecurityContext, PodSpec, Probe, Service, ServiceAccount, ServicePort,
+                ServiceSpec, Volume,
             },
             rbac::v1::{RoleBinding, RoleRef, Subject},
         },
-        apimachinery::pkg::apis::meta::v1::LabelSelector,
+        apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
     },
     kube::{
         api::DynamicObject,
@@ -40,10 +44,18 @@ use stackable_operator::{
     },
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
+    memory::{BinaryMultiple, MemoryQuantity},
     product_config::{
         types::PropertyNameKind, writer::to_java_properties_string, ProductConfigManager,
     },
     product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
+    product_logging::{
+        self,
+        spec::{
+            ConfigMapLogConfig, ContainerLogConfig, ContainerLogConfigChoice,
+            CustomContainerLogConfig,
+        },
+    },
     role_utils::RoleGroupRef,
 };
 use std::{
@@ -54,15 +66,8 @@ use std::{
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-use crate::command::kcat_container_cmd_args;
-use crate::{
-    command,
-    discovery::{self, build_discovery_configmaps},
-    utils::{self, ObjectRefExt},
-    ControllerConfig,
-};
-
-const RESOURCE_SCOPE: &str = "kafka-operator_kafkacluster";
+pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
+const JAVA_HEAP_RATIO: f32 = 0.8;
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -78,8 +83,6 @@ pub enum Error {
     ObjectHasNoName,
     #[snafu(display("object has no namespace"))]
     ObjectHasNoNamespace,
-    #[snafu(display("object defines no version"))]
-    ObjectHasNoVersion,
     #[snafu(display("object defines no broker role"))]
     NoBrokerRole,
     #[snafu(display("failed to calculate global service name"))]
@@ -143,11 +146,6 @@ pub enum Error {
     RoleGroupNotFound {
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
-    #[snafu(display("failed to validate configuration of rolegroup {rolegroup}"))]
-    RoleGroupValidation {
-        rolegroup: RoleGroupRef<KafkaCluster>,
-        source: ValidationError,
-    },
     #[snafu(display("invalid ServiceAccount"))]
     InvalidServiceAccount {
         source: utils::NamespaceMismatchError,
@@ -156,26 +154,20 @@ pub enum Error {
     InvalidOpaConfig {
         source: stackable_operator::error::Error,
     },
-    #[snafu(display("invalid java heap config: {source}"))]
-    InvalidJavaHeapConfig {
-        source: stackable_operator::error::Error,
-    },
-    #[snafu(display("failed to parse Kafka version/image"))]
-    KafkaVersionParseFailure { source: stackable_kafka_crd::Error },
     #[snafu(display("failed to retrieve {}", authentication_class))]
     AuthenticationClassRetrieval {
         source: stackable_operator::error::Error,
         authentication_class: ObjectRef<AuthenticationClass>,
     },
     #[snafu(display(
-        "failed to use authentication mechanism {} - supported methods: {:?}",
-        method,
+        "failed to use authentication provider {} - supported methods: {:?}",
+        provider,
         supported
     ))]
-    AuthenticationMethodNotSupported {
+    AuthenticationProviderNotSupported {
         authentication_class: ObjectRef<AuthenticationClass>,
         supported: Vec<String>,
-        method: String,
+        provider: String,
     },
     #[snafu(display("invalid kafka listeners"))]
     InvalidKafkaListeners {
@@ -190,6 +182,29 @@ pub enum Error {
     DeleteOrphans {
         source: stackable_operator::error::Error,
     },
+    #[snafu(display("failed to initialize security context"))]
+    FailedToInitializeSecurityContext {
+        source: stackable_kafka_crd::security::Error,
+    },
+    #[snafu(display("invalid memory resource configuration"))]
+    InvalidHeapConfig {
+        source: stackable_operator::error::Error,
+    },
+    #[snafu(display("failed to create cluster resources"))]
+    CreateClusterResources {
+        source: stackable_operator::error::Error,
+    },
+    #[snafu(display("failed to resolve and merge config for role and role group"))]
+    FailedToResolveConfig { source: stackable_kafka_crd::Error },
+    #[snafu(display("failed to resolve the Vector aggregator address"))]
+    ResolveVectorAggregatorAddress {
+        source: crate::product_logging::Error,
+    },
+    #[snafu(display("failed to add the logging configuration to the ConfigMap [{cm_name}]"))]
+    InvalidLoggingConfig {
+        source: crate::product_logging::Error,
+        cm_name: String,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -202,7 +217,6 @@ impl ReconcilerError for Error {
         match self {
             Error::ObjectHasNoName => None,
             Error::ObjectHasNoNamespace => None,
-            Error::ObjectHasNoVersion => None,
             Error::NoBrokerRole => None,
             Error::GlobalServiceNameNotFound => None,
             Error::ApplyRoleService { .. } => None,
@@ -219,22 +233,25 @@ impl ReconcilerError for Error {
             Error::BuildDiscoveryConfig { .. } => None,
             Error::ApplyDiscoveryConfig { .. } => None,
             Error::RoleGroupNotFound { .. } => None,
-            Error::RoleGroupValidation { .. } => None,
             Error::InvalidServiceAccount { .. } => None,
             Error::InvalidOpaConfig { .. } => None,
-            Error::InvalidJavaHeapConfig { .. } => None,
-            Error::KafkaVersionParseFailure { .. } => None,
             Error::AuthenticationClassRetrieval {
                 authentication_class,
                 ..
             } => Some(authentication_class.clone().erase()),
-            Error::AuthenticationMethodNotSupported {
+            Error::AuthenticationProviderNotSupported {
                 authentication_class,
                 ..
             } => Some(authentication_class.clone().erase()),
             Error::InvalidKafkaListeners { .. } => None,
             Error::InvalidContainerName { .. } => None,
             Error::DeleteOrphans { .. } => None,
+            Error::FailedToInitializeSecurityContext { .. } => None,
+            Error::InvalidHeapConfig { .. } => None,
+            Error::CreateClusterResources { .. } => None,
+            Error::FailedToResolveConfig { .. } => None,
+            Error::ResolveVectorAggregatorAddress { .. } => None,
+            Error::InvalidLoggingConfig { .. } => None,
         }
     }
 }
@@ -243,15 +260,20 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     tracing::info!("Starting reconcile");
     let client = &ctx.client;
 
-    let mut cluster_resources =
-        ClusterResources::new(APP_NAME, RESOURCE_SCOPE, &kafka.object_ref(&())).unwrap();
+    let resolved_product_image = kafka.spec.image.resolve(DOCKER_IMAGE_BASE_NAME);
+
+    let mut cluster_resources = ClusterResources::new(
+        APP_NAME,
+        OPERATOR_NAME,
+        KAFKA_CONTROLLER_NAME,
+        &kafka.object_ref(&()),
+    )
+    .context(CreateClusterResourcesSnafu)?;
 
     let validated_config = validate_all_roles_and_groups_config(
-        kafka
-            .product_version()
-            .context(KafkaVersionParseFailureSnafu)?,
+        &resolved_product_image.product_version,
         &transform_all_roles_to_config(
-            &*kafka,
+            kafka.as_ref(),
             [(
                 KafkaRole::Broker.to_string(),
                 (
@@ -275,22 +297,13 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .map(Cow::Borrowed)
         .unwrap_or_default();
 
-    let client_authentication_class = if let Some(auth_class) = kafka.client_authentication_class()
-    {
-        Some(
-            AuthenticationClass::resolve(client, auth_class)
-                .await
-                .context(AuthenticationClassRetrievalSnafu {
-                    authentication_class: ObjectRef::<AuthenticationClass>::new(auth_class),
-                })?,
-        )
-    } else {
-        None
-    };
+    let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, &kafka)
+        .await
+        .context(FailedToInitializeSecurityContextSnafu)?;
 
     // Assemble the OPA connection string from the discovery and the given path if provided
     // Will be passed as --override parameter in the cli in the state ful set
-    let opa_connect = if let Some(opa_spec) = &kafka.spec.opa {
+    let opa_connect = if let Some(opa_spec) = &kafka.spec.cluster_config.authorization.opa {
         Some(
             opa_spec
                 .full_document_url_from_config_map(
@@ -306,10 +319,12 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         None
     };
 
-    let broker_role_service = build_broker_role_service(&kafka)?;
+    let broker_role_service =
+        build_broker_role_service(&kafka, &resolved_product_image, &kafka_security)?;
     let (broker_role_serviceaccount, broker_role_rolebinding) =
-        build_broker_role_serviceaccount(&kafka, &ctx.controller_config)?;
+        build_broker_role_serviceaccount(&kafka, &resolved_product_image, &ctx.controller_config)?;
     let broker_role_serviceaccount_ref = ObjectRef::from_obj(&broker_role_serviceaccount);
+
     let broker_role_service = cluster_resources
         .add(client, &broker_role_service)
         .await
@@ -323,31 +338,41 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .await
         .context(ApplyRoleRoleBindingSnafu)?;
 
+    let vector_aggregator_address = resolve_vector_aggregator_address(&kafka, client)
+        .await
+        .context(ResolveVectorAggregatorAddressSnafu)?;
+
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
-        let (role, rolegroup) =
-            kafka
-                .rolegroup(&rolegroup_ref)
-                .with_context(|| RoleGroupNotFoundSnafu {
-                    rolegroup: rolegroup_ref.clone(),
-                })?;
-        let rolegroup_typed_config = rolegroup
-            .validate_config::<KafkaConfig>(role, &KafkaCluster::broker_default_config())
-            .with_context(|_| RoleGroupValidationSnafu {
-                rolegroup: rolegroup_ref.clone(),
-            })?;
 
-        let rg_service = build_broker_rolegroup_service(&rolegroup_ref, &kafka)?;
-        let rg_configmap =
-            build_broker_rolegroup_config_map(&rolegroup_ref, &kafka, rolegroup_config)?;
-        let rg_statefulset = build_broker_rolegroup_statefulset(
-            &rolegroup_ref,
+        let merged_config = kafka
+            .merged_config(&KafkaRole::Broker, rolegroup_name)
+            .context(FailedToResolveConfigSnafu)?;
+
+        let rg_service = build_broker_rolegroup_service(
             &kafka,
+            &resolved_product_image,
+            &kafka_security,
+            &rolegroup_ref,
+        )?;
+        let rg_configmap = build_broker_rolegroup_config_map(
+            &kafka,
+            &resolved_product_image,
+            &kafka_security,
+            &rolegroup_ref,
+            rolegroup_config,
+            &merged_config,
+            vector_aggregator_address.as_deref(),
+        )?;
+        let rg_statefulset = build_broker_rolegroup_statefulset(
+            &kafka,
+            &resolved_product_image,
+            &rolegroup_ref,
             rolegroup_config,
             &broker_role_serviceaccount_ref,
             opa_connect.as_deref(),
-            client_authentication_class.as_ref(),
-            &rolegroup_typed_config,
+            &kafka_security,
+            &merged_config,
         )?;
         cluster_resources
             .add(client, &rg_service)
@@ -370,11 +395,12 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     }
 
     for discovery_cm in build_discovery_configmaps(
-        client,
-        &*kafka,
         &kafka,
+        &*kafka,
+        &resolved_product_image,
+        client,
+        &kafka_security,
         &broker_role_service,
-        RESOURCE_SCOPE,
     )
     .await
     .context(BuildDiscoveryConfigSnafu)?
@@ -395,7 +421,11 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
 
 /// The broker-role service is the primary endpoint that should be used by clients that do not perform internal load balancing,
 /// including targets outside of the cluster.
-pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
+pub fn build_broker_role_service(
+    kafka: &KafkaCluster,
+    resolved_product_image: &ResolvedProductImage,
+    kafka_security: &KafkaTlsSecurity,
+) -> Result<Service> {
     let role_name = KafkaRole::Broker.to_string();
     let role_svc_name = kafka
         .broker_role_service_name()
@@ -406,19 +436,16 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
             .name(&role_svc_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
-                RESOURCE_SCOPE,
+                KAFKA_CONTROLLER_NAME,
+                &resolved_product_image.app_version_label,
                 &role_name,
                 "global",
-            )
+            ))
             .build(),
         spec: Some(ServiceSpec {
-            ports: Some(service_ports(kafka)),
+            ports: Some(service_ports(kafka_security)),
             selector: Some(role_selector_labels(kafka, APP_NAME, &role_name)),
             type_: Some("NodePort".to_string()),
             ..ServiceSpec::default()
@@ -429,6 +456,7 @@ pub fn build_broker_role_service(kafka: &KafkaCluster) -> Result<Service> {
 
 fn build_broker_role_serviceaccount(
     kafka: &KafkaCluster,
+    resolved_product_image: &ResolvedProductImage,
     controller_config: &ControllerConfig,
 ) -> Result<(ServiceAccount, RoleBinding)> {
     let role_name = KafkaRole::Broker.to_string();
@@ -439,16 +467,13 @@ fn build_broker_role_serviceaccount(
             .name(&sa_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
-                RESOURCE_SCOPE,
+                KAFKA_CONTROLLER_NAME,
+                &resolved_product_image.app_version_label,
                 &role_name,
                 "global",
-            )
+            ))
             .build(),
         ..ServiceAccount::default()
     };
@@ -459,16 +484,13 @@ fn build_broker_role_serviceaccount(
             .name(binding_name)
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
-                RESOURCE_SCOPE,
+                KAFKA_CONTROLLER_NAME,
+                &resolved_product_image.app_version_label,
                 &role_name,
                 "global",
-            )
+            ))
             .build(),
         role_ref: RoleRef {
             api_group: "rbac.authorization.k8s.io".to_string(), // k8s_openapi 1.24 has made ClusterRole::GROUP crate private
@@ -487,35 +509,41 @@ fn build_broker_role_serviceaccount(
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
 fn build_broker_rolegroup_config_map(
-    rolegroup: &RoleGroupRef<KafkaCluster>,
     kafka: &KafkaCluster,
+    resolved_product_image: &ResolvedProductImage,
+    kafka_security: &KafkaTlsSecurity,
+    rolegroup: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
+    merged_config: &KafkaConfig,
+    vector_aggregator_address: Option<&str>,
 ) -> Result<ConfigMap> {
-    let server_cfg = broker_config
+    let mut server_cfg = broker_config
         .get(&PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()))
         .cloned()
         .unwrap_or_default();
+
+    server_cfg.extend(kafka_security.config_settings());
+
     let server_cfg = server_cfg
         .into_iter()
         .map(|(k, v)| (k, Some(v)))
         .collect::<Vec<_>>();
-    ConfigMapBuilder::new()
+
+    let mut cm_builder = ConfigMapBuilder::new();
+    cm_builder
         .metadata(
             ObjectMetaBuilder::new()
                 .name_and_namespace(kafka)
                 .name(rolegroup.object_name())
                 .ownerreference_from_resource(kafka, None, Some(true))
                 .context(ObjectMissingMetadataForOwnerRefSnafu)?
-                .with_recommended_labels(
+                .with_recommended_labels(build_recommended_labels(
                     kafka,
-                    APP_NAME,
-                    kafka
-                        .image_version()
-                        .context(KafkaVersionParseFailureSnafu)?,
-                    RESOURCE_SCOPE,
+                    KAFKA_CONTROLLER_NAME,
+                    &resolved_product_image.app_version_label,
                     &rolegroup.role,
                     "global",
-                )
+                ))
                 .build(),
         )
         .add_data(
@@ -525,11 +553,19 @@ fn build_broker_rolegroup_config_map(
                     rolegroup: rolegroup.clone(),
                 },
             )?,
-        )
-        .add_data(
-            "log4j.properties",
-            kafka.spec.log4j.as_ref().unwrap_or(&"".to_string()),
-        )
+        );
+
+    extend_role_group_config_map(
+        rolegroup,
+        vector_aggregator_address,
+        &merged_config.logging,
+        &mut cm_builder,
+    )
+    .context(InvalidLoggingConfigSnafu {
+        cm_name: rolegroup.object_name(),
+    })?;
+
+    cm_builder
         .build()
         .with_context(|_| BuildRoleGroupConfigSnafu {
             rolegroup: rolegroup.clone(),
@@ -540,8 +576,10 @@ fn build_broker_rolegroup_config_map(
 ///
 /// This is mostly useful for internal communication between peers, or for clients that perform client-side load balancing.
 fn build_broker_rolegroup_service(
-    rolegroup: &RoleGroupRef<KafkaCluster>,
     kafka: &KafkaCluster,
+    resolved_product_image: &ResolvedProductImage,
+    kafka_security: &KafkaTlsSecurity,
+    rolegroup: &RoleGroupRef<KafkaCluster>,
 ) -> Result<Service> {
     Ok(Service {
         metadata: ObjectMetaBuilder::new()
@@ -549,21 +587,18 @@ fn build_broker_rolegroup_service(
             .name(&rolegroup.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
-                kafka
-                    .image_version()
-                    .context(KafkaVersionParseFailureSnafu)?,
-                RESOURCE_SCOPE,
+                KAFKA_CONTROLLER_NAME,
+                &resolved_product_image.app_version_label,
                 &rolegroup.role,
                 &rolegroup.role_group,
-            )
+            ))
             .with_label("prometheus.io/scrape", "true")
             .build(),
         spec: Some(ServiceSpec {
             cluster_ip: Some("None".to_string()),
-            ports: Some(service_ports(kafka)),
+            ports: Some(service_ports(kafka_security)),
             selector: Some(role_group_selector_labels(
                 kafka,
                 APP_NAME,
@@ -580,103 +615,85 @@ fn build_broker_rolegroup_service(
 /// The rolegroup [`StatefulSet`] runs the rolegroup, as configured by the administrator.
 ///
 /// The [`Pod`](`stackable_operator::k8s_openapi::api::core::v1::Pod`)s are accessible through the corresponding [`Service`] (from [`build_broker_rolegroup_service`]).
+#[allow(clippy::too_many_arguments)]
 fn build_broker_rolegroup_statefulset(
-    rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     kafka: &KafkaCluster,
+    resolved_product_image: &ResolvedProductImage,
+    rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     serviceaccount: &ObjectRef<ServiceAccount>,
     opa_connect_string: Option<&str>,
-    client_authentication_class: Option<&AuthenticationClass>,
-    rolegroup_typed_config: &KafkaConfig,
+    kafka_security: &KafkaTlsSecurity,
+    merged_config: &KafkaConfig,
 ) -> Result<StatefulSet> {
-    let mut cb_kafka =
-        ContainerBuilder::new(APP_NAME).context(InvalidContainerNameSnafu { name: APP_NAME })?;
-    let mut cb_prepare = ContainerBuilder::new("prepare").context(InvalidContainerNameSnafu {
-        name: "prepare".to_string(),
-    })?;
-    let mut cb_kcat_prober =
-        ContainerBuilder::new("kcat-prober").context(InvalidContainerNameSnafu {
-            name: "kcat-prober".to_string(),
+    let prepare_container_name = Container::Prepare.to_string();
+    let mut cb_prepare =
+        ContainerBuilder::new(&prepare_container_name).context(InvalidContainerNameSnafu {
+            name: prepare_container_name.clone(),
         })?;
-    let mut pod_builder = PodBuilder::new();
 
-    let role = kafka.spec.brokers.as_ref().context(NoBrokerRoleSnafu)?;
-    let rolegroup = role
+    let kcat_prober_container_name = Container::KcatProber.to_string();
+    let mut cb_kcat_prober =
+        ContainerBuilder::new(&kcat_prober_container_name).context(InvalidContainerNameSnafu {
+            name: kcat_prober_container_name.clone(),
+        })?;
+
+    let kafka_container_name = Container::Kafka.to_string();
+    let mut cb_kafka =
+        ContainerBuilder::new(&kafka_container_name).context(InvalidContainerNameSnafu {
+            name: kafka_container_name.clone(),
+        })?;
+
+    let rolegroup = kafka
+        .spec
+        .brokers
+        .as_ref()
+        .context(NoBrokerRoleSnafu)?
         .role_groups
         .get(&rolegroup_ref.role_group)
         .with_context(|| RoleGroupNotFoundSnafu {
             rolegroup: rolegroup_ref.clone(),
         })?;
-    let image_version = kafka
-        .image_version()
-        .context(KafkaVersionParseFailureSnafu)?;
-    let image = format!("docker.stackable.tech/stackable/kafka:{}", image_version);
 
-    // add client authentication volumes if required
-    if let Some(auth_class) = client_authentication_class {
-        match &auth_class.spec.provider {
-            AuthenticationClassProvider::Tls(TlsAuthenticationProvider {
-                client_cert_secret_class: Some(secret_class),
-            }) => {
-                cb_prepare.add_volume_mount(
-                    "client-tls-authentication-certificate",
-                    STACKABLE_TLS_CLIENT_AUTH_DIR,
-                );
-                cb_kafka.add_volume_mount(
-                    "client-tls-authentication-certificate",
-                    STACKABLE_TLS_CLIENT_AUTH_DIR,
-                );
-                cb_kcat_prober.add_volume_mount(
-                    "client-tls-authentication-certificate",
-                    STACKABLE_TLS_CLIENT_AUTH_DIR,
-                );
-                pod_builder.add_volume(create_tls_volume(
-                    "client-tls-authentication-certificate",
-                    Some(&TlsSecretClass {
-                        secret_class: secret_class.clone(),
-                    }),
-                ));
-            }
-            _ => {
-                return Err(Error::AuthenticationMethodNotSupported {
-                    authentication_class: ObjectRef::from_obj(auth_class),
-                    supported: vec!["tls".to_string()],
-                    method: auth_class.spec.provider.to_string(),
-                })
-            }
-        }
-    } else if let Some(tls) = kafka.client_tls_secret_class() {
-        cb_prepare.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
-        cb_kafka.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
-        cb_kcat_prober.add_volume_mount("client-tls-certificate", STACKABLE_TLS_CLIENT_DIR);
-        pod_builder.add_volume(create_tls_volume("client-tls-certificate", Some(tls)));
-    }
+    let mut pod_builder = PodBuilder::new();
 
-    if let Some(tls_internal) = kafka.internal_tls_secret_class() {
-        cb_prepare.add_volume_mount("internal-tls-certificate", STACKABLE_TLS_INTERNAL_DIR);
-        cb_kafka.add_volume_mount("internal-tls-certificate", STACKABLE_TLS_INTERNAL_DIR);
-        pod_builder.add_volume(create_tls_volume(
-            "internal-tls-certificate",
-            Some(tls_internal),
+    // Add TLS related volumes and volume mounts
+    kafka_security.add_volume_and_volume_mounts(
+        &mut pod_builder,
+        &mut cb_prepare,
+        &mut cb_kcat_prober,
+        &mut cb_kafka,
+    );
+
+    let mut prepare_container_args = vec![];
+
+    if let Some(ContainerLogConfig {
+        choice: Some(ContainerLogConfigChoice::Automatic(log_config)),
+    }) = merged_config.logging.containers.get(&Container::Prepare)
+    {
+        prepare_container_args.push(product_logging::framework::capture_shell_output(
+            STACKABLE_LOG_DIR,
+            &prepare_container_name,
+            log_config,
         ));
     }
 
+    prepare_container_args.extend(kafka_security.prepare_container_command_args());
+
     cb_prepare
-        .image("docker.stackable.tech/stackable/tools:0.2.0-stackable0.3.0")
+        .image_from_product_image(resolved_product_image)
         .command(vec![
             "/bin/bash".to_string(),
             "-euo".to_string(),
             "pipefail".to_string(),
             "-c".to_string(),
         ])
-        .args(vec![command::prepare_container_cmd_args(kafka)])
+        .args(vec![prepare_container_args.join(" && ")])
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("listener", STACKABLE_LISTENER_DIR)
-        .security_context(SecurityContextBuilder::run_as_root());
+        .add_volume_mount("log", STACKABLE_LOG_DIR);
 
-    let resources = rolegroup_typed_config.resources.clone();
-    let pvcs = resources.storage.build_pvcs();
-    let container_resources: ResourceRequirements = resources.into();
+    let pvcs = merged_config.resources.storage.build_pvcs();
 
     let mut env = broker_config
         .get(&PropertyNameKind::Env)
@@ -689,13 +706,20 @@ fn build_broker_rolegroup_statefulset(
         })
         .collect::<Vec<_>>();
 
-    if let Some(heap_limits) = kafka
-        .heap_limits(&container_resources)
-        .context(InvalidJavaHeapConfigSnafu)?
-    {
+    if let Some(memory_limit) = merged_config.resources.memory.limit.as_ref() {
+        let heap_size = MemoryQuantity::try_from(memory_limit)
+            .context(InvalidHeapConfigSnafu)?
+            .scale_to(BinaryMultiple::Mebi)
+            * JAVA_HEAP_RATIO;
+
         env.push(EnvVar {
             name: KAFKA_HEAP_OPTS.to_string(),
-            value: Some(heap_limits),
+            value: Some(format!(
+                "-Xmx{heap}",
+                heap = heap_size
+                    .format_for_java()
+                    .context(InvalidHeapConfigSnafu)?
+            )),
             ..EnvVar::default()
         });
     }
@@ -704,7 +728,7 @@ fn build_broker_rolegroup_statefulset(
         name: "ZOOKEEPER".to_string(),
         value_from: Some(EnvVarSource {
             config_map_key_ref: Some(ConfigMapKeySelector {
-                name: Some(kafka.spec.zookeeper_config_map_name.clone()),
+                name: Some(kafka.spec.cluster_config.zookeeper_config_map_name.clone()),
                 key: "ZOOKEEPER".to_string(),
                 ..ConfigMapKeySelector::default()
             }),
@@ -725,91 +749,89 @@ fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    // add env var for log4j if set
-    if kafka.spec.log4j.is_some() {
-        env.push(EnvVar {
-            name: "KAFKA_LOG4J_OPTS".to_string(),
-            value: Some(
-                "-Dlog4j.configuration=file:/stackable/config/log4j.properties".to_string(),
-            ),
-            ..EnvVar::default()
-        });
-    }
-
     let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
-    let zookeeper_override = "--override \"zookeeper.connect=$ZOOKEEPER\"";
-
-    let kafka_listeners = get_kafka_listener_config(kafka, &rolegroup_ref.object_name())
-        .context(InvalidKafkaListenersSnafu)?;
-    let listeners_override = format!("--override \"listeners={}\"", kafka_listeners.listeners());
-    let advertised_listeners_override = format!(
-        "--override \"advertised.listeners={}\"",
-        kafka_listeners.advertised_listeners()
-    );
-    let listener_security_protocol_map_override = format!(
-        "--override \"listener.security.protocol.map={}\"",
-        kafka_listeners.listener_security_protocol_map()
-    );
-    let opa_url_override = opa_connect_string.map_or("".to_string(), |opa| {
-        format!("--override \"opa.authorizer.url={}\"", opa)
-    });
+    let kafka_listeners =
+        get_kafka_listener_config(kafka, kafka_security, &rolegroup_ref.object_name())
+            .context(InvalidKafkaListenersSnafu)?;
 
     cb_kafka
-        .image(image)
-        .args(vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            [
-                "bin/kafka-server-start.sh",
-                &format!("/stackable/config/{}", SERVER_PROPERTIES_FILE),
-                zookeeper_override,
-                &listeners_override,
-                &advertised_listeners_override,
-                &listener_security_protocol_map_override,
-                &opa_url_override,
-            ]
-            .join(" "),
-        ])
-        .add_env_vars(env)
+        .image_from_product_image(resolved_product_image)
+        .command(vec!["sh".to_string(), "-c".to_string()])
+        .args(vec![kafka_security
+            .kafka_container_commands(&kafka_listeners, opa_connect_string)
+            .join(" ")])
         .add_env_var("EXTRA_ARGS", jvm_args)
-        .add_container_ports(container_ports(kafka))
+        .add_env_var(
+            "KAFKA_LOG4J_OPTS",
+            format!("-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J_CONFIG_FILE}"),
+        )
+        .add_env_vars(env)
+        .add_container_ports(container_ports(kafka_security))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("config", STACKABLE_CONFIG_DIR)
         .add_volume_mount("listener", STACKABLE_LISTENER_DIR)
-        .resources(container_resources);
+        .add_volume_mount("log-config", STACKABLE_LOG_CONFIG_DIR)
+        .add_volume_mount("log", STACKABLE_LOG_DIR)
+        .resources(merged_config.resources.clone().into());
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
-    let mut container_kcat_prober = cb_kcat_prober
-        .image("edenhill/kcat:1.7.0")
-        .command(vec!["sh".to_string()])
+    cb_kcat_prober
+        .image_from_product_image(resolved_product_image)
+        .command(vec!["sleep".to_string(), "infinity".to_string()])
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum
         // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
         .readiness_probe(Probe {
             exec: Some(ExecAction {
                 // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(kcat_container_cmd_args(kafka)),
+                command: Some(kafka_security.kcat_prober_container_commands()),
             }),
             timeout_seconds: Some(5),
             period_seconds: Some(2),
             ..Probe::default()
-        })
-        .build();
-    container_kcat_prober.stdin = Some(true);
-    let mut pod_template = pod_builder
+        });
+
+    if let Some(ContainerLogConfig {
+        choice:
+            Some(ContainerLogConfigChoice::Custom(CustomContainerLogConfig {
+                custom: ConfigMapLogConfig { config_map },
+            })),
+    }) = merged_config.logging.containers.get(&Container::Kafka)
+    {
+        pod_builder.add_volume(Volume {
+            name: "log-config".to_string(),
+            config_map: Some(ConfigMapVolumeSource {
+                name: Some(config_map.into()),
+                ..ConfigMapVolumeSource::default()
+            }),
+            ..Volume::default()
+        });
+    } else {
+        pod_builder.add_volume(Volume {
+            name: "log-config".to_string(),
+            config_map: Some(ConfigMapVolumeSource {
+                name: Some(rolegroup_ref.object_name()),
+                ..ConfigMapVolumeSource::default()
+            }),
+            ..Volume::default()
+        });
+    }
+
+    pod_builder
         .metadata_builder(|m| {
-            m.with_recommended_labels(
+            m.with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
-                image_version,
-                RESOURCE_SCOPE,
+                KAFKA_CONTROLLER_NAME,
+                &resolved_product_image.app_version_label,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
-            )
+            ))
         })
+        .image_pull_secrets_from_product_image(resolved_product_image)
         .add_init_container(cb_prepare.build())
         .add_container(cb_kafka.build())
-        .add_container(container_kcat_prober)
+        .add_container(cb_kcat_prober.build())
+        .affinity(&merged_config.affinity)
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {
@@ -819,7 +841,32 @@ fn build_broker_rolegroup_statefulset(
             ..Volume::default()
         })
         .add_listener_volume_by_listener_class("listener", "nodeport")
-        .build_template();
+        .add_volume(Volume {
+            name: "log".to_string(),
+            empty_dir: Some(EmptyDirVolumeSource {
+                medium: None,
+                size_limit: Some(Quantity(format!("{LOG_VOLUME_SIZE_IN_MIB}Mi"))),
+            }),
+            ..Volume::default()
+        })
+        .security_context(PodSecurityContext {
+            run_as_user: Some(1000),
+            run_as_group: Some(1000),
+            fs_group: Some(1000),
+            ..PodSecurityContext::default()
+        });
+
+    // Add vector container after kafka container to keep the defaulting into kafka container
+    if merged_config.logging.enable_vector_agent {
+        pod_builder.add_container(product_logging::framework::vector_container(
+            resolved_product_image,
+            "config",
+            "log",
+            merged_config.logging.containers.get(&Container::Vector),
+        ));
+    }
+
+    let mut pod_template = pod_builder.build_template();
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
     pod_template_spec.share_process_namespace = Some(true);
@@ -835,14 +882,13 @@ fn build_broker_rolegroup_statefulset(
             .name(&rolegroup_ref.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(
+            .with_recommended_labels(build_recommended_labels(
                 kafka,
-                APP_NAME,
-                image_version,
-                RESOURCE_SCOPE,
+                KAFKA_CONTROLLER_NAME,
+                &resolved_product_image.app_version_label,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
-            )
+            ))
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
@@ -874,72 +920,37 @@ pub fn error_policy(_obj: Arc<KafkaCluster>, _error: &Error, _ctx: Arc<Ctx>) -> 
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
-fn service_ports(kafka: &KafkaCluster) -> Vec<ServicePort> {
-    let mut ports = vec![ServicePort {
-        name: Some(METRICS_PORT_NAME.to_string()),
-        port: METRICS_PORT.into(),
-        protocol: Some("TCP".to_string()),
-        ..ServicePort::default()
-    }];
-
-    if kafka.client_tls_secret_class().is_some() || kafka.client_authentication_class().is_some() {
-        ports.push(ServicePort {
-            name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
-            port: SECURE_CLIENT_PORT.into(),
+fn service_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ServicePort> {
+    vec![
+        ServicePort {
+            name: Some(METRICS_PORT_NAME.to_string()),
+            port: METRICS_PORT.into(),
             protocol: Some("TCP".to_string()),
             ..ServicePort::default()
-        });
-    } else {
-        ports.push(ServicePort {
-            name: Some(CLIENT_PORT_NAME.to_string()),
-            port: CLIENT_PORT.into(),
+        },
+        ServicePort {
+            name: Some(kafka_security.client_port_name().to_string()),
+            port: kafka_security.client_port().into(),
             protocol: Some("TCP".to_string()),
             ..ServicePort::default()
-        });
-    }
-
-    ports
+        },
+    ]
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
-fn container_ports(kafka: &KafkaCluster) -> Vec<ContainerPort> {
-    let mut ports = vec![ContainerPort {
-        name: Some(METRICS_PORT_NAME.to_string()),
-        container_port: METRICS_PORT.into(),
-        protocol: Some("TCP".to_string()),
-        ..ContainerPort::default()
-    }];
-
-    if kafka.client_tls_secret_class().is_some() || kafka.client_authentication_class().is_some() {
-        ports.push(ContainerPort {
-            name: Some(SECURE_CLIENT_PORT_NAME.to_string()),
-            container_port: SECURE_CLIENT_PORT.into(),
+fn container_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ContainerPort> {
+    vec![
+        ContainerPort {
+            name: Some(METRICS_PORT_NAME.to_string()),
+            container_port: METRICS_PORT.into(),
             protocol: Some("TCP".to_string()),
             ..ContainerPort::default()
-        });
-    } else {
-        ports.push(ContainerPort {
-            name: Some(CLIENT_PORT_NAME.to_string()),
-            container_port: CLIENT_PORT.into(),
+        },
+        ContainerPort {
+            name: Some(kafka_security.client_port_name().to_string()),
+            container_port: kafka_security.client_port().into(),
             protocol: Some("TCP".to_string()),
             ..ContainerPort::default()
-        });
-    }
-
-    ports
-}
-
-fn create_tls_volume(volume_name: &str, tls_secret_class: Option<&TlsSecretClass>) -> Volume {
-    let secret_class_name = tls_secret_class
-        .map(|t| t.secret_class.as_ref())
-        .unwrap_or(TLS_DEFAULT_SECRET_CLASS);
-
-    VolumeBuilder::new(volume_name)
-        .ephemeral(
-            SecretOperatorVolumeSourceBuilder::new(secret_class_name)
-                .with_pod_scope()
-                .with_node_scope()
-                .build(),
-        )
-        .build()
+        },
+    ]
 }

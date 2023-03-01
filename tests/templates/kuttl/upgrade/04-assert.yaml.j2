@@ -1,0 +1,16 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+  labels:
+    app.kubernetes.io/version: "{{ test_scenario['values']['upgrade_new'] }}"
+status:
+  readyReplicas: 1
+  replicas: 1
+  currentReplicas: 1
+  updatedReplicas: 1
