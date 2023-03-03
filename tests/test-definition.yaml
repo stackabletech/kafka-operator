@@ -19,12 +19,12 @@ dimensions:
       - 3.8.0-stackable23.4.0-rc2
   - name: upgrade_old
     values:
-      - 2.8.1-stackable23.4.0-rc2
-      - 3.1.0-stackable23.4.0-rc2
-      - 3.2.0-stackable23.4.0-rc2
+      - 2.8.1-stackable23.4.0-rc3
+      - 3.1.0-stackable23.4.0-rc3
+      - 3.2.0-stackable23.4.0-rc3
   - name: upgrade_new
     values:
-      - 3.3.1-stackable23.4.0-rc2
+      - 3.3.1-stackable23.4.0-rc3
   - name: use-client-tls
     values:
       - "true"
