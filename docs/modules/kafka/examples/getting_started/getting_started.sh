@@ -21,26 +21,28 @@ cd "$(dirname "$0")"
 
 case "$1" in
 "helm")
-echo "Adding '{{ helm.repo_name }}' Helm Chart repository"
+echo "Adding 'stackable-dev' Helm Chart repository"
 # tag::helm-add-repo[]
-helm repo add {{ helm.repo_name }} {{ helm.repo_url }}
+helm repo add stackable-dev https://repo.stackable.tech/repository/helm-dev/
 # end::helm-add-repo[]
+echo "Updating Helm repositories"
+helm repo update
 echo "Installing Operators with Helm"
 # tag::helm-install-operators[]
-helm install --wait commons-operator {{ helm.repo_name }}/commons-operator --version {{ versions.commons }}
-helm install --wait secret-operator {{ helm.repo_name }}/secret-operator --version {{ versions.secret }}
-helm install --wait zookeeper-operator {{ helm.repo_name }}/zookeeper-operator --version {{ versions.zookeeper }}
-helm install --wait kafka-operator {{ helm.repo_name }}/kafka-operator --version {{ versions.kafka }}
+helm install --wait commons-operator stackable-dev/commons-operator --version 0.0.0-dev
+helm install --wait secret-operator stackable-dev/secret-operator --version 0.0.0-dev
+helm install --wait zookeeper-operator stackable-dev/zookeeper-operator --version 0.0.0-dev
+helm install --wait kafka-operator stackable-dev/kafka-operator --version 0.0.0-dev
 # end::helm-install-operators[]
 ;;
 "stackablectl")
 echo "installing Operators with stackablectl"
 # tag::stackablectl-install-operators[]
 stackablectl operator install \
-  commons={{ versions.commons }} \
-  secret={{ versions.secret }} \
-  zookeeper={{ versions.zookeeper }} \
-  kafka={{ versions.kafka }}
+  commons=0.0.0-dev \
+  secret=0.0.0-dev \
+  zookeeper=0.0.0-dev \
+  kafka=0.0.0-dev
 # end::stackablectl-install-operators[]
 ;;
 *)
@@ -59,11 +61,11 @@ echo "Installing ZNode from kafka-znode.yaml"
 kubectl apply -f kafka-znode.yaml
 # end::install-znode[]
 
-sleep 5
+sleep 15
 
 echo "Awaiting ZooKeeper rollout finish"
 # tag::watch-zookeeper-rollout[]
-kubectl rollout status --watch statefulset/simple-zk-server-default
+kubectl rollout status --watch --timeout=5m statefulset/simple-zk-server-default
 # end::watch-zookeeper-rollout[]
 
 echo "Install KafkaCluster from kafka.yaml"
@@ -71,11 +73,11 @@ echo "Install KafkaCluster from kafka.yaml"
 kubectl apply -f kafka.yaml
 # end::install-kafka[]
 
-sleep 5
+sleep 15
 
 echo "Awaiting Kafka rollout finish"
 # tag::watch-kafka-rollout[]
-kubectl rollout status --watch statefulset/simple-kafka-broker-default
+kubectl rollout status --watch --timeout=5m statefulset/simple-kafka-broker-default
 # end::watch-kafka-rollout[]
 
 echo "Starting port-forwarding of port 9092"
@@ -85,7 +87,7 @@ kubectl port-forward svc/simple-kafka 9092 2>&1 >/dev/null &
 PORT_FORWARD_PID=$!
 trap "kill $PORT_FORWARD_PID" EXIT
 
-sleep 5
+sleep 15
 
 echo "Creating test data"
 # tag::kcat-create-data[]

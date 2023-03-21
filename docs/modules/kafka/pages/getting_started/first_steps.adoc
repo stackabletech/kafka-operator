@@ -25,7 +25,7 @@ and apply it:
 
 [source,bash]
 ----
-include::example$getting_started/getting-started.sh[tag=install-zookeeper]
+include::example$getting_started/getting_started.sh[tag=install-zookeeper]
 ----
 
 Create a file `kafka-znode.yaml` with the following content:
@@ -39,7 +39,7 @@ and apply it:
 
 [source,bash]
 ----
-include::example$getting_started/getting-started.sh[tag=install-znode]
+include::example$getting_started/getting_started.sh[tag=install-znode]
 ----
 
 === Kafka
@@ -54,7 +54,7 @@ include::example$getting_started/kafka.yaml[]
 and apply it:
 
 ----
-include::example$getting_started/getting-started.sh[tag=install-kafka]
+include::example$getting_started/getting_started.sh[tag=install-kafka]
 ----
 
 This will create the actual Kafka instance.
@@ -81,37 +81,37 @@ simple-zk-server-default             3/3     7m
 Then, create a port-forward for the Kafka Broker:
 
 ----
-include::example$getting_started/getting-started.sh[tag=port-forwarding]
+include::example$getting_started/getting_started.sh[tag=port-forwarding]
 ----
 
 Create a file containing some data:
 
 ----
-include::example$getting_started/getting-started.sh[tag=kcat-create-data]
+include::example$getting_started/getting_started.sh[tag=kcat-create-data]
 ----
 
 Write that data:
 
 ----
-include::example$getting_started/getting-started.sh[tag=kcat-write-data]
+include::example$getting_started/getting_started.sh[tag=kcat-write-data]
 ----
 
 Read that data:
 
 ----
-include::example$getting_started/getting-started.sh[tag=kcat-read-data]
+include::example$getting_started/getting_started.sh[tag=kcat-read-data]
 ----
 
 Check the content:
 
 ----
-include::example$getting_started/getting-started.sh[tag=kcat-check-data]
+include::example$getting_started/getting_started.sh[tag=kcat-check-data]
 ----
 
 And clean up:
 
 ----
-include::example$getting_started/getting-started.sh[tag=kcat-cleanup-data]
+include::example$getting_started/getting_started.sh[tag=kcat-cleanup-data]
 ----
 
 You successfully created a Kafka cluster and produced and consumed data.
