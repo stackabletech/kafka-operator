@@ -2,6 +2,7 @@ mod discovery;
 mod kafka_controller;
 mod pod_svc_controller;
 mod product_logging;
+mod rbac;
 mod utils;
 
 use crate::kafka_controller::KAFKA_CONTROLLER_NAME;

@@ -6,6 +6,7 @@ use crate::{
     discovery::{self, build_discovery_configmaps},
     pod_svc_controller,
     product_logging::{LOG4J_CONFIG_FILE, LOG_VOLUME_SIZE_IN_MIB},
+    rbac,
     utils::{self, build_recommended_labels, ObjectRefExt},
     ControllerConfig,
 };
@@ -17,6 +18,7 @@ use stackable_kafka_crd::{
     LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
     STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
+use stackable_operator::builder::PodSecurityContextBuilder;
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     cluster_resources::ClusterResources,
@@ -30,8 +32,7 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
                 EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
-                PodSecurityContext, PodSpec, Probe, Service, ServiceAccount, ServicePort,
-                ServiceSpec, Volume,
+                PodSpec, Probe, Service, ServiceAccount, ServicePort, ServiceSpec, Volume,
             },
             rbac::v1::{RoleBinding, RoleRef, Subject},
         },
@@ -40,7 +41,7 @@ use stackable_operator::{
     kube::{
         api::DynamicObject,
         runtime::{controller::Action, reflector::ObjectRef},
-        Resource,
+        Resource, ResourceExt,
     },
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
@@ -205,6 +206,16 @@ pub enum Error {
         source: crate::product_logging::Error,
         cm_name: String,
     },
+    #[snafu(display("failed to patch service account: {source}"))]
+    ApplyServiceAccount {
+        name: String,
+        source: stackable_operator::error::Error,
+    },
+    #[snafu(display("failed to patch role binding: {source}"))]
+    ApplyRoleBinding {
+        name: String,
+        source: stackable_operator::error::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -252,6 +263,8 @@ impl ReconcilerError for Error {
             Error::FailedToResolveConfig { .. } => None,
             Error::ResolveVectorAggregatorAddress { .. } => None,
             Error::InvalidLoggingConfig { .. } => None,
+            Error::ApplyServiceAccount { .. } => None,
+            Error::ApplyRoleBinding { .. } => None,
         }
     }
 }
@@ -269,6 +282,20 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         &kafka.object_ref(&()),
     )
     .context(CreateClusterResourcesSnafu)?;
+
+    let (rbac_sa, rbac_rolebinding) = rbac::build_rbac_resources(kafka.as_ref(), "kafka");
+    client
+        .apply_patch(KAFKA_CONTROLLER_NAME, &rbac_sa, &rbac_sa)
+        .await
+        .with_context(|_| ApplyServiceAccountSnafu {
+            name: rbac_sa.name_unchecked(),
+        })?;
+    client
+        .apply_patch(KAFKA_CONTROLLER_NAME, &rbac_rolebinding, &rbac_rolebinding)
+        .await
+        .with_context(|_| ApplyRoleBindingSnafu {
+            name: rbac_rolebinding.name_unchecked(),
+        })?;
 
     let validated_config = validate_all_roles_and_groups_config(
         &resolved_product_image.product_version,
@@ -373,6 +400,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             opa_connect.as_deref(),
             &kafka_security,
             &merged_config,
+            &rbac_sa.name_unchecked(),
         )?;
         cluster_resources
             .add(client, &rg_service)
@@ -625,6 +653,7 @@ fn build_broker_rolegroup_statefulset(
     opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
     merged_config: &KafkaConfig,
+    sa_name: &str,
 ) -> Result<StatefulSet> {
     let prepare_container_name = Container::Prepare.to_string();
     let mut cb_prepare =
@@ -894,12 +923,14 @@ fn build_broker_rolegroup_statefulset(
             }),
             ..Volume::default()
         })
-        .security_context(PodSecurityContext {
-            run_as_user: Some(1000),
-            run_as_group: Some(1000),
-            fs_group: Some(1000),
-            ..PodSecurityContext::default()
-        });
+        .service_account_name(sa_name)
+        .security_context(
+            PodSecurityContextBuilder::new()
+                .run_as_user(rbac::KAFKA_UID)
+                .run_as_group(0)
+                .fs_group(1000) // Needed for secret-operator
+                .build(),
+        );
 
     // Add vector container after kafka container to keep the defaulting into kafka container
     if merged_config.logging.enable_vector_agent {
