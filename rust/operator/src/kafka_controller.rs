@@ -68,6 +68,8 @@ use std::{
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
+/// Used as runAsUser in the pod security context. This is specified in the kafka image file
+pub const KAFKA_UID: i64 = 1000;
 const JAVA_HEAP_RATIO: f32 = 0.8;
 
 pub struct Ctx {
@@ -926,7 +928,7 @@ fn build_broker_rolegroup_statefulset(
         .service_account_name(sa_name)
         .security_context(
             PodSecurityContextBuilder::new()
-                .run_as_user(rbac::KAFKA_UID)
+                .run_as_user(KAFKA_UID)
                 .run_as_group(0)
                 .fs_group(1000) // Needed for secret-operator
                 .build(),
