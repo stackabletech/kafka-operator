@@ -2,17 +2,17 @@
 dimensions:
   - name: kafka
     values:
-      #- 2.8.1-stackable23.4.0-rc3
-      #- 3.1.0-stackable23.4.0-rc3
-      #- 3.2.0-stackable23.4.0-rc3
+      - 2.8.1-stackable23.4.0-rc3
+      - 3.1.0-stackable23.4.0-rc3
+      - 3.2.0-stackable23.4.0-rc3
       - 3.3.1-stackable23.4.0-rc3
   - name: kafka-latest
     values:
       - 3.3.1-stackable23.4.0-rc3
   - name: zookeeper
     values:
-      #- 3.6.3-stackable23.4.0-rc2
-      #- 3.7.0-stackable23.4.0-rc2
+      - 3.6.3-stackable23.4.0-rc2
+      - 3.7.0-stackable23.4.0-rc2
       - 3.8.0-stackable23.4.0-rc2
   - name: zookeeper-latest
     values:
