@@ -3,6 +3,7 @@
 :brokerPort: 9092
 
 = Discovery
+:page-aliases: discovery.adoc
 
 The Stackable Operator for Apache Kafka publishes a discovery https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#configmap-v1-core[`ConfigMap`], which exposes a client configuration bundle that allows access to the Apache Kafka cluster.
 

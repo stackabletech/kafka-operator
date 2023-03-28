@@ -1,0 +1,22 @@
+= Pod Placement
+
+You can configure Pod placement for Kafka brokers as described in xref:concepts:pod_placement.adoc[].
+
+By default, the operator configures the following Pod placement constraints:
+
+[source,yaml]
+----
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - podAffinityTerm:
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: broker
+            app.kubernetes.io/instance: cluster-name
+            app.kubernetes.io/name: kafka
+        topologyKey: kubernetes.io/hostname
+      weight: 70
+----
+
+In the example above `cluster-name` is the name of the Kafka custom resource that owns this Pod.

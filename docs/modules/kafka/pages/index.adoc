@@ -4,15 +4,20 @@ This is an operator for Kubernetes that can manage https://kafka.apache.org/[Apa
 
 WARNING: This operator only works with images from the https://repo.stackable.tech/#browse/browse:docker:v2%2Fstackable%2Fkafka[Stackable] repository
 
+= Dependencies
+
+== ZooKeeper
+
+Kafka currently requires ZooKeeper for coordination purposes.
+
+NOTE: This will change https://cwiki.apache.org/confluence/display/KAFKA/KIP-500[in the future].
+
+Which means a reference to an existing ZooKeeper ensemble must be provided.
+
+
+
 == Supported Versions
 
 The Stackable Operator for Apache Kafka currently supports the following versions of Kafka:
 
 include::partial$supported-versions.adoc[]
-
-== Getting the Docker image
-
-[source]
-----
-docker pull docker.stackable.tech/stackable/kafka:<version>
-----
