@@ -6,7 +6,6 @@ use crate::{
     discovery::{self, build_discovery_configmaps},
     pod_svc_controller,
     product_logging::{LOG4J_CONFIG_FILE, LOG_VOLUME_SIZE_IN_MIB},
-    rbac,
     utils::{self, build_recommended_labels, ObjectRefExt},
     ControllerConfig,
 };
@@ -24,7 +23,7 @@ use stackable_operator::{
     cluster_resources::ClusterResources,
     commons::{
         authentication::AuthenticationClass, opa::OpaApiVersion,
-        product_image_selection::ResolvedProductImage,
+        product_image_selection::ResolvedProductImage, rbac::build_rbac_resources,
     },
     k8s_openapi::{
         api::{
@@ -285,7 +284,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     )
     .context(CreateClusterResourcesSnafu)?;
 
-    let (rbac_sa, rbac_rolebinding) = rbac::build_rbac_resources(kafka.as_ref(), "kafka");
+    let (rbac_sa, rbac_rolebinding) = build_rbac_resources(kafka.as_ref(), "kafka");
     client
         .apply_patch(KAFKA_CONTROLLER_NAME, &rbac_sa, &rbac_sa)
         .await
