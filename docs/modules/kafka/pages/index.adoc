@@ -16,7 +16,7 @@ The _KafkaCluster_ custom resource contains your Kafka cluster configuration. It
 
 image::kafka_overview.drawio.svg[A diagram depicting the Kubernetes resources created by the operator.]
 
-For every xref:concepts:roles-and-role-groups.adoc#_role_groups[role group] in the `broker` role the Operator creates a StatefulSet. Multiple Services are created, one at role level, one per role group as well as one for every individual Pod, to allow accessing the whole Kafka cluster, parts of it or even individual brokers.
+For every xref:concepts:roles-and-role-groups.adoc#_role_groups[role group] in the `broker` role the Operator creates a StatefulSet. Multiple Services are created - one at role level, one per role group as well as one for every individual Pod - to allow access to the entire Kafka cluster, parts of it or just individual brokers.
 
 For every StatefulSet (role group) a ConfigMap is deployed containing a `log4j.properties` file for xref:usage-guide/logging.adoc[logging] configuration and a `server.properties` file containing the whole Kafka configuration which is derived from the KafkaCluster resource.
 
