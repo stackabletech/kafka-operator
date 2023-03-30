@@ -28,7 +28,7 @@ Kafka requires xref:zookeeper:index.adoc[Apache ZooKeeper] for coordination purp
 
 == Connections to other products
 
-Since Kafka often takes on a bridging role, many other products connect to it. In the <<demos, demos>> below you will find example data pipelines that use xref:nifi:index.adoc[Apache NiFi with the Stackable Operator] to write to Kafka and xref:nifi:index.adoc[Apache Druid with the Stackable Operator] to read from Kafka. But you can also connect xref:spark-k8s:index.adoc[Apache Spark] or custom Jobs written in various languages to it.
+Since Kafka often takes on a bridging role, many other products connect to it. In the <<demos, demos>> below you will find example data pipelines that use xref:nifi:index.adoc[Apache NiFi with the Stackable Operator] to write to Kafka and xref:nifi:index.adoc[Apache Druid with the Stackable Operator] to read from Kafka. But you can also connect using xref:spark-k8s:index.adoc[Apache Spark] or with a custom Job written in various languages.
 
 == [[demos]]Demos
 
