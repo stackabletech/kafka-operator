@@ -24,7 +24,7 @@ The Operator creates a xref:concepts:service_discovery.adoc[] for the whole Kafk
 
 == Dependencies
 
-Kafka requires xref:zookeeper:index.adoc[Apache ZooKeeper] for coordination purposes (Although it will not be needed in the future as it will be replaced with a https://cwiki.apache.org/confluence/display/KAFKA/KIP-500%3A+Replace+ZooKeeper+with+a+Self-Managed+Metadata+Quorum[built-in solution]).
+Kafka requires xref:zookeeper:index.adoc[Apache ZooKeeper] for coordination purposes (it will not be needed in the future as it will be replaced with a https://cwiki.apache.org/confluence/display/KAFKA/KIP-500%3A+Replace+ZooKeeper+with+a+Self-Managed+Metadata+Quorum[built-in solution]).
 
 == Connections to other products
 
