@@ -4,8 +4,7 @@
 
 The Stackable Operator for Apache Kafka is an operator that can deploy and manage https://kafka.apache.org/[Apache Kafka] clusters on Kubernetes. 
 // what is Kafka?
-Kafka is a distributed event streaming platform ... TODO
-
+Apache Kafka is a distributed streaming platform designed to handle large volumes of data in real-time. It is commonly used for real-time data processing, data ingestion, event streaming, and messaging between applications.
 
 == Getting started
 
@@ -21,21 +20,19 @@ For every xref:concepts:roles-and-role-groups.adoc#_role_groups[role group] in t
 
 For every StatefulSet (role group) a ConfigMap is deployed containing a `log4j.properties` file for xref:usage-guide/logging.adoc[logging] configuration and a `server.properties` file containing the whole Kafka configuration which is derived from the KafkaCluster resource.
 
+The Operator creates a xref:concepts:service_discovery.adoc[] for the whole KafkaCluster which references the Service for the whole cluster. Other operators use this ConfigMap to connect to a Kafka cluster simply by name and it can also be used by custom third party applications to find the endpoint to connect to the kafka.
+
 == Dependencies
 
-Kafka currently requires Apache ZooKeeper for coordination purposes.
-
-NOTE: This will change https://cwiki.apache.org/confluence/display/KAFKA/KIP-500[in the future].
+Kafka requires xref:zookeeper:index.adoc[Apache ZooKeeper] for coordination purposes (Although it will not be needed in the future as it will be replaced with a https://cwiki.apache.org/confluence/display/KAFKA/KIP-500%3A+Replace+ZooKeeper+with+a+Self-Managed+Metadata+Quorum[built-in solution]).
 
 == Connections to other products
 
-Input from NiFi
-
-Output to Druid
+Since Kafka often takes on a bridging role, many other products connect to it. In the <<demos, demos>> below you will find example data pipelines that use xref:nifi:index.adoc[Apache NiFi with the Stackable Operator] to write to Kafka and xref:nifi:index.adoc[Apache Druid with the Stackable Operator] to read from Kafka. But you can also connect xref:spark-k8s:index.adoc[Apache Spark] or custom Jobs written in various languages to it.
 
 == [[demos]]Demos
 
-xref:stackablectl::index.adoc[] supports installing xref:stackablectl::demos/index.adoc[] with a single command. The demos are complete data piplines which showcase multiple components of the Stackable platform working together and which you can try out interactively. Both demos below include inject data into Kafka using NiFi and use Druid as a destination for the Kafka topics.
+xref:stackablectl::index.adoc[] supports installing xref:stackablectl::demos/index.adoc[] with a single command. The demos are complete data piplines which showcase multiple components of the Stackable platform working together and which you can try out interactively. Both demos below inject data into Kafka using NiFi and read from the Kafka topics using Druid.
 
 === Waterlevel Demo
 
