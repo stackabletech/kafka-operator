@@ -12,7 +12,7 @@ Follow the xref:kafka:getting_started/index.adoc[] which will guide you through 
 
 == Resources
 
-The _KafkaCluster_ custom resource defines all your Kafka cluster configuration. It defines a single `broker` xref:concepts:roles-and-role-groups.adoc[role].
+The _KafkaCluster_ custom resource contains your Kafka cluster configuration. It defines a single `broker` xref:concepts:roles-and-role-groups.adoc[role].
 
 image::kafka_overview.drawio.svg[A diagram depicting the Kubernetes resources created by the operator.]
 
