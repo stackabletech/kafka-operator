@@ -20,7 +20,7 @@ For every xref:concepts:roles-and-role-groups.adoc#_role_groups[role group] in t
 
 For every StatefulSet (role group) a ConfigMap is deployed containing a `log4j.properties` file for xref:usage-guide/logging.adoc[logging] configuration and a `server.properties` file containing the whole Kafka configuration which is derived from the KafkaCluster resource.
 
-The Operator creates a xref:concepts:service_discovery.adoc[] for the whole KafkaCluster which references the Service for the whole cluster. Other operators use this ConfigMap to connect to a Kafka cluster simply by name and it can also be used by custom third party applications to find the endpoint to connect to the kafka.
+The Operator creates a xref:concepts:service_discovery.adoc[] for the whole KafkaCluster which references the Service for the whole cluster. Other operators use this ConfigMap to connect to a Kafka cluster simply by name and it can also be used by custom third party applications to find the connection endpoint.
 
 == Dependencies
 
