@@ -14,10 +14,12 @@ All notable changes to this project will be documented in this file.
 - operator-rs: 0.30.1 -> 0.33.0 ([#545]).
 - Bumped stackable versions to "23.4.0-rc1" ([#545]).
 - Bumped kafka stackable versions to "23.4.0-rc2" ([#547]).
+- Updated landing page and restructured usage guide ([#573]).
 
 [#545]: https://github.com/stackabletech/kafka-operator/pull/545
 [#547]: https://github.com/stackabletech/kafka-operator/pull/547
 [#557]: https://github.com/stackabletech/kafka-operator/pull/557
+[#573]: https://github.com/stackabletech/kafka-operator/pull/573
 
 ## [23.1.0] - 2023-01-23
 

@@ -1,0 +1,63 @@
+= Configuration & Environment Overrides
+
+The cluster definition also supports overriding configuration properties and environment variables, either per role or per role group, where the more specific override (role group) has precedence over the less specific one (role).
+
+IMPORTANT: Overriding certain properties which are set by operator (such as the ports) can interfere with the operator and can lead to problems.
+
+== Configuration Properties
+
+For a role or role group, at the same level of `config`, you can specify: `configOverrides` for the `server.properties`. For example, if you want to set the `auto.create.topics.enable` to disable automatic topic creation, it can be configured in the `KafkaCluster` resource like so:
+
+[source,yaml]
+----
+brokers:
+  roleGroups:
+    default:
+      configOverrides:
+        server.properties:
+          auto.create.topics.enable: "false"
+      replicas: 1
+----
+
+Just as for the `config`, it is possible to specify this at role level as well:
+
+[source,yaml]
+----
+brokers:
+  configOverrides:
+    server.properties:
+      auto.create.topics.enable: "false"
+  roleGroups:
+    default:
+      replicas: 1
+----
+
+All override property values must be strings.
+
+For a full list of configuration options we refer to the Apache Kafka https://kafka.apache.org/documentation/#configuration[Configuration Reference].
+
+== Environment Variables
+
+In a similar fashion, environment variables can be (over)written. For example per role group:
+
+[source,yaml]
+----
+servers:
+  roleGroups:
+    default:
+      envOverrides:
+        MY_ENV_VAR: "MY_VALUE"
+      replicas: 1
+----
+
+or per role:
+
+[source,yaml]
+----
+servers:
+  envOverrides:
+    MY_ENV_VAR: "MY_VALUE"
+  roleGroups:
+    default:
+      replicas: 1
+----

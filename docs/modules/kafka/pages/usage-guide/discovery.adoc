@@ -3,8 +3,9 @@
 :brokerPort: 9092
 
 = Discovery
+:page-aliases: discovery.adoc
 
-The Stackable Operator for Apache Kafka publishes a discovery https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#configmap-v1-core[`ConfigMap`], which exposes a client configuration bundle that allows access to the Apache Kafka cluster.
+The Stackable Operator for Apache Kafka publishes a xref:concepts:service_discovery.adoc[service discovery ConfigMap] which exposes a client configuration bundle that allows access to the Apache Kafka cluster.
 
 The bundle includes a thrift connection string to access the Kafka broker service. This string may be used by other operators or tools to configure their products with access to Kafka. This is limited to internal cluster access.
 
@@ -22,14 +23,14 @@ metadata:
 spec:
   [...]
 ----
-<1> The name of the Kafka cluster, which is also the name of the created discovery `ConfigMap`.
-<2> The namespace of the discovery `ConfigMap`.
+<1> The name of the Kafka cluster, which is also the name of the created discovery ConfigMap.
+<2> The namespace of the discovery ConfigMap.
 
-The resulting discovery `ConfigMap` is `{namespace}/{clusterName}`.
+The resulting discovery ConfigMap is `{namespace}/{clusterName}`.
 
 == Contents
 
-The `{namespace}/{clusterName}` discovery `ConfigMap` contains the following fields where `{clusterName}` represents the name and `{namespace}` the namespace of the cluster:
+The `{namespace}/{clusterName}` discovery ConfigMap contains the following fields where `{clusterName}` represents the name and `{namespace}` the namespace of the cluster:
 
 `KAFKA`::
 ====
