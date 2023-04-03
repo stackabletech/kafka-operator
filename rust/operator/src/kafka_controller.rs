@@ -931,7 +931,7 @@ fn build_broker_rolegroup_statefulset(
             PodSecurityContextBuilder::new()
                 .run_as_user(KAFKA_UID)
                 .run_as_group(0)
-                .fs_group(1000) // Needed for secret-operator
+                .fs_group(1000)
                 .build(),
         );
 
