@@ -30,7 +30,7 @@ include::example$getting_started/getting_started.sh[tag=install-zookeeper]
 
 Create a file `kafka-znode.yaml` with the following content:
 
-[source,bash]
+[source,yaml]
 ----
 include::example$getting_started/kafka-znode.yaml[]
 ----

@@ -1,9 +1,0 @@
-= Dependencies
-
-== ZooKeeper
-
-Kafka currently requires ZooKeeper for coordination purposes.
-
-NOTE: This will change https://cwiki.apache.org/confluence/display/KAFKA/KIP-500[in the future].
-
-Which means a reference to an existing ZooKeeper ensemble must be provided.
