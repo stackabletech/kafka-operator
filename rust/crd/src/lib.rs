@@ -12,6 +12,7 @@ use crate::tls::KafkaTls;
 use affinity::get_affinity;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
+use stackable_operator::commons::cluster_operation::ClusterOperation;
 use stackable_operator::{
     commons::{
         affinity::StackableAffinity,
@@ -90,6 +91,8 @@ pub struct KafkaClusterSpec {
     pub brokers: Option<Role<KafkaConfigFragment>>,
     pub cluster_config: KafkaClusterConfig,
     pub stopped: Option<bool>,
+    #[serde(default)]
+    pub cluster_operation: ClusterOperation,
 }
 
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]

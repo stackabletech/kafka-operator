@@ -18,6 +18,7 @@ use stackable_kafka_crd::{
     STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
 use stackable_operator::builder::PodSecurityContextBuilder;
+use stackable_operator::cluster_resources::ClusterResourceApplyStrategy;
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     cluster_resources::ClusterResources,
@@ -281,6 +282,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         OPERATOR_NAME,
         KAFKA_CONTROLLER_NAME,
         &kafka.object_ref(&()),
+        ClusterResourceApplyStrategy::from(&kafka.spec.cluster_operation),
     )
     .context(CreateClusterResourcesSnafu)?;
 
@@ -354,15 +356,15 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let broker_role_serviceaccount_ref = ObjectRef::from_obj(&broker_role_serviceaccount);
 
     let broker_role_service = cluster_resources
-        .add(client, &broker_role_service)
+        .add(client, broker_role_service)
         .await
         .context(ApplyRoleServiceSnafu)?;
     cluster_resources
-        .add(client, &broker_role_serviceaccount)
+        .add(client, broker_role_serviceaccount)
         .await
         .context(ApplyRoleServiceAccountSnafu)?;
     cluster_resources
-        .add(client, &broker_role_rolebinding)
+        .add(client, broker_role_rolebinding)
         .await
         .context(ApplyRoleRoleBindingSnafu)?;
 
@@ -404,19 +406,19 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             &rbac_sa.name_unchecked(),
         )?;
         cluster_resources
-            .add(client, &rg_service)
+            .add(client, rg_service)
             .await
             .with_context(|_| ApplyRoleGroupServiceSnafu {
                 rolegroup: rolegroup_ref.clone(),
             })?;
         cluster_resources
-            .add(client, &rg_configmap)
+            .add(client, rg_configmap)
             .await
             .with_context(|_| ApplyRoleGroupConfigSnafu {
                 rolegroup: rolegroup_ref.clone(),
             })?;
         cluster_resources
-            .add(client, &rg_statefulset)
+            .add(client, rg_statefulset)
             .await
             .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
                 rolegroup: rolegroup_ref.clone(),
@@ -435,7 +437,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     .context(BuildDiscoveryConfigSnafu)?
     {
         cluster_resources
-            .add(client, &discovery_cm)
+            .add(client, discovery_cm)
             .await
             .context(ApplyDiscoveryConfigSnafu)?;
     }
