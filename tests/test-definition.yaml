@@ -64,3 +64,7 @@ tests:
     dimensions:
       - kafka
       - zookeeper-latest
+  - name: cluster-operation
+    dimensions:
+      - zookeeper-latest
+      - kafka-latest

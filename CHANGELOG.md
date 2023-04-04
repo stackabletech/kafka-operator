@@ -8,10 +8,11 @@ All notable changes to this project will be documented in this file.
 
 - Enabled logging and log aggregation ([#547]).
 - Deploy default and support custom affinities ([#557]).
+- Extend cluster resources for status and cluster operation (paused, stopped) ([#574]).
 
 ### Changed
 
-- operator-rs: 0.30.1 -> 0.33.0 ([#545]).
+- `operator-rs` `0.30.1` -> `0.39.0` ([#545], [#574]).
 - Bumped stackable versions to "23.4.0-rc1" ([#545]).
 - Bumped kafka stackable versions to "23.4.0-rc2" ([#547]).
 - Updated landing page and restructured usage guide ([#573]).
@@ -20,6 +21,7 @@ All notable changes to this project will be documented in this file.
 [#547]: https://github.com/stackabletech/kafka-operator/pull/547
 [#557]: https://github.com/stackabletech/kafka-operator/pull/557
 [#573]: https://github.com/stackabletech/kafka-operator/pull/573
+[#574]: https://github.com/stackabletech/kafka-operator/pull/574
 
 ## [23.1.0] - 2023-01-23
 
