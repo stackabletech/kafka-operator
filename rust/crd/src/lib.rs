@@ -91,6 +91,7 @@ pub struct KafkaClusterSpec {
     pub brokers: Option<Role<KafkaConfigFragment>>,
     pub cluster_config: KafkaClusterConfig,
     pub stopped: Option<bool>,
+    /// Cluster operations like pause reconciliation or cluster stop.
     #[serde(default)]
     pub cluster_operation: ClusterOperation,
 }
