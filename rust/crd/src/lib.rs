@@ -27,7 +27,7 @@ use stackable_operator::{
     k8s_openapi::{
         api::core::v1::PersistentVolumeClaim, apimachinery::pkg::api::resource::Quantity,
     },
-    kube::{runtime::reflector::ObjectRef, CustomResource, ResourceExt, config::Cluster},
+    kube::{runtime::reflector::ObjectRef, CustomResource, ResourceExt},
     product_config_utils::{ConfigError, Configuration},
     product_logging::{self, spec::Logging},
     role_utils::{Role, RoleGroup, RoleGroupRef},
