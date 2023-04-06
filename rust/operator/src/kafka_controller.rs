@@ -398,7 +398,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             .with_context(|_| ApplyRoleGroupConfigSnafu {
                 rolegroup: rolegroup_ref.clone(),
             })?;
-        
+
         ss_cond_builder.add(
             cluster_resources
                 .add(client, rg_statefulset)
@@ -426,13 +426,14 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             .context(ApplyDiscoveryConfigSnafu)?;
     }
 
-    let cluster_operation_cond_builder = ClusterOperationsConditionBuilder::new(&kafka.spec.cluster_operation);
+    let cluster_operation_cond_builder =
+        ClusterOperationsConditionBuilder::new(&kafka.spec.cluster_operation);
 
-    let status = KafkaClusterStatus{
+    let status = KafkaClusterStatus {
         conditions: compute_conditions(
-            kafka.as_ref(), 
-            &[&ss_cond_builder, &cluster_operation_cond_builder]
-        )
+            kafka.as_ref(),
+            &[&ss_cond_builder, &cluster_operation_cond_builder],
+        ),
     };
 
     cluster_resources
