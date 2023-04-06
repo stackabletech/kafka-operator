@@ -1507,6 +1507,10 @@ spec:
                       description: Stackable version of the product, e.g. 2.1.0
                       type: string
                   type: object
+              required:
+                - clusterConfig
+                - image
+              type: object
             status:
               nullable: true
               properties:
@@ -1553,8 +1557,6 @@ spec:
                     type: object
                   type: array
               required:
-                - clusterConfig
-                - image
                 - conditions
               type: object
           required:
@@ -1563,4 +1565,5 @@ spec:
           type: object
       served: true
       storage: true
-      subresources: {}
+      subresources:
+        status: {}
