@@ -12,6 +12,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Support specifying Service type.
+  This enables us to later switch non-breaking to using `ListenerClasses` for the exposure of Services.
+  So far only `external-unstable` is supported, which re-uses the current code to create NodePorts
+  and calculate the reachable address to advertise ([#576]).
 - `operator-rs` `0.30.1` -> `0.39.0` ([#545], [#574]).
 - Bumped stackable versions to "23.4.0-rc1" ([#545]).
 - Bumped kafka stackable versions to "23.4.0-rc2" ([#547]).
@@ -22,6 +26,7 @@ All notable changes to this project will be documented in this file.
 [#557]: https://github.com/stackabletech/kafka-operator/pull/557
 [#573]: https://github.com/stackabletech/kafka-operator/pull/573
 [#574]: https://github.com/stackabletech/kafka-operator/pull/574
+[#576]: https://github.com/stackabletech/kafka-operator/pull/576
 
 ## [23.1.0] - 2023-01-23
 
