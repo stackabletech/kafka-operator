@@ -32,6 +32,7 @@ use stackable_operator::{
     product_logging::{self, spec::Logging},
     role_utils::{Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
+    status::condition::{ClusterCondition, HasStatusCondition},
 };
 use std::collections::BTreeMap;
 use strum::{Display, EnumIter, EnumString};
@@ -77,6 +78,7 @@ pub enum Error {
     version = "v1alpha1",
     kind = "KafkaCluster",
     plural = "kafkaclusters",
+    status = "KafkaClusterStatus",
     shortname = "kafka",
     namespaced,
     crates(
@@ -396,6 +398,21 @@ impl Configuration for KafkaConfigFragment {
         }
 
         Ok(config)
+    }
+}
+
+#[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KafkaClusterStatus {
+    pub conditions: Vec<ClusterCondition>,
+}
+
+impl HasStatusCondition for KafkaCluster {
+    fn conditions(&self) -> Vec<ClusterCondition> {
+        match &self.status {
+            Some(status) => status.conditions.clone(),
+            None => vec![],
+        }
     }
 }
 

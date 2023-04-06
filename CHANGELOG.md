@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Enabled logging and log aggregation ([#547]).
 - Deploy default and support custom affinities ([#557]).
 - Extend cluster resources for status and cluster operation (paused, stopped) ([#574]).
+- Cluster status conditions ([#575]).
 
 ### Changed
 
@@ -22,6 +23,7 @@ All notable changes to this project will be documented in this file.
 [#557]: https://github.com/stackabletech/kafka-operator/pull/557
 [#573]: https://github.com/stackabletech/kafka-operator/pull/573
 [#574]: https://github.com/stackabletech/kafka-operator/pull/574
+[#575]: https://github.com/stackabletech/kafka-operator/pull/575
 
 ## [23.1.0] - 2023-01-23
 

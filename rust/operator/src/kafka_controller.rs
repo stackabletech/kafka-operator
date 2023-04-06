@@ -11,12 +11,16 @@ use crate::{
 };
 
 use snafu::{OptionExt, ResultExt, Snafu};
+use stackable_kafka_crd::KafkaClusterStatus;
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
     KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
     LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
     STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
+use stackable_operator::status::condition::compute_conditions;
+use stackable_operator::status::condition::operations::ClusterOperationsConditionBuilder;
+use stackable_operator::status::condition::statefulset::StatefulSetConditionBuilder;
 use stackable_operator::{
     builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
@@ -205,6 +209,10 @@ pub enum Error {
         source: crate::product_logging::Error,
         cm_name: String,
     },
+    #[snafu(display("failed to update status"))]
+    ApplyStatus {
+        source: stackable_operator::error::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -252,6 +260,7 @@ impl ReconcilerError for Error {
             Error::FailedToResolveConfig { .. } => None,
             Error::ResolveVectorAggregatorAddress { .. } => None,
             Error::InvalidLoggingConfig { .. } => None,
+            Error::ApplyStatus { .. } => None,
         }
     }
 }
@@ -343,6 +352,8 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .await
         .context(ResolveVectorAggregatorAddressSnafu)?;
 
+    let mut ss_cond_builder = StatefulSetConditionBuilder::default();
+
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
 
@@ -387,12 +398,15 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             .with_context(|_| ApplyRoleGroupConfigSnafu {
                 rolegroup: rolegroup_ref.clone(),
             })?;
-        cluster_resources
-            .add(client, rg_statefulset)
-            .await
-            .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
-                rolegroup: rolegroup_ref.clone(),
-            })?;
+
+        ss_cond_builder.add(
+            cluster_resources
+                .add(client, rg_statefulset)
+                .await
+                .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
+                    rolegroup: rolegroup_ref.clone(),
+                })?,
+        );
     }
 
     for discovery_cm in build_discovery_configmaps(
@@ -412,10 +426,25 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             .context(ApplyDiscoveryConfigSnafu)?;
     }
 
+    let cluster_operation_cond_builder =
+        ClusterOperationsConditionBuilder::new(&kafka.spec.cluster_operation);
+
+    let status = KafkaClusterStatus {
+        conditions: compute_conditions(
+            kafka.as_ref(),
+            &[&ss_cond_builder, &cluster_operation_cond_builder],
+        ),
+    };
+
     cluster_resources
         .delete_orphaned_resources(client)
         .await
         .context(DeleteOrphansSnafu)?;
+
+    client
+        .apply_patch_status(OPERATOR_NAME, &*kafka, &status)
+        .await
+        .context(ApplyStatusSnafu)?;
 
     Ok(Action::await_change())
 }
