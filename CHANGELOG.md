@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- `operator-rs` `0.30.1` -> `0.39.0` ([#545], [#574]).
+- `operator-rs` `0.30.1` -> `0.39.1` ([#545], [#574], [#577]).
 - Bumped stackable versions to "23.4.0-rc1" ([#545]).
 - Bumped kafka stackable versions to "23.4.0-rc2" ([#547]).
 - Updated landing page and restructured usage guide ([#573]).
