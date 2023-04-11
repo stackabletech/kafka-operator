@@ -19,15 +19,16 @@ use stackable_kafka_crd::{
     STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
 
-use stackable_operator::builder::PodSecurityContextBuilder;
-use stackable_operator::cluster_resources::ClusterResourceApplyStrategy;
 use stackable_operator::status::condition::compute_conditions;
 use stackable_operator::status::condition::operations::ClusterOperationsConditionBuilder;
 use stackable_operator::status::condition::statefulset::StatefulSetConditionBuilder;
 
 use stackable_operator::{
-    builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
-    cluster_resources::ClusterResources,
+    builder::{
+        ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
+        PodSecurityContextBuilder,
+    },
+    cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::{
         authentication::AuthenticationClass, opa::OpaApiVersion,
         product_image_selection::ResolvedProductImage, rbac::build_rbac_resources,
@@ -214,11 +215,11 @@ pub enum Error {
         source: crate::product_logging::Error,
         cm_name: String,
     },
-    #[snafu(display("failed to patch service account [{APP_NAME}-sa]"))]
+    #[snafu(display("failed to patch service account"))]
     ApplyServiceAccount {
         source: stackable_operator::error::Error,
     },
-    #[snafu(display("failed to patch role binding [{APP_NAME}-rolebinding]"))]
+    #[snafu(display("failed to patch role binding"))]
     ApplyRoleBinding {
         source: stackable_operator::error::Error,
     },
@@ -421,7 +422,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             opa_connect.as_deref(),
             &kafka_security,
             &merged_config,
-            &rbac_sa.name_unchecked(),
+            &rbac_sa.name_any(),
         )?;
         cluster_resources
             .add(client, rg_service)
