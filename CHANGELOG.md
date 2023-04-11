@@ -10,13 +10,19 @@ All notable changes to this project will be documented in this file.
 - Deploy default and support custom affinities ([#557]).
 - Openshift compatibility ([#572]).
 - Extend cluster resources for status and cluster operation (paused, stopped) ([#574]).
+- Cluster status conditions ([#575]).
 
 ### Changed
 
-- `operator-rs` `0.30.1` -> `0.39.0` ([#545], [#574]).
+- `operator-rs` `0.30.1` -> `0.39.1` ([#545], [#574], [#577]).
 - Bumped stackable versions to "23.4.0-rc1" ([#545]).
 - Bumped kafka stackable versions to "23.4.0-rc2" ([#547]).
 - Updated landing page and restructured usage guide ([#573]).
+
+### Fixed
+
+- Avoid empty log events dated to 1970-01-01 and improve the precision of the
+  log event timestamps ([#577]).
 
 [#545]: https://github.com/stackabletech/kafka-operator/pull/545
 [#547]: https://github.com/stackabletech/kafka-operator/pull/547
@@ -24,6 +30,8 @@ All notable changes to this project will be documented in this file.
 [#572]: https://github.com/stackabletech/kafka-operator/pull/572
 [#573]: https://github.com/stackabletech/kafka-operator/pull/573
 [#574]: https://github.com/stackabletech/kafka-operator/pull/574
+[#575]: https://github.com/stackabletech/kafka-operator/pull/575
+[#577]: https://github.com/stackabletech/kafka-operator/pull/577
 
 ## [23.1.0] - 2023-01-23
 
