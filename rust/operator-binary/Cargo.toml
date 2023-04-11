@@ -12,7 +12,7 @@ publish = false
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
 stackable-kafka-operator = { path = "../operator" }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.39.0" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.39.1" }
 
 clap = "4.0.26"
 tokio = { version = "1.25.0", features = ["macros", "rt-multi-thread"] }
@@ -20,7 +20,7 @@ tracing = "0.1.37"
 
 [build-dependencies]
 built = { version = "0.5.2", features = ["chrono", "git2"] }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.39.0" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "0.39.1" }
 stackable-kafka-crd = { path = "../crd" }
 
 [[bin]]
