@@ -19,7 +19,6 @@ use stackable_kafka_crd::{
     STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
 
-
 use stackable_operator::builder::PodSecurityContextBuilder;
 use stackable_operator::cluster_resources::ClusterResourceApplyStrategy;
 use stackable_operator::status::condition::compute_conditions;
@@ -307,6 +306,15 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         cluster_resources.get_required_labels(),
     )
     .context(BuildRbacResourcesSnafu)?;
+
+    let rbac_sa = cluster_resources
+        .add(client, rbac_sa)
+        .await
+        .context(ApplyServiceAccountSnafu)?;
+    cluster_resources
+        .add(client, rbac_rolebinding)
+        .await
+        .context(ApplyRoleBindingSnafu)?;
 
     let validated_config = validate_all_roles_and_groups_config(
         &resolved_product_image.product_version,
