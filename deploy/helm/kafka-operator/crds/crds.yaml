@@ -1507,9 +1507,6 @@ spec:
                       description: Stackable version of the product, e.g. 2.1.0
                       type: string
                   type: object
-                stopped:
-                  nullable: true
-                  type: boolean
               required:
                 - clusterConfig
                 - image
