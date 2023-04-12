@@ -163,6 +163,7 @@ rules:
       - configmaps
       - secrets
       - serviceaccounts
+      - services
     verbs:
       - get
   - apiGroups:
