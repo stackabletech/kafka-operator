@@ -8,14 +8,16 @@ All notable changes to this project will be documented in this file.
 
 - Enabled logging and log aggregation ([#547]).
 - Deploy default and support custom affinities ([#557]).
+- Openshift compatibility ([#572]).
 - Extend cluster resources for status and cluster operation (paused, stopped) ([#574]).
 - Cluster status conditions ([#575]).
 
 ### Changed
 
-- `operator-rs` `0.30.1` -> `0.39.1` ([#545], [#574], [#577]).
+- `operator-rs` `0.30.1` -> `0.40.2` ([#545], [#572], [#574], [#577]).
 - Bumped stackable versions to "23.4.0-rc1" ([#545]).
 - Bumped kafka stackable versions to "23.4.0-rc2" ([#547]).
+- Use operator-rs `build_rbac_resources` method ([#572]).
 - Updated landing page and restructured usage guide ([#573]).
 
 ### Fixed
@@ -26,6 +28,7 @@ All notable changes to this project will be documented in this file.
 [#545]: https://github.com/stackabletech/kafka-operator/pull/545
 [#547]: https://github.com/stackabletech/kafka-operator/pull/547
 [#557]: https://github.com/stackabletech/kafka-operator/pull/557
+[#572]: https://github.com/stackabletech/kafka-operator/pull/572
 [#573]: https://github.com/stackabletech/kafka-operator/pull/573
 [#574]: https://github.com/stackabletech/kafka-operator/pull/574
 [#575]: https://github.com/stackabletech/kafka-operator/pull/575
