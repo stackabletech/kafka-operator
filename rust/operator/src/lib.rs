@@ -16,7 +16,7 @@ use stackable_operator::{
         core::v1::{ConfigMap, Pod, Service, ServiceAccount},
         rbac::v1::RoleBinding,
     },
-    kube::{api::ListParams, runtime::Controller},
+    kube::runtime::{watcher, Controller},
     logging::controller::report_controller_reconciled,
     namespace::WatchNamespace,
     product_config::ProductConfigManager,
@@ -35,24 +35,27 @@ pub async fn create_controller(
 ) {
     let kafka_controller = Controller::new(
         namespace.get_api::<KafkaCluster>(&client),
-        ListParams::default(),
+        watcher::Config::default(),
     )
     .owns(
         namespace.get_api::<StatefulSet>(&client),
-        ListParams::default(),
+        watcher::Config::default(),
     )
-    .owns(namespace.get_api::<Service>(&client), ListParams::default())
+    .owns(
+        namespace.get_api::<Service>(&client),
+        watcher::Config::default(),
+    )
     .owns(
         namespace.get_api::<ConfigMap>(&client),
-        ListParams::default(),
+        watcher::Config::default(),
     )
     .owns(
         namespace.get_api::<ServiceAccount>(&client),
-        ListParams::default(),
+        watcher::Config::default(),
     )
     .owns(
         namespace.get_api::<RoleBinding>(&client),
-        ListParams::default(),
+        watcher::Config::default(),
     )
     .shutdown_on_signal()
     .run(
@@ -74,9 +77,12 @@ pub async fn create_controller(
 
     let pod_svc_controller = Controller::new(
         namespace.get_api::<Pod>(&client),
-        ListParams::default().labels(&format!("{}=true", pod_svc_controller::LABEL_ENABLE)),
+        watcher::Config::default().labels(&format!("{}=true", pod_svc_controller::LABEL_ENABLE)),
     )
-    .owns(namespace.get_api::<Pod>(&client), ListParams::default())
+    .owns(
+        namespace.get_api::<Pod>(&client),
+        watcher::Config::default(),
+    )
     .shutdown_on_signal()
     .run(
         pod_svc_controller::reconcile_pod,
