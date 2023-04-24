@@ -7,8 +7,11 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - `operator-rs` `0.40.2` -> `0.41.0` ([#583]).
+- Use 0.0.0-dev product images for testing ([#xxx)
+- Use testing-tools 0.2.0 ([#xxx])
 
 [#583]: https://github.com/stackabletech/kafka-operator/pull/583
+[#xxx]: https://github.com/stackabletech/kafka-operator/pull/xxx
 
 ## [23.4.0] - 2023-04-17
 
