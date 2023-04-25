@@ -49,7 +49,7 @@ metadata:
 spec:
   image:
     productVersion: 3.3.1
-    stackableVersion: "23.4.0-rc2"
+    stackableVersion: "0.0.0-dev"
   clusterConfig:
     zookeeperConfigMapName: simple-kafka-znode
     tls:
@@ -67,6 +67,7 @@ If you want to find out more about it, take a look at this [getting started guid
 This operator is written by [Stackable](https://www.stackable.tech). It uses [kube.rs](https://kube.rs/) to interact with the Kubernetes control plane.
 
 We test it [extensively](https://ci.stackable.tech/) using [Kuttl](https://kuttl.dev/)-powered integration tests on managed Kubernetes of multiple cloud platforms and our own bare-metal clusters.
+
 
 ## About The Stackable Data Platform
 
