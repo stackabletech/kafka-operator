@@ -15,6 +15,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::{
         affinity::StackableAffinity,
+        cluster_operation::ClusterOperation,
         product_image_selection::ProductImage,
         resources::{
             CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
@@ -31,6 +32,7 @@ use stackable_operator::{
     product_logging::{self, spec::Logging},
     role_utils::{Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
+    status::condition::{ClusterCondition, HasStatusCondition},
 };
 use std::collections::BTreeMap;
 use strum::{Display, EnumIter, EnumString};
@@ -76,6 +78,7 @@ pub enum Error {
     version = "v1alpha1",
     kind = "KafkaCluster",
     plural = "kafkaclusters",
+    status = "KafkaClusterStatus",
     shortname = "kafka",
     namespaced,
     crates(
@@ -89,7 +92,9 @@ pub struct KafkaClusterSpec {
     pub image: ProductImage,
     pub brokers: Option<Role<KafkaConfigFragment>>,
     pub cluster_config: KafkaClusterConfig,
-    pub stopped: Option<bool>,
+    /// Cluster operations like pause reconciliation or cluster stop.
+    #[serde(default)]
+    pub cluster_operation: ClusterOperation,
 }
 
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
@@ -393,6 +398,21 @@ impl Configuration for KafkaConfigFragment {
         }
 
         Ok(config)
+    }
+}
+
+#[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KafkaClusterStatus {
+    pub conditions: Vec<ClusterCondition>,
+}
+
+impl HasStatusCondition for KafkaCluster {
+    fn conditions(&self) -> Vec<ClusterCondition> {
+        match &self.status {
+            Some(status) => status.conditions.clone(),
+            None => vec![],
+        }
     }
 }
 

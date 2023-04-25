@@ -9,7 +9,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-green.svg)](https://docs.stackable.tech/home/stable/contributor/index.html)
 [![License OSL3.0](https://img.shields.io/badge/license-OSL3.0-green)](./LICENSE)
 
-[Documentation](https://docs.stackable.tech/kafka/stable/index.html) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/) | [Discussions](https://github.com/orgs/stackabletech/discussions)
+[Documentation](https://docs.stackable.tech/kafka/stable/index.html) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/) | [Discussions](https://github.com/orgs/stackabletech/discussions) | [Discord](https://discord.gg/7kZ3BNnCAF)
 
 This is a Kubernetes operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
 
@@ -49,7 +49,7 @@ metadata:
 spec:
   image:
     productVersion: 3.3.1
-    stackableVersion: "23.4.0-rc2"
+    stackableVersion: "0.0.0-dev"
   clusterConfig:
     zookeeperConfigMapName: simple-kafka-znode
     tls:
@@ -67,6 +67,7 @@ If you want to find out more about it, take a look at this [getting started guid
 This operator is written by [Stackable](https://www.stackable.tech). It uses [kube.rs](https://kube.rs/) to interact with the Kubernetes control plane.
 
 We test it [extensively](https://ci.stackable.tech/) using [Kuttl](https://kuttl.dev/)-powered integration tests on managed Kubernetes of multiple cloud platforms and our own bare-metal clusters.
+
 
 ## About The Stackable Data Platform
 
@@ -91,7 +92,7 @@ We develop and test our operators on the following cloud platforms:
 * GKE on Google Cloud Platform (GCP)
 * [IONOS Cloud Managed Kubernetes](https://cloud.ionos.com/managed/kubernetes)
 * K3s
-* Kubernetes 1.21-1.25
+* Kubernetes 1.23-1.26
 
 We are currently working to support:
 

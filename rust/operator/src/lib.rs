@@ -14,7 +14,7 @@ use stackable_operator::{
         core::v1::{ConfigMap, Service, ServiceAccount},
         rbac::v1::RoleBinding,
     },
-    kube::{api::ListParams, runtime::Controller},
+    kube::runtime::{watcher, Controller},
     logging::controller::report_controller_reconciled,
     namespace::WatchNamespace,
     product_config::ProductConfigManager,
@@ -33,24 +33,27 @@ pub async fn create_controller(
 ) {
     let kafka_controller = Controller::new(
         namespace.get_api::<KafkaCluster>(&client),
-        ListParams::default(),
+        watcher::Config::default(),
     )
     .owns(
         namespace.get_api::<StatefulSet>(&client),
-        ListParams::default(),
+        watcher::Config::default(),
     )
-    .owns(namespace.get_api::<Service>(&client), ListParams::default())
+    .owns(
+        namespace.get_api::<Service>(&client),
+        watcher::Config::default(),
+    )
     .owns(
         namespace.get_api::<ConfigMap>(&client),
-        ListParams::default(),
+        watcher::Config::default(),
     )
     .owns(
         namespace.get_api::<ServiceAccount>(&client),
-        ListParams::default(),
+        watcher::Config::default(),
     )
     .owns(
         namespace.get_api::<RoleBinding>(&client),
-        ListParams::default(),
+        watcher::Config::default(),
     )
     .shutdown_on_signal()
     .run(

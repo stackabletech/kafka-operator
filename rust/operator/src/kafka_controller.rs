@@ -5,24 +5,31 @@ use crate::product_logging::{
 use crate::{
     discovery::{self, build_discovery_configmaps},
     product_logging::{LOG4J_CONFIG_FILE, LOG_VOLUME_SIZE_IN_MIB},
-    utils::{self, build_recommended_labels, ObjectRefExt},
+    utils::{self, build_recommended_labels},
     ControllerConfig,
 };
 
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::STACKABLE_LISTENER_DIR;
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
-    KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
+    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
     LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR,
+    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_DIR, STACKABLE_LOG_CONFIG_DIR,
 };
+
+use stackable_operator::status::condition::compute_conditions;
+use stackable_operator::status::condition::operations::ClusterOperationsConditionBuilder;
+use stackable_operator::status::condition::statefulset::StatefulSetConditionBuilder;
+
 use stackable_operator::{
-    builder::{ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder},
-    cluster_resources::ClusterResources,
+    builder::{
+        ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
+        PodSecurityContextBuilder,
+    },
+    cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::{
         authentication::AuthenticationClass, opa::OpaApiVersion,
-        product_image_selection::ResolvedProductImage,
+        product_image_selection::ResolvedProductImage, rbac::build_rbac_resources,
     },
     k8s_openapi::{
         api::{
@@ -30,17 +37,15 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
                 EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
-                PodSecurityContext, PodSpec, Probe, Service, ServiceAccount, ServicePort,
-                ServiceSpec, Volume,
+                PodSpec, Probe, Service, ServicePort, ServiceSpec, Volume,
             },
-            rbac::v1::{RoleBinding, RoleRef, Subject},
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
     },
     kube::{
         api::DynamicObject,
         runtime::{controller::Action, reflector::ObjectRef},
-        Resource,
+        Resource, ResourceExt,
     },
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
@@ -67,6 +72,8 @@ use std::{
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
+/// Used as runAsUser in the pod security context. This is specified in the kafka image file
+pub const KAFKA_UID: i64 = 1000;
 const JAVA_HEAP_RATIO: f32 = 0.8;
 
 pub struct Ctx {
@@ -205,6 +212,22 @@ pub enum Error {
         source: crate::product_logging::Error,
         cm_name: String,
     },
+    #[snafu(display("failed to patch service account"))]
+    ApplyServiceAccount {
+        source: stackable_operator::error::Error,
+    },
+    #[snafu(display("failed to patch role binding"))]
+    ApplyRoleBinding {
+        source: stackable_operator::error::Error,
+    },
+    #[snafu(display("failed to update status"))]
+    ApplyStatus {
+        source: stackable_operator::error::Error,
+    },
+    #[snafu(display("failed to build RBAC resources"))]
+    BuildRbacResources {
+        source: stackable_operator::error::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -252,6 +275,10 @@ impl ReconcilerError for Error {
             Error::FailedToResolveConfig { .. } => None,
             Error::ResolveVectorAggregatorAddress { .. } => None,
             Error::InvalidLoggingConfig { .. } => None,
+            Error::ApplyServiceAccount { .. } => None,
+            Error::ApplyRoleBinding { .. } => None,
+            Error::ApplyStatus { .. } => None,
+            Error::BuildRbacResources { .. } => None,
         }
     }
 }
@@ -267,6 +294,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         OPERATOR_NAME,
         KAFKA_CONTROLLER_NAME,
         &kafka.object_ref(&()),
+        ClusterResourceApplyStrategy::from(&kafka.spec.cluster_operation),
     )
     .context(CreateClusterResourcesSnafu)?;
 
@@ -321,26 +349,33 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
 
     let broker_role_service =
         build_broker_role_service(&kafka, &resolved_product_image, &kafka_security)?;
-    let (broker_role_serviceaccount, broker_role_rolebinding) =
-        build_broker_role_serviceaccount(&kafka, &resolved_product_image, &ctx.controller_config)?;
-    let broker_role_serviceaccount_ref = ObjectRef::from_obj(&broker_role_serviceaccount);
 
     let broker_role_service = cluster_resources
-        .add(client, &broker_role_service)
+        .add(client, broker_role_service)
         .await
         .context(ApplyRoleServiceSnafu)?;
-    cluster_resources
-        .add(client, &broker_role_serviceaccount)
-        .await
-        .context(ApplyRoleServiceAccountSnafu)?;
-    cluster_resources
-        .add(client, &broker_role_rolebinding)
-        .await
-        .context(ApplyRoleRoleBindingSnafu)?;
 
     let vector_aggregator_address = resolve_vector_aggregator_address(&kafka, client)
         .await
         .context(ResolveVectorAggregatorAddressSnafu)?;
+
+    let mut ss_cond_builder = StatefulSetConditionBuilder::default();
+
+    let (rbac_sa, rbac_rolebinding) = build_rbac_resources(
+        kafka.as_ref(),
+        APP_NAME,
+        cluster_resources.get_required_labels(),
+    )
+    .context(BuildRbacResourcesSnafu)?;
+
+    let rbac_sa = cluster_resources
+        .add(client, rbac_sa)
+        .await
+        .context(ApplyServiceAccountSnafu)?;
+    cluster_resources
+        .add(client, rbac_rolebinding)
+        .await
+        .context(ApplyRoleBindingSnafu)?;
 
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
@@ -369,29 +404,32 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             &resolved_product_image,
             &rolegroup_ref,
             rolegroup_config,
-            &broker_role_serviceaccount_ref,
             opa_connect.as_deref(),
             &kafka_security,
             &merged_config,
+            &rbac_sa.name_any(),
         )?;
         cluster_resources
-            .add(client, &rg_service)
+            .add(client, rg_service)
             .await
             .with_context(|_| ApplyRoleGroupServiceSnafu {
                 rolegroup: rolegroup_ref.clone(),
             })?;
         cluster_resources
-            .add(client, &rg_configmap)
+            .add(client, rg_configmap)
             .await
             .with_context(|_| ApplyRoleGroupConfigSnafu {
                 rolegroup: rolegroup_ref.clone(),
             })?;
-        cluster_resources
-            .add(client, &rg_statefulset)
-            .await
-            .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
-                rolegroup: rolegroup_ref.clone(),
-            })?;
+
+        ss_cond_builder.add(
+            cluster_resources
+                .add(client, rg_statefulset)
+                .await
+                .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
+                    rolegroup: rolegroup_ref.clone(),
+                })?,
+        );
     }
 
     for discovery_cm in build_discovery_configmaps(
@@ -406,15 +444,30 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     .context(BuildDiscoveryConfigSnafu)?
     {
         cluster_resources
-            .add(client, &discovery_cm)
+            .add(client, discovery_cm)
             .await
             .context(ApplyDiscoveryConfigSnafu)?;
     }
+
+    let cluster_operation_cond_builder =
+        ClusterOperationsConditionBuilder::new(&kafka.spec.cluster_operation);
+
+    let status = KafkaClusterStatus {
+        conditions: compute_conditions(
+            kafka.as_ref(),
+            &[&ss_cond_builder, &cluster_operation_cond_builder],
+        ),
+    };
 
     cluster_resources
         .delete_orphaned_resources(client)
         .await
         .context(DeleteOrphansSnafu)?;
+
+    client
+        .apply_patch_status(OPERATOR_NAME, &*kafka, &status)
+        .await
+        .context(ApplyStatusSnafu)?;
 
     Ok(Action::await_change())
 }
@@ -452,59 +505,6 @@ pub fn build_broker_role_service(
         }),
         status: None,
     })
-}
-
-fn build_broker_role_serviceaccount(
-    kafka: &KafkaCluster,
-    resolved_product_image: &ResolvedProductImage,
-    controller_config: &ControllerConfig,
-) -> Result<(ServiceAccount, RoleBinding)> {
-    let role_name = KafkaRole::Broker.to_string();
-    let sa_name = format!("{}-{}", kafka.metadata.name.as_ref().unwrap(), role_name);
-    let sa = ServiceAccount {
-        metadata: ObjectMetaBuilder::new()
-            .name_and_namespace(kafka)
-            .name(&sa_name)
-            .ownerreference_from_resource(kafka, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(build_recommended_labels(
-                kafka,
-                KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label,
-                &role_name,
-                "global",
-            ))
-            .build(),
-        ..ServiceAccount::default()
-    };
-    let binding_name = &sa_name;
-    let binding = RoleBinding {
-        metadata: ObjectMetaBuilder::new()
-            .name_and_namespace(kafka)
-            .name(binding_name)
-            .ownerreference_from_resource(kafka, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(build_recommended_labels(
-                kafka,
-                KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label,
-                &role_name,
-                "global",
-            ))
-            .build(),
-        role_ref: RoleRef {
-            api_group: "rbac.authorization.k8s.io".to_string(), // k8s_openapi 1.24 has made ClusterRole::GROUP crate private
-            kind: "ClusterRole".to_string(),
-            name: controller_config.broker_clusterrole.clone(),
-        },
-        subjects: Some(vec![Subject {
-            api_group: Some("".to_string()),
-            kind: "ServiceAccount".to_string(),
-            name: sa_name,
-            namespace: sa.metadata.namespace.clone(),
-        }]),
-    };
-    Ok((sa, binding))
 }
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
@@ -621,10 +621,10 @@ fn build_broker_rolegroup_statefulset(
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
-    serviceaccount: &ObjectRef<ServiceAccount>,
     opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
     merged_config: &KafkaConfig,
+    sa_name: &str,
 ) -> Result<StatefulSet> {
     let prepare_container_name = Container::Prepare.to_string();
     let mut cb_prepare =
@@ -849,12 +849,14 @@ fn build_broker_rolegroup_statefulset(
             }),
             ..Volume::default()
         })
-        .security_context(PodSecurityContext {
-            run_as_user: Some(1000),
-            run_as_group: Some(1000),
-            fs_group: Some(1000),
-            ..PodSecurityContext::default()
-        });
+        .service_account_name(sa_name)
+        .security_context(
+            PodSecurityContextBuilder::new()
+                .run_as_user(KAFKA_UID)
+                .run_as_group(0)
+                .fs_group(1000)
+                .build(),
+        );
 
     // Add vector container after kafka container to keep the defaulting into kafka container
     if merged_config.logging.enable_vector_agent {
@@ -870,12 +872,6 @@ fn build_broker_rolegroup_statefulset(
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
     pod_template_spec.share_process_namespace = Some(true);
-    pod_template_spec.service_account_name = Some(
-        serviceaccount
-            .name_in_ns_of(kafka)
-            .context(InvalidServiceAccountSnafu)?
-            .to_string(),
-    );
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
@@ -892,11 +888,7 @@ fn build_broker_rolegroup_statefulset(
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
-            replicas: if kafka.spec.stopped.unwrap_or(false) {
-                Some(0)
-            } else {
-                rolegroup.replicas.map(i32::from)
-            },
+            replicas: rolegroup.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(role_group_selector_labels(
                     kafka,

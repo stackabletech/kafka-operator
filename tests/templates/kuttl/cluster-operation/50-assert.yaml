@@ -1,0 +1,14 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+commands:
+  - script: kubectl -n $NAMESPACE wait --for=condition=available kafkaclusters.kafka.stackable.tech/test-kafka --timeout 301s
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+status:
+  readyReplicas: 1
+  replicas: 1

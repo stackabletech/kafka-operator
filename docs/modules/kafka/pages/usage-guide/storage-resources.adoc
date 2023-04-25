@@ -1,0 +1,44 @@
+= Storage and resource configuration
+
+== Storage for data volumes
+
+You can mount volumes where data is stored by specifying https://kubernetes.io/docs/concepts/storage/persistent-volumes[PersistentVolumeClaims] for each individual role group:
+
+[source,yaml]
+----
+brokers:
+  roleGroups:
+    default:
+      config:
+        resources:
+          storage:
+            data:
+              capacity: 2Gi
+----
+
+In the above example, all Kafka brokers in the default group will store data (the location of the property `log.dirs`) on a `2Gi` volume.
+
+If nothing is configured in the custom resource for a certain role group, then by default each Pod will have a `1Gi` large local volume mount for the data location.
+
+== Resource Requests
+
+include::home:concepts:stackable_resource_requests.adoc[]
+
+If no resource requests are configured explicitly, the Kafka operator uses the following defaults:
+
+[source,yaml]
+----
+brokers:
+  roleGroups:
+    default:
+      config:
+        resources:
+          memory:
+            limit: '2Gi'
+          cpu:
+            min: '500m'
+            max: '4'
+          storage:
+            log_dirs:
+              capacity: 1Gi
+----
