@@ -10,6 +10,7 @@ metadata:
 spec:
   template:
     spec:
+      serviceAccountName: read-write-data-sa
       containers:
         - name: read-data
           image: edenhill/kcat:1.7.1
