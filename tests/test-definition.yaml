@@ -1,3 +1,7 @@
+#
+# To run these tests on OpenShift you have to ensure that:
+# 1. The "openshift" dimension below is set to "true"
+#
 ---
 dimensions:
   - name: kafka
@@ -33,6 +37,9 @@ dimensions:
     values:
       - "true"
       - "false"
+  - name: openshift
+    values:
+      - "false"
 tests:
   - name: smoke
     dimensions:
@@ -50,6 +57,7 @@ tests:
       - upgrade_old
       - use-client-tls
       - use-client-auth-tls
+      - openshift
   - name: tls
     dimensions:
       - kafka
