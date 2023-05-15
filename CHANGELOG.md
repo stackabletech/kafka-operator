@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [23.4.1] - 2023-05-17
+
+### Added
+
+- Missing CRD defaults for `status.conditions` field ([#588]).
+
+[#588]: https://github.com/stackabletech/kafka-operator/pull/588
+
 ## [23.4.0] - 2023-04-17
 
 ### Added
