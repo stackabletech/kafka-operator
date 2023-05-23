@@ -450,8 +450,8 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
+            stackableVersion: "0.0.0-dev"
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -469,8 +469,8 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
+            stackableVersion: "0.0.0-dev"
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
@@ -494,8 +494,8 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
+            stackableVersion: "0.0.0-dev"
           clusterConfig:
             tls:
               serverSecretClass: null
@@ -515,8 +515,8 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
+            stackableVersion: "0.0.0-dev"
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
@@ -540,8 +540,8 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
+            stackableVersion: "0.0.0-dev"
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -559,8 +559,8 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
+            stackableVersion: "0.0.0-dev"
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls
@@ -580,8 +580,8 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
+            stackableVersion: "0.0.0-dev"
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
