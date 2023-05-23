@@ -46,8 +46,8 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
+            stackableVersion: "0.0.0-dev"
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:
@@ -104,8 +104,8 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
+            stackableVersion: "0.0.0-dev"
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:

@@ -10,9 +10,10 @@ dimensions:
       - 3.1.0-stackable0.0.0-dev
       - 3.2.0-stackable0.0.0-dev
       - 3.3.1-stackable0.0.0-dev
+      - 3.4.0-stackable0.0.0-dev
   - name: kafka-latest
     values:
-      - 3.3.1-stackable0.0.0-dev
+      - 3.4.0-stackable0.0.0-dev
   - name: zookeeper
     values:
       - 3.6.3-stackable0.0.0-dev
@@ -24,11 +25,11 @@ dimensions:
   - name: upgrade_old
     values:
       - 2.8.1-stackable0.0.0-dev
-      - 3.1.0-stackable0.0.0-dev
       - 3.2.0-stackable0.0.0-dev
+      - 3.3.1-stackable0.0.0-dev
   - name: upgrade_new
     values:
-      - 3.3.1-stackable0.0.0-dev
+      - 3.4.0-stackable0.0.0-dev
   - name: use-client-tls
     values:
       - "true"
