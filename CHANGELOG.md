@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Generate OLM bundle for Release 23.4.0 ([#585]).
 - Fixed upgrade test on Openshift ([#585]).
 - Missing CRD defaults for `status.conditions` field ([#588]).
+- Support Kafka 3.4.0 ([#591]).
 
 ### Changed
 
@@ -20,6 +21,7 @@ All notable changes to this project will be documented in this file.
 [#584]: https://github.com/stackabletech/kafka-operator/pull/584
 [#585]: https://github.com/stackabletech/kafka-operator/pull/585
 [#588]: https://github.com/stackabletech/kafka-operator/pull/588
+[#591]: https://github.com/stackabletech/kafka-operator/pull/591
 
 ## [23.4.0] - 2023-04-17
 
