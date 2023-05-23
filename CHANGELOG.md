@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed upgrade test on Openshift (partial cherry-pick) ([#585]).
+
+[#585]: https://github.com/stackabletech/kafka-operator/pull/585
+
 ## [23.4.1] - 2023-05-17
 
 ### Added
