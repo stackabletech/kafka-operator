@@ -48,7 +48,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.3.1
+    productVersion: 3.4.0
     stackableVersion: "0.0.0-dev"
   clusterConfig:
     zookeeperConfigMapName: simple-kafka-znode
