@@ -790,7 +790,10 @@ fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
+    let jvm_args = format!(
+        "-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={}:/stackable/jmx/broker.yaml",
+        METRICS_PORT
+    );
     let kafka_listeners =
         get_kafka_listener_config(kafka, kafka_security, &rolegroup_ref.object_name())
             .context(InvalidKafkaListenersSnafu)?;
