@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - Fixed upgrade test on Openshift ([#585]).
 - Missing CRD defaults for `status.conditions` field ([#588]).
 - Support Kafka 3.4.0 ([#591]).
-- Add support for resource quotas ([#xxx])
+- Add support for resource quotas ([#595])
 
 ### Changed
 
@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file.
 [#585]: https://github.com/stackabletech/kafka-operator/pull/585
 [#588]: https://github.com/stackabletech/kafka-operator/pull/588
 [#591]: https://github.com/stackabletech/kafka-operator/pull/591
-[#xxx]: https://github.com/stackabletech/kafka-operator/pull/xxx
+[#595]: https://github.com/stackabletech/kafka-operator/pull/595
 
 ## [23.4.0] - 2023-04-17
 
