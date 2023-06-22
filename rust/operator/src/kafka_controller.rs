@@ -628,12 +628,6 @@ fn build_broker_rolegroup_statefulset(
     merged_config: &KafkaConfig,
     sa_name: &str,
 ) -> Result<StatefulSet> {
-    let prepare_container_name = Container::Prepare.to_string();
-    let mut cb_prepare =
-        ContainerBuilder::new(&prepare_container_name).context(InvalidContainerNameSnafu {
-            name: prepare_container_name.clone(),
-        })?;
-
     let get_svc_container_name = Container::GetService.to_string();
     let mut cb_get_svc =
         ContainerBuilder::new(&get_svc_container_name).context(InvalidContainerNameSnafu {
@@ -668,7 +662,6 @@ fn build_broker_rolegroup_statefulset(
     // Add TLS related volumes and volume mounts
     kafka_security.add_volume_and_volume_mounts(
         &mut pod_builder,
-        &mut cb_prepare,
         &mut cb_kcat_prober,
         &mut cb_kafka,
     );
@@ -694,34 +687,6 @@ fn build_broker_rolegroup_statefulset(
             ..EnvVar::default()
         }])
         .add_volume_mount("tmp", STACKABLE_TMP_DIR);
-
-    let mut prepare_container_args = vec![];
-
-    if let Some(ContainerLogConfig {
-        choice: Some(ContainerLogConfigChoice::Automatic(log_config)),
-    }) = merged_config.logging.containers.get(&Container::Prepare)
-    {
-        prepare_container_args.push(product_logging::framework::capture_shell_output(
-            STACKABLE_LOG_DIR,
-            &prepare_container_name,
-            log_config,
-        ));
-    }
-
-    prepare_container_args.extend(kafka_security.prepare_container_command_args());
-
-    cb_prepare
-        .image_from_product_image(resolved_product_image)
-        .command(vec![
-            "/bin/bash".to_string(),
-            "-euo".to_string(),
-            "pipefail".to_string(),
-            "-c".to_string(),
-        ])
-        .args(vec![prepare_container_args.join(" && ")])
-        .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
-        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
-        .add_volume_mount("log", STACKABLE_LOG_DIR);
 
     let pvcs = merged_config.resources.storage.build_pvcs();
 
@@ -873,7 +838,6 @@ fn build_broker_rolegroup_statefulset(
             .with_label(pod_svc_controller::LABEL_ENABLE, "true")
         })
         .image_pull_secrets_from_product_image(resolved_product_image)
-        .add_init_container(cb_prepare.build())
         .add_init_container(cb_get_svc.build())
         .add_container(cb_kafka.build())
         .add_container(cb_kcat_prober.build())
