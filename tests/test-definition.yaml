@@ -77,3 +77,21 @@ tests:
     dimensions:
       - zookeeper-latest
       - kafka-latest
+
+suites:
+- name: latest
+  patch:
+  - dimensions:
+    - expr: last
+- name: smoke
+  select:
+  - smoke
+- name: openshift
+  patch:
+  - dimensions:
+    - expr: last
+      #- test: upgrade
+  - dimensions:
+    - name: openshift
+      expr: "true"
+ 
