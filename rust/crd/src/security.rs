@@ -257,7 +257,7 @@ impl KafkaTlsSecurity {
                         SecretOperatorVolumeSourceBuilder::new(tls_server_secret_class)
                             .with_pod_scope()
                             .with_node_scope()
-                            .with_format(SecretFormat::Tls)
+                            .with_format(SecretFormat::TlsPem)
                             .build(),
                     )
                     .build(),
