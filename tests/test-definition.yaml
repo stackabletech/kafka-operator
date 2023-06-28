@@ -80,9 +80,16 @@ tests:
 
 suites:
   - name: latest
+    select:
+      - tls
     patch:
       - dimensions:
           - expr: last
+      - dimensions:
+          - name: use-client-auth-tls
+            expr: "true"
+          - name: use-client-tls
+            expr: "true"
   - name: smoke
     select:
       - smoke
