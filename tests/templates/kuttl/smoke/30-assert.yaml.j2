@@ -20,8 +20,22 @@ spec:
               cpu: 250m
               memory: 1Gi
         - name: kcat-prober
+          resources:
+            limits:
+              cpu: 200m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
         - name: vector
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 250m
+              memory: 128Mi
 {% endif %}
 status:
   readyReplicas: 1
