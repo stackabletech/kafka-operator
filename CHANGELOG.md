@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - `operator-rs` `0.40.2` -> `0.41.0` ([#583]).
 - Use 0.0.0-dev product images for testing ([#584])
 - Use testing-tools 0.2.0 ([#584])
+- Added kuttl test suites ([#599])
 
 [#583]: https://github.com/stackabletech/kafka-operator/pull/583
 [#584]: https://github.com/stackabletech/kafka-operator/pull/584
@@ -24,6 +25,7 @@ All notable changes to this project will be documented in this file.
 [#588]: https://github.com/stackabletech/kafka-operator/pull/588
 [#591]: https://github.com/stackabletech/kafka-operator/pull/591
 [#595]: https://github.com/stackabletech/kafka-operator/pull/595
+[#599]: https://github.com/stackabletech/kafka-operator/pull/599
 
 ## [23.4.0] - 2023-04-17
 
