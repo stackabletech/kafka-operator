@@ -826,7 +826,7 @@ fn build_broker_rolegroup_statefulset(
         .command(vec!["sleep".to_string(), "infinity".to_string()])
         .resources(
             ResourceRequirementsBuilder::new()
-                .with_cpu_request("100")
+                .with_cpu_request("100m")
                 .with_cpu_limit("200m")
                 .with_memory_request("128Mi")
                 .with_memory_limit("128Mi")
