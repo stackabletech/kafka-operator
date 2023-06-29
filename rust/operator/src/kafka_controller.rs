@@ -692,7 +692,8 @@ fn build_broker_rolegroup_statefulset(
             }),
             ..EnvVar::default()
         }])
-        .add_volume_mount("tmp", STACKABLE_TMP_DIR);
+        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
+        .resources(merged_config.resources.clone().into());
 
     let mut prepare_container_args = vec![];
 
@@ -720,7 +721,8 @@ fn build_broker_rolegroup_statefulset(
         .args(vec![prepare_container_args.join(" && ")])
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("tmp", STACKABLE_TMP_DIR)
-        .add_volume_mount("log", STACKABLE_LOG_DIR);
+        .add_volume_mount("log", STACKABLE_LOG_DIR)
+        .resources(merged_config.resources.clone().into());
 
     let pvcs = merged_config.resources.storage.build_pvcs();
 
@@ -822,6 +824,14 @@ fn build_broker_rolegroup_statefulset(
     cb_kcat_prober
         .image_from_product_image(resolved_product_image)
         .command(vec!["sleep".to_string(), "infinity".to_string()])
+        .resources(
+            ResourceRequirementsBuilder::new()
+                .with_cpu_request("100")
+                .with_cpu_limit("200m")
+                .with_memory_request("128Mi")
+                .with_memory_limit("128Mi")
+                .build(),
+        )
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum
         // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
         .readiness_probe(Probe {
