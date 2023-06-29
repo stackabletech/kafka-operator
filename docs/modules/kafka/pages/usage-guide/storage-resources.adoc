@@ -29,7 +29,7 @@ A minimal HA setup consisting of 2 Brokers has the following https://kubernetes.
 * `1200m` CPU request
 * `3400m` CPU limit
 * `2560Mi` memory request and limit
-* `4Gi` allocated PVs
+* `4Gi` persistent storage
 
 Of course, additional services, require additional resources. For Stackable components, see the corresponding documentation on further resource requirements.
 
@@ -50,5 +50,4 @@ brokers:
           capacity: 2Gi
   roleGroups:
     default:
-      replicas: 2
 ----
