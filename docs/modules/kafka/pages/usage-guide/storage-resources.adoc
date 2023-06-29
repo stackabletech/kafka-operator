@@ -24,21 +24,31 @@ If nothing is configured in the custom resource for a certain role group, then b
 
 include::home:concepts:stackable_resource_requests.adoc[]
 
-If no resource requests are configured explicitly, the Kafka operator uses the following defaults:
+A minimal HA setup consisting of 2 Brokers has the following https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[resource requirements]:
+
+* `1200m` CPU request
+* `3400m` CPU limit
+* `2560Mi` memory request and limit
+* `4Gi` allocated PVs
+
+Of course, additional services, require additional resources. For Stackable components, see the corresponding documentation on further resource requirements.
+
+Corresponding to the values above, the operator uses the following resource defaults:
 
 [source,yaml]
 ----
 brokers:
+  config:
+    resources:
+      memory:
+        limit: 1Gi
+      cpu:
+        min: 250m
+        max: 1000m
+      storage:
+        logDirs:
+          capacity: 2Gi
   roleGroups:
     default:
-      config:
-        resources:
-          memory:
-            limit: '2Gi'
-          cpu:
-            min: '500m'
-            max: '4'
-          storage:
-            log_dirs:
-              capacity: 1Gi
+      replicas: 2
 ----
