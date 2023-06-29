@@ -6,4 +6,4 @@ commands:
   - script: >-
       kubectl --namespace $NAMESPACE
       patch kafkaclusters.kafka.stackable.tech test-kafka
-      --type=merge --patch '{ "spec": { "image": { "productVersion": "{{ test_scenario['values']['upgrade_new'].split('-stackable')[0] }}", "stackableVersion": "{{ test_scenario['values']['upgrade_new'].split('-stackable')[1] }}" }}}'
+      --type=merge --patch '{ "spec": { "image": { "productVersion": "{{ test_scenario['values']['upgrade_new'].split('-stackable')[0] }}", "stackableVersion": "{{ test_scenario['values']['upgrade_new'].split('-stackable')[1] }}" }}}' && sleep 5
