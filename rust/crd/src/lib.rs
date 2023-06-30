@@ -336,16 +336,16 @@ impl KafkaConfig {
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {
-                    min: Some(Quantity("500m".to_owned())),
-                    max: Some(Quantity("4".to_owned())),
+                    min: Some(Quantity("250m".to_owned())),
+                    max: Some(Quantity("1000m".to_owned())),
                 },
                 memory: MemoryLimitsFragment {
-                    limit: Some(Quantity("2Gi".to_owned())),
+                    limit: Some(Quantity("1Gi".to_owned())),
                     runtime_limits: NoRuntimeLimitsFragment {},
                 },
                 storage: StorageFragment {
                     log_dirs: PvcConfigFragment {
-                        capacity: Some(Quantity("1Gi".to_owned())),
+                        capacity: Some(Quantity("2Gi".to_owned())),
                         storage_class: None,
                         selectors: None,
                     },

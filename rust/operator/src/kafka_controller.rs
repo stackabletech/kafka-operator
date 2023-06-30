@@ -11,22 +11,17 @@ use crate::{
 };
 
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::KafkaClusterStatus;
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
-    KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
+    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
     LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
     STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
 
-use stackable_operator::status::condition::compute_conditions;
-use stackable_operator::status::condition::operations::ClusterOperationsConditionBuilder;
-use stackable_operator::status::condition::statefulset::StatefulSetConditionBuilder;
-
 use stackable_operator::{
     builder::{
-        ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
-        PodSecurityContextBuilder,
+        resources::ResourceRequirementsBuilder, ConfigMapBuilder, ContainerBuilder,
+        ObjectMetaBuilder, PodBuilder, PodSecurityContextBuilder,
     },
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::{
@@ -64,6 +59,10 @@ use stackable_operator::{
         },
     },
     role_utils::RoleGroupRef,
+    status::condition::{
+        compute_conditions, operations::ClusterOperationsConditionBuilder,
+        statefulset::StatefulSetConditionBuilder,
+    },
 };
 use std::{
     borrow::Cow,
@@ -693,7 +692,8 @@ fn build_broker_rolegroup_statefulset(
             }),
             ..EnvVar::default()
         }])
-        .add_volume_mount("tmp", STACKABLE_TMP_DIR);
+        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
+        .resources(merged_config.resources.clone().into());
 
     let mut prepare_container_args = vec![];
 
@@ -721,7 +721,8 @@ fn build_broker_rolegroup_statefulset(
         .args(vec![prepare_container_args.join(" && ")])
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("tmp", STACKABLE_TMP_DIR)
-        .add_volume_mount("log", STACKABLE_LOG_DIR);
+        .add_volume_mount("log", STACKABLE_LOG_DIR)
+        .resources(merged_config.resources.clone().into());
 
     let pvcs = merged_config.resources.storage.build_pvcs();
 
@@ -823,6 +824,14 @@ fn build_broker_rolegroup_statefulset(
     cb_kcat_prober
         .image_from_product_image(resolved_product_image)
         .command(vec!["sleep".to_string(), "infinity".to_string()])
+        .resources(
+            ResourceRequirementsBuilder::new()
+                .with_cpu_request("100m")
+                .with_cpu_limit("200m")
+                .with_memory_request("128Mi")
+                .with_memory_limit("128Mi")
+                .build(),
+        )
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum
         // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
         .readiness_probe(Probe {
@@ -915,6 +924,12 @@ fn build_broker_rolegroup_statefulset(
             "config",
             "log",
             merged_config.logging.containers.get(&Container::Vector),
+            ResourceRequirementsBuilder::new()
+                .with_cpu_request("250m")
+                .with_cpu_limit("500m")
+                .with_memory_request("128Mi")
+                .with_memory_limit("128Mi")
+                .build(),
         ));
     }
 

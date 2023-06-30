@@ -198,10 +198,10 @@ mod tests {
     use crate::authentication::ResolvedAuthenticationClasses;
 
     use stackable_operator::builder::ObjectMetaBuilder;
+    use stackable_operator::commons::authentication::tls::TlsAuthenticationProvider;
     use stackable_operator::commons::authentication::{
         AuthenticationClass, AuthenticationClassProvider, AuthenticationClassSpec,
     };
-    use stackable_operator::commons::tls::TlsAuthenticationProvider;
 
     #[test]
     fn test_get_kafka_listeners_config() {
