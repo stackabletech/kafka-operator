@@ -79,13 +79,21 @@ tests:
       - kafka-latest
 
 suites:
-  - name: latest
+  - name: nightly
+    patch:
+      - dimensions:
+          - name: kafka
+            expr: last
+          - name: zookeeper
+            expr: last
+          - name: upgrade_old
+            expr: last
+  - name: smoke-latest
+    select:
+      - smoke
     patch:
       - dimensions:
           - expr: last
-  - name: smoke
-    select:
-      - smoke
   - name: openshift
     patch:
       - dimensions:
@@ -93,3 +101,9 @@ suites:
       - dimensions:
           - name: openshift
             expr: "true"
+          - name: kafka
+            expr: last
+          - name: zookeeper
+            expr: last
+          - name: upgrade_old
+            expr: last
