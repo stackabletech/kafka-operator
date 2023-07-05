@@ -167,7 +167,7 @@ impl KafkaCluster {
     pub fn rolegroup(
         &self,
         rolegroup_ref: &RoleGroupRef<KafkaCluster>,
-    ) -> Result<RoleGroup<KafkaConfigFragment>, Error> {
+    ) -> Result<&RoleGroup<KafkaConfigFragment>, Error> {
         let role_variant =
             KafkaRole::from_str(&rolegroup_ref.role).with_context(|_| UnknownKafkaRoleSnafu {
                 role: rolegroup_ref.role.to_owned(),
@@ -180,7 +180,6 @@ impl KafkaCluster {
             .with_context(|| CannotRetrieveKafkaRoleGroupSnafu {
                 role_group: rolegroup_ref.role_group.to_owned(),
             })
-            .cloned()
     }
 
     /// List all pods expected to form the cluster
@@ -223,7 +222,7 @@ impl KafkaCluster {
 
         // Retrieve rolegroup specific resource config
         let role_group = self.rolegroup(rolegroup_ref)?;
-        let mut conf_role_group = role_group.config.config;
+        let mut conf_role_group = role_group.config.config.to_owned();
 
         if let Some(RoleGroup {
             selector: Some(selector),
