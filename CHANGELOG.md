@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Missing CRD defaults for `status.conditions` field ([#588]).
 - Support Kafka 3.4.0 ([#591]).
 - Add support for resource quotas ([#595])
+- Support podOverrides ([#602])
 
 ### Changed
 
@@ -26,6 +27,7 @@ All notable changes to this project will be documented in this file.
 [#591]: https://github.com/stackabletech/kafka-operator/pull/591
 [#595]: https://github.com/stackabletech/kafka-operator/pull/595
 [#599]: https://github.com/stackabletech/kafka-operator/pull/599
+[#602]: https://github.com/stackabletech/kafka-operator/pull/602
 
 ## [23.4.0] - 2023-04-17
 
