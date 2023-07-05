@@ -14,10 +14,10 @@ spec:
         - name: kafka
           resources:
             limits:
-              cpu: "1"
+              cpu: 1100m # From podOverrides
               memory: 1Gi
             requests:
-              cpu: 250m
+              cpu: 300m # From podOverrides
               memory: 1Gi
         - name: kcat-prober
           resources:
