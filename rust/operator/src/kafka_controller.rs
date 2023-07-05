@@ -936,12 +936,13 @@ fn build_broker_rolegroup_statefulset(
     }
 
     let mut pod_template = pod_builder.build_template();
-    pod_template.merge_from(role.config.pod_overrides.clone());
-    pod_template.merge_from(rolegroup.config.pod_overrides.clone());
 
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
     pod_template_spec.share_process_namespace = Some(true);
+
+    pod_template.merge_from(role.config.pod_overrides.clone());
+    pod_template.merge_from(rolegroup.config.pod_overrides.clone());
 
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
