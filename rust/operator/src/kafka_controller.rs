@@ -18,6 +18,7 @@ use stackable_kafka_crd::{
     STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
 
+use stackable_operator::k8s_openapi::DeepMerge;
 use stackable_operator::{
     builder::{
         resources::ResourceRequirementsBuilder, ConfigMapBuilder, ContainerBuilder,
@@ -229,6 +230,9 @@ pub enum Error {
     BuildRbacResources {
         source: stackable_operator::error::Error,
     },
+
+    #[snafu(display("internal operator failure"))]
+    InternalOperatorError { source: stackable_kafka_crd::Error },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -280,6 +284,7 @@ impl ReconcilerError for Error {
             Error::ApplyRoleBinding { .. } => None,
             Error::ApplyStatus { .. } => None,
             Error::BuildRbacResources { .. } => None,
+            Error::InternalOperatorError { .. } => None,
         }
     }
 }
@@ -287,6 +292,7 @@ impl ReconcilerError for Error {
 pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<Action> {
     tracing::info!("Starting reconcile");
     let client = &ctx.client;
+    let kafka_role = KafkaRole::Broker;
 
     let resolved_product_image = kafka.spec.image.resolve(DOCKER_IMAGE_BASE_NAME);
 
@@ -382,7 +388,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
 
         let merged_config = kafka
-            .merged_config(&KafkaRole::Broker, rolegroup_name)
+            .merged_config(&KafkaRole::Broker, &rolegroup_ref)
             .context(FailedToResolveConfigSnafu)?;
 
         let rg_service = build_broker_rolegroup_service(
@@ -402,6 +408,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         )?;
         let rg_statefulset = build_broker_rolegroup_statefulset(
             &kafka,
+            &kafka_role,
             &resolved_product_image,
             &rolegroup_ref,
             rolegroup_config,
@@ -619,6 +626,7 @@ fn build_broker_rolegroup_service(
 #[allow(clippy::too_many_arguments)]
 fn build_broker_rolegroup_statefulset(
     kafka: &KafkaCluster,
+    role: &KafkaRole,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
@@ -627,6 +635,11 @@ fn build_broker_rolegroup_statefulset(
     merged_config: &KafkaConfig,
     sa_name: &str,
 ) -> Result<StatefulSet> {
+    let role = kafka.role(role).context(InternalOperatorSnafu)?;
+    let rolegroup = kafka
+        .rolegroup(rolegroup_ref)
+        .context(InternalOperatorSnafu)?;
+
     let prepare_container_name = Container::Prepare.to_string();
     let mut cb_prepare =
         ContainerBuilder::new(&prepare_container_name).context(InvalidContainerNameSnafu {
@@ -649,17 +662,6 @@ fn build_broker_rolegroup_statefulset(
     let mut cb_kafka =
         ContainerBuilder::new(&kafka_container_name).context(InvalidContainerNameSnafu {
             name: kafka_container_name.clone(),
-        })?;
-
-    let rolegroup = kafka
-        .spec
-        .brokers
-        .as_ref()
-        .context(NoBrokerRoleSnafu)?
-        .role_groups
-        .get(&rolegroup_ref.role_group)
-        .with_context(|| RoleGroupNotFoundSnafu {
-            rolegroup: rolegroup_ref.clone(),
         })?;
 
     let mut pod_builder = PodBuilder::new();
@@ -934,9 +936,13 @@ fn build_broker_rolegroup_statefulset(
     }
 
     let mut pod_template = pod_builder.build_template();
+    pod_template.merge_from(role.config.pod_overrides.clone());
+    pod_template.merge_from(rolegroup.config.pod_overrides.clone());
+
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
     pod_template_spec.share_process_namespace = Some(true);
+
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
