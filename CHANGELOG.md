@@ -13,9 +13,13 @@ All notable changes to this project will be documented in this file.
 - Add support for resource quotas ([#595])
 - Support podOverrides ([#602])
 
+### Fixed
+
+- Increase the size limit of the log volume ([#604])
+
 ### Changed
 
-- `operator-rs` `0.40.2` -> `0.41.0` ([#583]).
+- `operator-rs` `0.40.2` -> `0.44.0` ([#583], [#604]).
 - Use 0.0.0-dev product images for testing ([#584])
 - Use testing-tools 0.2.0 ([#584])
 - Added kuttl test suites ([#599])
@@ -28,6 +32,7 @@ All notable changes to this project will be documented in this file.
 [#595]: https://github.com/stackabletech/kafka-operator/pull/595
 [#599]: https://github.com/stackabletech/kafka-operator/pull/599
 [#602]: https://github.com/stackabletech/kafka-operator/pull/602
+[#604]: https://github.com/stackabletech/kafka-operator/pull/604
 
 ## [23.4.0] - 2023-04-17
 

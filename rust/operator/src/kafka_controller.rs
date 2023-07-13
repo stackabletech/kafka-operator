@@ -1,11 +1,12 @@
 //! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
 use crate::product_logging::{
-    extend_role_group_config_map, resolve_vector_aggregator_address, STACKABLE_LOG_DIR,
+    extend_role_group_config_map, resolve_vector_aggregator_address, MAX_KAFKA_LOG_FILES_SIZE,
+    MAX_PREPARE_LOG_FILE_SIZE, STACKABLE_LOG_DIR,
 };
 use crate::{
     discovery::{self, build_discovery_configmaps},
     pod_svc_controller,
-    product_logging::{LOG4J_CONFIG_FILE, LOG_VOLUME_SIZE_IN_MIB},
+    product_logging::LOG4J_CONFIG_FILE,
     utils::{self, build_recommended_labels},
     ControllerConfig,
 };
@@ -38,7 +39,7 @@ use stackable_operator::{
                 PodSpec, Probe, Service, ServicePort, ServiceSpec, Volume,
             },
         },
-        apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
+        apimachinery::pkg::apis::meta::v1::LabelSelector,
     },
     kube::{
         api::DynamicObject,
@@ -902,14 +903,12 @@ fn build_broker_rolegroup_statefulset(
             empty_dir: Some(EmptyDirVolumeSource::default()),
             ..Volume::default()
         })
-        .add_volume(Volume {
-            name: "log".to_string(),
-            empty_dir: Some(EmptyDirVolumeSource {
-                medium: None,
-                size_limit: Some(Quantity(format!("{LOG_VOLUME_SIZE_IN_MIB}Mi"))),
-            }),
-            ..Volume::default()
-        })
+        .add_empty_dir_volume(
+            "log",
+            Some(product_logging::framework::calculate_log_volume_size_limit(
+                &[MAX_KAFKA_LOG_FILES_SIZE, MAX_PREPARE_LOG_FILE_SIZE],
+            )),
+        )
         .service_account_name(sa_name)
         .security_context(
             PodSecurityContextBuilder::new()
