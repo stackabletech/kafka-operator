@@ -6,30 +6,30 @@
 dimensions:
   - name: kafka
     values:
-      - 2.8.1-stackable0.0.0-dev
-      - 3.1.0-stackable0.0.0-dev
-      - 3.2.0-stackable0.0.0-dev
-      - 3.3.1-stackable0.0.0-dev
-      - 3.4.0-stackable0.0.0-dev
+      - 2.8.1-stackable23.7
+      - 3.1.0-stackable23.7
+      - 3.2.0-stackable23.7
+      - 3.3.1-stackable23.7
+      - 3.4.0-stackable23.7
   - name: kafka-latest
     values:
-      - 3.4.0-stackable0.0.0-dev
+      - 3.4.0-stackable23.7
   - name: zookeeper
     values:
-      - 3.6.3-stackable0.0.0-dev
-      - 3.7.0-stackable0.0.0-dev
-      - 3.8.0-stackable0.0.0-dev
+      - 3.6.3-stackable23.7
+      - 3.7.0-stackable23.7
+      - 3.8.0-stackable23.7
   - name: zookeeper-latest
     values:
-      - 3.8.0-stackable0.0.0-dev
+      - 3.8.0-stackable23.7
   - name: upgrade_old
     values:
-      - 2.8.1-stackable0.0.0-dev
-      - 3.2.0-stackable0.0.0-dev
-      - 3.3.1-stackable0.0.0-dev
+      - 2.8.1-stackable23.7
+      - 3.2.0-stackable23.7
+      - 3.3.1-stackable23.7
   - name: upgrade_new
     values:
-      - 3.4.0-stackable0.0.0-dev
+      - 3.4.0-stackable23.7
   - name: use-client-tls
     values:
       - "true"
