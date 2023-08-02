@@ -6,7 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Default stackableVersion to operator version ([#XXX]).
+- Default stackableVersion to operator version ([#611]).
+
+[#611]: https://github.com/stackabletech/kafka-operator/pull/611
 
 ## [23.7.0] - 2023-07-14
 
