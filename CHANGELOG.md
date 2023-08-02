@@ -8,7 +8,13 @@ All notable changes to this project will be documented in this file.
 
 - Default stackableVersion to operator version ([#611]).
 
+### Changed
+
+- `vector` `0.26.0` -> `0.31.0` ([#612]).
+- `operator-rs` `0.44.0` -> `0.45.1` ([#611]).
+
 [#611]: https://github.com/stackabletech/kafka-operator/pull/611
+[#612]: https://github.com/stackabletech/kafka-operator/pull/612
 
 ## [23.7.0] - 2023-07-14
 
