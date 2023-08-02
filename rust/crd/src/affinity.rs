@@ -49,7 +49,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:
@@ -111,7 +110,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:

@@ -23,6 +23,10 @@ use stackable_operator::{
 };
 use std::sync::Arc;
 
+mod built_info {
+    pub const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+}
+
 pub struct ControllerConfig {
     pub broker_clusterrole: String,
 }

@@ -37,8 +37,7 @@ metadata:
   name: test-kafka
 spec:
   image:
-    productVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[0] }}"
-    stackableVersion: "{{ test_scenario['values']['kafka'].split('-stackable')[1] }}"
+    productVersion: "{{ test_scenario['values']['kafka'] }}"
   clusterConfig:
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
     authentication:
