@@ -216,7 +216,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           clusterConfig:
             authentication:
               - authenticationClass: kafka-client-tls
@@ -286,7 +285,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           clusterConfig:
             tls:
               serverSecretClass: tls
@@ -346,7 +344,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:

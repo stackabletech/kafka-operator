@@ -295,7 +295,10 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let client = &ctx.client;
     let kafka_role = KafkaRole::Broker;
 
-    let resolved_product_image = kafka.spec.image.resolve(DOCKER_IMAGE_BASE_NAME);
+    let resolved_product_image = kafka
+        .spec
+        .image
+        .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::CARGO_PKG_VERSION);
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,

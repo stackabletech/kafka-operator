@@ -503,7 +503,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -522,7 +521,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
@@ -547,7 +545,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           clusterConfig:
             tls:
               serverSecretClass: null
@@ -568,7 +565,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
@@ -593,7 +589,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -612,7 +607,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls
@@ -633,7 +627,6 @@ mod tests {
         spec:
           image:
             productVersion: 3.4.0
-            stackableVersion: "0.0.0-dev"
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
