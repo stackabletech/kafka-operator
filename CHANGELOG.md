@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Default stackableVersion to operator version ([#611]).
+- Default stackableVersion to operator version. It is recommended to remove `spec.image.stackableVersion` from your custom resources ([#611], [#613]).
 
 ### Changed
 
@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 [#611]: https://github.com/stackabletech/kafka-operator/pull/611
 [#612]: https://github.com/stackabletech/kafka-operator/pull/612
+[#613]: https://github.com/stackabletech/kafka-operator/pull/613
 
 ## [23.7.0] - 2023-07-14
 
