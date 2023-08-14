@@ -12,6 +12,7 @@ use crate::{
 };
 
 use snafu::{OptionExt, ResultExt, Snafu};
+use stackable_kafka_crd::JVM_SECURITY_PROPERTIES_FILE;
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
     KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
@@ -234,6 +235,14 @@ pub enum Error {
 
     #[snafu(display("internal operator failure"))]
     InternalOperatorError { source: stackable_kafka_crd::Error },
+    #[snafu(display(
+        "failed to serialize [{JVM_SECURITY_PROPERTIES_FILE}] for {}",
+        rolegroup
+    ))]
+    JvmSecurityPoperties {
+        source: stackable_operator::product_config::writer::PropertiesWriterError,
+        rolegroup: String,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -286,6 +295,7 @@ impl ReconcilerError for Error {
             Error::ApplyStatus { .. } => None,
             Error::BuildRbacResources { .. } => None,
             Error::InternalOperatorError { .. } => None,
+            Error::JvmSecurityPoperties { .. } => None,
         }
     }
 }
@@ -318,6 +328,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
                 (
                     vec![
                         PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()),
+                        PropertyNameKind::File(JVM_SECURITY_PROPERTIES_FILE.to_string()),
                         PropertyNameKind::Env,
                     ],
                     kafka.spec.brokers.clone().context(NoBrokerRoleSnafu)?,
@@ -541,6 +552,16 @@ fn build_broker_rolegroup_config_map(
         .map(|(k, v)| (k, Some(v)))
         .collect::<Vec<_>>();
 
+    let jvm_sec_props: BTreeMap<String, Option<String>> = broker_config
+        .get(&PropertyNameKind::File(
+            JVM_SECURITY_PROPERTIES_FILE.to_string(),
+        ))
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(k, v)| (k, Some(v)))
+        .collect();
+
     let mut cm_builder = ConfigMapBuilder::new();
     cm_builder
         .metadata(
@@ -565,6 +586,14 @@ fn build_broker_rolegroup_config_map(
                     rolegroup: rolegroup.clone(),
                 },
             )?,
+        )
+        .add_data(
+            JVM_SECURITY_PROPERTIES_FILE,
+            to_java_properties_string(jvm_sec_props.iter()).with_context(|_| {
+                JvmSecurityPopertiesSnafu {
+                    rolegroup: rolegroup.role_group.clone(),
+                }
+            })?,
         );
 
     extend_role_group_config_map(
@@ -798,8 +827,7 @@ fn build_broker_rolegroup_statefulset(
     });
 
     let jvm_args = format!(
-        "-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={}:/stackable/jmx/broker.yaml",
-        METRICS_PORT
+        "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE} -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml",
     );
     let kafka_listeners =
         get_kafka_listener_config(kafka, kafka_security, &rolegroup_ref.object_name())
