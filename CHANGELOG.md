@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Default stackableVersion to operator version. It is recommended to remove `spec.image.stackableVersion` from your custom resources ([#611], [#613]).
+- Configuration overrides for the JVM security properties, such as DNS caching ([#616]).
 
 ### Changed
 
@@ -16,6 +17,7 @@ All notable changes to this project will be documented in this file.
 [#611]: https://github.com/stackabletech/kafka-operator/pull/611
 [#612]: https://github.com/stackabletech/kafka-operator/pull/612
 [#613]: https://github.com/stackabletech/kafka-operator/pull/613
+[#616]: https://github.com/stackabletech/kafka-operator/pull/616
 
 ## [23.7.0] - 2023-07-14
 
@@ -111,19 +113,15 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Change port names from `http`/`https` to `kafka`/`kafka-tls` ([#472]).
 - Role and rolegroup configurations are merged correctly ([#499]).
 - operator-rs: 0.22.0 -> 0.26.0 ([#495], [#499]).
 
+[#472]: https://github.com/stackabletech/kafka-operator/pull/472
 [#485]: https://github.com/stackabletech/kafka-operator/pull/485
 [#492]: https://github.com/stackabletech/kafka-operator/pull/492
 [#495]: https://github.com/stackabletech/kafka-operator/pull/495
 [#499]: https://github.com/stackabletech/kafka-operator/pull/499
-
-### Changed
-
-- Change port names from `http`/`https` to `kafka`/`kafka-tls` ([#472]).
-
-[#472]: https://github.com/stackabletech/kafka-operator/pull/472
 
 ## [0.7.0] - 2022-09-06
 
