@@ -1,0 +1,51 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 300
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+spec:
+  image:
+    productVersion: "{{ test_scenario['values']['kafka-latest'] }}"
+  clusterConfig:
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
+{% endif %}
+    zookeeperConfigMapName: test-zk
+  brokers:
+    config:
+      logging:
+        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+      resources:
+        cpu:
+          # Inherit the default value '250m' set by the operator
+          # min: '250m'
+          # Override the default value '1' set by the operator
+          max: '500m'
+        # memory:
+          # Inherit the default value '1Gi' set by the operator
+          # limit: '1Gi'
+        storage:
+          logDirs:
+            # Override the default value '2Gi' set by the operator
+            capacity: '1Gi'
+    roleGroups:
+      default:
+        config:
+          resources:
+            # cpu:
+              # Inherit the default value '250m' set by the operator
+              # min: '250m'
+              # Inherit the value '1000m' set in the role configuration
+              # max: '1000m'
+            memory:
+              # Override the default value '1Gi' set by the operator
+              limit: '2Gi'
+            storage:
+              logDirs:
+                # Override the value '2Gi' set in the role configuration
+                capacity: '1Gi'
+        replicas: 1

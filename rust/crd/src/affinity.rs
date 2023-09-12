@@ -23,6 +23,7 @@ pub fn get_affinity(cluster_name: &str, role: &KafkaRole) -> StackableAffinityFr
 mod tests {
     use super::*;
 
+    use rstest::rstest;
     use std::collections::BTreeMap;
 
     use crate::KafkaCluster;
@@ -37,8 +38,9 @@ mod tests {
         },
     };
 
-    #[test]
-    fn test_affinity_defaults() {
+    #[rstest]
+    #[case(KafkaRole::Broker)]
+    fn test_affinity_defaults(#[case] role: KafkaRole) {
         let input = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
         kind: KafkaCluster
@@ -46,8 +48,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:
@@ -55,8 +56,11 @@ mod tests {
               default:
                 replicas: 1
         "#;
+
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        let merged_config = kafka.merged_config(&KafkaRole::Broker, "default").unwrap();
+        let merged_config = kafka
+            .merged_config(&role, &role.rolegroup_ref(&kafka, "default"))
+            .unwrap();
 
         assert_eq!(
             merged_config.affinity,
@@ -95,8 +99,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_affinity_legacy_node_selector() {
+    #[rstest]
+    #[case(KafkaRole::Broker)]
+    fn test_affinity_legacy_node_selector(#[case] role: KafkaRole) {
         let input = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
         kind: KafkaCluster
@@ -104,8 +109,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:
@@ -123,7 +127,9 @@ mod tests {
                         - antarctica-west1
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
-        let merged_config = kafka.merged_config(&KafkaRole::Broker, "default").unwrap();
+        let merged_config = kafka
+            .merged_config(&role, &role.rolegroup_ref(&kafka, "default"))
+            .unwrap();
 
         assert_eq!(
             merged_config.affinity,

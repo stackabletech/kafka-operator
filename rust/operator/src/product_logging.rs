@@ -5,6 +5,7 @@ use stackable_operator::{
     client::Client,
     k8s_openapi::api::core::v1::ConfigMap,
     kube::ResourceExt,
+    memory::{BinaryMultiple, MemoryQuantity},
     product_logging::{
         self,
         spec::{ContainerLogConfig, ContainerLogConfigChoice, Logging},
@@ -38,12 +39,14 @@ pub const LOG4J_CONFIG_FILE: &str = "log4j.properties";
 pub const KAFKA_LOG_FILE: &str = "kafka.log4j.xml";
 pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
 
-// Additional buffer space is not needed, as the `prepare` container already has sufficient buffer
-// space and all containers share a single volume.
-pub const LOG_VOLUME_SIZE_IN_MIB: u32 =
-    MAX_KAFKA_LOG_FILES_SIZE_IN_MIB + MAX_PREPARE_LOG_FILE_SIZE_IN_MIB;
-pub const MAX_KAFKA_LOG_FILES_SIZE_IN_MIB: u32 = 10;
-const MAX_PREPARE_LOG_FILE_SIZE_IN_MIB: u32 = 1;
+pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {
+    value: 10.0,
+    unit: BinaryMultiple::Mebi,
+};
+pub const MAX_PREPARE_LOG_FILE_SIZE: MemoryQuantity = MemoryQuantity {
+    value: 1.0,
+    unit: BinaryMultiple::Mebi,
+};
 
 const VECTOR_AGGREGATOR_CM_ENTRY: &str = "ADDRESS";
 const CONSOLE_CONVERSION_PATTERN: &str = "[%d] %p %m (%c)%n";
@@ -105,7 +108,10 @@ pub fn extend_role_group_config_map(
                     container = Container::Kafka
                 ),
                 KAFKA_LOG_FILE,
-                MAX_KAFKA_LOG_FILES_SIZE_IN_MIB,
+                MAX_KAFKA_LOG_FILES_SIZE
+                    .scale_to(BinaryMultiple::Mebi)
+                    .floor()
+                    .value as u32,
                 CONSOLE_CONVERSION_PATTERN,
                 log_config,
             ),

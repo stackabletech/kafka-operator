@@ -1,12 +1,15 @@
 ---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 300
+---
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperCluster
 metadata:
   name: test-zk
 spec:
   image:
-    productVersion: "{{ test_scenario['values']['zookeeper'].split('-stackable')[0] }}"
-    stackableVersion: "{{ test_scenario['values']['zookeeper'].split('-stackable')[1] }}"
+    productVersion: "{{ test_scenario['values']['zookeeper-latest'] }}"
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
   clusterConfig:
     logging:

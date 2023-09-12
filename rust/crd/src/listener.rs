@@ -201,10 +201,10 @@ mod tests {
     use crate::authentication::ResolvedAuthenticationClasses;
 
     use stackable_operator::builder::ObjectMetaBuilder;
+    use stackable_operator::commons::authentication::tls::TlsAuthenticationProvider;
     use stackable_operator::commons::authentication::{
         AuthenticationClass, AuthenticationClassProvider, AuthenticationClassSpec,
     };
-    use stackable_operator::commons::tls::TlsAuthenticationProvider;
 
     #[test]
     fn test_get_kafka_listeners_config() {
@@ -218,8 +218,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           clusterConfig:
             authentication:
               - authenticationClass: kafka-client-tls
@@ -288,8 +287,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           clusterConfig:
             tls:
               serverSecretClass: tls
@@ -348,8 +346,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:

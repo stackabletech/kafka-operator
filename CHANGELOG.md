@@ -4,14 +4,52 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Default stackableVersion to operator version. It is recommended to remove `spec.image.stackableVersion` from your custom resources ([#611], [#613]).
+- Configuration overrides for the JVM security properties, such as DNS caching ([#616]).
+
 ### Changed
 
-- `operator-rs` `0.40.2` -> `0.41.0` ([#583]).
+- `vector` `0.26.0` -> `0.31.0` ([#612]).
+- `operator-rs` `0.44.0` -> `0.45.1` ([#611]).
+
+[#611]: https://github.com/stackabletech/kafka-operator/pull/611
+[#612]: https://github.com/stackabletech/kafka-operator/pull/612
+[#613]: https://github.com/stackabletech/kafka-operator/pull/613
+[#616]: https://github.com/stackabletech/kafka-operator/pull/616
+
+## [23.7.0] - 2023-07-14
+
+### Added
+
+- Generate OLM bundle for Release 23.4.0 ([#585]).
+- Fixed upgrade test on Openshift ([#585]).
+- Missing CRD defaults for `status.conditions` field ([#588]).
+- Support Kafka 3.4.0 ([#591]).
+- Add support for resource quotas ([#595])
+- Support podOverrides ([#602])
+
+### Fixed
+
+- Increase the size limit of the log volume ([#604])
+
+### Changed
+
+- `operator-rs` `0.40.2` -> `0.44.0` ([#583], [#604]).
 - Use 0.0.0-dev product images for testing ([#584])
 - Use testing-tools 0.2.0 ([#584])
+- Added kuttl test suites ([#599])
 
 [#583]: https://github.com/stackabletech/kafka-operator/pull/583
 [#584]: https://github.com/stackabletech/kafka-operator/pull/584
+[#585]: https://github.com/stackabletech/kafka-operator/pull/585
+[#588]: https://github.com/stackabletech/kafka-operator/pull/588
+[#591]: https://github.com/stackabletech/kafka-operator/pull/591
+[#595]: https://github.com/stackabletech/kafka-operator/pull/595
+[#599]: https://github.com/stackabletech/kafka-operator/pull/599
+[#602]: https://github.com/stackabletech/kafka-operator/pull/602
+[#604]: https://github.com/stackabletech/kafka-operator/pull/604
 
 ## [23.4.0] - 2023-04-17
 
@@ -75,19 +113,15 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Change port names from `http`/`https` to `kafka`/`kafka-tls` ([#472]).
 - Role and rolegroup configurations are merged correctly ([#499]).
 - operator-rs: 0.22.0 -> 0.26.0 ([#495], [#499]).
 
+[#472]: https://github.com/stackabletech/kafka-operator/pull/472
 [#485]: https://github.com/stackabletech/kafka-operator/pull/485
 [#492]: https://github.com/stackabletech/kafka-operator/pull/492
 [#495]: https://github.com/stackabletech/kafka-operator/pull/495
 [#499]: https://github.com/stackabletech/kafka-operator/pull/499
-
-### Changed
-
-- Change port names from `http`/`https` to `kafka`/`kafka-tls` ([#472]).
-
-[#472]: https://github.com/stackabletech/kafka-operator/pull/472
 
 ## [0.7.0] - 2022-09-06
 

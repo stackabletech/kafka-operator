@@ -1,30 +1,35 @@
+#
+# To run these tests on OpenShift you have to ensure that:
+# 1. The "openshift" dimension below is set to "true"
+#
 ---
 dimensions:
   - name: kafka
     values:
-      - 2.8.1-stackable0.0.0-dev
-      - 3.1.0-stackable0.0.0-dev
-      - 3.2.0-stackable0.0.0-dev
-      - 3.3.1-stackable0.0.0-dev
+      - 2.8.1
+      - 3.1.0
+      - 3.2.0
+      - 3.3.1
+      - 3.4.0
   - name: kafka-latest
     values:
-      - 3.3.1-stackable0.0.0-dev
+      - 3.4.0
   - name: zookeeper
     values:
-      - 3.6.3-stackable0.0.0-dev
-      - 3.7.0-stackable0.0.0-dev
-      - 3.8.0-stackable0.0.0-dev
+      - 3.6.3
+      - 3.7.0
+      - 3.8.0
   - name: zookeeper-latest
     values:
-      - 3.8.0-stackable0.0.0-dev
+      - 3.8.0
   - name: upgrade_old
     values:
-      - 2.8.1-stackable0.0.0-dev
-      - 3.1.0-stackable0.0.0-dev
-      - 3.2.0-stackable0.0.0-dev
+      - 2.8.1
+      - 3.2.0
+      - 3.3.1
   - name: upgrade_new
     values:
-      - 3.3.1-stackable0.0.0-dev
+      - 3.4.0
   - name: use-client-tls
     values:
       - "true"
@@ -32,6 +37,9 @@ dimensions:
   - name: use-client-auth-tls
     values:
       - "true"
+      - "false"
+  - name: openshift
+    values:
       - "false"
 tests:
   - name: smoke
@@ -50,6 +58,7 @@ tests:
       - upgrade_old
       - use-client-tls
       - use-client-auth-tls
+      - openshift
   - name: tls
     dimensions:
       - kafka
@@ -68,3 +77,33 @@ tests:
     dimensions:
       - zookeeper-latest
       - kafka-latest
+
+suites:
+  - name: nightly
+    patch:
+      - dimensions:
+          - name: kafka
+            expr: last
+          - name: zookeeper
+            expr: last
+          - name: upgrade_old
+            expr: last
+  - name: smoke-latest
+    select:
+      - smoke
+    patch:
+      - dimensions:
+          - expr: last
+  - name: openshift
+    patch:
+      - dimensions:
+          - expr: last
+      - dimensions:
+          - name: openshift
+            expr: "true"
+          - name: kafka
+            expr: last
+          - name: zookeeper
+            expr: last
+          - name: upgrade_old
+            expr: last

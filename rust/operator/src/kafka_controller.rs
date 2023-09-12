@@ -1,10 +1,11 @@
 //! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
 use crate::product_logging::{
-    extend_role_group_config_map, resolve_vector_aggregator_address, STACKABLE_LOG_DIR,
+    extend_role_group_config_map, resolve_vector_aggregator_address, MAX_KAFKA_LOG_FILES_SIZE,
+    MAX_PREPARE_LOG_FILE_SIZE, STACKABLE_LOG_DIR,
 };
 use crate::{
     discovery::{self, build_discovery_configmaps},
-    product_logging::{LOG4J_CONFIG_FILE, LOG_VOLUME_SIZE_IN_MIB},
+    product_logging::LOG4J_CONFIG_FILE,
     utils::{self, build_recommended_labels},
     ControllerConfig,
 };
@@ -12,19 +13,17 @@ use crate::{
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
-    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
-    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_DIR, STACKABLE_LOG_CONFIG_DIR,
+    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME,
+    JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
+    METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
+    STACKABLE_DATA_DIR, STACKABLE_LISTENER_DIR, STACKABLE_LOG_CONFIG_DIR,
 };
 
-use stackable_operator::status::condition::compute_conditions;
-use stackable_operator::status::condition::operations::ClusterOperationsConditionBuilder;
-use stackable_operator::status::condition::statefulset::StatefulSetConditionBuilder;
-
+use stackable_operator::k8s_openapi::DeepMerge;
 use stackable_operator::{
     builder::{
-        ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
-        PodSecurityContextBuilder,
+        resources::ResourceRequirementsBuilder, ConfigMapBuilder, ContainerBuilder,
+        ObjectMetaBuilder, PodBuilder, PodSecurityContextBuilder,
     },
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::{
@@ -35,12 +34,12 @@ use stackable_operator::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
             core::v1::{
-                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
-                EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
-                PodSpec, Probe, Service, ServicePort, ServiceSpec, Volume,
+                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar,
+                EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe, Service,
+                ServicePort, ServiceSpec, Volume,
             },
         },
-        apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
+        apimachinery::pkg::apis::meta::v1::LabelSelector,
     },
     kube::{
         api::DynamicObject,
@@ -62,6 +61,10 @@ use stackable_operator::{
         },
     },
     role_utils::RoleGroupRef,
+    status::condition::{
+        compute_conditions, operations::ClusterOperationsConditionBuilder,
+        statefulset::StatefulSetConditionBuilder,
+    },
 };
 use std::{
     borrow::Cow,
@@ -228,6 +231,17 @@ pub enum Error {
     BuildRbacResources {
         source: stackable_operator::error::Error,
     },
+
+    #[snafu(display("internal operator failure"))]
+    InternalOperatorError { source: stackable_kafka_crd::Error },
+    #[snafu(display(
+        "failed to serialize [{JVM_SECURITY_PROPERTIES_FILE}] for {}",
+        rolegroup
+    ))]
+    JvmSecurityPoperties {
+        source: stackable_operator::product_config::writer::PropertiesWriterError,
+        rolegroup: String,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -279,6 +293,8 @@ impl ReconcilerError for Error {
             Error::ApplyRoleBinding { .. } => None,
             Error::ApplyStatus { .. } => None,
             Error::BuildRbacResources { .. } => None,
+            Error::InternalOperatorError { .. } => None,
+            Error::JvmSecurityPoperties { .. } => None,
         }
     }
 }
@@ -286,8 +302,12 @@ impl ReconcilerError for Error {
 pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<Action> {
     tracing::info!("Starting reconcile");
     let client = &ctx.client;
+    let kafka_role = KafkaRole::Broker;
 
-    let resolved_product_image = kafka.spec.image.resolve(DOCKER_IMAGE_BASE_NAME);
+    let resolved_product_image = kafka
+        .spec
+        .image
+        .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::CARGO_PKG_VERSION);
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
@@ -307,6 +327,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
                 (
                     vec![
                         PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()),
+                        PropertyNameKind::File(JVM_SECURITY_PROPERTIES_FILE.to_string()),
                         PropertyNameKind::Env,
                     ],
                     kafka.spec.brokers.clone().context(NoBrokerRoleSnafu)?,
@@ -381,7 +402,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
 
         let merged_config = kafka
-            .merged_config(&KafkaRole::Broker, rolegroup_name)
+            .merged_config(&KafkaRole::Broker, &rolegroup_ref)
             .context(FailedToResolveConfigSnafu)?;
 
         let rg_service = build_broker_rolegroup_service(
@@ -401,6 +422,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         )?;
         let rg_statefulset = build_broker_rolegroup_statefulset(
             &kafka,
+            &kafka_role,
             &resolved_product_image,
             &rolegroup_ref,
             rolegroup_config,
@@ -529,6 +551,16 @@ fn build_broker_rolegroup_config_map(
         .map(|(k, v)| (k, Some(v)))
         .collect::<Vec<_>>();
 
+    let jvm_sec_props: BTreeMap<String, Option<String>> = broker_config
+        .get(&PropertyNameKind::File(
+            JVM_SECURITY_PROPERTIES_FILE.to_string(),
+        ))
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(k, v)| (k, Some(v)))
+        .collect();
+
     let mut cm_builder = ConfigMapBuilder::new();
     cm_builder
         .metadata(
@@ -553,6 +585,14 @@ fn build_broker_rolegroup_config_map(
                     rolegroup: rolegroup.clone(),
                 },
             )?,
+        )
+        .add_data(
+            JVM_SECURITY_PROPERTIES_FILE,
+            to_java_properties_string(jvm_sec_props.iter()).with_context(|_| {
+                JvmSecurityPopertiesSnafu {
+                    rolegroup: rolegroup.role_group.clone(),
+                }
+            })?,
         );
 
     extend_role_group_config_map(
@@ -618,6 +658,7 @@ fn build_broker_rolegroup_service(
 #[allow(clippy::too_many_arguments)]
 fn build_broker_rolegroup_statefulset(
     kafka: &KafkaCluster,
+    role: &KafkaRole,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
@@ -626,6 +667,11 @@ fn build_broker_rolegroup_statefulset(
     merged_config: &KafkaConfig,
     sa_name: &str,
 ) -> Result<StatefulSet> {
+    let role = kafka.role(role).context(InternalOperatorSnafu)?;
+    let rolegroup = kafka
+        .rolegroup(rolegroup_ref)
+        .context(InternalOperatorSnafu)?;
+
     let prepare_container_name = Container::Prepare.to_string();
     let mut cb_prepare =
         ContainerBuilder::new(&prepare_container_name).context(InvalidContainerNameSnafu {
@@ -642,17 +688,6 @@ fn build_broker_rolegroup_statefulset(
     let mut cb_kafka =
         ContainerBuilder::new(&kafka_container_name).context(InvalidContainerNameSnafu {
             name: kafka_container_name.clone(),
-        })?;
-
-    let rolegroup = kafka
-        .spec
-        .brokers
-        .as_ref()
-        .context(NoBrokerRoleSnafu)?
-        .role_groups
-        .get(&rolegroup_ref.role_group)
-        .with_context(|| RoleGroupNotFoundSnafu {
-            rolegroup: rolegroup_ref.clone(),
         })?;
 
     let mut pod_builder = PodBuilder::new();
@@ -691,7 +726,8 @@ fn build_broker_rolegroup_statefulset(
         .args(vec![prepare_container_args.join(" && ")])
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("listener", STACKABLE_LISTENER_DIR)
-        .add_volume_mount("log", STACKABLE_LOG_DIR);
+        .add_volume_mount("log", STACKABLE_LOG_DIR)
+        .resources(merged_config.resources.clone().into());
 
     let pvcs = merged_config.resources.storage.build_pvcs();
 
@@ -749,7 +785,9 @@ fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let jvm_args = format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent-0.16.1.jar={}:/stackable/jmx/broker.yaml", METRICS_PORT);
+    let jvm_args = format!(
+        "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE} -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml",
+    );
     let kafka_listeners =
         get_kafka_listener_config(kafka, kafka_security, &rolegroup_ref.object_name())
             .context(InvalidKafkaListenersSnafu)?;
@@ -779,6 +817,14 @@ fn build_broker_rolegroup_statefulset(
     cb_kcat_prober
         .image_from_product_image(resolved_product_image)
         .command(vec!["sleep".to_string(), "infinity".to_string()])
+        .resources(
+            ResourceRequirementsBuilder::new()
+                .with_cpu_request("100m")
+                .with_cpu_limit("200m")
+                .with_memory_request("128Mi")
+                .with_memory_limit("128Mi")
+                .build(),
+        )
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum
         // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
         .readiness_probe(Probe {
@@ -841,14 +887,12 @@ fn build_broker_rolegroup_statefulset(
             ..Volume::default()
         })
         .add_listener_volume_by_listener_class("listener", "nodeport")
-        .add_volume(Volume {
-            name: "log".to_string(),
-            empty_dir: Some(EmptyDirVolumeSource {
-                medium: None,
-                size_limit: Some(Quantity(format!("{LOG_VOLUME_SIZE_IN_MIB}Mi"))),
-            }),
-            ..Volume::default()
-        })
+        .add_empty_dir_volume(
+            "log",
+            Some(product_logging::framework::calculate_log_volume_size_limit(
+                &[MAX_KAFKA_LOG_FILES_SIZE, MAX_PREPARE_LOG_FILE_SIZE],
+            )),
+        )
         .service_account_name(sa_name)
         .security_context(
             PodSecurityContextBuilder::new()
@@ -865,13 +909,24 @@ fn build_broker_rolegroup_statefulset(
             "config",
             "log",
             merged_config.logging.containers.get(&Container::Vector),
+            ResourceRequirementsBuilder::new()
+                .with_cpu_request("250m")
+                .with_cpu_limit("500m")
+                .with_memory_request("128Mi")
+                .with_memory_limit("128Mi")
+                .build(),
         ));
     }
 
     let mut pod_template = pod_builder.build_template();
+
     let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
     pod_template_spec.share_process_namespace = Some(true);
+
+    pod_template.merge_from(role.config.pod_overrides.clone());
+    pod_template.merge_from(rolegroup.config.pod_overrides.clone());
+
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)

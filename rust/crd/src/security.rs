@@ -7,7 +7,7 @@
 
 use crate::{
     authentication, authentication::ResolvedAuthenticationClasses, listener, tls, KafkaCluster,
-    SERVER_PROPERTIES_FILE,
+    SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
 };
 
 use crate::listener::KafkaListenerConfig;
@@ -256,7 +256,7 @@ impl KafkaTlsSecurity {
     ) -> Vec<String> {
         vec![
             "bin/kafka-server-start.sh".to_string(),
-            format!("/stackable/config/{}", SERVER_PROPERTIES_FILE),
+            format!("{STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE}"),
             "--override \"zookeeper.connect=$ZOOKEEPER\"".to_string(),
             format!("--override \"listeners={}\"", kafka_listeners.listeners()),
             format!(

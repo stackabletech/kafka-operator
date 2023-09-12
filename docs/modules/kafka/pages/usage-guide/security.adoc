@@ -13,8 +13,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.3.1
-    stackableVersion: "0.0.0-dev"
+    productVersion: 3.4.0
   clusterConfig:
     zookeeperConfigMapName: simple-kafka-znode
     tls:
@@ -84,8 +83,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.3.1
-    stackableVersion: "0.0.0-dev"
+    productVersion: 3.4.0
   clusterConfig:
     authentication:
       - authenticationClass: kafka-client-tls # <1>
@@ -114,8 +112,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.3.1
-    stackableVersion: "0.0.0-dev"
+    productVersion: 3.4.0
   clusterConfig:
     authorization:
       opa:
@@ -139,8 +136,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.3.1
-    stackableVersion: "0.0.0-dev"
+    productVersion: 3.4.0
   clusterConfig:
     authorization:
       opa:

@@ -6,7 +6,6 @@ metadata:
 spec:
   image:
     productVersion: 3.8.0
-    stackableVersion: "0.0.0-dev"
   servers:
     roleGroups:
       default:
@@ -30,7 +29,6 @@ metadata:
 spec:
   image:
     productVersion: 0.45.0
-    stackableVersion: "0.0.0-dev"
   servers:
     roleGroups:
       default:
@@ -58,8 +56,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.3.1
-    stackableVersion: "0.0.0-dev"
+    productVersion: 3.4.0
   clusterConfig:
     authorization:
       opa:

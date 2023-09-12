@@ -34,8 +34,8 @@ use stackable_operator::{
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
 };
-use std::collections::BTreeMap;
-use strum::{Display, EnumIter, EnumString};
+use std::{collections::BTreeMap, str::FromStr};
+use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
 pub const DOCKER_IMAGE_BASE_NAME: &str = "kafka";
 pub const APP_NAME: &str = "kafka";
@@ -45,6 +45,7 @@ pub const METRICS_PORT_NAME: &str = "metrics";
 pub const METRICS_PORT: u16 = 9606;
 // config files
 pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
+pub const JVM_SECURITY_PROPERTIES_FILE: &str = "security.properties";
 // env vars
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
@@ -59,15 +60,32 @@ pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
 pub enum Error {
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
+
     #[snafu(display("failed to validate config of rolegroup {rolegroup}"))]
     RoleGroupValidation {
         rolegroup: RoleGroupRef<KafkaCluster>,
         source: ValidationError,
     },
+
     #[snafu(display("the Kafka role [{role}] is missing from spec"))]
     MissingKafkaRole { role: String },
+
+    #[snafu(display("the role {role} is not defined"))]
+    CannotRetrieveKafkaRole { role: String },
+
     #[snafu(display("the Kafka node role group [{role_group}] is missing from spec"))]
     MissingKafkaRoleGroup { role_group: String },
+
+    #[snafu(display("the role group {role_group} is not defined"))]
+    CannotRetrieveKafkaRoleGroup { role_group: String },
+
+    #[snafu(display("unknown role {role}. Should be one of {roles:?}"))]
+    UnknownKafkaRole {
+        source: strum::ParseError,
+        role: String,
+        roles: Vec<String>,
+    },
+
     #[snafu(display("fragment validation failure"))]
     FragmentValidationFailure { source: ValidationError },
 }
@@ -138,17 +156,31 @@ impl KafkaCluster {
         }
     }
 
+    pub fn role(&self, role_variant: &KafkaRole) -> Result<&Role<KafkaConfigFragment>, Error> {
+        match role_variant {
+            KafkaRole::Broker => self.spec.brokers.as_ref(),
+        }
+        .with_context(|| CannotRetrieveKafkaRoleSnafu {
+            role: role_variant.to_string(),
+        })
+    }
+
     pub fn rolegroup(
         &self,
         rolegroup_ref: &RoleGroupRef<KafkaCluster>,
-    ) -> Option<(&Role<KafkaConfigFragment>, &RoleGroup<KafkaConfigFragment>)> {
-        match rolegroup_ref.role.parse().ok()? {
-            KafkaRole::Broker => {
-                let role = &self.spec.brokers.as_ref()?;
-                let rg = role.role_groups.get(&rolegroup_ref.role_group)?;
-                Some((role, rg))
-            }
-        }
+    ) -> Result<&RoleGroup<KafkaConfigFragment>, Error> {
+        let role_variant =
+            KafkaRole::from_str(&rolegroup_ref.role).with_context(|_| UnknownKafkaRoleSnafu {
+                role: rolegroup_ref.role.to_owned(),
+                roles: KafkaRole::roles(),
+            })?;
+
+        let role = self.role(&role_variant)?;
+        role.role_groups
+            .get(&rolegroup_ref.role_group)
+            .with_context(|| CannotRetrieveKafkaRoleGroupSnafu {
+                role_group: rolegroup_ref.role_group.to_owned(),
+            })
     }
 
     /// List all pods expected to form the cluster
@@ -177,33 +209,31 @@ impl KafkaCluster {
     }
 
     /// Retrieve and merge resource configs for role and role groups
-    pub fn merged_config(&self, role: &KafkaRole, role_group: &str) -> Result<KafkaConfig, Error> {
+    pub fn merged_config(
+        &self,
+        role: &KafkaRole,
+        rolegroup_ref: &RoleGroupRef<Self>,
+    ) -> Result<KafkaConfig, Error> {
         // Initialize the result with all default values as baseline
         let conf_defaults = KafkaConfig::default_config(&self.name_any(), role);
 
-        let role = self.spec.brokers.as_ref().context(MissingKafkaRoleSnafu {
-            role: role.to_string(),
-        })?;
-
         // Retrieve role resource config
+        let role = self.role(role)?;
         let mut conf_role = role.config.config.to_owned();
 
         // Retrieve rolegroup specific resource config
-        let mut conf_rolegroup = role
-            .role_groups
-            .get(role_group)
-            .map(|rg| rg.config.config.clone())
-            .unwrap_or_default();
+        let role_group = self.rolegroup(rolegroup_ref)?;
+        let mut conf_role_group = role_group.config.config.to_owned();
 
         if let Some(RoleGroup {
             selector: Some(selector),
             ..
-        }) = role.role_groups.get(role_group)
+        }) = role.role_groups.get(&rolegroup_ref.role_group)
         {
             // Migrate old `selector` attribute, see ADR 26 affinities.
             // TODO Can be removed after support for the old `selector` field is dropped.
             #[allow(deprecated)]
-            conf_rolegroup.affinity.add_legacy_selector(selector);
+            conf_role_group.affinity.add_legacy_selector(selector);
         }
 
         // Merge more specific configs into default config
@@ -212,10 +242,10 @@ impl KafkaCluster {
         // 2. Role
         // 3. Default
         conf_role.merge(&conf_defaults);
-        conf_rolegroup.merge(&conf_role);
+        conf_role_group.merge(&conf_role);
 
-        tracing::debug!("Merged config: {:?}", conf_rolegroup);
-        fragment::validate(conf_rolegroup).context(FragmentValidationFailureSnafu)
+        tracing::debug!("Merged config: {:?}", conf_role_group);
+        fragment::validate(conf_role_group).context(FragmentValidationFailureSnafu)
     }
 }
 
@@ -254,6 +284,29 @@ impl KafkaPodRef {
 pub enum KafkaRole {
     #[strum(serialize = "broker")]
     Broker,
+}
+
+impl KafkaRole {
+    /// Metadata about a rolegroup
+    pub fn rolegroup_ref(
+        &self,
+        kafka: &KafkaCluster,
+        group_name: impl Into<String>,
+    ) -> RoleGroupRef<KafkaCluster> {
+        RoleGroupRef {
+            cluster: ObjectRef::from_obj(kafka),
+            role: self.to_string(),
+            role_group: group_name.into(),
+        }
+    }
+
+    pub fn roles() -> Vec<String> {
+        let mut roles = vec![];
+        for role in Self::iter() {
+            roles.push(role.to_string())
+        }
+        roles
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Fragment, JsonSchema)]
@@ -336,16 +389,16 @@ impl KafkaConfig {
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {
-                    min: Some(Quantity("500m".to_owned())),
-                    max: Some(Quantity("4".to_owned())),
+                    min: Some(Quantity("250m".to_owned())),
+                    max: Some(Quantity("1000m".to_owned())),
                 },
                 memory: MemoryLimitsFragment {
-                    limit: Some(Quantity("2Gi".to_owned())),
+                    limit: Some(Quantity("1Gi".to_owned())),
                     runtime_limits: NoRuntimeLimitsFragment {},
                 },
                 storage: StorageFragment {
                     log_dirs: PvcConfigFragment {
-                        capacity: Some(Quantity("1Gi".to_owned())),
+                        capacity: Some(Quantity("2Gi".to_owned())),
                         storage_class: None,
                         selectors: None,
                     },
@@ -404,6 +457,7 @@ impl Configuration for KafkaConfigFragment {
 #[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterStatus {
+    #[serde(default)]
     pub conditions: Vec<ClusterCondition>,
 }
 
@@ -449,8 +503,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -468,8 +521,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
@@ -493,8 +545,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           clusterConfig:
             tls:
               serverSecretClass: null
@@ -514,8 +565,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
@@ -539,8 +589,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -558,8 +607,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls
@@ -579,8 +627,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.3.1
-            stackableVersion: "23.4.0-rc2"
+            productVersion: 3.4.0
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
