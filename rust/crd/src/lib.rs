@@ -353,7 +353,6 @@ impl Storage {
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum Container {
-    Prepare,
     Vector,
     KcatProber,
     GetService,
