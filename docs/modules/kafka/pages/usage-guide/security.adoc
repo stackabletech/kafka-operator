@@ -2,7 +2,8 @@
 
 == Encryption
 
-The internal and client communication can be encrypted TLS. This requires the xref:secret-operator::index.adoc[Secret Operator] to be present in order to provide certificates. The utilized certificates can be changed in a top-level config.
+The internal and client communication can be encrypted TLS. This requires the xref:secret-operator:index.adoc[Secret
+Operator] to be present in order to provide certificates. The utilized certificates can be changed in a top-level config.
 
 [source,yaml]
 ----
@@ -28,7 +29,7 @@ spec:
 <1> The `spec.clusterConfig.tls.serverSecretClass` refers to the client-to-server encryption. Defaults to the `tls` secret. Can be deactivated by setting `serverSecretClass` to `null`.
 <2> The `spec.clusterConfig.tls.internalSecretClass` refers to the broker-to-broker internal encryption. This must be explicitly set or defaults to `tls`. May be disabled by setting `internalSecretClass` to `null`.
 
-The `tls` secret is deployed from the xref:secret-operator::index.adoc[Secret Operator] and looks like this:
+The `tls` secret is deployed from the xref:secret-operator:index.adoc[Secret Operator] and looks like this:
 
 [source,yaml]
 ----
@@ -47,11 +48,14 @@ spec:
         autoGenerate: true
 ----
 
-You can create your own secrets and reference them e.g. in the `spec.clusterConfig.tls.serverSecretClass` or `spec.clusterConfig.tls.internalSecretClass` to use different certificates.
+You can create your own secrets and reference them e.g. in the `spec.clusterConfig.tls.serverSecretClass` or
+`spec.clusterConfig.tls.internalSecretClass` to use different certificates.
 
 == Authentication
 
-The internal or broker-to-broker communication is authenticated via TLS. In order to enforce TLS authentication for client-to-server communication, you can set an `AuthenticationClass` reference in the custom resource provided by the xref:commons-operator::index.adoc[Commons Operator].
+The internal or broker-to-broker communication is authenticated via TLS. In order to enforce TLS authentication for
+client-to-server communication, you can set an `AuthenticationClass` reference in the custom resource provided by the
+xref:commons-operator:index.adoc[Commons Operator].
 
 [source,yaml]
 ----
@@ -103,7 +107,9 @@ spec:
 
 == [[authorization]]Authorization
 
-If you wish to include integration with xref:opa::index.adoc[Open Policy Agent] and already have an OPA cluster, then you can include an `opa` field pointing to the OPA cluster discovery `ConfigMap` and the required package. The package is optional and will default to the `metadata.name` field:
+If you wish to include integration with xref:opa:index.adoc[Open Policy Agent] and already have an OPA cluster, then you
+can include an `opa` field pointing to the OPA cluster discovery `ConfigMap` and the required package. The package is
+optional and will default to the `metadata.name` field:
 
 [source,yaml]
 ----
