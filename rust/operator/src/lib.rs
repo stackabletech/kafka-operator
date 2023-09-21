@@ -1,11 +1,9 @@
 mod discovery;
 mod kafka_controller;
-mod pod_svc_controller;
 mod product_logging;
 mod utils;
 
 use crate::kafka_controller::KAFKA_CONTROLLER_NAME;
-use crate::pod_svc_controller::POD_SERVICE_CONTROLLER_NAME;
 
 use futures::StreamExt;
 use stackable_kafka_crd::{KafkaCluster, OPERATOR_NAME};
@@ -13,7 +11,7 @@ use stackable_operator::{
     client::Client,
     k8s_openapi::api::{
         apps::v1::StatefulSet,
-        core::v1::{ConfigMap, Pod, Service, ServiceAccount},
+        core::v1::{ConfigMap, Service, ServiceAccount},
         rbac::v1::RoleBinding,
     },
     kube::runtime::{watcher, Controller},
@@ -79,31 +77,5 @@ pub async fn create_controller(
         );
     });
 
-    let pod_svc_controller = Controller::new(
-        namespace.get_api::<Pod>(&client),
-        watcher::Config::default().labels(&format!("{}=true", pod_svc_controller::LABEL_ENABLE)),
-    )
-    .owns(
-        namespace.get_api::<Pod>(&client),
-        watcher::Config::default(),
-    )
-    .shutdown_on_signal()
-    .run(
-        pod_svc_controller::reconcile_pod,
-        pod_svc_controller::error_policy,
-        Arc::new(pod_svc_controller::Ctx {
-            client: client.clone(),
-        }),
-    )
-    .map(|res| {
-        report_controller_reconciled(
-            &client,
-            &format!("{POD_SERVICE_CONTROLLER_NAME}.{OPERATOR_NAME}"),
-            &res,
-        );
-    });
-
-    futures::stream::select(kafka_controller, pod_svc_controller)
-        .collect::<()>()
-        .await;
+    kafka_controller.collect::<()>().await;
 }

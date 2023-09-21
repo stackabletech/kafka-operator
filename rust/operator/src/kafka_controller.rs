@@ -5,19 +5,18 @@ use crate::product_logging::{
 };
 use crate::{
     discovery::{self, build_discovery_configmaps},
-    pod_svc_controller,
     product_logging::LOG4J_CONFIG_FILE,
     utils::{self, build_recommended_labels},
     ControllerConfig,
 };
 
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::JVM_SECURITY_PROPERTIES_FILE;
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
-    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
-    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
+    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME,
+    JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
+    METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
+    STACKABLE_DATA_DIR, STACKABLE_LISTENER_DIR, STACKABLE_LOG_CONFIG_DIR,
 };
 
 use stackable_operator::k8s_openapi::DeepMerge;
@@ -35,9 +34,9 @@ use stackable_operator::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
             core::v1::{
-                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort,
-                EmptyDirVolumeSource, EnvVar, EnvVarSource, ExecAction, ObjectFieldSelector,
-                PodSpec, Probe, Service, ServicePort, ServiceSpec, Volume,
+                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar,
+                EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe, Service,
+                ServicePort, ServiceSpec, Volume,
             },
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
@@ -679,12 +678,6 @@ fn build_broker_rolegroup_statefulset(
             name: prepare_container_name.clone(),
         })?;
 
-    let get_svc_container_name = Container::GetService.to_string();
-    let mut cb_get_svc =
-        ContainerBuilder::new(&get_svc_container_name).context(InvalidContainerNameSnafu {
-            name: get_svc_container_name.clone(),
-        })?;
-
     let kcat_prober_container_name = Container::KcatProber.to_string();
     let mut cb_kcat_prober =
         ContainerBuilder::new(&kcat_prober_container_name).context(InvalidContainerNameSnafu {
@@ -706,29 +699,6 @@ fn build_broker_rolegroup_statefulset(
         &mut cb_kcat_prober,
         &mut cb_kafka,
     );
-
-    cb_get_svc
-        .image_from_product_image(resolved_product_image)
-        .command(vec!["bash".to_string()])
-        .args(vec![
-            "-euo".to_string(),
-            "pipefail".to_string(),
-            "-c".to_string(),
-            kafka_security.svc_container_commands(),
-        ])
-        .add_env_vars(vec![EnvVar {
-            name: "POD_NAME".to_string(),
-            value_from: Some(EnvVarSource {
-                field_ref: Some(ObjectFieldSelector {
-                    api_version: Some("v1".to_string()),
-                    field_path: "metadata.name".to_string(),
-                }),
-                ..EnvVarSource::default()
-            }),
-            ..EnvVar::default()
-        }])
-        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
-        .resources(merged_config.resources.clone().into());
 
     let mut prepare_container_args = vec![];
 
@@ -755,7 +725,7 @@ fn build_broker_rolegroup_statefulset(
         ])
         .args(vec![prepare_container_args.join(" && ")])
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
-        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
+        .add_volume_mount("listener", STACKABLE_LISTENER_DIR)
         .add_volume_mount("log", STACKABLE_LOG_DIR)
         .resources(merged_config.resources.clone().into());
 
@@ -804,17 +774,6 @@ fn build_broker_rolegroup_statefulset(
     });
 
     env.push(EnvVar {
-        name: "NODE".to_string(),
-        value_from: Some(EnvVarSource {
-            field_ref: Some(ObjectFieldSelector {
-                api_version: Some("v1".to_string()),
-                field_path: "status.hostIP".to_string(),
-            }),
-            ..EnvVarSource::default()
-        }),
-        ..EnvVar::default()
-    });
-    env.push(EnvVar {
         name: "POD_NAME".to_string(),
         value_from: Some(EnvVarSource {
             field_ref: Some(ObjectFieldSelector {
@@ -848,7 +807,7 @@ fn build_broker_rolegroup_statefulset(
         .add_container_ports(container_ports(kafka_security))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("config", STACKABLE_CONFIG_DIR)
-        .add_volume_mount("tmp", STACKABLE_TMP_DIR)
+        .add_volume_mount("listener", STACKABLE_LISTENER_DIR)
         .add_volume_mount("log-config", STACKABLE_LOG_CONFIG_DIR)
         .add_volume_mount("log", STACKABLE_LOG_DIR)
         .resources(merged_config.resources.clone().into());
@@ -913,11 +872,9 @@ fn build_broker_rolegroup_statefulset(
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             ))
-            .with_label(pod_svc_controller::LABEL_ENABLE, "true")
         })
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_init_container(cb_prepare.build())
-        .add_init_container(cb_get_svc.build())
         .add_container(cb_kafka.build())
         .add_container(cb_kcat_prober.build())
         .affinity(&merged_config.affinity)
@@ -929,11 +886,7 @@ fn build_broker_rolegroup_statefulset(
             }),
             ..Volume::default()
         })
-        .add_volume(Volume {
-            name: "tmp".to_string(),
-            empty_dir: Some(EmptyDirVolumeSource::default()),
-            ..Volume::default()
-        })
+        .add_listener_volume_by_listener_class("listener", "nodeport")
         .add_empty_dir_volume(
             "log",
             Some(product_logging::framework::calculate_log_volume_size_limit(

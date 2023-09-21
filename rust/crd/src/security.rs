@@ -7,7 +7,7 @@
 
 use crate::{
     authentication, authentication::ResolvedAuthenticationClasses, listener, tls, KafkaCluster,
-    SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_TMP_DIR,
+    SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
 };
 
 use crate::listener::KafkaListenerConfig;
@@ -222,13 +222,6 @@ impl KafkaTlsSecurity {
         }
 
         args
-    }
-
-    /// Returns SVC container command to retrieve the node port service port.
-    pub fn svc_container_commands(&self) -> String {
-        let port_name = self.client_port_name();
-        // Extract the nodeport from the nodeport service
-        format!("kubectl get service \"$POD_NAME\" -o jsonpath='{{.spec.ports[?(@.name==\"{port_name}\")].nodePort}}' | tee {STACKABLE_TMP_DIR}/{port_name}_nodeport")
     }
 
     /// Returns the commands for the kcat readiness probe.
