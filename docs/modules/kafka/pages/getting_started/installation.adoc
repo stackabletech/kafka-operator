@@ -1,20 +1,22 @@
 = Installation
 
-On this page you will install the Stackable Operator for Apache Kafka and operators for its dependencies - ZooKeeper - as well as the commons and secret operator which are required by all Stackable Operators.
+On this page you will install the Stackable Operator for Apache Kafka and operators for its dependencies - ZooKeeper -
+as well as the commons and secret operator which are required by all Stackable Operators.
 
 == Stackable Operators
 
 There are 2 ways to install Stackable Operators:
 
-1. Using xref:stackablectl::index.adoc[stackablectl]
-
-2. Using Helm
+. Using xref:management:stackablectl:index.adoc[stackablectl]
+. Using Helm
 
 === stackablectl
 
-The stackablectl command line tool is the recommended way to interact with operators and dependencies. Follow the xref:stackablectl::installation.adoc[installation steps] for your platform if you choose to work with stackablectl.
+The `stackablectl` command line tool is the recommended way to interact with operators and dependencies. Follow the
+xref:management:stackablectl:installation.adoc[installation steps] for your platform if you choose to work with
+`stackablectl`.
 
-After you have installed stackablectl, run the following command to install all operators necessary for Kafka:
+After you have installed `stackablectl`, run the following command to install all operators necessary for Kafka:
 
 [source,bash]
 ----
@@ -28,7 +30,7 @@ The tool will show
 include::example$getting_started/install-operator-output.txt[tag=stackablectl-install-operators-output]
 ----
 
-TIP: Consult the xref:stackablectl::quickstart.adoc[] to learn more about how to use stackablectl.
+TIP: Consult the xref:management:stackablectl:quickstart.adoc[] to learn more about how to use `stackablectl`.
 
 === Helm
 
@@ -46,7 +48,8 @@ Then install the Stackable Operators:
 include::example$getting_started/getting_started.sh[tag=helm-install-operators]
 ----
 
-Helm will deploy the operators in a Kubernetes Deployment and apply the CRDs for the Apache Kafka service (as well as the CRDs for the required operators). You are now ready to deploy Apache Kafka in Kubernetes.
+Helm will deploy the operators in a Kubernetes Deployment and apply the CRDs for the Apache Kafka service (as well as
+the CRDs for the required operators). You are now ready to deploy Apache Kafka in Kubernetes.
 
 == What's next
 
