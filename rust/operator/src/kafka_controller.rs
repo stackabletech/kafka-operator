@@ -1,7 +1,7 @@
 //! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
 use crate::product_logging::{
     extend_role_group_config_map, resolve_vector_aggregator_address, MAX_KAFKA_LOG_FILES_SIZE,
-    MAX_PREPARE_LOG_FILE_SIZE, STACKABLE_LOG_DIR,
+    STACKABLE_LOG_DIR,
 };
 use crate::{
     discovery::{self, build_discovery_configmaps},
@@ -900,7 +900,7 @@ fn build_broker_rolegroup_statefulset(
         .add_empty_dir_volume(
             "log",
             Some(product_logging::framework::calculate_log_volume_size_limit(
-                &[MAX_KAFKA_LOG_FILES_SIZE, MAX_PREPARE_LOG_FILE_SIZE],
+                &[MAX_KAFKA_LOG_FILES_SIZE],
             )),
         )
         .service_account_name(sa_name)

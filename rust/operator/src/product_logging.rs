@@ -43,10 +43,6 @@ pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {
     value: 10.0,
     unit: BinaryMultiple::Mebi,
 };
-pub const MAX_PREPARE_LOG_FILE_SIZE: MemoryQuantity = MemoryQuantity {
-    value: 1.0,
-    unit: BinaryMultiple::Mebi,
-};
 
 const VECTOR_AGGREGATOR_CM_ENTRY: &str = "ADDRESS";
 const CONSOLE_CONVERSION_PATTERN: &str = "[%d] %p %m (%c)%n";
