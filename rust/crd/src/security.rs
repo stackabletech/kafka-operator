@@ -255,34 +255,34 @@ impl KafkaTlsSecurity {
         // add tls (server or client authentication volumes) if required
         if let Some(tls_server_secret_class) = self.get_tls_secret_class() {
             // We have to mount tls pem files for kcat (the mount can be used directly)
-            cb_kcat_prober.add_volume_mount(
-                Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
-                Self::STACKABLE_TLS_CERT_SERVER_DIR,
-            );
             pod_builder.add_volume(Self::create_tls_volume(
                 Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
                 tls_server_secret_class,
             ));
-            // Mounted keystores fore the kafka container
-            cb_kafka.add_volume_mount(
-                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
-                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR,
+            cb_kcat_prober.add_volume_mount(
+                Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
+                Self::STACKABLE_TLS_CERT_SERVER_DIR,
             );
+            // Keystores fore the kafka container
             pod_builder.add_volume(Self::create_tls_keystore_volume(
                 Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
                 tls_server_secret_class,
             ));
+            cb_kafka.add_volume_mount(
+                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
+                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR,
+            );
         }
 
         if let Some(tls_internal_secret_class) = self.tls_internal_secret_class() {
-            cb_kafka.add_volume_mount(
-                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
-                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR,
-            );
             pod_builder.add_volume(Self::create_tls_keystore_volume(
                 Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
                 tls_internal_secret_class,
             ));
+            cb_kafka.add_volume_mount(
+                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
+                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR,
+            );
         }
     }
 
