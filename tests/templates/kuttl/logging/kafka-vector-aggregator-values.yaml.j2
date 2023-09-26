@@ -32,12 +32,6 @@ customConfig:
       condition: >-
         .pod == "test-kafka-broker-automatic-log-config-0" &&
         .container == "vector"
-    filteredAutomaticLogConfigBrokerPrepare:
-      type: filter
-      inputs: [vector]
-      condition: >-
-        .pod == "test-kafka-broker-automatic-log-config-0" &&
-        .container == "prepare"
     filteredCustomLogConfigBrokerKafka:
       type: filter
       inputs: [vector]
@@ -50,12 +44,6 @@ customConfig:
       condition: >-
         .pod == "test-kafka-broker-custom-log-config-0" &&
         .container == "vector"
-    filteredCustomLogConfigBrokerPrepare:
-      type: filter
-      inputs: [vector]
-      condition: >-
-        .pod == "test-kafka-broker-custom-log-config-0" &&
-        .container == "prepare"
     filteredInvalidEvents:
       type: filter
       inputs: [vector]
