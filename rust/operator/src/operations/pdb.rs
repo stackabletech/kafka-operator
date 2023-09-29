@@ -56,6 +56,6 @@ pub async fn add_pdbs(
 }
 
 fn max_unavailable_brokers() -> u16 {
-    // We can not make any assumptions about topic replication factors
+    // We can not make any assumptions about topic replication factors.
     1
 }
