@@ -23,7 +23,7 @@ pub enum Error {
 
 pub async fn add_pdbs(
     pdb: &PdbConfig,
-    zookeeper: &KafkaCluster,
+    kafka: &KafkaCluster,
     role: &KafkaRole,
     client: &Client,
     cluster_resources: &mut ClusterResources,
@@ -35,7 +35,7 @@ pub async fn add_pdbs(
         KafkaRole::Broker => max_unavailable_brokers(),
     });
     let pdb = PodDisruptionBudgetBuilder::new_with_role(
-        zookeeper,
+        kafka,
         APP_NAME,
         &role.to_string(),
         OPERATOR_NAME,
