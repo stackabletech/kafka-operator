@@ -1,4 +1,5 @@
 //! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
+use crate::operations::pdb::add_pdbs;
 use crate::product_logging::{
     extend_role_group_config_map, resolve_vector_aggregator_address, MAX_KAFKA_LOG_FILES_SIZE,
     STACKABLE_LOG_DIR,
@@ -21,6 +22,7 @@ use stackable_kafka_crd::{
 };
 
 use stackable_operator::k8s_openapi::DeepMerge;
+use stackable_operator::role_utils::RoleConfig;
 use stackable_operator::{
     builder::{
         resources::ResourceRequirementsBuilder, ConfigMapBuilder, ContainerBuilder,
@@ -232,7 +234,6 @@ pub enum Error {
     BuildRbacResources {
         source: stackable_operator::error::Error,
     },
-
     #[snafu(display("internal operator failure"))]
     InternalOperatorError { source: stackable_kafka_crd::Error },
     #[snafu(display(
@@ -242,6 +243,10 @@ pub enum Error {
     JvmSecurityPoperties {
         source: stackable_operator::product_config::writer::PropertiesWriterError,
         rolegroup: String,
+    },
+    #[snafu(display("failed to create PodDisruptionBudget"))]
+    FailedToCreatePdb {
+        source: crate::operations::pdb::Error,
     },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -296,6 +301,7 @@ impl ReconcilerError for Error {
             Error::BuildRbacResources { .. } => None,
             Error::InternalOperatorError { .. } => None,
             Error::JvmSecurityPoperties { .. } => None,
+            Error::FailedToCreatePdb { .. } => None,
         }
     }
 }
@@ -453,6 +459,16 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
                     rolegroup: rolegroup_ref.clone(),
                 })?,
         );
+    }
+
+    let role_config = kafka.role_config(&kafka_role);
+    if let Some(RoleConfig {
+        pod_disruption_budget: pdb,
+    }) = role_config
+    {
+        add_pdbs(pdb, &kafka, &kafka_role, client, &mut cluster_resources)
+            .await
+            .context(FailedToCreatePdbSnafu)?;
     }
 
     for discovery_cm in build_discovery_configmaps(
