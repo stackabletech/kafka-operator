@@ -49,3 +49,12 @@ status:
   capacity:
     storage: 2Gi
   phase: Bound
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: test-kafka-broker
+status:
+  expectedPods: 1
+  currentHealthy: 1
+  disruptionsAllowed: 1

@@ -1,5 +1,6 @@
 mod discovery;
 mod kafka_controller;
+mod operations;
 mod pod_svc_controller;
 mod product_logging;
 mod utils;
