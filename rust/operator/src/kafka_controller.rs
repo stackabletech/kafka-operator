@@ -21,8 +21,6 @@ use stackable_kafka_crd::{
     STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
 
-use stackable_operator::k8s_openapi::DeepMerge;
-use stackable_operator::role_utils::RoleConfig;
 use stackable_operator::{
     builder::{
         resources::ResourceRequirementsBuilder, ConfigMapBuilder, ContainerBuilder,
@@ -43,6 +41,7 @@ use stackable_operator::{
             },
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
+        DeepMerge,
     },
     kube::{
         api::DynamicObject,
@@ -63,7 +62,7 @@ use stackable_operator::{
             CustomContainerLogConfig,
         },
     },
-    role_utils::RoleGroupRef,
+    role_utils::{GenericRoleConfig, RoleGroupRef},
     status::condition::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
         statefulset::StatefulSetConditionBuilder,
@@ -462,7 +461,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     }
 
     let role_config = kafka.role_config(&kafka_role);
-    if let Some(RoleConfig {
+    if let Some(GenericRoleConfig {
         pod_disruption_budget: pdb,
     }) = role_config
     {

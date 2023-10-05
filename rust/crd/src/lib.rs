@@ -30,7 +30,7 @@ use stackable_operator::{
     kube::{runtime::reflector::ObjectRef, CustomResource, ResourceExt},
     product_config_utils::{ConfigError, Configuration},
     product_logging::{self, spec::Logging},
-    role_utils::{Role, RoleConfig, RoleGroup, RoleGroupRef},
+    role_utils::{GenericRoleConfig, Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
 };
@@ -183,7 +183,7 @@ impl KafkaCluster {
             })
     }
 
-    pub fn role_config(&self, role: &KafkaRole) -> Option<&RoleConfig> {
+    pub fn role_config(&self, role: &KafkaRole) -> Option<&GenericRoleConfig> {
         match role {
             KafkaRole::Broker => self.spec.brokers.as_ref().map(|b| &b.role_config),
         }
