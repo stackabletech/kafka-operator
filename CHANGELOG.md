@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Default stackableVersion to operator version. It is recommended to remove `spec.image.stackableVersion` from your custom resources ([#611], [#613]).
 - Configuration overrides for the JVM security properties, such as DNS caching ([#616]).
 - Support PodDisruptionBudgets ([#625]).
+- Support new versions 3.4.1, 3.5.0 ([#627]).
 
 ### Changed
 
@@ -18,12 +19,17 @@ All notable changes to this project will be documented in this file.
   with the effect, that you can't configure the log level for this container anymore.
   You need to remove the field `spec.brokers.config.logging.container.prepare` in case you have specified it ([#621]).
 
+### Removed
+
+- Removed support for versions 2.7.1, 3.1.0, 3.2.0, 3.3.1 ([#627]). 
+
 [#611]: https://github.com/stackabletech/kafka-operator/pull/611
 [#612]: https://github.com/stackabletech/kafka-operator/pull/612
 [#613]: https://github.com/stackabletech/kafka-operator/pull/613
 [#616]: https://github.com/stackabletech/kafka-operator/pull/616
 [#621]: https://github.com/stackabletech/kafka-operator/pull/621
 [#625]: https://github.com/stackabletech/kafka-operator/pull/625
+[#627]: https://github.com/stackabletech/kafka-operator/pull/627
 
 ## [23.7.0] - 2023-07-14
 
