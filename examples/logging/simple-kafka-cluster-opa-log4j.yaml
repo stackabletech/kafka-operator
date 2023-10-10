@@ -5,13 +5,10 @@ metadata:
   name: simple-zk
 spec:
   image:
-    productVersion: 3.8.0
+    productVersion: 3.8.2
   servers:
     roleGroups:
       default:
-        selector:
-          matchLabels:
-            kubernetes.io/os: linux
         replicas: 3
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1
@@ -28,13 +25,10 @@ metadata:
   name: simple-opa
 spec:
   image:
-    productVersion: 0.45.0
+    productVersion: 0.57.0
   servers:
     roleGroups:
-      default:
-        selector:
-          matchLabels:
-            kubernetes.io/os: linux
+      default: {}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -56,7 +50,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.4.0
+    productVersion: 3.5.0
   clusterConfig:
     authorization:
       opa:
