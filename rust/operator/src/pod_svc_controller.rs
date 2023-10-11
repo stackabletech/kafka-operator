@@ -1,6 +1,7 @@
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::APP_NAME;
 use stackable_operator::{
+    duration::Duration,
     k8s_openapi::{
         api::core::v1::{Container, Pod, Service, ServicePort, ServiceSpec},
         apimachinery::pkg::apis::meta::v1::OwnerReference,
@@ -8,7 +9,7 @@ use stackable_operator::{
     kube::{core::ObjectMeta, runtime::controller::Action},
     logging::controller::ReconcilerError,
 };
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 pub const POD_SERVICE_CONTROLLER_NAME: &str = "pod-service";
@@ -96,5 +97,5 @@ pub async fn reconcile_pod(pod: Arc<Pod>, ctx: Arc<Ctx>) -> Result<Action> {
 }
 
 pub fn error_policy(_obj: Arc<Pod>, _error: &Error, _ctx: Arc<Ctx>) -> Action {
-    Action::requeue(Duration::from_secs(5))
+    Action::requeue(*Duration::from_secs(5))
 }
