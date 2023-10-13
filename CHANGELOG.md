@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - Default stackableVersion to operator version. It is recommended to remove `spec.image.stackableVersion` from your custom resources ([#611], [#613]).
 - Configuration overrides for the JVM security properties, such as DNS caching ([#616]).
 - Support PodDisruptionBudgets ([#625]).
-- Support new versions 3.4.1, 3.5.0 ([#627]).
+- Support new versions 3.4.1, 3.5.1 ([#627]).
 
 ### Changed
 
