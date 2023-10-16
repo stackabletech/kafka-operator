@@ -31,6 +31,7 @@ use stackable_operator::{
         authentication::AuthenticationClass, opa::OpaApiVersion,
         product_image_selection::ResolvedProductImage, rbac::build_rbac_resources,
     },
+    duration::Duration,
     k8s_openapi::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
@@ -72,7 +73,6 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
     sync::Arc,
-    time::Duration,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
@@ -988,7 +988,7 @@ fn build_broker_rolegroup_statefulset(
 }
 
 pub fn error_policy(_obj: Arc<KafkaCluster>, _error: &Error, _ctx: Arc<Ctx>) -> Action {
-    Action::requeue(Duration::from_secs(5))
+    Action::requeue(*Duration::from_secs(5))
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
