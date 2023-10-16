@@ -31,7 +31,6 @@ use stackable_operator::{
         authentication::AuthenticationClass, opa::OpaApiVersion,
         product_image_selection::ResolvedProductImage, rbac::build_rbac_resources,
     },
-    duration::Duration,
     k8s_openapi::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
@@ -68,6 +67,7 @@ use stackable_operator::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
         statefulset::StatefulSetConditionBuilder,
     },
+    time::Duration,
 };
 use std::{
     borrow::Cow,

@@ -1,13 +1,13 @@
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::APP_NAME;
 use stackable_operator::{
-    duration::Duration,
     k8s_openapi::{
         api::core::v1::{Container, Pod, Service, ServicePort, ServiceSpec},
         apimachinery::pkg::apis::meta::v1::OwnerReference,
     },
     kube::{core::ObjectMeta, runtime::controller::Action},
     logging::controller::ReconcilerError,
+    time::Duration,
 };
 use std::sync::Arc;
 use strum::{EnumDiscriminants, IntoStaticStr};
