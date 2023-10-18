@@ -21,7 +21,7 @@ All notable changes to this project will be documented in this file.
 
 ### Removed
 
-- Removed support for versions 2.7.1, 3.1.0, 3.2.0, 3.3.1 ([#627]). 
+- Removed support for versions 2.7.1, 3.1.0, 3.2.0, 3.3.1 ([#627]).
 
 [#611]: https://github.com/stackabletech/kafka-operator/pull/611
 [#612]: https://github.com/stackabletech/kafka-operator/pull/612
