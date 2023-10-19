@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: test_tls.sh namespace
+# Usage: test_client_tls.sh namespace
 
 NAMESPACE=$1
 

@@ -511,6 +511,7 @@ spec:
                           default:
                             enableVectorAgent: null
                             containers: {}
+                          description: Logging configuration
                           properties:
                             containers:
                               additionalProperties:
@@ -518,13 +519,14 @@ spec:
                                   - required:
                                       - custom
                                   - {}
-                                description: Fragment derived from `ContainerLogConfigChoice`
+                                description: Log configuration of the container
                                 properties:
                                   console:
+                                    description: Configuration for the console appender
                                     nullable: true
                                     properties:
                                       level:
-                                        description: Log levels
+                                        description: The log level threshold. Log events with a lower log level are discarded.
                                         enum:
                                           - TRACE
                                           - DEBUG
@@ -540,14 +542,16 @@ spec:
                                     description: Custom log configuration provided in a ConfigMap
                                     properties:
                                       configMap:
+                                        description: ConfigMap containing the log configuration files
                                         nullable: true
                                         type: string
                                     type: object
                                   file:
+                                    description: Configuration for the file appender
                                     nullable: true
                                     properties:
                                       level:
-                                        description: Log levels
+                                        description: The log level threshold. Log events with a lower log level are discarded.
                                         enum:
                                           - TRACE
                                           - DEBUG
@@ -561,9 +565,10 @@ spec:
                                     type: object
                                   loggers:
                                     additionalProperties:
+                                      description: Configuration of a logger
                                       properties:
                                         level:
-                                          description: Log levels
+                                          description: The log level threshold. Log events with a lower log level are discarded.
                                           enum:
                                             - TRACE
                                             - DEBUG
@@ -576,10 +581,13 @@ spec:
                                           type: string
                                       type: object
                                     default: {}
+                                    description: Configuration per logger
                                     type: object
                                 type: object
+                              description: Log configuration per container
                               type: object
                             enableVectorAgent:
+                              description: Wether or not to deploy a container with the Vector log agent
                               nullable: true
                               type: boolean
                           type: object
@@ -3987,6 +3995,7 @@ spec:
                                 default:
                                   enableVectorAgent: null
                                   containers: {}
+                                description: Logging configuration
                                 properties:
                                   containers:
                                     additionalProperties:
@@ -3994,13 +4003,14 @@ spec:
                                         - required:
                                             - custom
                                         - {}
-                                      description: Fragment derived from `ContainerLogConfigChoice`
+                                      description: Log configuration of the container
                                       properties:
                                         console:
+                                          description: Configuration for the console appender
                                           nullable: true
                                           properties:
                                             level:
-                                              description: Log levels
+                                              description: The log level threshold. Log events with a lower log level are discarded.
                                               enum:
                                                 - TRACE
                                                 - DEBUG
@@ -4016,14 +4026,16 @@ spec:
                                           description: Custom log configuration provided in a ConfigMap
                                           properties:
                                             configMap:
+                                              description: ConfigMap containing the log configuration files
                                               nullable: true
                                               type: string
                                           type: object
                                         file:
+                                          description: Configuration for the file appender
                                           nullable: true
                                           properties:
                                             level:
-                                              description: Log levels
+                                              description: The log level threshold. Log events with a lower log level are discarded.
                                               enum:
                                                 - TRACE
                                                 - DEBUG
@@ -4037,9 +4049,10 @@ spec:
                                           type: object
                                         loggers:
                                           additionalProperties:
+                                            description: Configuration of a logger
                                             properties:
                                               level:
-                                                description: Log levels
+                                                description: The log level threshold. Log events with a lower log level are discarded.
                                                 enum:
                                                   - TRACE
                                                   - DEBUG
@@ -4052,10 +4065,13 @@ spec:
                                                 type: string
                                             type: object
                                           default: {}
+                                          description: Configuration per logger
                                           type: object
                                       type: object
+                                    description: Log configuration per container
                                     type: object
                                   enableVectorAgent:
+                                    description: Wether or not to deploy a container with the Vector log agent
                                     nullable: true
                                     type: boolean
                                 type: object

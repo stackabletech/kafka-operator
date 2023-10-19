@@ -9,14 +9,19 @@ All notable changes to this project will be documented in this file.
 - Default stackableVersion to operator version. It is recommended to remove `spec.image.stackableVersion` from your custom resources ([#611], [#613]).
 - Configuration overrides for the JVM security properties, such as DNS caching ([#616]).
 - Support PodDisruptionBudgets ([#625]).
+- Support new versions 2.8.2, 3.4.1, 3.5.1 ([#627]).
 
 ### Changed
 
-- `vector` `0.26.0` -> `0.31.0` ([#612]).
-- `operator-rs` `0.44.0` -> `0.52.1` ([#611], [#621], [#625]).
+- `vector` `0.26.0` -> `0.33.0` ([#612], [#627]).
+- `operator-rs` `0.44.0` -> `0.55.0` ([#611], [#621], [#625], [#627]).
 - [BREAKING]: Let secret-operator handle certificate conversion. Doing so we were able to remove the `prepare` init container
   with the effect, that you can't configure the log level for this container anymore.
   You need to remove the field `spec.brokers.config.logging.container.prepare` in case you have specified it ([#621]).
+
+### Removed
+
+- Removed support for versions 2.7.1, 3.1.0, 3.2.0, 3.3.1 ([#627]).
 
 [#611]: https://github.com/stackabletech/kafka-operator/pull/611
 [#612]: https://github.com/stackabletech/kafka-operator/pull/612
@@ -24,6 +29,7 @@ All notable changes to this project will be documented in this file.
 [#616]: https://github.com/stackabletech/kafka-operator/pull/616
 [#621]: https://github.com/stackabletech/kafka-operator/pull/621
 [#625]: https://github.com/stackabletech/kafka-operator/pull/625
+[#627]: https://github.com/stackabletech/kafka-operator/pull/627
 
 ## [23.7.0] - 2023-07-14
 
