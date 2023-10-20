@@ -14,3 +14,4 @@
 *** xref:kafka:usage-guide/operations/pod-placement.adoc[]
 *** xref:kafka:usage-guide/operations/pod-disruptions.adoc[]
 *** xref:kafka:usage-guide/operations/graceful-shutdown.adoc[]
+*** xref:kafka:usage-guide/operations/znode-id.adoc[]
