@@ -1,26 +1,23 @@
 //! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
-use crate::operations::pdb::add_pdbs;
-use crate::product_logging::{
-    extend_role_group_config_map, resolve_vector_aggregator_address, MAX_KAFKA_LOG_FILES_SIZE,
-    STACKABLE_LOG_DIR,
-};
-use crate::{
-    discovery::{self, build_discovery_configmaps},
-    pod_svc_controller,
-    product_logging::LOG4J_CONFIG_FILE,
-    utils::{self, build_recommended_labels},
-    ControllerConfig,
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
 };
 
+use product_config::{
+    types::PropertyNameKind,
+    writer::{to_java_properties_string, PropertiesWriterError},
+    ProductConfigManager,
+};
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::JVM_SECURITY_PROPERTIES_FILE;
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
-    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME, KAFKA_HEAP_OPTS,
-    LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
+    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME,
+    JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
+    METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
+    STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
-
 use stackable_operator::{
     builder::{
         resources::ResourceRequirementsBuilder, ConfigMapBuilder, ContainerBuilder,
@@ -51,9 +48,6 @@ use stackable_operator::{
     labels::{role_group_selector_labels, role_selector_labels},
     logging::controller::ReconcilerError,
     memory::{BinaryMultiple, MemoryQuantity},
-    product_config::{
-        types::PropertyNameKind, writer::to_java_properties_string, ProductConfigManager,
-    },
     product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
     product_logging::{
         self,
@@ -69,12 +63,19 @@ use stackable_operator::{
     },
     time::Duration,
 };
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
 use strum::{EnumDiscriminants, IntoStaticStr};
+
+use crate::{
+    discovery::{self, build_discovery_configmaps},
+    operations::pdb::add_pdbs,
+    pod_svc_controller,
+    product_logging::{
+        extend_role_group_config_map, resolve_vector_aggregator_address, LOG4J_CONFIG_FILE,
+        MAX_KAFKA_LOG_FILES_SIZE, STACKABLE_LOG_DIR,
+    },
+    utils::{self, build_recommended_labels},
+    ControllerConfig,
+};
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
 /// Used as runAsUser in the pod security context. This is specified in the kafka image file
@@ -141,7 +142,7 @@ pub enum Error {
     },
     #[snafu(display("failed to serialize zoo.cfg for {}", rolegroup))]
     SerializeZooCfg {
-        source: stackable_operator::product_config::writer::PropertiesWriterError,
+        source: PropertiesWriterError,
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
     #[snafu(display("object is missing metadata to build owner reference"))]
@@ -240,7 +241,7 @@ pub enum Error {
         rolegroup
     ))]
     JvmSecurityPoperties {
-        source: stackable_operator::product_config::writer::PropertiesWriterError,
+        source: PropertiesWriterError,
         rolegroup: String,
     },
     #[snafu(display("failed to create PodDisruptionBudget"))]

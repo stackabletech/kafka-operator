@@ -1,14 +1,7 @@
-mod discovery;
-mod kafka_controller;
-mod operations;
-mod pod_svc_controller;
-mod product_logging;
-mod utils;
-
-use crate::kafka_controller::KAFKA_CONTROLLER_NAME;
-use crate::pod_svc_controller::POD_SERVICE_CONTROLLER_NAME;
+use std::sync::Arc;
 
 use futures::StreamExt;
+use product_config::ProductConfigManager;
 use stackable_kafka_crd::{KafkaCluster, OPERATOR_NAME};
 use stackable_operator::{
     client::Client,
@@ -20,9 +13,18 @@ use stackable_operator::{
     kube::runtime::{watcher, Controller},
     logging::controller::report_controller_reconciled,
     namespace::WatchNamespace,
-    product_config::ProductConfigManager,
 };
-use std::sync::Arc;
+
+use crate::{
+    kafka_controller::KAFKA_CONTROLLER_NAME, pod_svc_controller::POD_SERVICE_CONTROLLER_NAME,
+};
+
+mod discovery;
+mod kafka_controller;
+mod operations;
+mod pod_svc_controller;
+mod product_logging;
+mod utils;
 
 mod built_info {
     pub const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
