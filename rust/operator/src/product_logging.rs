@@ -1,5 +1,5 @@
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{Container, KafkaCluster};
+use stackable_kafka_crd::{Container, KafkaCluster, STACKABLE_LOG_DIR};
 use stackable_operator::{
     builder::ConfigMapBuilder,
     client::Client,
@@ -37,7 +37,6 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub const LOG4J_CONFIG_FILE: &str = "log4j.properties";
 pub const KAFKA_LOG_FILE: &str = "kafka.log4j.xml";
-pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
 
 pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {
     value: 10.0,

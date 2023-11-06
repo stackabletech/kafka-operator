@@ -33,6 +33,7 @@ use stackable_operator::{
     role_utils::{GenericRoleConfig, Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
+    time::Duration,
 };
 use std::{collections::BTreeMap, str::FromStr};
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
@@ -55,6 +56,9 @@ pub const STACKABLE_TMP_DIR: &str = "/stackable/tmp";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
+pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
+
+const DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_minutes_unchecked(30);
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -382,10 +386,16 @@ pub enum Container {
 pub struct KafkaConfig {
     #[fragment_attrs(serde(default))]
     pub logging: Logging<Container>,
+
     #[fragment_attrs(serde(default))]
     pub resources: Resources<Storage, NoRuntimeLimits>,
+
     #[fragment_attrs(serde(default))]
     pub affinity: StackableAffinity,
+
+    /// Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
+    #[fragment_attrs(serde(default))]
+    pub graceful_shutdown_timeout: Option<Duration>,
 }
 
 impl KafkaConfig {
@@ -410,6 +420,7 @@ impl KafkaConfig {
                 },
             },
             affinity: get_affinity(cluster_name, role),
+            graceful_shutdown_timeout: Some(DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT),
         }
     }
 }
