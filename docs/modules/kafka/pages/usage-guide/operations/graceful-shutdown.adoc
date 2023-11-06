@@ -1,7 +1,38 @@
 = Graceful shutdown
 
-Graceful shutdown of Kafka nodes is either not supported by the product itself
-or we have not implemented it yet.
+You can configure the graceful shutdown as described in xref:concepts:operations/graceful_shutdown.adoc[].
 
-Outstanding implementation work for the graceful shutdowns of all products where this functionality is relevant is tracked in
-https://github.com/stackabletech/issues/issues/357
+== Brokers
+
+As a default, Kafka brokers have `30 minutes` to shut down gracefully.
+
+The Kafka broker process will receive a `SIGTERM` signal when Kubernetes wants to terminate the Pod.
+After the graceful shutdown timeout runs out, and the process still didn't exit, Kubernetes will issue a `SIGKILL` signal.
+
+This is equivalent to executing the `bin/kafka-server-stop.sh` command, which internally executes `kill <kafka-pid>` (https://github.com/apache/kafka/blob/2c6fb6c54472e90ae17439e62540ef3cb0426fe3/bin/kafka-server-stop.sh#L34[code]).
+
+The broker logs the received signal as shown in the log below:
+
+[source,text]
+----
+[2023-11-06 09:16:12,340] INFO Terminating process due to signal SIGTERM (org.apache.kafka.common.utils.LoggingSignalHandler)
+[2023-11-06 09:16:12,341] INFO [KafkaServer id=1001] shutting down (kafka.server.KafkaServer)
+[2023-11-06 09:16:12,346] INFO [KafkaServer id=1001] Starting controlled shutdown (kafka.server.KafkaServer)
+[2023-11-06 09:16:12,379] INFO [Controller id=1001] Shutting down broker 1001 (kafka.controller.KafkaController)
+----
+
+=== Implementation
+
+The https://kafka.apache.org/35/documentation/#basic_ops_restarting[Kafka documentation] does a very good job at explaining what happens during a graceful shutdown:
+
+The Kafka cluster will automatically detect any broker shutdown or failure and elect new leaders for the partitions on that machine.
+This will occur whether a server fails or it is brought down intentionally for maintenance or configuration changes.
+For the latter cases Kafka supports a more graceful mechanism for stopping a server than just killing it.
+When a server is stopped gracefully it has two optimizations it will take advantage of:
+
+1. It will sync all its logs to disk to avoid needing to do any log recovery when it restarts (i.e. validating the checksum for all messages in the tail of the log). Log recovery takes time so this speeds up intentional restarts.
+2. It will migrate any partitions the server is the leader for to other replicas prior to shutting down. This will make the leadership transfer faster and minimize the time each partition is unavailable to a few milliseconds.
+
+Note that controlled shutdown will only succeed if all the partitions hosted on the broker have replicas (i.e. the replication factor is greater than 1 and at least one of these replicas is alive).
+This is generally what you want since shutting down the last replica would make that topic partition unavailable.
+This operator takes care of that by only allowing a certain number of brokers to be offline as described in xref:pod-disruptions.adoc[].
