@@ -13,18 +13,9 @@ pub enum Error {
 }
 
 pub fn graceful_shutdown_config_properties() -> BTreeMap<String, String> {
-    // Kafka default values
-    BTreeMap::from([
-        ("controlled.shutdown.enable".to_string(), "true".to_string()),
-        (
-            "controlled.shutdown.max.retries".to_string(),
-            "3".to_string(),
-        ),
-        (
-            "controlled.shutdown.retry.backoff.ms".to_string(),
-            "5000".to_string(),
-        ),
-    ])
+    // We don't specify other configs (such as controlled.shutdown.retry.backoff.ms and controlled.shutdown.max.retries),
+    // as this way we can benefit from changing defaults in the future.
+    BTreeMap::from([("controlled.shutdown.enable".to_string(), "true".to_string())])
 }
 
 pub fn add_graceful_shutdown_config(
