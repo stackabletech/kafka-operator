@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Support PodDisruptionBudgets ([#625]).
 - Support new versions 2.8.2, 3.4.1, 3.5.1 ([#627]).
 - Document internal clusterId check ([#631]).
+- Support graceful shutdown ([#XXX]).
 
 ### Changed
 

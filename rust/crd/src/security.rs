@@ -4,22 +4,28 @@
 //! and helper functions
 //!
 //! This is required due to overlaps between TLS encryption and e.g. mTLS authentication or Kerberos
+use std::collections::BTreeMap;
 
-use crate::{
-    authentication, authentication::ResolvedAuthenticationClasses, listener, tls, KafkaCluster,
-    SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_TMP_DIR,
-};
-
-use crate::listener::KafkaListenerConfig;
+use indoc::formatdoc;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::builder::SecretFormat;
+use stackable_operator::product_logging::framework::{
+    create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
+};
 use stackable_operator::{
     builder::{ContainerBuilder, PodBuilder, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
     client::Client,
     commons::authentication::{AuthenticationClass, AuthenticationClassProvider},
     k8s_openapi::api::core::v1::Volume,
+    utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
-use std::collections::BTreeMap;
+
+use crate::STACKABLE_LOG_DIR;
+use crate::{
+    authentication::{self, ResolvedAuthenticationClasses},
+    listener::{self, KafkaListenerConfig},
+    tls, KafkaCluster, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_TMP_DIR,
+};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -225,23 +231,26 @@ impl KafkaTlsSecurity {
         kafka_listeners: &KafkaListenerConfig,
         opa_connect_string: Option<&str>,
     ) -> Vec<String> {
-        vec![
-            "bin/kafka-server-start.sh".to_string(),
-            format!("{STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE}"),
-            "--override \"zookeeper.connect=$ZOOKEEPER\"".to_string(),
-            format!("--override \"listeners={}\"", kafka_listeners.listeners()),
-            format!(
-                "--override \"advertised.listeners={}\"",
-                kafka_listeners.advertised_listeners()
-            ),
-            format!(
-                "--override \"listener.security.protocol.map={}\"",
-                kafka_listeners.listener_security_protocol_map()
-            ),
-            opa_connect_string.map_or("".to_string(), |opa| {
-                format!("--override \"opa.authorizer.url={}\"", opa)
-            }),
-        ]
+        vec![formatdoc! {"
+            {COMMON_BASH_TRAP_FUNCTIONS}
+            {remove_vector_shutdown_file_command}
+            prepare_signal_handlers
+            bin/kafka-server-start.sh {STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE} --override \"zookeeper.connect=$ZOOKEEPER\" --override \"listeners={listeners}\" --override \"advertised.listeners={advertised_listeners}\" --override \"listener.security.protocol.map={listener_security_protocol_map}\"{opa_config} &
+            wait_for_termination $!
+            {create_vector_shutdown_file_command}
+            ",
+        remove_vector_shutdown_file_command =
+            remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+        create_vector_shutdown_file_command =
+            create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+            listeners = kafka_listeners.listeners(),
+            advertised_listeners = kafka_listeners.advertised_listeners(),
+            listener_security_protocol_map = kafka_listeners.listener_security_protocol_map(),
+            opa_config = match opa_connect_string {
+                None => "".to_string(),
+                Some(opa_connect_string) => format!(" --override \"opa.authorizer.url={opa_connect_string}\""),
+            }
+        }]
     }
 
     /// Adds required volumes and volume mounts to the pod and container builders

@@ -16,7 +16,7 @@ use stackable_kafka_crd::{
     KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME,
     JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
     METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
-    STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_TMP_DIR,
+    STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR, STACKABLE_TMP_DIR,
 };
 use stackable_operator::{
     builder::{
@@ -67,11 +67,14 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     discovery::{self, build_discovery_configmaps},
-    operations::pdb::add_pdbs,
+    operations::{
+        graceful_shutdown::{add_graceful_shutdown_config, graceful_shutdown_config_properties},
+        pdb::add_pdbs,
+    },
     pod_svc_controller,
     product_logging::{
         extend_role_group_config_map, resolve_vector_aggregator_address, LOG4J_CONFIG_FILE,
-        MAX_KAFKA_LOG_FILES_SIZE, STACKABLE_LOG_DIR,
+        MAX_KAFKA_LOG_FILES_SIZE,
     },
     utils::{self, build_recommended_labels},
     ControllerConfig,
@@ -94,84 +97,105 @@ pub struct Ctx {
 pub enum Error {
     #[snafu(display("object has no name"))]
     ObjectHasNoName,
+
     #[snafu(display("object has no namespace"))]
     ObjectHasNoNamespace,
+
     #[snafu(display("object defines no broker role"))]
     NoBrokerRole,
+
     #[snafu(display("failed to calculate global service name"))]
     GlobalServiceNameNotFound,
+
     #[snafu(display("failed to apply role Service"))]
     ApplyRoleService {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to apply role ServiceAccount"))]
     ApplyRoleServiceAccount {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to apply global RoleBinding"))]
     ApplyRoleRoleBinding {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to apply Service for {}", rolegroup))]
     ApplyRoleGroupService {
         source: stackable_operator::error::Error,
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
+
     #[snafu(display("failed to build ConfigMap for {}", rolegroup))]
     BuildRoleGroupConfig {
         source: stackable_operator::error::Error,
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
+
     #[snafu(display("failed to apply ConfigMap for {}", rolegroup))]
     ApplyRoleGroupConfig {
         source: stackable_operator::error::Error,
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
+
     #[snafu(display("failed to apply StatefulSet for {}", rolegroup))]
     ApplyRoleGroupStatefulSet {
         source: stackable_operator::error::Error,
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
+
     #[snafu(display("failed to generate product config"))]
     GenerateProductConfig {
         source: stackable_operator::product_config_utils::ConfigError,
     },
+
     #[snafu(display("invalid product config"))]
     InvalidProductConfig {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to serialize zoo.cfg for {}", rolegroup))]
     SerializeZooCfg {
         source: PropertiesWriterError,
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
+
     #[snafu(display("object is missing metadata to build owner reference"))]
     ObjectMissingMetadataForOwnerRef {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to build discovery ConfigMap"))]
     BuildDiscoveryConfig { source: discovery::Error },
+
     #[snafu(display("failed to apply discovery ConfigMap"))]
     ApplyDiscoveryConfig {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to find rolegroup {}", rolegroup))]
     RoleGroupNotFound {
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
+
     #[snafu(display("invalid ServiceAccount"))]
     InvalidServiceAccount {
         source: utils::NamespaceMismatchError,
     },
+
     #[snafu(display("invalid OpaConfig"))]
     InvalidOpaConfig {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to retrieve {}", authentication_class))]
     AuthenticationClassRetrieval {
         source: stackable_operator::error::Error,
         authentication_class: ObjectRef<AuthenticationClass>,
     },
+
     #[snafu(display(
         "failed to use authentication provider {} - supported methods: {:?}",
         provider,
@@ -182,60 +206,75 @@ pub enum Error {
         supported: Vec<String>,
         provider: String,
     },
+
     #[snafu(display("invalid kafka listeners"))]
     InvalidKafkaListeners {
         source: stackable_kafka_crd::listener::KafkaListenerError,
     },
+
     #[snafu(display("invalid container name [{name}]"))]
     InvalidContainerName {
         name: String,
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to delete orphaned resources"))]
     DeleteOrphans {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to initialize security context"))]
     FailedToInitializeSecurityContext {
         source: stackable_kafka_crd::security::Error,
     },
+
     #[snafu(display("invalid memory resource configuration"))]
     InvalidHeapConfig {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to create cluster resources"))]
     CreateClusterResources {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to resolve and merge config for role and role group"))]
     FailedToResolveConfig { source: stackable_kafka_crd::Error },
+
     #[snafu(display("failed to resolve the Vector aggregator address"))]
     ResolveVectorAggregatorAddress {
         source: crate::product_logging::Error,
     },
+
     #[snafu(display("failed to add the logging configuration to the ConfigMap [{cm_name}]"))]
     InvalidLoggingConfig {
         source: crate::product_logging::Error,
         cm_name: String,
     },
+
     #[snafu(display("failed to patch service account"))]
     ApplyServiceAccount {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to patch role binding"))]
     ApplyRoleBinding {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to update status"))]
     ApplyStatus {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("failed to build RBAC resources"))]
     BuildRbacResources {
         source: stackable_operator::error::Error,
     },
+
     #[snafu(display("internal operator failure"))]
     InternalOperatorError { source: stackable_kafka_crd::Error },
+
     #[snafu(display(
         "failed to serialize [{JVM_SECURITY_PROPERTIES_FILE}] for {}",
         rolegroup
@@ -244,9 +283,15 @@ pub enum Error {
         source: PropertiesWriterError,
         rolegroup: String,
     },
+
     #[snafu(display("failed to create PodDisruptionBudget"))]
     FailedToCreatePdb {
         source: crate::operations::pdb::Error,
+    },
+
+    #[snafu(display("failed to configure graceful shutdown"))]
+    GracefulShutdown {
+        source: crate::operations::graceful_shutdown::Error,
     },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -302,6 +347,7 @@ impl ReconcilerError for Error {
             Error::InternalOperatorError { .. } => None,
             Error::JvmSecurityPoperties { .. } => None,
             Error::FailedToCreatePdb { .. } => None,
+            Error::GracefulShutdown { .. } => None,
         }
     }
 }
@@ -562,6 +608,7 @@ fn build_broker_rolegroup_config_map(
         .unwrap_or_default();
 
     server_cfg.extend(kafka_security.config_settings());
+    server_cfg.extend(graceful_shutdown_config_properties());
 
     let server_cfg = server_cfg
         .into_iter()
@@ -718,13 +765,14 @@ fn build_broker_rolegroup_statefulset(
 
     cb_get_svc
         .image_from_product_image(resolved_product_image)
-        .command(vec!["bash".to_string()])
-        .args(vec![
+        .command(vec![
+            "/bin/bash".to_string(),
+            "-x".to_string(),
             "-euo".to_string(),
             "pipefail".to_string(),
             "-c".to_string(),
-            kafka_security.svc_container_commands(),
         ])
+        .args(vec![kafka_security.svc_container_commands()])
         .add_env_vars(vec![EnvVar {
             name: "POD_NAME".to_string(),
             value_from: Some(EnvVarSource {
@@ -815,10 +863,16 @@ fn build_broker_rolegroup_statefulset(
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
-        .command(vec!["sh".to_string(), "-c".to_string()])
+        .command(vec![
+            "/bin/bash".to_string(),
+            "-x".to_string(),
+            "-euo".to_string(),
+            "pipefail".to_string(),
+            "-c".to_string(),
+        ])
         .args(vec![kafka_security
             .kafka_container_commands(&kafka_listeners, opa_connect_string)
-            .join(" ")])
+            .join("\n")])
         .add_env_var("EXTRA_ARGS", jvm_args)
         .add_env_var(
             "KAFKA_LOG4J_OPTS",
@@ -943,6 +997,8 @@ fn build_broker_rolegroup_statefulset(
                 .build(),
         ));
     }
+
+    add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
 
     let mut pod_template = pod_builder.build_template();
 
