@@ -31,7 +31,7 @@ For the latter cases Kafka supports a more graceful mechanism for stopping a ser
 When a server is stopped gracefully it has two optimizations it will take advantage of:
 
 1. It will sync all its logs to disk to avoid the need for any log recovery when it restarts (i.e. validating the checksum for all messages in the tail of the log). Log recovery takes time, so this speeds up intentional restarts.
-2. It will migrate any partitions the server is the leader for to other replicas prior to shutting down. This will make the leadership transfer faster and minimize the time each partition is unavailable to a few milliseconds.
+2. It will migrate any partitions the broker is the leader of, to other replicas prior to shutting down. This will make the leadership transfer faster and minimize the time each partition is unavailable to a few milliseconds.
 
 Note that controlled shutdown will only succeed if all the partitions hosted on the broker have replicas (i.e. the replication factor is greater than 1 and at least one of these replicas is alive).
 This is generally what you want since shutting down the last replica would make that topic partition unavailable.
