@@ -36,5 +36,5 @@ When a server is stopped gracefully it has two optimizations it will take advant
 Note that controlled shutdown will only succeed if all the partitions hosted on the broker have replicas (i.e. the replication factor is greater than 1 and at least one of these replicas is alive).
 This is generally what you want since shutting down the last replica would make that topic partition unavailable.
 
-This operator takes care of that by only allowing a certain number of brokers to be offline as described in xref:pod-disruptions.adoc[].
+This operator takes care of that by only allowing a certain number of brokers to be offline as described in xref:usage-guide/operations/pod-disruptions.adoc[].
 It also always set `controlled.shutdown.enable=true` explicitly.
