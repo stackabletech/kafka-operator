@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - [BREAKING]: Let secret-operator handle certificate conversion. Doing so we were able to remove the `prepare` init container
   with the effect, that you can't configure the log level for this container anymore.
   You need to remove the field `spec.brokers.config.logging.container.prepare` in case you have specified it ([#621]).
+- Combine the operator lib and binary crates ([#638]).
 
 ### Removed
 
@@ -34,6 +35,7 @@ All notable changes to this project will be documented in this file.
 [#627]: https://github.com/stackabletech/kafka-operator/pull/627
 [#631]: https://github.com/stackabletech/kafka-operator/pull/631
 [#635]: https://github.com/stackabletech/kafka-operator/pull/635
+[#638]: https://github.com/stackabletech/kafka-operator/pull/638
 
 ## [23.7.0] - 2023-07-14
 
