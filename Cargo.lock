@@ -1939,7 +1939,7 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "stackable-kafka-crd"
-version = "0.0.0-dev"
+version = "23.11.0"
 dependencies = [
  "indoc",
  "rstest",
@@ -1955,7 +1955,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-operator"
-version = "0.0.0-dev"
+version = "23.11.0"
 dependencies = [
  "built",
  "clap",
