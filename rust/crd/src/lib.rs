@@ -94,6 +94,9 @@ pub enum Error {
     FragmentValidationFailure { source: ValidationError },
 }
 
+/// A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.
+/// Find more information on how to use it and the resources that the operator generates in the
+/// [operator documentation](DOCS_BASE_URL_PLACEHOLDER/kafka/).
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
     group = "kafka.stackable.tech",
@@ -111,14 +114,21 @@ pub enum Error {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterSpec {
+    // no doc - docs in ProductImage struct.
     pub image: ProductImage,
+
+    // no doc - docs in Role struct.
     pub brokers: Option<Role<KafkaConfigFragment>>,
+
+    // no doc - docs in KafkaClusterConfig struct.
     pub cluster_config: KafkaClusterConfig,
-    /// Cluster operations like pause reconciliation or cluster stop.
+
+    // no doc - docs in ClusterOperation struct.
     #[serde(default)]
     pub cluster_operation: ClusterOperation,
 }
 
+/// TODO
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterConfig {
