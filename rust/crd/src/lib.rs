@@ -120,7 +120,8 @@ pub struct KafkaClusterSpec {
     // no doc - docs in Role struct.
     pub brokers: Option<Role<KafkaConfigFragment>>,
 
-    // no doc - docs in KafkaClusterConfig struct.
+    /// Kafka settings that affect all roles and role groups.
+    /// The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
     pub cluster_config: KafkaClusterConfig,
 
     // no doc - docs in ClusterOperation struct.
@@ -128,7 +129,6 @@ pub struct KafkaClusterSpec {
     pub cluster_operation: ClusterOperation,
 }
 
-/// TODO
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterConfig {
