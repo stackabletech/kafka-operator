@@ -7,5 +7,6 @@ use stackable_operator::{
 #[derive(Clone, Deserialize, Debug, Default, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaAuthorization {
+    // no doc - docs in the OpaConfig struct.
     pub opa: Option<OpaConfig>,
 }
