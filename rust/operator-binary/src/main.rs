@@ -56,7 +56,7 @@ struct KafkaRun {
 async fn main() -> Result<(), error::Error> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => KafkaCluster::print_yaml_schema()?,
+        Command::Crd => KafkaCluster::print_yaml_schema(built_info::CARGO_PKG_VERSION)?,
         Command::Run(KafkaRun {
             kafka_broker_clusterrole,
             common:

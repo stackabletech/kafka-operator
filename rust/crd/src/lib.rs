@@ -94,6 +94,9 @@ pub enum Error {
     FragmentValidationFailure { source: ValidationError },
 }
 
+/// A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.
+/// Find more information on how to use it and the resources that the operator generates in the
+/// [operator documentation](DOCS_BASE_URL_PLACEHOLDER/kafka/).
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
     group = "kafka.stackable.tech",
@@ -111,10 +114,17 @@ pub enum Error {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterSpec {
+    // no doc - docs in ProductImage struct.
     pub image: ProductImage,
+
+    // no doc - docs in Role struct.
     pub brokers: Option<Role<KafkaConfigFragment>>,
+
+    /// Kafka settings that affect all roles and role groups.
+    /// The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
     pub cluster_config: KafkaClusterConfig,
-    /// Cluster operations like pause reconciliation or cluster stop.
+
+    // no doc - docs in ClusterOperation struct.
     #[serde(default)]
     pub cluster_operation: ClusterOperation,
 }
@@ -125,20 +135,29 @@ pub struct KafkaClusterConfig {
     /// Authentication class settings for Kafka like mTLS authentication.
     #[serde(default)]
     pub authentication: Vec<KafkaAuthentication>,
+
     /// Authorization settings for Kafka like OPA.
     #[serde(default)]
     pub authorization: KafkaAuthorization,
+
     /// TLS encryption settings for Kafka (server, internal).
     #[serde(
         default = "tls::default_kafka_tls",
         skip_serializing_if = "Option::is_none"
     )]
     pub tls: Option<KafkaTls>,
-    /// Name of the Vector aggregator discovery ConfigMap.
+
+    /// Name of the Vector aggregator [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery).
     /// It must contain the key `ADDRESS` with the address of the Vector aggregator.
+    /// Follow the [logging tutorial](DOCS_BASE_URL_PLACEHOLDER/tutorials/logging-vector-aggregator)
+    /// to learn how to configure log aggregation with Vector.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vector_aggregator_config_map_name: Option<String>,
-    /// ZooKeeper discovery config map name.
+
+    /// Kafka requires a ZooKeeper cluster connection to run.
+    /// Provide the name of the ZooKeeper [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery)
+    /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
+    /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
     pub zookeeper_config_map_name: String,
 }
 
