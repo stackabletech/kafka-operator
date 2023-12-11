@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Various documentation of the CRD ([#645]).
+
+### Updated
+
+- `operator-rs` `0.56.1` -> `0.57.0` ([#645]).
+
+[#645]: https://github.com/stackabletech/kafka-operator/pull/645
+
 ## [23.11.0] - 2023-11-24
 
 ### Added
