@@ -10,6 +10,7 @@ metadata:
 spec:
   image:
     productVersion: "{{ test_scenario['values']['kafka'] }}"
+    pullPolicy: IfNotPresent
   clusterConfig:
     tls:
 {% if test_scenario['values']['use-client-tls'] == 'true' %}
