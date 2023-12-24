@@ -1,7 +1,6 @@
 * xref:kafka:getting_started/index.adoc[]
 ** xref:kafka:getting_started/installation.adoc[]
 ** xref:kafka:getting_started/first_steps.adoc[]
-* xref:kafka:configuration.adoc[]
 * xref:kafka:usage-guide/index.adoc[]
 ** xref:kafka:usage-guide/storage-resources.adoc[]
 ** xref:kafka:usage-guide/security.adoc[]
