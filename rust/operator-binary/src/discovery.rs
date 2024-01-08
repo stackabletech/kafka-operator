@@ -18,24 +18,36 @@ pub enum Error {
         source: stackable_operator::error::Error,
         kafka: ObjectRef<KafkaCluster>,
     },
+
     #[snafu(display("object has no name associated"))]
     NoName,
+
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
+
     #[snafu(display("could not find service port with name {}", port_name))]
     NoServicePort { port_name: String },
+
     #[snafu(display("service port with name {} does not have a nodePort", port_name))]
     NoNodePort { port_name: String },
+
     #[snafu(display("could not find Endpoints for {}", svc))]
     FindEndpoints {
         source: stackable_operator::error::Error,
         svc: ObjectRef<Service>,
     },
+
     #[snafu(display("nodePort was out of range"))]
     InvalidNodePort { source: TryFromIntError },
+
     #[snafu(display("failed to build ConfigMap"))]
     BuildConfigMap {
         source: stackable_operator::error::Error,
+    },
+
+    #[snafu(display("failed to build metadata"))]
+    MetadataBuild {
+        source: stackable_operator::builder::ObjectMetaBuilderError,
     },
 }
 
@@ -101,6 +113,7 @@ fn build_discovery_configmap(
                     &KafkaRole::Broker.to_string(),
                     "discovery",
                 ))
+                .context(MetadataBuildSnafu)?
                 .build(),
         )
         .add_data("KAFKA", bootstrap_servers)

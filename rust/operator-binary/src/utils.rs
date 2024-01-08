@@ -2,7 +2,7 @@ use snafu::Snafu;
 use stackable_kafka_crd::{KafkaCluster, APP_NAME, OPERATOR_NAME};
 use stackable_operator::{
     kube::{core::DynamicObject, runtime::reflector::ObjectRef, Resource},
-    labels::ObjectLabels,
+    kvp::ObjectLabels,
 };
 
 #[derive(Debug, Snafu)]

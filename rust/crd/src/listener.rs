@@ -198,7 +198,7 @@ mod tests {
     use crate::authentication::ResolvedAuthenticationClasses;
 
     use stackable_operator::builder::ObjectMetaBuilder;
-    use stackable_operator::commons::authentication::tls::TlsAuthenticationProvider;
+    use stackable_operator::commons::authentication::tls::AuthenticationProvider;
     use stackable_operator::commons::authentication::{
         AuthenticationClass, AuthenticationClassProvider, AuthenticationClassSpec,
     };
@@ -229,7 +229,7 @@ mod tests {
             ResolvedAuthenticationClasses::new(vec![AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),
                 spec: AuthenticationClassSpec {
-                    provider: AuthenticationClassProvider::Tls(TlsAuthenticationProvider {
+                    provider: AuthenticationClassProvider::Tls(AuthenticationProvider {
                         client_cert_secret_class: Some("client-auth-secret-class".to_string()),
                     }),
                 },
