@@ -309,6 +309,11 @@ pub enum Error {
     LabelBuild {
         source: stackable_operator::kvp::LabelError,
     },
+
+    #[snafu(display("failed to add Secret Volumes and VolumeMounts"))]
+    AddVolumesAndVolumeMounts {
+        source: stackable_kafka_crd::security::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -367,6 +372,7 @@ impl ReconcilerError for Error {
             Error::GetRequiredLabels { .. } => None,
             Error::MetadataBuild { .. } => None,
             Error::LabelBuild { .. } => None,
+            Error::AddVolumesAndVolumeMounts { .. } => None,
         }
     }
 }
@@ -789,11 +795,9 @@ fn build_broker_rolegroup_statefulset(
     let mut pod_builder = PodBuilder::new();
 
     // Add TLS related volumes and volume mounts
-    kafka_security.add_volume_and_volume_mounts(
-        &mut pod_builder,
-        &mut cb_kcat_prober,
-        &mut cb_kafka,
-    );
+    kafka_security
+        .add_volume_and_volume_mounts(&mut pod_builder, &mut cb_kcat_prober, &mut cb_kafka)
+        .context(AddVolumesAndVolumeMountsSnafu)?;
 
     cb_get_svc
         .image_from_product_image(resolved_product_image)
