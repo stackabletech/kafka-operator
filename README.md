@@ -70,7 +70,6 @@ This operator is written by [Stackable](https://www.stackable.tech). It uses [ku
 
 We test it [extensively](https://ci.stackable.tech/) using [Kuttl](https://kuttl.dev/)-powered integration tests on managed Kubernetes of multiple cloud platforms and our own bare-metal clusters.
 
-
 ## About The Stackable Data Platform
 
 This operator is written and maintained by [Stackable](https://stackable.tech) and it is part of a larger data platform.
