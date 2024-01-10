@@ -1,18 +1,22 @@
 This is a Kubernetes operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
 
-{% include "partials/borrowed/overview_blurb.md.j2" %}
+{% filter trim %}
+  {%- include "partials/borrowed/overview_blurb.md.j2" -%}
+{% endfilter %}
 
 ## Installation
 
-You can install the operator using [stackablectl or helm](https://docs.stackable.tech/kafka/stable/getting_started/installation.html).
+You can install the operator using [stackablectl or helm](https://docs.stackable.tech/home/stable/{{operator_name}}/getting_started/installation).
 
 Read on to get started with it, or see it in action in one of our [demos](https://stackable.tech/en/demos/).
 
 ## Getting Started
 
-You can follow this [tutorial](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html) to create a Kafka cluster with three replicas.
+You can follow this [tutorial](https://docs.stackable.tech/home/stable/{{operator_name}}/getting_started/first_steps) to create a Kafka cluster with three replicas.
 
-{% include "partials/borrowed/documentation.md.j2" %}
+{% filter trim %}
+  {%- include "partials/borrowed/documentation.md.j2" -%}
+{% endfilter %}
 
 ## What Does This Do?
 
@@ -38,11 +42,3 @@ spec:
       default:
         replicas: 3
 ```
-
-If you want to find out more about it, take a look at this [getting started guide](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html).
-
-## Behind the Scenes
-
-This operator is written by [Stackable](https://www.stackable.tech). It uses [kube.rs](https://kube.rs/) to interact with the Kubernetes control plane.
-
-We test it [extensively](https://ci.stackable.tech/) using [Kuttl](https://kuttl.dev/)-powered integration tests on managed Kubernetes of multiple cloud platforms and our own bare-metal clusters.
