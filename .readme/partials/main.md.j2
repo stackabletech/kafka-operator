@@ -17,28 +17,3 @@ You can follow this [tutorial](https://docs.stackable.tech/home/stable/{{operato
 {% filter trim %}
   {%- include "partials/borrowed/documentation.md.j2" -%}
 {% endfilter %}
-
-## What Does This Do?
-
-This operator is managing Kafka in Kubernetes. An operator observes custom resources in a Kubernetes cluster, and manages the application it's responsible for according to the desired state specified in those custom resources.
-
-Here's an example how a custom resource to bring up a 3-replica Kafka cluster can look like:
-
-```
----
-apiVersion: kafka.stackable.tech/v1alpha1
-kind: KafkaCluster
-metadata:
-  name: simple-kafka
-spec:
-  image:
-    productVersion: 3.4.0
-  clusterConfig:
-    zookeeperConfigMapName: simple-kafka-znode
-    tls:
-      serverSecretClass: null
-  brokers:
-    roleGroups:
-      default:
-        replicas: 3
-```

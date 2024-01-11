@@ -34,31 +34,6 @@ The documentation for all Stackable products can be found at [docs.stackable.tec
 
 If you have a question about the Stackable Data Platform contact us via our [homepage](https://stackable.tech/) or ask a public questions in our [Discussions forum](https://github.com/orgs/stackabletech/discussions).
 
-## What Does This Do?
-
-This operator is managing Kafka in Kubernetes. An operator observes custom resources in a Kubernetes cluster, and manages the application it's responsible for according to the desired state specified in those custom resources.
-
-Here's an example how a custom resource to bring up a 3-replica Kafka cluster can look like:
-
-```
----
-apiVersion: kafka.stackable.tech/v1alpha1
-kind: KafkaCluster
-metadata:
-  name: simple-kafka
-spec:
-  image:
-    productVersion: 3.4.0
-  clusterConfig:
-    zookeeperConfigMapName: simple-kafka-znode
-    tls:
-      serverSecretClass: null
-  brokers:
-    roleGroups:
-      default:
-        replicas: 3
-```
-
 ## About The Stackable Data Platform
 
 This operator is written and maintained by [Stackable](https://stackable.tech) and it is part of a larger data platform.
