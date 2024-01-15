@@ -9,63 +9,30 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-green.svg)](https://docs.stackable.tech/home/stable/contributor/index.html)
 [![License OSL3.0](https://img.shields.io/badge/license-OSL3.0-green)](./LICENSE)
 
-[Documentation](https://docs.stackable.tech/kafka/stable/index.html) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/) | [Discussions](https://github.com/orgs/stackabletech/discussions) | [Discord](https://discord.gg/7kZ3BNnCAF)
+[Documentation](https://docs.stackable.tech/home/stable/kafka) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/) | [Discussions](https://github.com/orgs/stackabletech/discussions) | [Discord](https://discord.gg/7kZ3BNnCAF)
 
 This is a Kubernetes operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
 
-It is part of the Stackable Data Platform, a curated selection of the best open source data apps like Apache Kafka, Apache Druid, Trino or Apache Spark, [all](#our-operators) working together seamlessly. Based on Kubernetes, it runs everywhere – [on prem or in the cloud](#supported-platforms).
+It is part of the Stackable Data Platform, a curated selection of the best open source data apps like Apache Kafka, Apache Druid, Trino or Apache Spark, [all](#other-operators) working together seamlessly. Based on Kubernetes, it runs everywhere – [on prem or in the cloud](#supported-platforms).
 
 ## Installation
 
-You can install the operator using [stackablectl or helm](https://docs.stackable.tech/kafka/stable/getting_started/installation.html).
+You can install the operator using [stackablectl or helm](https://docs.stackable.tech/home/stable/kafka/getting_started/installation).
 
 Read on to get started with it, or see it in action in one of our [demos](https://stackable.tech/en/demos/).
 
 ## Getting Started
 
-You can follow this [tutorial](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html) to create a Kafka cluster with three replicas.
+You can follow this [tutorial](https://docs.stackable.tech/home/stable/kafka/getting_started/first_steps) to create a Kafka cluster with three replicas.
 
 ## Documentation
 
-The stable documentation for this operator can be found [here](https://docs.stackable.tech/kafka/stable/index.html).
-If you are interested in the most recent state of this repository, check out the [nightly docs](https://docs.stackable.tech/kafka/nightly/index.html) instead.
+The stable documentation for this operator can be found [here](https://docs.stackable.tech/home/stable/kafka).
+If you are interested in the most recent state of this repository, check out the [nightly docs](https://docs.stackable.tech/home/nightly/kafka) instead.
 
 The documentation for all Stackable products can be found at [docs.stackable.tech](https://docs.stackable.tech).
 
 If you have a question about the Stackable Data Platform contact us via our [homepage](https://stackable.tech/) or ask a public questions in our [Discussions forum](https://github.com/orgs/stackabletech/discussions).
-
-## What Does This Do?
-
-This operator is managing Kafka in Kubernetes. An operator observes custom resources in a Kubernetes cluster, and manages the application it's responsible for according to the desired state specified in those custom resources.
-
-Here's an example how a custom resource to bring up a 3-replica Kafka cluster can look like:
-
-```
----
-apiVersion: kafka.stackable.tech/v1alpha1
-kind: KafkaCluster
-metadata:
-  name: simple-kafka
-spec:
-  image:
-    productVersion: 3.4.0
-  clusterConfig:
-    zookeeperConfigMapName: simple-kafka-znode
-    tls:
-      serverSecretClass: null
-  brokers:
-    roleGroups:
-      default:
-        replicas: 3
-```
-
-If you want to find out more about it, take a look at this [getting started guide](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html).
-
-## Behind the Scenes
-
-This operator is written by [Stackable](https://www.stackable.tech). It uses [kube.rs](https://kube.rs/) to interact with the Kubernetes control plane.
-
-We test it [extensively](https://ci.stackable.tech/) using [Kuttl](https://kuttl.dev/)-powered integration tests on managed Kubernetes of multiple cloud platforms and our own bare-metal clusters.
 
 ## About The Stackable Data Platform
 
