@@ -45,7 +45,7 @@ use stackable_operator::{
         runtime::{controller::Action, reflector::ObjectRef},
         Resource, ResourceExt,
     },
-    labels::{role_group_selector_labels, role_selector_labels},
+    kvp::{Label, Labels},
     logging::controller::ReconcilerError,
     memory::{BinaryMultiple, MemoryQuantity},
     product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
@@ -293,6 +293,27 @@ pub enum Error {
     GracefulShutdown {
         source: crate::operations::graceful_shutdown::Error,
     },
+
+    #[snafu(display("failed to get required Labels"))]
+    GetRequiredLabels {
+        source:
+            stackable_operator::kvp::KeyValuePairError<stackable_operator::kvp::LabelValueError>,
+    },
+
+    #[snafu(display("failed to build Metadata"))]
+    MetadataBuild {
+        source: stackable_operator::builder::ObjectMetaBuilderError,
+    },
+
+    #[snafu(display("failed to build Labels"))]
+    LabelBuild {
+        source: stackable_operator::kvp::LabelError,
+    },
+
+    #[snafu(display("failed to add Secret Volumes and VolumeMounts"))]
+    AddVolumesAndVolumeMounts {
+        source: stackable_kafka_crd::security::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -348,6 +369,10 @@ impl ReconcilerError for Error {
             Error::JvmSecurityPoperties { .. } => None,
             Error::FailedToCreatePdb { .. } => None,
             Error::GracefulShutdown { .. } => None,
+            Error::GetRequiredLabels { .. } => None,
+            Error::MetadataBuild { .. } => None,
+            Error::LabelBuild { .. } => None,
+            Error::AddVolumesAndVolumeMounts { .. } => None,
         }
     }
 }
@@ -438,7 +463,9 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let (rbac_sa, rbac_rolebinding) = build_rbac_resources(
         kafka.as_ref(),
         APP_NAME,
-        cluster_resources.get_required_labels(),
+        cluster_resources
+            .get_required_labels()
+            .context(GetRequiredLabelsSnafu)?,
     )
     .context(BuildRbacResourcesSnafu)?;
 
@@ -581,10 +608,15 @@ pub fn build_broker_role_service(
                 &role_name,
                 "global",
             ))
+            .context(MetadataBuildSnafu)?
             .build(),
         spec: Some(ServiceSpec {
             ports: Some(service_ports(kafka_security)),
-            selector: Some(role_selector_labels(kafka, APP_NAME, &role_name)),
+            selector: Some(
+                Labels::role_selector(kafka, APP_NAME, &role_name)
+                    .context(LabelBuildSnafu)?
+                    .into(),
+            ),
             type_: Some("NodePort".to_string()),
             ..ServiceSpec::default()
         }),
@@ -640,6 +672,7 @@ fn build_broker_rolegroup_config_map(
                     &rolegroup.role,
                     "global",
                 ))
+                .context(MetadataBuildSnafu)?
                 .build(),
         )
         .add_data(
@@ -698,17 +731,22 @@ fn build_broker_rolegroup_service(
                 &rolegroup.role,
                 &rolegroup.role_group,
             ))
-            .with_label("prometheus.io/scrape", "true")
+            .context(MetadataBuildSnafu)?
+            .with_label(Label::try_from(("prometheus.io/scrape", "true")).context(LabelBuildSnafu)?)
             .build(),
         spec: Some(ServiceSpec {
             cluster_ip: Some("None".to_string()),
             ports: Some(service_ports(kafka_security)),
-            selector: Some(role_group_selector_labels(
-                kafka,
-                APP_NAME,
-                &rolegroup.role,
-                &rolegroup.role_group,
-            )),
+            selector: Some(
+                Labels::role_group_selector(
+                    kafka,
+                    APP_NAME,
+                    &rolegroup.role,
+                    &rolegroup.role_group,
+                )
+                .context(LabelBuildSnafu)?
+                .into(),
+            ),
             publish_not_ready_addresses: Some(true),
             ..ServiceSpec::default()
         }),
@@ -757,11 +795,9 @@ fn build_broker_rolegroup_statefulset(
     let mut pod_builder = PodBuilder::new();
 
     // Add TLS related volumes and volume mounts
-    kafka_security.add_volume_and_volume_mounts(
-        &mut pod_builder,
-        &mut cb_kcat_prober,
-        &mut cb_kafka,
-    );
+    kafka_security
+        .add_volume_and_volume_mounts(&mut pod_builder, &mut cb_kcat_prober, &mut cb_kafka)
+        .context(AddVolumesAndVolumeMountsSnafu)?;
 
     cb_get_svc
         .image_from_product_image(resolved_product_image)
@@ -938,17 +974,22 @@ fn build_broker_rolegroup_statefulset(
         });
     }
 
+    let metadata = ObjectMetaBuilder::new()
+        .with_recommended_labels(build_recommended_labels(
+            kafka,
+            KAFKA_CONTROLLER_NAME,
+            &resolved_product_image.app_version_label,
+            &rolegroup_ref.role,
+            &rolegroup_ref.role_group,
+        ))
+        .context(MetadataBuildSnafu)?
+        .with_label(
+            Label::try_from((pod_svc_controller::LABEL_ENABLE, "true")).context(LabelBuildSnafu)?,
+        )
+        .build();
+
     pod_builder
-        .metadata_builder(|m| {
-            m.with_recommended_labels(build_recommended_labels(
-                kafka,
-                KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label,
-                &rolegroup_ref.role,
-                &rolegroup_ref.role_group,
-            ))
-            .with_label(pod_svc_controller::LABEL_ENABLE, "true")
-        })
+        .metadata(metadata)
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_init_container(cb_get_svc.build())
         .add_container(cb_kafka.build())
@@ -1022,17 +1063,22 @@ fn build_broker_rolegroup_statefulset(
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             ))
+            .context(MetadataBuildSnafu)?
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
             replicas: rolegroup.replicas.map(i32::from),
             selector: LabelSelector {
-                match_labels: Some(role_group_selector_labels(
-                    kafka,
-                    APP_NAME,
-                    &rolegroup_ref.role,
-                    &rolegroup_ref.role_group,
-                )),
+                match_labels: Some(
+                    Labels::role_group_selector(
+                        kafka,
+                        APP_NAME,
+                        &rolegroup_ref.role,
+                        &rolegroup_ref.role_group,
+                    )
+                    .context(LabelBuildSnafu)?
+                    .into(),
+                ),
                 ..LabelSelector::default()
             },
             service_name: rolegroup_ref.object_name(),
