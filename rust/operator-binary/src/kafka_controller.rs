@@ -300,12 +300,12 @@ pub enum Error {
             stackable_operator::kvp::KeyValuePairError<stackable_operator::kvp::LabelValueError>,
     },
 
-    #[snafu(display("failed to build metadata"))]
+    #[snafu(display("failed to build Metadata"))]
     MetadataBuild {
         source: stackable_operator::builder::ObjectMetaBuilderError,
     },
 
-    #[snafu(display("failed to build labels"))]
+    #[snafu(display("failed to build Labels"))]
     LabelBuild {
         source: stackable_operator::kvp::LabelError,
     },
