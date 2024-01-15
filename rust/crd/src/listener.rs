@@ -199,7 +199,8 @@ mod tests {
 
     use stackable_operator::builder::ObjectMetaBuilder;
     use stackable_operator::commons::authentication::{
-        AuthenticationClass, AuthenticationClassProvider, AuthenticationClassSpec, tls::AuthenticationProvider
+        tls::AuthenticationProvider, AuthenticationClass, AuthenticationClassProvider,
+        AuthenticationClassSpec,
     };
 
     #[test]
