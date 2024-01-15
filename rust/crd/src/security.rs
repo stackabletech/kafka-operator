@@ -32,7 +32,7 @@ pub enum Error {
     #[snafu(display("failed to process authentication class"))]
     InvalidAuthenticationClassConfiguration { source: authentication::Error },
 
-    #[snafu(display("failed to build the Secret operator Volume"))]
+    #[snafu(display("failed to build the secret operator Volume"))]
     SecretVolumeBuild {
         source: stackable_operator::builder::SecretOperatorVolumeSourceBuilderError,
     },
