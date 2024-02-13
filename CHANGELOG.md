@@ -8,9 +8,15 @@ All notable changes to this project will be documented in this file.
 
 - Various documentation of the CRD ([#645]).
 - Helm: support labels in values.yaml ([#657]).
+- Support new versions `3.5.2`, `3.6.1` ([#664]).
+
+### Removed
+
+- Support for versions `2.8.2`, `3.4.0`, `3.5.1` ([#664]).
 
 [#645]: https://github.com/stackabletech/kafka-operator/pull/645
 [#657]: https://github.com/stackabletech/kafka-operator/pull/657
+[#664]: https://github.com/stackabletech/kafka-operator/pull/664
 
 ## [23.11.0] - 2023-11-24
 
