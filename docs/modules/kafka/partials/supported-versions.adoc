@@ -2,8 +2,6 @@
 // This is a separate file, since it is used by both the direct Kafka documentation, and the overarching
 // Stackable Platform documentation.
 
-- 3.5.1
-- 3.4.1
-- 3.4.0 (deprecated)
-- 2.8.2
-- 2.8.1 (deprecated)
+- 3.6.1
+- 3.5.2 (deprecated)
+- 3.4.1 (LTS)

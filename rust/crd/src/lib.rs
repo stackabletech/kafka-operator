@@ -527,7 +527,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.6.1
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -545,7 +545,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.6.1
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
@@ -569,7 +569,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.6.1
           clusterConfig:
             tls:
               serverSecretClass: null
@@ -589,7 +589,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.6.1
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
@@ -613,7 +613,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.6.1
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -631,7 +631,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.6.1
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls
@@ -651,7 +651,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.6.1
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
