@@ -25,7 +25,7 @@ metadata:
   name: simple-opa
 spec:
   image:
-    productVersion: 0.57.0
+    productVersion: 0.61.0
   servers:
     roleGroups:
       default: {}
@@ -50,7 +50,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.5.1
+    productVersion: 3.6.1
   clusterConfig:
     authorization:
       opa:
