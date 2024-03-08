@@ -24,8 +24,8 @@ spec:
 {% else %}
               export SSL_OPTIONS=""
 {% endif %}
-              echo "message written before upgrade" > message
-              kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -P message
+              echo "message written before upgrade" > /tmp/message
+              kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -P /tmp/message
           env:
             - name: KAFKA
               valueFrom:
