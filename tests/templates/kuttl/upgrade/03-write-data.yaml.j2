@@ -11,9 +11,11 @@ spec:
   template:
     spec:
       serviceAccountName: read-write-data-sa
+      securityContext:
+        runAsGroup: 0
       containers:
         - name: write-data
-          image: edenhill/kcat:1.7.1
+          image: "docker.stackable.tech/stackable/kafka:{{ test_scenario['values']['upgrade_old'] }}-stackable0.0.0-dev"
           command: [sh, -euo, pipefail, -c]
           args:
             - |
@@ -25,7 +27,7 @@ spec:
               export SSL_OPTIONS=""
 {% endif %}
               echo "message written before upgrade" > /tmp/message
-              kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -P /tmp/message
+              /stackable/kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -P /tmp/message
           env:
             - name: KAFKA
               valueFrom:

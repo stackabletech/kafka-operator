@@ -11,9 +11,11 @@ spec:
   template:
     spec:
       serviceAccountName: read-write-data-sa
+      securityContext:
+        runAsGroup: 0
       containers:
         - name: read-data
-          image: edenhill/kcat:1.7.1
+          image: "docker.stackable.tech/stackable/kafka:{{ test_scenario['values']['upgrade_new'] }}-stackable0.0.0-dev"
           command: [sh, -euo, pipefail, -c]
           args:
             - |
@@ -25,13 +27,13 @@ spec:
               export SSL_OPTIONS=""
 {% endif %}
               echo "message written after upgrade" > /tmp/message
-              kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -P /tmp/message
+              /stackable/kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -P /tmp/message
 
               echo "message written before upgrade" > /tmp/expected-messages
               echo >> /tmp/expected-messages
               cat /tmp/message >> /tmp/expected-messages
               echo >> /tmp/expected-messages
-              kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -C -e > /tmp/read-messages
+              /stackable/kcat -b $KAFKA $SSL_OPTIONS -t upgrade-test-data -C -e > /tmp/read-messages
               diff /tmp/read-messages /tmp/expected-messages
               cmp /tmp/read-messages /tmp/expected-messages
           env:
