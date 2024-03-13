@@ -102,3 +102,7 @@ suites:
             expr: last
           - name: upgrade_old
             expr: last
+          - name: use-client-tls
+            expr: "true"
+          - name: use-client-auth-tls
+            expr: "true"
