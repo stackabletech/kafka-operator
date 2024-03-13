@@ -11,8 +11,10 @@ spec:
   template:
     spec:
       serviceAccountName: read-write-data-sa
+{% if test_scenario['values']['openshift'] == "true" %}
       securityContext:
-        runAsGroup: 0
+        runAsUser: 0
+{% endif %}
       containers:
         - name: write-data
           image: docker.stackable.tech/stackable/kafka-testing-tools:1.0.0-stackable0.0.0-dev
