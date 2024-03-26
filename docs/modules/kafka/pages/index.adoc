@@ -52,20 +52,22 @@ xref:management:stackablectl:index.adoc[] supports installing xref:demos:index.a
 are complete data piplines which showcase multiple components of the Stackable platform working together and which you
 can try out interactively. Both demos below inject data into Kafka using NiFi and read from the Kafka topics using Druid.
 
-=== Waterlevel Demo
+=== Waterlevel demo
 
 The xref:demos:nifi-kafka-druid-water-level-data.adoc[] demo uses data from
 https://www.pegelonline.wsv.de/webservice/ueberblick[PEGELONLINE] to visualize water levels in rivers and coastal
 regions of Germany from historic and real time data.
 
-=== Earthquake Demo
+=== Earthquake demo
 
 The xref:demos:nifi-kafka-druid-earthquake-data.adoc[] demo ingests https://earthquake.usgs.gov/[earthquake data] into
 a similar pipeline as is used in the waterlevel demo.
 
 
-== Supported Versions
+== Supported versions
 
-The Stackable Operator for Apache Kafka currently supports the following versions of Kafka:
+The Stackable Operator for Apache Kafka currently supports the Kafka versions listed below.
+To use a specific Kafka version in your KafkaCluster, you have to specify an image - this is explained in the xref:concepts:product-image-selection.adoc[] documentation.
+The operator also supports running images from a custom registry or running entirely customized images; both of these cases are explained under xref:concepts:product-image-selection.adoc[] as well.
 
 include::partial$supported-versions.adoc[]
