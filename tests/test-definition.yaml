@@ -42,10 +42,12 @@ tests:
       - kafka
       - zookeeper
       - use-client-tls
+      - openshift
   - name: configuration
     dimensions:
       - kafka-latest
       - zookeeper-latest
+      - openshift
   - name: upgrade
     dimensions:
       - zookeeper
@@ -60,18 +62,22 @@ tests:
       - zookeeper-latest
       - use-client-tls
       - use-client-auth-tls
+      - openshift
   - name: delete-rolegroup
     dimensions:
       - kafka
       - zookeeper-latest
+      - openshift
   - name: logging
     dimensions:
       - kafka
       - zookeeper-latest
+      - openshift
   - name: cluster-operation
     dimensions:
       - zookeeper-latest
       - kafka-latest
+      - openshift
 
 suites:
   - name: nightly
