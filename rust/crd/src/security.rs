@@ -208,7 +208,7 @@ impl KafkaTlsSecurity {
 
     /// Returns the commands for the kcat readiness probe.
     pub fn kcat_prober_container_commands(&self) -> Vec<String> {
-        let mut args = vec!["/stackable/kcat".to_string()];
+        let mut args = vec!["kcat".to_string()];
         let port = self.client_port();
 
         if self.tls_client_authentication_class().is_some() {
