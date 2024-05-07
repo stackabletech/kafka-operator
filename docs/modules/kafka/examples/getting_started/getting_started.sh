@@ -98,12 +98,12 @@ echo "some test data" > data
 
 echo "Writing test data"
 # tag::kcat-write-data[]
-kafkacat -b localhost:9092 -t test-data-topic -P data
+kcat -b localhost:9092 -t test-data-topic -P data
 # end::kcat-write-data[]
 
 echo "Reading test data"
 # tag::kcat-read-data[]
-kafkacat -b localhost:9092 -t test-data-topic -C -e > read-data.out
+kcat -b localhost:9092 -t test-data-topic -C -e > read-data.out
 # end::kcat-read-data[]
 
 echo "Check contents"
