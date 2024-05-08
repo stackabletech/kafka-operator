@@ -80,7 +80,7 @@ use crate::{
         extend_role_group_config_map, resolve_vector_aggregator_address, LOG4J_CONFIG_FILE,
         MAX_KAFKA_LOG_FILES_SIZE,
     },
-    utils::{self, build_recommended_labels},
+    utils::build_recommended_labels,
     ControllerConfig,
 };
 
@@ -182,11 +182,6 @@ pub enum Error {
     #[snafu(display("failed to find rolegroup {}", rolegroup))]
     RoleGroupNotFound {
         rolegroup: RoleGroupRef<KafkaCluster>,
-    },
-
-    #[snafu(display("invalid ServiceAccount"))]
-    InvalidServiceAccount {
-        source: utils::NamespaceMismatchError,
     },
 
     #[snafu(display("invalid OpaConfig"))]
@@ -346,7 +341,6 @@ impl ReconcilerError for Error {
             Error::BuildDiscoveryConfig { .. } => None,
             Error::ApplyDiscoveryConfig { .. } => None,
             Error::RoleGroupNotFound { .. } => None,
-            Error::InvalidServiceAccount { .. } => None,
             Error::InvalidOpaConfig { .. } => None,
             Error::AuthenticationClassRetrieval {
                 authentication_class,
