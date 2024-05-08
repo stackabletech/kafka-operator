@@ -19,4 +19,3 @@
 ** xref:kafka:reference/discovery.adoc[]
 ** xref:kafka:reference/commandline-parameters.adoc[]
 ** xref:kafka:reference/environment-variables.adoc[]
-
