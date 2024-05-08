@@ -13,7 +13,11 @@ use stackable_operator::product_logging::framework::{
     create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
 };
 use stackable_operator::{
-    builder::pod::{container::ContainerBuilder, PodBuilder, volume::{SecretOperatorVolumeSourceBuilder, VolumeBuilder}},
+    builder::pod::{
+        container::ContainerBuilder,
+        volume::{SecretOperatorVolumeSourceBuilder, VolumeBuilder},
+        PodBuilder,
+    },
     client::Client,
     commons::authentication::{AuthenticationClass, AuthenticationClassProvider},
     k8s_openapi::api::core::v1::Volume,
