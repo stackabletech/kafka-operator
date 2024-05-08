@@ -3,11 +3,11 @@ use std::sync::Arc;
 use clap::{crate_description, crate_version, Parser};
 use futures::StreamExt;
 use product_config::ProductConfigManager;
+use snafu::{ResultExt, Snafu};
 use stackable_kafka_crd::{KafkaCluster, APP_NAME, OPERATOR_NAME};
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
     client::{self, Client},
-    error,
     k8s_openapi::api::{
         apps::v1::StatefulSet,
         core::v1::{ConfigMap, Pod, Service, ServiceAccount},
@@ -33,7 +33,6 @@ mod utils;
 mod built_info {
     // The file has been placed there by the build script.
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
-    pub const TARGET: Option<&str> = option_env!("TARGET");
     pub const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 }
 
@@ -52,11 +51,28 @@ struct KafkaRun {
     common: ProductOperatorRun,
 }
 
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("failed to print yaml"))]
+    PrintYaml {
+        source: stackable_operator::crd::Error,
+    },
+    #[snafu(display("failed to create client"))]
+    CreateClient {
+        source: stackable_operator::client::Error,
+    },
+    #[snafu(display("failed to load config"))]
+    LoadConfig {
+        source: stackable_operator::cli::Error,
+    },
+}
+
 #[tokio::main]
-async fn main() -> Result<(), error::Error> {
+async fn main() -> Result<(), Error> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => KafkaCluster::print_yaml_schema(built_info::CARGO_PKG_VERSION)?,
+        Command::Crd => KafkaCluster::print_yaml_schema(built_info::CARGO_PKG_VERSION)
+            .context(PrintYamlSnafu)?,
         Command::Run(KafkaRun {
             kafka_broker_clusterrole,
             common:
@@ -75,18 +91,22 @@ async fn main() -> Result<(), error::Error> {
                 crate_description!(),
                 crate_version!(),
                 built_info::GIT_VERSION,
-                built_info::TARGET.unwrap_or("unknown target"),
+                built_info::TARGET,
                 built_info::BUILT_TIME_UTC,
                 built_info::RUSTC_VERSION,
             );
             let controller_config = ControllerConfig {
                 broker_clusterrole: kafka_broker_clusterrole,
             };
-            let product_config = product_config.load(&[
-                "deploy/config-spec/properties.yaml",
-                "/etc/stackable/kafka-operator/config-spec/properties.yaml",
-            ])?;
-            let client = client::create_client(Some(OPERATOR_NAME.to_string())).await?;
+            let product_config = product_config
+                .load(&[
+                    "deploy/config-spec/properties.yaml",
+                    "/etc/stackable/kafka-operator/config-spec/properties.yaml",
+                ])
+                .context(LoadConfigSnafu)?;
+            let client = client::create_client(Some(OPERATOR_NAME.to_string()))
+                .await
+                .context(CreateClientSnafu)?;
             create_controller(client, controller_config, product_config, watch_namespace).await;
         }
     };

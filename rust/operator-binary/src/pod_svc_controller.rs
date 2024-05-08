@@ -31,7 +31,7 @@ pub enum Error {
     ObjectHasNoUid,
     #[snafu(display("failed to apply Service for Pod"))]
     ApplyServiceFailed {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::client::Error,
     },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
