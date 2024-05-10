@@ -32,7 +32,6 @@ mod utils;
 mod built_info {
     // The file has been placed there by the build script.
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
-    pub const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 }
 
 #[derive(clap::Parser)]
@@ -54,7 +53,7 @@ struct KafkaRun {
 async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => KafkaCluster::print_yaml_schema(built_info::CARGO_PKG_VERSION)?,
+        Command::Crd => KafkaCluster::print_yaml_schema(built_info::PKG_VERSION)?,
         Command::Run(KafkaRun {
             kafka_broker_clusterrole,
             common:
