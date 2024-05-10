@@ -197,10 +197,12 @@ mod tests {
     use super::*;
     use crate::authentication::ResolvedAuthenticationClasses;
 
-    use stackable_operator::builder::meta::ObjectMetaBuilder;
-    use stackable_operator::commons::authentication::{
-        tls::AuthenticationProvider, AuthenticationClass, AuthenticationClassProvider,
-        AuthenticationClassSpec,
+    use stackable_operator::{
+        builder::meta::ObjectMetaBuilder,
+        commons::authentication::{
+            tls::AuthenticationProvider, AuthenticationClass, AuthenticationClassProvider,
+            AuthenticationClassSpec,
+        },
     };
 
     #[test]
