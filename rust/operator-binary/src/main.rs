@@ -3,7 +3,6 @@ use std::sync::Arc;
 use clap::{crate_description, crate_version, Parser};
 use futures::StreamExt;
 use product_config::ProductConfigManager;
-use snafu::{ResultExt, Snafu};
 use stackable_kafka_crd::{KafkaCluster, APP_NAME, OPERATOR_NAME};
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
@@ -51,28 +50,11 @@ struct KafkaRun {
     common: ProductOperatorRun,
 }
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("failed to print yaml"))]
-    PrintYaml {
-        source: stackable_operator::crd::Error,
-    },
-    #[snafu(display("failed to create client"))]
-    CreateClient {
-        source: stackable_operator::client::Error,
-    },
-    #[snafu(display("failed to load config"))]
-    LoadConfig {
-        source: stackable_operator::cli::Error,
-    },
-}
-
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => KafkaCluster::print_yaml_schema(built_info::CARGO_PKG_VERSION)
-            .context(PrintYamlSnafu)?,
+        Command::Crd => KafkaCluster::print_yaml_schema(built_info::CARGO_PKG_VERSION)?,
         Command::Run(KafkaRun {
             kafka_broker_clusterrole,
             common:
@@ -98,15 +80,11 @@ async fn main() -> Result<(), Error> {
             let controller_config = ControllerConfig {
                 broker_clusterrole: kafka_broker_clusterrole,
             };
-            let product_config = product_config
-                .load(&[
-                    "deploy/config-spec/properties.yaml",
-                    "/etc/stackable/kafka-operator/config-spec/properties.yaml",
-                ])
-                .context(LoadConfigSnafu)?;
-            let client = client::create_client(Some(OPERATOR_NAME.to_string()))
-                .await
-                .context(CreateClientSnafu)?;
+            let product_config = product_config.load(&[
+                "deploy/config-spec/properties.yaml",
+                "/etc/stackable/kafka-operator/config-spec/properties.yaml",
+            ])?;
+            let client = client::create_client(Some(OPERATOR_NAME.to_string())).await?;
             create_controller(client, controller_config, product_config, watch_namespace).await;
         }
     };
