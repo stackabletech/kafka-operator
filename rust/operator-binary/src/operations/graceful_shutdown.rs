@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use snafu::{ResultExt, Snafu};
 use stackable_kafka_crd::KafkaConfig;
-use stackable_operator::builder::PodBuilder;
+use stackable_operator::builder::pod::PodBuilder;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

@@ -20,8 +20,12 @@ use stackable_kafka_crd::{
 };
 use stackable_operator::{
     builder::{
-        resources::ResourceRequirementsBuilder, ConfigMapBuilder, ContainerBuilder,
-        ObjectMetaBuilder, PodBuilder, PodSecurityContextBuilder,
+        configmap::ConfigMapBuilder,
+        meta::ObjectMetaBuilder,
+        pod::{
+            container::ContainerBuilder, resources::ResourceRequirementsBuilder,
+            security::PodSecurityContextBuilder, PodBuilder,
+        },
     },
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::{
@@ -109,51 +113,51 @@ pub enum Error {
 
     #[snafu(display("failed to apply role Service"))]
     ApplyRoleService {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
     },
 
     #[snafu(display("failed to apply role ServiceAccount"))]
     ApplyRoleServiceAccount {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
     },
 
     #[snafu(display("failed to apply global RoleBinding"))]
     ApplyRoleRoleBinding {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
     },
 
     #[snafu(display("failed to apply Service for {}", rolegroup))]
     ApplyRoleGroupService {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
 
     #[snafu(display("failed to build ConfigMap for {}", rolegroup))]
     BuildRoleGroupConfig {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::builder::configmap::Error,
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
 
     #[snafu(display("failed to apply ConfigMap for {}", rolegroup))]
     ApplyRoleGroupConfig {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
 
     #[snafu(display("failed to apply StatefulSet for {}", rolegroup))]
     ApplyRoleGroupStatefulSet {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
         rolegroup: RoleGroupRef<KafkaCluster>,
     },
 
     #[snafu(display("failed to generate product config"))]
     GenerateProductConfig {
-        source: stackable_operator::product_config_utils::ConfigError,
+        source: stackable_operator::product_config_utils::Error,
     },
 
     #[snafu(display("invalid product config"))]
     InvalidProductConfig {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::product_config_utils::Error,
     },
 
     #[snafu(display("failed to serialize zoo.cfg for {}", rolegroup))]
@@ -164,7 +168,7 @@ pub enum Error {
 
     #[snafu(display("object is missing metadata to build owner reference"))]
     ObjectMissingMetadataForOwnerRef {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::builder::meta::Error,
     },
 
     #[snafu(display("failed to build discovery ConfigMap"))]
@@ -172,7 +176,7 @@ pub enum Error {
 
     #[snafu(display("failed to apply discovery ConfigMap"))]
     ApplyDiscoveryConfig {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
     },
 
     #[snafu(display("failed to find rolegroup {}", rolegroup))]
@@ -182,12 +186,12 @@ pub enum Error {
 
     #[snafu(display("invalid OpaConfig"))]
     InvalidOpaConfig {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::commons::opa::Error,
     },
 
     #[snafu(display("failed to retrieve {}", authentication_class))]
     AuthenticationClassRetrieval {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::commons::opa::Error,
         authentication_class: ObjectRef<AuthenticationClass>,
     },
 
@@ -210,12 +214,12 @@ pub enum Error {
     #[snafu(display("invalid container name [{name}]"))]
     InvalidContainerName {
         name: String,
-        source: stackable_operator::error::Error,
+        source: stackable_operator::builder::pod::container::Error,
     },
 
     #[snafu(display("failed to delete orphaned resources"))]
     DeleteOrphans {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
     },
 
     #[snafu(display("failed to initialize security context"))]
@@ -225,12 +229,12 @@ pub enum Error {
 
     #[snafu(display("invalid memory resource configuration"))]
     InvalidHeapConfig {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::memory::Error,
     },
 
     #[snafu(display("failed to create cluster resources"))]
     CreateClusterResources {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
     },
 
     #[snafu(display("failed to resolve and merge config for role and role group"))]
@@ -249,22 +253,22 @@ pub enum Error {
 
     #[snafu(display("failed to patch service account"))]
     ApplyServiceAccount {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
     },
 
     #[snafu(display("failed to patch role binding"))]
     ApplyRoleBinding {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::cluster_resources::Error,
     },
 
     #[snafu(display("failed to update status"))]
     ApplyStatus {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::client::Error,
     },
 
     #[snafu(display("failed to build RBAC resources"))]
     BuildRbacResources {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::commons::rbac::Error,
     },
 
     #[snafu(display("internal operator failure"))]
@@ -297,7 +301,7 @@ pub enum Error {
 
     #[snafu(display("failed to build Metadata"))]
     MetadataBuild {
-        source: stackable_operator::builder::ObjectMetaBuilderError,
+        source: stackable_operator::builder::meta::Error,
     },
 
     #[snafu(display("failed to build Labels"))]
@@ -379,7 +383,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let resolved_product_image = kafka
         .spec
         .image
-        .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::CARGO_PKG_VERSION);
+        .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION);
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,

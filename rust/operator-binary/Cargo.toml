@@ -10,7 +10,7 @@ publish = false
 
 [dependencies]
 stackable-kafka-crd = { path = "../crd" }
-
+anyhow.workspace = true
 clap.workspace = true
 futures.workspace = true
 product-config.workspace = true

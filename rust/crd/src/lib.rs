@@ -28,7 +28,7 @@ use stackable_operator::{
         api::core::v1::PersistentVolumeClaim, apimachinery::pkg::api::resource::Quantity,
     },
     kube::{runtime::reflector::ObjectRef, CustomResource, ResourceExt},
-    product_config_utils::{ConfigError, Configuration},
+    product_config_utils::Configuration,
     product_logging::{self, spec::Logging},
     role_utils::{GenericRoleConfig, Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
@@ -440,7 +440,8 @@ impl Configuration for KafkaConfigFragment {
         &self,
         _resource: &Self::Configurable,
         _role_name: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
+    {
         Ok(BTreeMap::new())
     }
 
@@ -448,7 +449,8 @@ impl Configuration for KafkaConfigFragment {
         &self,
         _resource: &Self::Configurable,
         _role_name: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
+    {
         Ok(BTreeMap::new())
     }
 
@@ -457,7 +459,8 @@ impl Configuration for KafkaConfigFragment {
         resource: &Self::Configurable,
         _role_name: &str,
         file: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
+    {
         let mut config = BTreeMap::new();
 
         if file == SERVER_PROPERTIES_FILE {
