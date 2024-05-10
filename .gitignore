@@ -17,5 +17,3 @@ tilt_options.json
 .direnv/
 .direnvrc
 .envrc
-
-.DS_Store
