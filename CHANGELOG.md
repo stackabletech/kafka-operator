@@ -16,9 +16,15 @@ All notable changes to this project will be documented in this file.
 
 - Support for versions `2.8.2`, `3.4.0`, `3.5.1` ([#664]).
 
+### Fixed
+
+- Processing of corrupted log events fixed; If errors occur, the error
+  messages are added to the log event ([#715]).
+
 [#645]: https://github.com/stackabletech/kafka-operator/pull/645
 [#657]: https://github.com/stackabletech/kafka-operator/pull/657
 [#664]: https://github.com/stackabletech/kafka-operator/pull/664
+[#715]: https://github.com/stackabletech/kafka-operator/pull/715
 
 ## [23.11.0] - 2023-11-24
 
