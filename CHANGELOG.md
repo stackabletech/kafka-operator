@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Support for versions `3.6.2`, `3.7.1` ([#723]).
+
+### Removed
+
+- Support for version `3.5.2` ([#723]).
+
+[#723]: https://github.com/stackabletech/kafka-operator/pull/723
+
 ## [24.3.0] - 2024-03-20
 
 ### Added
