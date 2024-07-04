@@ -7,11 +7,12 @@ dimensions:
   - name: kafka
     values:
       - 3.4.1
-      - 3.5.2
       - 3.6.1
+      - 3.6.2
+      - 3.7.1
   - name: kafka-latest
     values:
-      - 3.6.1
+      - 3.7.1
   - name: zookeeper
     values:
       - 3.8.3
@@ -21,10 +22,10 @@ dimensions:
   - name: upgrade_old
     values:
       - 3.4.1
-      - 3.5.2
+      - 3.6.1
   - name: upgrade_new
     values:
-      - 3.6.1
+      - 3.7.1
   - name: use-client-tls
     values:
       - "true"

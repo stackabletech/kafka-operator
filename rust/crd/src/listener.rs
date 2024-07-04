@@ -217,7 +217,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.6.1
+            productVersion: 3.7.1
           clusterConfig:
             authentication:
               - authenticationClass: kafka-client-tls
@@ -286,7 +286,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.6.1
+            productVersion: 3.7.1
           clusterConfig:
             tls:
               serverSecretClass: tls
@@ -345,7 +345,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.6.1
+            productVersion: 3.7.1
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
