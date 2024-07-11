@@ -18,8 +18,11 @@ All notable changes to this project will be documented in this file.
 ### Removed
 
 - Support for version `3.5.2` ([#723]).
+- BREAKING: Remove field/arg `controller_config` from `kafka_controller::Ctx`
+  struct and `create_controller` function ([#726]).
 
 [#723]: https://github.com/stackabletech/kafka-operator/pull/723
+[#726]: https://github.com/stackabletech/kafka-operator/pull/726
 
 ## [24.3.0] - 2024-03-20
 
@@ -272,13 +275,12 @@ All notable changes to this project will be documented in this file.
 - `kube-runtime` dependency ([#167]).
 
 [#207]: https://github.com/stackabletech/kafka-operator/pull/207
-[#167]: https://github.com/stackabletech/kafka-operator/pull/167
 [#181]: https://github.com/stackabletech/kafka-operator/pull/181
 [#194]: https://github.com/stackabletech/kafka-operator/pull/194
 
 ## [0.2.1] - 2021-09-14
 
-- Fixed Dockerfile to use the correct binary ([#167])
+- Fixed Dockerfile to use the correct binary ([#167]).
 
 [#167]: https://github.com/stackabletech/kafka-operator/pull/167
 
