@@ -55,13 +55,13 @@ async fn main() -> anyhow::Result<()> {
     match opts.cmd {
         Command::Crd => KafkaCluster::print_yaml_schema(built_info::PKG_VERSION)?,
         Command::Run(KafkaRun {
-            kafka_broker_clusterrole,
             common:
                 ProductOperatorRun {
                     product_config,
                     watch_namespace,
                     tracing_target,
                 },
+            ..
         }) => {
             stackable_operator::logging::initialize_logging(
                 "KAFKA_OPERATOR_LOG",
@@ -76,15 +76,12 @@ async fn main() -> anyhow::Result<()> {
                 built_info::BUILT_TIME_UTC,
                 built_info::RUSTC_VERSION,
             );
-            let controller_config = ControllerConfig {
-                broker_clusterrole: kafka_broker_clusterrole,
-            };
             let product_config = product_config.load(&[
                 "deploy/config-spec/properties.yaml",
                 "/etc/stackable/kafka-operator/config-spec/properties.yaml",
             ])?;
             let client = client::create_client(Some(OPERATOR_NAME.to_string())).await?;
-            create_controller(client, controller_config, product_config, watch_namespace).await;
+            create_controller(client, product_config, watch_namespace).await;
         }
     };
 
@@ -97,7 +94,6 @@ pub struct ControllerConfig {
 
 pub async fn create_controller(
     client: Client,
-    controller_config: ControllerConfig,
     product_config: ProductConfigManager,
     namespace: WatchNamespace,
 ) {
@@ -131,7 +127,6 @@ pub async fn create_controller(
         kafka_controller::error_policy,
         Arc::new(kafka_controller::Ctx {
             client: client.clone(),
-            controller_config,
             product_config,
         }),
     )
