@@ -81,7 +81,6 @@ use crate::{
         MAX_KAFKA_LOG_FILES_SIZE,
     },
     utils::build_recommended_labels,
-    ControllerConfig,
 };
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
@@ -91,7 +90,6 @@ const JAVA_HEAP_RATIO: f32 = 0.8;
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
-    pub controller_config: ControllerConfig,
     pub product_config: ProductConfigManager,
 }
 
