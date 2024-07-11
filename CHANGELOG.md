@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 
 - Support for versions `3.6.2`, `3.7.1` ([#723]).
 
+### Changed
+
+- Bump `stackable-operator` from `0.64.0` to `0.70.0` ([#725]).
+- Bump `product-config` from `0.6.0` to `0.7.0` ([#725]).
+
+[#725]: https://github.com/stackabletech/airflow-operator/pull/725
+
 ### Removed
 
 - Support for version `3.5.2` ([#723]).
