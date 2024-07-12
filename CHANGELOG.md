@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 - Bump `stackable-operator` from `0.64.0` to `0.70.0` ([#725]).
 - Bump `product-config` from `0.6.0` to `0.7.0` ([#725]).
+- Bump other dependencies ([#728]).
 
 ### Removed
 
@@ -22,6 +23,7 @@ All notable changes to this project will be documented in this file.
 [#723]: https://github.com/stackabletech/kafka-operator/pull/723
 [#725]: https://github.com/stackabletech/kafka-operator/pull/725
 [#726]: https://github.com/stackabletech/kafka-operator/pull/726
+[#728]: https://github.com/stackabletech/kafka-operator/pull/728
 
 ## [24.3.0] - 2024-03-20
 
