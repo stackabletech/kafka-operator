@@ -97,10 +97,12 @@ kubectl rollout status --watch --timeout=5m statefulset/simple-kafka-broker-defa
 # end::watch-kafka-rollout[]
 
 echo "Starting port-forwarding of port 9092"
+# shellcheck disable=2069 # we want all output to be blackholed
 # tag::port-forwarding[]
 kubectl port-forward svc/simple-kafka 9092 2>&1 >/dev/null &
 # end::port-forwarding[]
 PORT_FORWARD_PID=$!
+# shellcheck disable=2064 # we want the PID evaluated now, not at the time the trap is
 trap "kill $PORT_FORWARD_PID" EXIT
 
 sleep 15
