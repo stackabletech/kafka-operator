@@ -437,7 +437,7 @@ impl<'a> KafkaTlsSecurity<'a> {
 
     /// Creates ephemeral volumes to mount the `SecretClass` into the Pods
     fn create_tls_volume(
-        kafka_name: &str,
+        kafka_bootstrap_service_name: &str,
         volume_name: &str,
         secret_class_name: &str,
     ) -> Result<Volume, Error> {
@@ -446,9 +446,7 @@ impl<'a> KafkaTlsSecurity<'a> {
                 SecretOperatorVolumeSourceBuilder::new(secret_class_name)
                     .with_pod_scope()
                     .with_node_scope()
-                    // We need to add the DNS SAN of the global kafka service and not only the rolegroup services
-                    // created by the StatefulSet.
-                    .with_service_scope(kafka_name)
+                    .with_service_scope(kafka_bootstrap_service_name)
                     .build()
                     .context(SecretVolumeBuildSnafu)?,
             )
@@ -457,7 +455,7 @@ impl<'a> KafkaTlsSecurity<'a> {
 
     /// Creates ephemeral volumes to mount the `SecretClass` into the Pods as keystores
     fn create_tls_keystore_volume(
-        kafka_name: &str,
+        kafka_bootstrap_service_name: &str,
         volume_name: &str,
         secret_class_name: &str,
     ) -> Result<Volume, Error> {
@@ -466,9 +464,7 @@ impl<'a> KafkaTlsSecurity<'a> {
                 SecretOperatorVolumeSourceBuilder::new(secret_class_name)
                     .with_pod_scope()
                     .with_node_scope()
-                    // We need to add the DNS SAN of the global kafka service and not only the rolegroup services
-                    // created by the StatefulSet.
-                    .with_service_scope(kafka_name)
+                    .with_service_scope(kafka_bootstrap_service_name)
                     .with_format(SecretFormat::TlsPkcs12)
                     .build()
                     .context(SecretVolumeBuildSnafu)?,
