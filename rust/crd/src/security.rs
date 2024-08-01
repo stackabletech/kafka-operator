@@ -17,7 +17,6 @@ use stackable_operator::{
     client::Client,
     commons::authentication::{AuthenticationClass, AuthenticationClassProvider},
     k8s_openapi::api::core::v1::Volume,
-    kube::ResourceExt,
     product_logging::framework::{
         create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
     },
@@ -280,7 +279,7 @@ impl<'a> KafkaTlsSecurity<'a> {
         if let Some(tls_server_secret_class) = self.get_tls_secret_class() {
             // We have to mount tls pem files for kcat (the mount can be used directly)
             pod_builder.add_volume(Self::create_tls_volume(
-                &self.kafka.name_any(),
+                &self.kafka.bootstrap_service_name(),
                 Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
                 tls_server_secret_class,
             )?);
@@ -290,7 +289,7 @@ impl<'a> KafkaTlsSecurity<'a> {
             );
             // Keystores fore the kafka container
             pod_builder.add_volume(Self::create_tls_keystore_volume(
-                &self.kafka.name_any(),
+                &self.kafka.bootstrap_service_name(),
                 Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
                 tls_server_secret_class,
             )?);
@@ -302,7 +301,7 @@ impl<'a> KafkaTlsSecurity<'a> {
 
         if let Some(tls_internal_secret_class) = self.tls_internal_secret_class() {
             pod_builder.add_volume(Self::create_tls_keystore_volume(
-                &self.kafka.name_any(),
+                &self.kafka.bootstrap_service_name(),
                 Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
                 tls_internal_secret_class,
             )?);
