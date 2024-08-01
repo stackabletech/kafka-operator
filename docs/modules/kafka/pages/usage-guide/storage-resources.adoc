@@ -22,7 +22,7 @@ If nothing is configured in the custom resource for a certain role group, then b
 
 == Resource Requests
 
-include::home:concepts:stackable_resource_requests.adoc[]
+include::concepts:stackable_resource_requests.adoc[]
 
 If no resource requests are configured explicitly, the Kafka operator uses the following defaults:
 
