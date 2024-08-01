@@ -22,7 +22,7 @@ If nothing is configured in the custom resource for a certain role group, then b
 
 == Resource Requests
 
-include::home:concepts:stackable_resource_requests.adoc[]
+include::concepts:stackable_resource_requests.adoc[]
 
 A minimal HA setup consisting of 2 Brokers has the following https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[resource requirements]:
 
