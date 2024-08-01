@@ -93,7 +93,7 @@ A full list of settings and their respective defaults can be found https://githu
 == Monitoring
 
 The managed Kafka instances are automatically configured to export Prometheus metrics. See
-xref:home:operators:monitoring.adoc[] for more details.
+xref:operators:monitoring.adoc[] for more details.
 
 == Provide log4j.properties
 
@@ -319,7 +319,7 @@ By default, in case nothing is configured in the custom resource for a certain r
 // The "nightly" version is needed because the "include" directive searches for
 // files in the "stable" version by default.
 // TODO: remove the "nightly" version after the next platform release (current: 22.09)
-include::home:concepts:stackable_resource_requests.adoc[]
+include::concepts:stackable_resource_requests.adoc[]
 
 If no resource requests are configured explicitly, the Kafka operator uses the following defaults:
 
