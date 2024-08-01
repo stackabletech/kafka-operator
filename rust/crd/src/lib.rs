@@ -162,9 +162,10 @@ pub struct KafkaClusterConfig {
 }
 
 impl KafkaCluster {
-    /// The name of the role-level load-balanced Kubernetes `Service`
-    pub fn broker_role_service_name(&self) -> Option<String> {
-        self.metadata.name.clone()
+    /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
+    /// to get a list of broker addresses and will use those to transmit data to the correct broker.
+    pub fn bootstrap_service_name(&self) -> String {
+        self.name_any()
     }
 
     /// Metadata about a broker rolegroup

@@ -11,6 +11,7 @@ pub struct KafkaTls {
     /// This setting controls:
     /// - Which cert the brokers should use to authenticate themselves against other brokers
     /// - Which ca.crt to use when validating the other brokers
+    ///
     /// Defaults to `tls`
     #[serde(default = "internal_tls_default")]
     pub internal_secret_class: String,
@@ -18,6 +19,7 @@ pub struct KafkaTls {
     /// client connections. This setting controls:
     /// - If TLS encryption is used at all
     /// - Which cert the servers should use to authenticate themselves against the client
+    ///
     /// Defaults to `tls`.
     #[serde(
         default = "server_tls_default",

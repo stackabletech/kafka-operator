@@ -106,9 +106,6 @@ pub enum Error {
     #[snafu(display("object defines no broker role"))]
     NoBrokerRole,
 
-    #[snafu(display("failed to calculate global service name"))]
-    GlobalServiceNameNotFound,
-
     #[snafu(display("failed to apply role Service"))]
     ApplyRoleService {
         source: stackable_operator::cluster_resources::Error,
@@ -324,7 +321,6 @@ impl ReconcilerError for Error {
             Error::ObjectHasNoName => None,
             Error::ObjectHasNoNamespace => None,
             Error::NoBrokerRole => None,
-            Error::GlobalServiceNameNotFound => None,
             Error::ApplyRoleService { .. } => None,
             Error::ApplyRoleServiceAccount { .. } => None,
             Error::ApplyRoleRoleBinding { .. } => None,
@@ -443,7 +439,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     };
 
     let broker_role_service =
-        build_broker_role_service(&kafka, &resolved_product_image, &kafka_security)?;
+        build_bootstrap_service(&kafka, &resolved_product_image, &kafka_security)?;
 
     let broker_role_service = cluster_resources
         .add(client, broker_role_service)
@@ -580,21 +576,18 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     Ok(Action::await_change())
 }
 
-/// The broker-role service is the primary endpoint that should be used by clients that do not perform internal load balancing,
-/// including targets outside of the cluster.
-pub fn build_broker_role_service(
+/// Kafka clients will use the load-balanced bootstrap service to get a list of broker addresses and will use those to
+/// transmit data to the correct broker.
+pub fn build_bootstrap_service(
     kafka: &KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
 ) -> Result<Service> {
     let role_name = KafkaRole::Broker.to_string();
-    let role_svc_name = kafka
-        .broker_role_service_name()
-        .context(GlobalServiceNameNotFoundSnafu)?;
     Ok(Service {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
-            .name(&role_svc_name)
+            .name(kafka.bootstrap_service_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(build_recommended_labels(
@@ -717,7 +710,7 @@ fn build_broker_rolegroup_service(
     Ok(Service {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
-            .name(&rolegroup.object_name())
+            .name(rolegroup.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(build_recommended_labels(
@@ -1049,7 +1042,7 @@ fn build_broker_rolegroup_statefulset(
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
-            .name(&rolegroup_ref.object_name())
+            .name(rolegroup_ref.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(build_recommended_labels(

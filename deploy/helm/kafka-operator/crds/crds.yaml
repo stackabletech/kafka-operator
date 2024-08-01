@@ -7296,7 +7296,9 @@ spec:
 
                               ## TLS provider
 
-                              Only affects client connections. This setting controls: - If clients need to authenticate themselves against the broker via TLS - Which ca.crt to use when validating the provided client certs This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
+                              Only affects client connections. This setting controls: - If clients need to authenticate themselves against the broker via TLS - Which ca.crt to use when validating the provided client certs
+
+                              This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
                             type: string
                         required:
                           - authenticationClass
@@ -7331,11 +7333,17 @@ spec:
                       properties:
                         internalSecretClass:
                           default: tls
-                          description: 'The [SecretClass](https://docs.stackable.tech/home/nightly/secret-operator/secretclass.html) to use for internal broker communication. Use mutual verification between brokers (mandatory). This setting controls: - Which cert the brokers should use to authenticate themselves against other brokers - Which ca.crt to use when validating the other brokers Defaults to `tls`'
+                          description: |-
+                            The [SecretClass](https://docs.stackable.tech/home/nightly/secret-operator/secretclass.html) to use for internal broker communication. Use mutual verification between brokers (mandatory). This setting controls: - Which cert the brokers should use to authenticate themselves against other brokers - Which ca.crt to use when validating the other brokers
+
+                            Defaults to `tls`
                           type: string
                         serverSecretClass:
                           default: tls
-                          description: 'The [SecretClass](https://docs.stackable.tech/home/nightly/secret-operator/secretclass.html) to use for client connections. This setting controls: - If TLS encryption is used at all - Which cert the servers should use to authenticate themselves against the client Defaults to `tls`.'
+                          description: |-
+                            The [SecretClass](https://docs.stackable.tech/home/nightly/secret-operator/secretclass.html) to use for client connections. This setting controls: - If TLS encryption is used at all - Which cert the servers should use to authenticate themselves against the client
+
+                            Defaults to `tls`.
                           nullable: true
                           type: string
                       type: object
