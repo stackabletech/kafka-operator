@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Include the global Kafka service (so not the rolegroup-specific) DNS record as SAN entries in the generated
+  certificates used by Kafka. This allows you to access Kafka brokers secured using TLS via the global service ([#XXX]).
+
 ## [24.7.0] - 2024-07-24
 
 ### Added

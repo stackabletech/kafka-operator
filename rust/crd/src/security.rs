@@ -17,6 +17,7 @@ use stackable_operator::{
     client::Client,
     commons::authentication::{AuthenticationClass, AuthenticationClassProvider},
     k8s_openapi::api::core::v1::Volume,
+    kube::ResourceExt,
     product_logging::framework::{
         create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
     },
@@ -42,13 +43,14 @@ pub enum Error {
 }
 
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
-pub struct KafkaTlsSecurity {
+pub struct KafkaTlsSecurity<'a> {
+    kafka: &'a KafkaCluster,
     resolved_authentication_classes: ResolvedAuthenticationClasses,
     internal_secret_class: String,
     server_secret_class: Option<String>,
 }
 
-impl KafkaTlsSecurity {
+impl<'a> KafkaTlsSecurity<'a> {
     // ports
     pub const CLIENT_PORT_NAME: &'static str = "kafka";
     pub const CLIENT_PORT: u16 = 9092;
@@ -104,12 +106,15 @@ impl KafkaTlsSecurity {
     const STACKABLE_TLS_KEYSTORE_INTERNAL_DIR: &'static str = "/stackable/tls_keystore_internal";
     const STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME: &'static str = "tls-keystore-internal";
 
+    #[cfg(test)]
     pub fn new(
+        kafka: &'a KafkaCluster,
         resolved_authentication_classes: ResolvedAuthenticationClasses,
         internal_secret_class: String,
         server_secret_class: Option<String>,
     ) -> Self {
         Self {
+            kafka,
             resolved_authentication_classes,
             internal_secret_class,
             server_secret_class,
@@ -120,9 +125,10 @@ impl KafkaTlsSecurity {
     /// all provided `AuthenticationClass` references.
     pub async fn new_from_kafka_cluster(
         client: &Client,
-        kafka: &KafkaCluster,
+        kafka: &'a KafkaCluster,
     ) -> Result<Self, Error> {
         Ok(KafkaTlsSecurity {
+            kafka,
             resolved_authentication_classes: ResolvedAuthenticationClasses::from_references(
                 client,
                 &kafka.spec.cluster_config.authentication,
@@ -273,6 +279,7 @@ impl KafkaTlsSecurity {
         if let Some(tls_server_secret_class) = self.get_tls_secret_class() {
             // We have to mount tls pem files for kcat (the mount can be used directly)
             pod_builder.add_volume(Self::create_tls_volume(
+                &self.kafka.name_any(),
                 Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
                 tls_server_secret_class,
             )?);
@@ -282,6 +289,7 @@ impl KafkaTlsSecurity {
             );
             // Keystores fore the kafka container
             pod_builder.add_volume(Self::create_tls_keystore_volume(
+                &self.kafka.name_any(),
                 Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
                 tls_server_secret_class,
             )?);
@@ -293,6 +301,7 @@ impl KafkaTlsSecurity {
 
         if let Some(tls_internal_secret_class) = self.tls_internal_secret_class() {
             pod_builder.add_volume(Self::create_tls_keystore_volume(
+                &self.kafka.name_any(),
                 Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
                 tls_internal_secret_class,
             )?);
@@ -426,20 +435,8 @@ impl KafkaTlsSecurity {
     }
 
     /// Creates ephemeral volumes to mount the `SecretClass` into the Pods
-    fn create_tls_volume(volume_name: &str, secret_class_name: &str) -> Result<Volume, Error> {
-        Ok(VolumeBuilder::new(volume_name)
-            .ephemeral(
-                SecretOperatorVolumeSourceBuilder::new(secret_class_name)
-                    .with_pod_scope()
-                    .with_node_scope()
-                    .build()
-                    .context(SecretVolumeBuildSnafu)?,
-            )
-            .build())
-    }
-
-    /// Creates ephemeral volumes to mount the `SecretClass` into the Pods as keystores
-    fn create_tls_keystore_volume(
+    fn create_tls_volume(
+        kafka_name: &str,
         volume_name: &str,
         secret_class_name: &str,
     ) -> Result<Volume, Error> {
@@ -448,6 +445,29 @@ impl KafkaTlsSecurity {
                 SecretOperatorVolumeSourceBuilder::new(secret_class_name)
                     .with_pod_scope()
                     .with_node_scope()
+                    // We need to add the DNS SAN of the global kafka service and not only the rolegroup services
+                    // created by the StatefulSet.
+                    .with_service_scope(kafka_name)
+                    .build()
+                    .context(SecretVolumeBuildSnafu)?,
+            )
+            .build())
+    }
+
+    /// Creates ephemeral volumes to mount the `SecretClass` into the Pods as keystores
+    fn create_tls_keystore_volume(
+        kafka_name: &str,
+        volume_name: &str,
+        secret_class_name: &str,
+    ) -> Result<Volume, Error> {
+        Ok(VolumeBuilder::new(volume_name)
+            .ephemeral(
+                SecretOperatorVolumeSourceBuilder::new(secret_class_name)
+                    .with_pod_scope()
+                    .with_node_scope()
+                    // We need to add the DNS SAN of the global kafka service and not only the rolegroup services
+                    // created by the StatefulSet.
+                    .with_service_scope(kafka_name)
                     .with_format(SecretFormat::TlsPkcs12)
                     .build()
                     .context(SecretVolumeBuildSnafu)?,
