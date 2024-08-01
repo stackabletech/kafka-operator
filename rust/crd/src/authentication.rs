@@ -40,6 +40,7 @@ pub struct KafkaAuthentication {
     /// Only affects client connections. This setting controls:
     /// - If clients need to authenticate themselves against the broker via TLS
     /// - Which ca.crt to use when validating the provided client certs
+    ///
     /// This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
     pub authentication_class: String,
 }

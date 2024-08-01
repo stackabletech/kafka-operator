@@ -154,6 +154,7 @@ impl<'a> KafkaTlsSecurity<'a> {
     /// Check if TLS encryption is enabled. This could be due to:
     /// - A provided server `SecretClass`
     /// - A provided client `AuthenticationClass`
+    ///
     /// This affects init container commands, Kafka configuration, volume mounts and
     /// the Kafka client port
     pub fn tls_enabled(&self) -> bool {
