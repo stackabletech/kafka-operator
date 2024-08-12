@@ -4,7 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-
 ### Changed
 
 - Reduce CRD size from `479KB` to `53KB` by accepting arbitrary YAML input instead of the underlying schema for the following fields ([#750]):
