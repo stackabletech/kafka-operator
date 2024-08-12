@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+
+### Changed
+
+- Reduce CRD size from `479KB` to `53KB` by accepting arbitrary YAML input instead of the underlying schema for the following fields ([#750]):
+  - `podOverrides`
+  - `affinity`
+
 ### Fixed
 
 - Include the global Kafka bootstrap service (not the rolegroup-specific) DNS record as SAN entry in the generated
@@ -11,6 +18,7 @@ All notable changes to this project will be documented in this file.
   service ([#741]).
 
 [#741]: https://github.com/stackabletech/kafka-operator/pull/741
+[#750]: https://github.com/stackabletech/kafka-operator/pull/750
 
 ## [24.7.0] - 2024-07-24
 
