@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Support version `3.8.0` ([#753]).
+
 ### Changed
 
 - Reduce CRD size from `479KB` to `53KB` by accepting arbitrary YAML input instead of the underlying schema for the following fields ([#750]):
@@ -16,8 +20,13 @@ All notable changes to this project will be documented in this file.
   certificates used by Kafka. This allows you to access Kafka brokers secured using TLS via the global bootstrap
   service ([#741]).
 
+### Removed
+
+- Remove versions `3.4.1`, `3.6.1`, `3.6.2` ([#753]).
+
 [#741]: https://github.com/stackabletech/kafka-operator/pull/741
 [#750]: https://github.com/stackabletech/kafka-operator/pull/750
+[#753]: https://github.com/stackabletech/kafka-operator/pull/753
 
 ## [24.7.0] - 2024-07-24
 
