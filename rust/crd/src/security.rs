@@ -4,36 +4,52 @@
 //! and helper functions
 //!
 //! This is required due to overlaps between TLS encryption and e.g. mTLS authentication or Kerberos
+use std::collections::BTreeMap;
 
-use crate::{
-    authentication, authentication::ResolvedAuthenticationClasses, listener, tls, KafkaCluster,
-    SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
-};
-
-use crate::listener::KafkaListenerConfig;
+use indoc::formatdoc;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    builder::{ContainerBuilder, PodBuilder, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
+    builder::pod::{
+        container::ContainerBuilder,
+        volume::{SecretFormat, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
+        PodBuilder,
+    },
     client::Client,
     commons::authentication::{AuthenticationClass, AuthenticationClassProvider},
     k8s_openapi::api::core::v1::Volume,
+    product_logging::framework::{
+        create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
+    },
+    utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
-use std::collections::BTreeMap;
+
+use crate::STACKABLE_LOG_DIR;
+use crate::{
+    authentication::{self, ResolvedAuthenticationClasses},
+    listener::{self, KafkaListenerConfig},
+    tls, KafkaCluster, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
+};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("failed to process authentication class"))]
     InvalidAuthenticationClassConfiguration { source: authentication::Error },
+
+    #[snafu(display("failed to build the secret operator Volume"))]
+    SecretVolumeBuild {
+        source: stackable_operator::builder::pod::volume::SecretOperatorVolumeSourceBuilderError,
+    },
 }
 
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
-pub struct KafkaTlsSecurity {
+pub struct KafkaTlsSecurity<'a> {
+    kafka: &'a KafkaCluster,
     resolved_authentication_classes: ResolvedAuthenticationClasses,
     internal_secret_class: String,
     server_secret_class: Option<String>,
 }
 
-impl KafkaTlsSecurity {
+impl<'a> KafkaTlsSecurity<'a> {
     // ports
     pub const CLIENT_PORT_NAME: &'static str = "kafka";
     pub const CLIENT_PORT: u16 = 9092;
@@ -42,7 +58,7 @@ impl KafkaTlsSecurity {
     pub const INTERNAL_PORT: u16 = 19092;
     pub const SECURE_INTERNAL_PORT: u16 = 19093;
     // - TLS global
-    const SSL_STORE_PASSWORD: &'static str = "changeit";
+    const SSL_STORE_PASSWORD: &'static str = "";
     // - TLS client
     const CLIENT_SSL_KEYSTORE_LOCATION: &'static str = "listener.name.client.ssl.keystore.location";
     const CLIENT_SSL_KEYSTORE_PASSWORD: &'static str = "listener.name.client.ssl.keystore.password";
@@ -80,18 +96,24 @@ impl KafkaTlsSecurity {
     const INTER_SSL_TRUSTSTORE_TYPE: &'static str = "listener.name.internal.ssl.truststore.type";
     const INTER_SSL_CLIENT_AUTH: &'static str = "listener.name.internal.ssl.client.auth";
     // directories
-    const STACKABLE_TLS_SERVER_MOUNT_DIR: &'static str = "/stackable/tls_server_mount";
-    const STACKABLE_TLS_SERVER_DIR: &'static str = "/stackable/tls_server";
-    const STACKABLE_TLS_INTERNAL_MOUNT_DIR: &'static str = "/stackable/tls_internal_mount";
-    const STACKABLE_TLS_INTERNAL_DIR: &'static str = "/stackable/tls_internal";
-    const SYSTEM_TRUST_STORE_DIR: &'static str = "/etc/pki/java/cacerts";
+    // for kcat container
+    const STACKABLE_TLS_CERT_SERVER_DIR: &'static str = "/stackable/tls_cert_server_mount";
+    const STACKABLE_TLS_CERT_SERVER_DIR_NAME: &'static str = "tls-cert-server-mount";
+    // kafka container
+    const STACKABLE_TLS_KEYSTORE_SERVER_DIR: &'static str = "/stackable/tls_keystore_server";
+    const STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME: &'static str = "tls-keystore-server";
+    const STACKABLE_TLS_KEYSTORE_INTERNAL_DIR: &'static str = "/stackable/tls_keystore_internal";
+    const STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME: &'static str = "tls-keystore-internal";
 
+    #[cfg(test)]
     pub fn new(
+        kafka: &'a KafkaCluster,
         resolved_authentication_classes: ResolvedAuthenticationClasses,
         internal_secret_class: String,
         server_secret_class: Option<String>,
     ) -> Self {
         Self {
+            kafka,
             resolved_authentication_classes,
             internal_secret_class,
             server_secret_class,
@@ -102,16 +124,16 @@ impl KafkaTlsSecurity {
     /// all provided `AuthenticationClass` references.
     pub async fn new_from_kafka_cluster(
         client: &Client,
-        kafka: &KafkaCluster,
+        kafka: &'a KafkaCluster,
     ) -> Result<Self, Error> {
         Ok(KafkaTlsSecurity {
-            resolved_authentication_classes:
-                authentication::ResolvedAuthenticationClasses::from_references(
-                    client,
-                    &kafka.spec.cluster_config.authentication,
-                )
-                .await
-                .context(InvalidAuthenticationClassConfigurationSnafu)?,
+            kafka,
+            resolved_authentication_classes: ResolvedAuthenticationClasses::from_references(
+                client,
+                &kafka.spec.cluster_config.authentication,
+            )
+            .await
+            .context(InvalidAuthenticationClassConfigurationSnafu)?,
             internal_secret_class: kafka
                 .spec
                 .cluster_config
@@ -131,6 +153,7 @@ impl KafkaTlsSecurity {
     /// Check if TLS encryption is enabled. This could be due to:
     /// - A provided server `SecretClass`
     /// - A provided client `AuthenticationClass`
+    ///
     /// This affects init container commands, Kafka configuration, volume mounts and
     /// the Kafka client port
     pub fn tls_enabled(&self) -> bool {
@@ -185,45 +208,6 @@ impl KafkaTlsSecurity {
         }
     }
 
-    /// Returns required (init) container commands to generate keystores and truststores
-    /// depending on the tls and authentication settings.
-    pub fn prepare_container_command_args(&self) -> Vec<String> {
-        let mut args = vec![];
-
-        if self.tls_client_authentication_class().is_some() {
-            args.extend(Self::create_key_and_trust_store(
-                Self::STACKABLE_TLS_SERVER_MOUNT_DIR,
-                Self::STACKABLE_TLS_SERVER_DIR,
-                "stackable-tls-client-auth-ca-cert",
-                Self::SSL_STORE_PASSWORD,
-            ));
-        } else if self.tls_server_secret_class().is_some() {
-            // Copy system truststore to stackable truststore
-            args.push(format!("keytool -importkeystore -srckeystore {system_trust_store_dir} -srcstoretype jks -srcstorepass {ssl_store_password} -destkeystore {stackable_tls_server_dir}/truststore.p12 -deststoretype pkcs12 -deststorepass {ssl_store_password} -noprompt",
-                system_trust_store_dir = Self::SYSTEM_TRUST_STORE_DIR,
-                ssl_store_password = Self::SSL_STORE_PASSWORD,
-                stackable_tls_server_dir = Self::STACKABLE_TLS_SERVER_DIR,
-            ));
-            args.extend(Self::create_key_and_trust_store(
-                Self::STACKABLE_TLS_SERVER_MOUNT_DIR,
-                Self::STACKABLE_TLS_SERVER_DIR,
-                "stackable-tls-server-ca-cert",
-                Self::SSL_STORE_PASSWORD,
-            ));
-        }
-
-        if self.tls_internal_secret_class().is_some() {
-            args.extend(Self::create_key_and_trust_store(
-                Self::STACKABLE_TLS_INTERNAL_MOUNT_DIR,
-                Self::STACKABLE_TLS_INTERNAL_DIR,
-                "stackable-tls-internal-ca-cert",
-                Self::SSL_STORE_PASSWORD,
-            ));
-        }
-
-        args
-    }
-
     /// Returns the commands for the kcat readiness probe.
     pub fn kcat_prober_container_commands(&self) -> Vec<String> {
         let mut args = vec!["/stackable/kcat".to_string()];
@@ -233,12 +217,12 @@ impl KafkaTlsSecurity {
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
             args.extend(Self::kcat_client_auth_ssl(
-                Self::STACKABLE_TLS_SERVER_MOUNT_DIR,
+                Self::STACKABLE_TLS_CERT_SERVER_DIR,
             ));
         } else if self.tls_server_secret_class().is_some() {
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
-            args.extend(Self::kcat_client_ssl(Self::STACKABLE_TLS_SERVER_MOUNT_DIR));
+            args.extend(Self::kcat_client_ssl(Self::STACKABLE_TLS_CERT_SERVER_DIR));
         } else {
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
@@ -254,23 +238,26 @@ impl KafkaTlsSecurity {
         kafka_listeners: &KafkaListenerConfig,
         opa_connect_string: Option<&str>,
     ) -> Vec<String> {
-        vec![
-            "bin/kafka-server-start.sh".to_string(),
-            format!("{STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE}"),
-            "--override \"zookeeper.connect=$ZOOKEEPER\"".to_string(),
-            format!("--override \"listeners={}\"", kafka_listeners.listeners()),
-            format!(
-                "--override \"advertised.listeners={}\"",
-                kafka_listeners.advertised_listeners()
-            ),
-            format!(
-                "--override \"listener.security.protocol.map={}\"",
-                kafka_listeners.listener_security_protocol_map()
-            ),
-            opa_connect_string.map_or("".to_string(), |opa| {
-                format!("--override \"opa.authorizer.url={}\"", opa)
-            }),
-        ]
+        vec![formatdoc! {"
+            {COMMON_BASH_TRAP_FUNCTIONS}
+            {remove_vector_shutdown_file_command}
+            prepare_signal_handlers
+            bin/kafka-server-start.sh {STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE} --override \"zookeeper.connect=$ZOOKEEPER\" --override \"listeners={listeners}\" --override \"advertised.listeners={advertised_listeners}\" --override \"listener.security.protocol.map={listener_security_protocol_map}\"{opa_config} &
+            wait_for_termination $!
+            {create_vector_shutdown_file_command}
+            ",
+        remove_vector_shutdown_file_command =
+            remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+        create_vector_shutdown_file_command =
+            create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+            listeners = kafka_listeners.listeners(),
+            advertised_listeners = kafka_listeners.advertised_listeners(),
+            listener_security_protocol_map = kafka_listeners.listener_security_protocol_map(),
+            opa_config = match opa_connect_string {
+                None => "".to_string(),
+                Some(opa_connect_string) => format!(" --override \"opa.authorizer.url={opa_connect_string}\""),
+            }
+        }]
     }
 
     /// Adds required volumes and volume mounts to the pod and container builders
@@ -278,50 +265,46 @@ impl KafkaTlsSecurity {
     pub fn add_volume_and_volume_mounts(
         &self,
         pod_builder: &mut PodBuilder,
-        cb_prepare: &mut ContainerBuilder,
         cb_kcat_prober: &mut ContainerBuilder,
         cb_kafka: &mut ContainerBuilder,
-    ) {
+    ) -> Result<(), Error> {
         // add tls (server or client authentication volumes) if required
         if let Some(tls_server_secret_class) = self.get_tls_secret_class() {
-            cb_prepare.add_volume_mount("server-tls-mount", Self::STACKABLE_TLS_SERVER_MOUNT_DIR);
-            // kcat requires pem files and not keystores
-            cb_kcat_prober
-                .add_volume_mount("server-tls-mount", Self::STACKABLE_TLS_SERVER_MOUNT_DIR);
-            cb_kafka.add_volume_mount("server-tls-mount", Self::STACKABLE_TLS_SERVER_MOUNT_DIR);
+            // We have to mount tls pem files for kcat (the mount can be used directly)
             pod_builder.add_volume(Self::create_tls_volume(
-                "server-tls-mount",
+                &self.kafka.bootstrap_service_name(),
+                Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
                 tls_server_secret_class,
-            ));
-
-            // empty mount for trust and keystore
-            cb_prepare.add_volume_mount("server-tls", Self::STACKABLE_TLS_SERVER_DIR);
-            cb_kafka.add_volume_mount("server-tls", Self::STACKABLE_TLS_SERVER_DIR);
-            pod_builder.add_volume(
-                VolumeBuilder::new("server-tls")
-                    .with_empty_dir(Some(""), None)
-                    .build(),
+            )?);
+            cb_kcat_prober.add_volume_mount(
+                Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
+                Self::STACKABLE_TLS_CERT_SERVER_DIR,
+            );
+            // Keystores fore the kafka container
+            pod_builder.add_volume(Self::create_tls_keystore_volume(
+                &self.kafka.bootstrap_service_name(),
+                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
+                tls_server_secret_class,
+            )?);
+            cb_kafka.add_volume_mount(
+                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
+                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR,
             );
         }
 
         if let Some(tls_internal_secret_class) = self.tls_internal_secret_class() {
-            cb_prepare
-                .add_volume_mount("internal-tls-mount", Self::STACKABLE_TLS_INTERNAL_MOUNT_DIR);
-            cb_kafka.add_volume_mount("internal-tls-mount", Self::STACKABLE_TLS_INTERNAL_MOUNT_DIR);
-            pod_builder.add_volume(Self::create_tls_volume(
-                "internal-tls-mount",
+            pod_builder.add_volume(Self::create_tls_keystore_volume(
+                &self.kafka.bootstrap_service_name(),
+                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
                 tls_internal_secret_class,
-            ));
-
-            // empty mount for trust and keystore
-            cb_prepare.add_volume_mount("internal-tls", Self::STACKABLE_TLS_INTERNAL_DIR);
-            cb_kafka.add_volume_mount("internal-tls", Self::STACKABLE_TLS_INTERNAL_DIR);
-            pod_builder.add_volume(
-                VolumeBuilder::new("internal-tls")
-                    .with_empty_dir(Some(""), None)
-                    .build(),
+            )?);
+            cb_kafka.add_volume_mount(
+                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
+                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR,
             );
         }
+
+        Ok(())
     }
 
     /// Returns required Kafka configuration settings for the `server.properties` file
@@ -335,7 +318,7 @@ impl KafkaTlsSecurity {
         if self.tls_client_authentication_class().is_some() {
             config.insert(
                 Self::CLIENT_AUTH_SSL_KEYSTORE_LOCATION.to_string(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_SERVER_DIR),
+                format!("{}/keystore.p12", Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR),
             );
             config.insert(
                 Self::CLIENT_AUTH_SSL_KEYSTORE_PASSWORD.to_string(),
@@ -347,7 +330,7 @@ impl KafkaTlsSecurity {
             );
             config.insert(
                 Self::CLIENT_AUTH_SSL_TRUSTSTORE_LOCATION.to_string(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_SERVER_DIR),
+                format!("{}/truststore.p12", Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR),
             );
             config.insert(
                 Self::CLIENT_AUTH_SSL_TRUSTSTORE_PASSWORD.to_string(),
@@ -365,7 +348,7 @@ impl KafkaTlsSecurity {
         } else if self.tls_server_secret_class().is_some() {
             config.insert(
                 Self::CLIENT_SSL_KEYSTORE_LOCATION.to_string(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_SERVER_DIR),
+                format!("{}/keystore.p12", Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR),
             );
             config.insert(
                 Self::CLIENT_SSL_KEYSTORE_PASSWORD.to_string(),
@@ -377,7 +360,7 @@ impl KafkaTlsSecurity {
             );
             config.insert(
                 Self::CLIENT_SSL_TRUSTSTORE_LOCATION.to_string(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_SERVER_DIR),
+                format!("{}/truststore.p12", Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR),
             );
             config.insert(
                 Self::CLIENT_SSL_TRUSTSTORE_PASSWORD.to_string(),
@@ -393,7 +376,7 @@ impl KafkaTlsSecurity {
         if self.tls_internal_secret_class().is_some() {
             config.insert(
                 Self::INTER_SSL_KEYSTORE_LOCATION.to_string(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_INTERNAL_DIR),
+                format!("{}/keystore.p12", Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR),
             );
             config.insert(
                 Self::INTER_SSL_KEYSTORE_PASSWORD.to_string(),
@@ -405,7 +388,10 @@ impl KafkaTlsSecurity {
             );
             config.insert(
                 Self::INTER_SSL_TRUSTSTORE_LOCATION.to_string(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_INTERNAL_DIR),
+                format!(
+                    "{}/truststore.p12",
+                    Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR
+                ),
             );
             config.insert(
                 Self::INTER_SSL_TRUSTSTORE_PASSWORD.to_string(),
@@ -442,35 +428,40 @@ impl KafkaTlsSecurity {
     }
 
     /// Creates ephemeral volumes to mount the `SecretClass` into the Pods
-    fn create_tls_volume(volume_name: &str, secret_class_name: &str) -> Volume {
-        VolumeBuilder::new(volume_name)
+    fn create_tls_volume(
+        kafka_bootstrap_service_name: &str,
+        volume_name: &str,
+        secret_class_name: &str,
+    ) -> Result<Volume, Error> {
+        Ok(VolumeBuilder::new(volume_name)
             .ephemeral(
                 SecretOperatorVolumeSourceBuilder::new(secret_class_name)
                     .with_pod_scope()
                     .with_node_scope()
-                    .build(),
+                    .with_service_scope(kafka_bootstrap_service_name)
+                    .build()
+                    .context(SecretVolumeBuildSnafu)?,
             )
-            .build()
+            .build())
     }
 
-    /// Generates the shell script to create key and trust stores from the certificates provided
-    /// by the secret operator.
-    fn create_key_and_trust_store(
-        mount_directory: &str,
-        store_directory: &str,
-        alias_name: &str,
-        store_password: &str,
-    ) -> Vec<String> {
-        vec![
-            format!("echo [{store_directory}] Cleaning up truststore - just in case"),
-            format!("rm -f {store_directory}/truststore.p12"),
-            format!("echo [{store_directory}] Creating truststore"),
-            format!("keytool -importcert -file {mount_directory}/ca.crt -keystore {store_directory}/truststore.p12 -storetype pkcs12 -noprompt -alias {alias_name} -storepass {store_password}"),
-            format!("echo [{store_directory}] Creating certificate chain"),
-            format!("cat {mount_directory}/ca.crt {mount_directory}/tls.crt > {store_directory}/chain.crt"),
-            format!("echo [{store_directory}] Creating keystore"),
-            format!("openssl pkcs12 -export -in {store_directory}/chain.crt -inkey {mount_directory}/tls.key -out {store_directory}/keystore.p12 --passout pass:{store_password}"),
-        ]
+    /// Creates ephemeral volumes to mount the `SecretClass` into the Pods as keystores
+    fn create_tls_keystore_volume(
+        kafka_bootstrap_service_name: &str,
+        volume_name: &str,
+        secret_class_name: &str,
+    ) -> Result<Volume, Error> {
+        Ok(VolumeBuilder::new(volume_name)
+            .ephemeral(
+                SecretOperatorVolumeSourceBuilder::new(secret_class_name)
+                    .with_pod_scope()
+                    .with_node_scope()
+                    .with_service_scope(kafka_bootstrap_service_name)
+                    .with_format(SecretFormat::TlsPkcs12)
+                    .build()
+                    .context(SecretVolumeBuildSnafu)?,
+            )
+            .build())
     }
 
     fn kcat_client_auth_ssl(cert_directory: &str) -> Vec<String> {

@@ -38,6 +38,7 @@ metadata:
 spec:
   image:
     productVersion: "{{ test_scenario['values']['kafka'] }}"
+    pullPolicy: IfNotPresent
   clusterConfig:
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
     authentication:
@@ -57,6 +58,11 @@ spec:
     config:
       logging:
         enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+      resources:
+        # There are some test failures that kill the container due to error 137 (not enough memory)
+        # using the default (currently 1Gi), when running the tls test scripts.
+        memory:
+          limit: '1.3Gi'
     roleGroups:
       default:
         replicas: 3

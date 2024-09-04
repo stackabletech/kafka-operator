@@ -15,7 +15,7 @@ const SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS: [&str; 1] = ["TLS"];
 pub enum Error {
     #[snafu(display("failed to retrieve AuthenticationClass [{}]", authentication_class))]
     AuthenticationClassRetrieval {
-        source: stackable_operator::error::Error,
+        source: stackable_operator::client::Error,
         authentication_class: ObjectRef<AuthenticationClass>,
     },
     // TODO: Adapt message if multiple authentication classes are supported
@@ -40,6 +40,7 @@ pub struct KafkaAuthentication {
     /// Only affects client connections. This setting controls:
     /// - If clients need to authenticate themselves against the broker via TLS
     /// - Which ca.crt to use when validating the provided client certs
+    ///
     /// This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
     pub authentication_class: String,
 }

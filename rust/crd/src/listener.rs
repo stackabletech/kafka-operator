@@ -200,10 +200,12 @@ mod tests {
     use super::*;
     use crate::authentication::ResolvedAuthenticationClasses;
 
-    use stackable_operator::builder::ObjectMetaBuilder;
-    use stackable_operator::commons::authentication::tls::TlsAuthenticationProvider;
-    use stackable_operator::commons::authentication::{
-        AuthenticationClass, AuthenticationClassProvider, AuthenticationClassSpec,
+    use stackable_operator::{
+        builder::meta::ObjectMetaBuilder,
+        commons::authentication::{
+            tls::AuthenticationProvider, AuthenticationClass, AuthenticationClassProvider,
+            AuthenticationClassSpec,
+        },
     };
 
     #[test]
@@ -218,7 +220,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.7.1
           clusterConfig:
             authentication:
               - authenticationClass: kafka-client-tls
@@ -229,10 +231,11 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
+            &kafka,
             ResolvedAuthenticationClasses::new(vec![AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),
                 spec: AuthenticationClassSpec {
-                    provider: AuthenticationClassProvider::Tls(TlsAuthenticationProvider {
+                    provider: AuthenticationClassProvider::Tls(AuthenticationProvider {
                         client_cert_secret_class: Some("client-auth-secret-class".to_string()),
                     }),
                 },
@@ -287,7 +290,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.7.1
           clusterConfig:
             tls:
               serverSecretClass: tls
@@ -295,6 +298,7 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
+            &kafka,
             ResolvedAuthenticationClasses::new(vec![]),
             "tls".to_string(),
             Some("tls".to_string()),
@@ -346,7 +350,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.7.1
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
@@ -356,6 +360,7 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
+            &kafka,
             ResolvedAuthenticationClasses::new(vec![]),
             "".to_string(),
             None,

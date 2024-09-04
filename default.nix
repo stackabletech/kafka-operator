@@ -20,12 +20,18 @@
         nativeBuildInputs = [ pkgs.pkg-config ];
         buildInputs = [ pkgs.krb5 ];
         LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
-        BINDGEN_EXTRA_CLANG_ARGS = "-I${pkgs.glibc.dev}/include -I${pkgs.clang.cc.lib}/lib/clang/${pkgs.lib.getVersion pkgs.clang.cc}/include";
+        # Clang's resource directory is located at ${pkgs.clang.cc.lib}/lib/clang/<version>.
+        # Starting with Clang 16, only the major version is used for the resource directory,
+        # whereas the full version was used in prior Clang versions (see
+        # https://github.com/llvm/llvm-project/commit/e1b88c8a09be25b86b13f98755a9bd744b4dbf14).
+        # The clang wrapper ${pkgs.clang} provides a symlink to the resource directory, which
+        # we use instead.
+        BINDGEN_EXTRA_CLANG_ARGS = "-I${pkgs.glibc.dev}/include -I${pkgs.clang}/resource-root/include";
       };
       libgssapi-sys = attrs: {
         buildInputs = [ pkgs.krb5 ];
         LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
-        BINDGEN_EXTRA_CLANG_ARGS = "-I${pkgs.glibc.dev}/include -I${pkgs.clang.cc.lib}/lib/clang/${pkgs.lib.getVersion pkgs.clang.cc}/include";
+        BINDGEN_EXTRA_CLANG_ARGS = "-I${pkgs.glibc.dev}/include -I${pkgs.clang}/resource-root/include";
       };
     };
   }
@@ -34,6 +40,7 @@
 , dockerTag ? null
 }:
 rec {
+  inherit cargo sources pkgs meta;
   build = cargo.allWorkspaceMembers;
   entrypoint = build+"/bin/stackable-${meta.operator.name}";
   crds = pkgs.runCommand "${meta.operator.name}-crds.yaml" {}
@@ -89,4 +96,20 @@ rec {
   # need to use vendored crate2nix because of https://github.com/kolloch/crate2nix/issues/264
   crate2nix = import sources.crate2nix {};
   tilt = pkgs.tilt;
+
+  regenerateNixLockfiles = pkgs.writeScriptBin "regenerate-nix-lockfiles"
+  ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo Running crate2nix
+    ${crate2nix}/bin/crate2nix generate
+
+    # crate2nix adds a trailing newline (see
+    # https://github.com/nix-community/crate2nix/commit/5dd04e6de2fbdbeb067ab701de8ec29bc228c389).
+    # The pre-commit hook trailing-whitespace wants to remove it again
+    # (see https://github.com/pre-commit/pre-commit-hooks?tab=readme-ov-file#trailing-whitespace).
+    # So, remove the trailing newline already here to avoid that an
+    # unnecessary change is shown in Git.
+    sed -i '$d' Cargo.nix
+  '';
 }

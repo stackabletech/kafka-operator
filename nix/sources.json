@@ -1,14 +1,26 @@
 {
+    "beku.py": {
+        "branch": "main",
+        "description": "Test suite expander for Stackable Kuttl tests.",
+        "homepage": null,
+        "owner": "stackabletech",
+        "repo": "beku.py",
+        "rev": "f5ef0199b0c3c8aa277a275a9d3c624eb5804f27",
+        "sha256": "1yx3ypn312p27d6zfnqcfnkarj9hirmm6gij9345kgnx5p2xfb1d",
+        "type": "tarball",
+        "url": "https://github.com/stackabletech/beku.py/archive/f5ef0199b0c3c8aa277a275a9d3c624eb5804f27.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
     "crate2nix": {
         "branch": "master",
         "description": "nix build file generator for rust crates",
         "homepage": "",
         "owner": "kolloch",
         "repo": "crate2nix",
-        "rev": "8749f46953b46d44fd181b002399e4a20371f323",
-        "sha256": "13gn5zynbzih8lrhf2y486km7g0dhfiss5hh2m2mssn8r50k6jqx",
+        "rev": "236f6addfd452a48be805819e3216af79e988fd5",
+        "sha256": "1cnq84c1bhhbn3blm31scrqsxw2bl1w67v6gpav01m0s2509klf5",
         "type": "tarball",
-        "url": "https://github.com/kolloch/crate2nix/archive/8749f46953b46d44fd181b002399e4a20371f323.tar.gz",
+        "url": "https://github.com/kolloch/crate2nix/archive/236f6addfd452a48be805819e3216af79e988fd5.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {
@@ -17,10 +29,10 @@
         "homepage": "",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "676fe5e01b9a41fa14aaa48d87685677664104b1",
-        "sha256": "0afm0dvqrjzdxhilhg0x9rbw8apfd5yg79f4qpdmdfzd8h68h72i",
+        "rev": "8b908192e64224420e2d59dfd9b2e4309e154c5d",
+        "sha256": "1yfsvb2cjinlydcmy8maaa2qafh2sqnn7h6mq80syzvr81li2kcy",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/676fe5e01b9a41fa14aaa48d87685677664104b1.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/8b908192e64224420e2d59dfd9b2e4309e154c5d.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }

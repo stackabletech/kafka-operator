@@ -28,11 +28,12 @@ use stackable_operator::{
         api::core::v1::PersistentVolumeClaim, apimachinery::pkg::api::resource::Quantity,
     },
     kube::{runtime::reflector::ObjectRef, CustomResource, ResourceExt},
-    product_config_utils::{ConfigError, Configuration},
+    product_config_utils::Configuration,
     product_logging::{self, spec::Logging},
-    role_utils::{Role, RoleGroup, RoleGroupRef},
+    role_utils::{GenericRoleConfig, Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
+    time::Duration,
 };
 use std::{collections::BTreeMap, str::FromStr};
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
@@ -55,6 +56,9 @@ pub const STACKABLE_LISTENER_DIR: &str = "/stackable/listener";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
+pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
+
+const DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_minutes_unchecked(30);
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -90,6 +94,9 @@ pub enum Error {
     FragmentValidationFailure { source: ValidationError },
 }
 
+/// A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.
+/// Find more information on how to use it and the resources that the operator generates in the
+/// [operator documentation](DOCS_BASE_URL_PLACEHOLDER/kafka/).
 #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
 #[kube(
     group = "kafka.stackable.tech",
@@ -107,10 +114,17 @@ pub enum Error {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterSpec {
+    // no doc - docs in ProductImage struct.
     pub image: ProductImage,
+
+    // no doc - docs in Role struct.
     pub brokers: Option<Role<KafkaConfigFragment>>,
+
+    /// Kafka settings that affect all roles and role groups.
+    /// The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
     pub cluster_config: KafkaClusterConfig,
-    /// Cluster operations like pause reconciliation or cluster stop.
+
+    // no doc - docs in ClusterOperation struct.
     #[serde(default)]
     pub cluster_operation: ClusterOperation,
 }
@@ -121,27 +135,37 @@ pub struct KafkaClusterConfig {
     /// Authentication class settings for Kafka like mTLS authentication.
     #[serde(default)]
     pub authentication: Vec<KafkaAuthentication>,
+
     /// Authorization settings for Kafka like OPA.
     #[serde(default)]
     pub authorization: KafkaAuthorization,
+
     /// TLS encryption settings for Kafka (server, internal).
     #[serde(
         default = "tls::default_kafka_tls",
         skip_serializing_if = "Option::is_none"
     )]
     pub tls: Option<KafkaTls>,
-    /// Name of the Vector aggregator discovery ConfigMap.
+
+    /// Name of the Vector aggregator [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery).
     /// It must contain the key `ADDRESS` with the address of the Vector aggregator.
+    /// Follow the [logging tutorial](DOCS_BASE_URL_PLACEHOLDER/tutorials/logging-vector-aggregator)
+    /// to learn how to configure log aggregation with Vector.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vector_aggregator_config_map_name: Option<String>,
-    /// ZooKeeper discovery config map name.
+
+    /// Kafka requires a ZooKeeper cluster connection to run.
+    /// Provide the name of the ZooKeeper [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery)
+    /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
+    /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
     pub zookeeper_config_map_name: String,
 }
 
 impl KafkaCluster {
-    /// The name of the role-level load-balanced Kubernetes `Service`
-    pub fn broker_role_service_name(&self) -> Option<String> {
-        self.metadata.name.clone()
+    /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
+    /// to get a list of broker addresses and will use those to transmit data to the correct broker.
+    pub fn bootstrap_service_name(&self) -> String {
+        self.name_any()
     }
 
     /// Metadata about a broker rolegroup
@@ -181,6 +205,12 @@ impl KafkaCluster {
             .with_context(|| CannotRetrieveKafkaRoleGroupSnafu {
                 role_group: rolegroup_ref.role_group.to_owned(),
             })
+    }
+
+    pub fn role_config(&self, role: &KafkaRole) -> Option<&GenericRoleConfig> {
+        match role {
+            KafkaRole::Broker => self.spec.brokers.as_ref().map(|b| &b.role_config),
+        }
     }
 
     /// List all pods expected to form the cluster
@@ -224,17 +254,6 @@ impl KafkaCluster {
         // Retrieve rolegroup specific resource config
         let role_group = self.rolegroup(rolegroup_ref)?;
         let mut conf_role_group = role_group.config.config.to_owned();
-
-        if let Some(RoleGroup {
-            selector: Some(selector),
-            ..
-        }) = role.role_groups.get(&rolegroup_ref.role_group)
-        {
-            // Migrate old `selector` attribute, see ADR 26 affinities.
-            // TODO Can be removed after support for the old `selector` field is dropped.
-            #[allow(deprecated)]
-            conf_role_group.affinity.add_legacy_selector(selector);
-        }
 
         // Merge more specific configs into default config
         // Hierarchy is:
@@ -353,7 +372,6 @@ impl Storage {
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum Container {
-    Prepare,
     Vector,
     KcatProber,
     GetService,
@@ -377,10 +395,16 @@ pub enum Container {
 pub struct KafkaConfig {
     #[fragment_attrs(serde(default))]
     pub logging: Logging<Container>,
+
     #[fragment_attrs(serde(default))]
     pub resources: Resources<Storage, NoRuntimeLimits>,
+
     #[fragment_attrs(serde(default))]
     pub affinity: StackableAffinity,
+
+    /// Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
+    #[fragment_attrs(serde(default))]
+    pub graceful_shutdown_timeout: Option<Duration>,
 }
 
 impl KafkaConfig {
@@ -405,6 +429,7 @@ impl KafkaConfig {
                 },
             },
             affinity: get_affinity(cluster_name, role),
+            graceful_shutdown_timeout: Some(DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT),
         }
     }
 }
@@ -416,7 +441,8 @@ impl Configuration for KafkaConfigFragment {
         &self,
         _resource: &Self::Configurable,
         _role_name: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
+    {
         Ok(BTreeMap::new())
     }
 
@@ -424,7 +450,8 @@ impl Configuration for KafkaConfigFragment {
         &self,
         _resource: &Self::Configurable,
         _role_name: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
+    {
         Ok(BTreeMap::new())
     }
 
@@ -433,7 +460,8 @@ impl Configuration for KafkaConfigFragment {
         resource: &Self::Configurable,
         _role_name: &str,
         file: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
+    {
         let mut config = BTreeMap::new();
 
         if file == SERVER_PROPERTIES_FILE {
@@ -503,7 +531,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.7.1
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -521,7 +549,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.7.1
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
@@ -545,7 +573,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.7.1
           clusterConfig:
             tls:
               serverSecretClass: null
@@ -565,7 +593,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.7.1
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
@@ -589,7 +617,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.7.1
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -607,7 +635,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.7.1
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls
@@ -627,7 +655,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.4.0
+            productVersion: 3.7.1
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls

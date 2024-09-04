@@ -1,76 +1,47 @@
+<!-- markdownlint-disable MD041 -->
 <p align="center">
   <img width="150" src="./.readme/static/borrowed/Icon_Stackable.svg" alt="Stackable Logo"/>
 </p>
 
 <h1 align="center">Stackable Operator for Apache Kafka</h1>
 
+<!-- markdownlint-disable MD041 -->
 ![Build Actions Status](https://ci.stackable.tech/buildStatus/icon?job=kafka%2doperator%2dit%2dnightly&subject=Integration%20Tests)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/stackabletech/kafka-operator/graphs/commit-activity)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-green.svg)](https://docs.stackable.tech/home/stable/contributor/index.html)
 [![License OSL3.0](https://img.shields.io/badge/license-OSL3.0-green)](./LICENSE)
 
-[Documentation](https://docs.stackable.tech/kafka/stable/index.html) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/) | [Discussions](https://github.com/orgs/stackabletech/discussions) | [Discord](https://discord.gg/7kZ3BNnCAF)
+[Documentation](https://docs.stackable.tech/home/stable/kafka) | [Stackable Data Platform](https://stackable.tech/) | [Platform Docs](https://docs.stackable.tech/) | [Discussions](https://github.com/orgs/stackabletech/discussions) | [Discord](https://discord.gg/7kZ3BNnCAF)
 
 This is a Kubernetes operator to manage [Apache Kafka](https://kafka.apache.org/) clusters.
 
-It is part of the Stackable Data Platform, a curated selection of the best open source data apps like Kafka, Druid, Trino or Spark, [all](#other-operators) working together seamlessly. Based on Kubernetes, it runs everywhere – [on prem or in the cloud](#supported-platforms).
+<!-- markdownlint-disable MD041 MD051 -->
+It is part of the Stackable Data Platform, a curated selection of the best open source data apps like Apache Kafka, Apache Druid, Trino or Apache Spark, [all](#other-operators) working together seamlessly. Based on Kubernetes, it runs everywhere – [on prem or in the cloud](#supported-platforms).
 
 ## Installation
 
-You can install the operator using [stackablectl or helm](https://docs.stackable.tech/kafka/stable/getting_started/installation.html).
+You can install the operator using [stackablectl or helm](https://docs.stackable.tech/home/stable/kafka/getting_started/installation).
 
 Read on to get started with it, or see it in action in one of our [demos](https://stackable.tech/en/demos/).
 
 ## Getting Started
 
-You can follow this [tutorial](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html) to create a Kafka cluster with three replicas.
+You can follow this [tutorial](https://docs.stackable.tech/home/stable/kafka/getting_started/first_steps) to create a Kafka cluster with three replicas.
 
+<!-- markdownlint-disable MD041 -->
 ## Documentation
 
-The stable documentation for this operator can be found [here](https://docs.stackable.tech/kafka/stable/index.html).
-If you are interested in the most recent state of this repository, check out the [nightly docs](https://docs.stackable.tech/kafka/nightly/index.html) instead.
+The stable documentation for this operator can be found [here](https://docs.stackable.tech/home/stable/kafka).
+If you are interested in the most recent state of this repository, check out the [nightly docs](https://docs.stackable.tech/home/nightly/kafka) instead.
 
 The documentation for all Stackable products can be found at [docs.stackable.tech](https://docs.stackable.tech).
 
 If you have a question about the Stackable Data Platform contact us via our [homepage](https://stackable.tech/) or ask a public questions in our [Discussions forum](https://github.com/orgs/stackabletech/discussions).
 
-## What Does This Do?
-
-This operator is managing Kafka in Kubernetes. An operator observes custom resources in a Kubernetes cluster, and manages the application it's responsible for according to the desired state specified in those custom resources.
-
-Here's an example how a custom resource to bring up a 3-replica Kafka cluster can look like:
-
-```
----
-apiVersion: kafka.stackable.tech/v1alpha1
-kind: KafkaCluster
-metadata:
-  name: simple-kafka
-spec:
-  image:
-    productVersion: 3.4.0
-  clusterConfig:
-    zookeeperConfigMapName: simple-kafka-znode
-    tls:
-      serverSecretClass: null
-  brokers:
-    roleGroups:
-      default:
-        replicas: 3
-```
-
-If you want to find out more about it, take a look at this [getting started guide](https://docs.stackable.tech/kafka/stable/getting_started/first_steps.html).
-
-## Behind the Scenes
-
-This operator is written by [Stackable](https://www.stackable.tech). It uses [kube.rs](https://kube.rs/) to interact with the Kubernetes control plane.
-
-We test it [extensively](https://ci.stackable.tech/) using [Kuttl](https://kuttl.dev/)-powered integration tests on managed Kubernetes of multiple cloud platforms and our own bare-metal clusters.
-
-
+<!-- markdownlint-disable MD041 -->
 ## About The Stackable Data Platform
 
-This operator is written and maintained by [Stackable](https://www.stackable.tech) and it is part of a larger data platform.
+This operator is written and maintained by [Stackable](https://stackable.tech) and it is part of a larger data platform.
 
 ![Stackable Data Platform Overview](./.readme/static/borrowed/sdp_overview.png)
 
@@ -93,7 +64,6 @@ We develop and test our operators on the following cloud platforms:
 * K3s
 * Kubernetes (for an up to date list of supported versions please check the release notes in our [docs](https://docs.stackable.tech))
 * Red Hat OpenShift
-
 
 ## Other Operators
 
@@ -120,7 +90,10 @@ And our internal operators:
 
 ## Contributing
 
-Contributions are welcome. Follow our [Contributors Guide](https://docs.stackable.tech/home/stable/contributor/index.html) to learn how you can contribute.
+Contributions are welcome.
+Follow our [Contributors Guide](https://docs.stackable.tech/home/stable/contributor/index.html) to learn how you can contribute.
+All contributors will have to sign a [Contributor License Agreement](https://github.com/stackabletech/.github/blob/main/cla.md).
+This is enforced automatically when you submit a Pull Request where a bot will guide you through the process.
 
 ## License
 
@@ -129,3 +102,5 @@ Contributions are welcome. Follow our [Contributors Guide](https://docs.stackabl
 ## Support
 
 Get started with the community edition! If you want professional support, [we offer subscription plans and custom licensing](https://stackable.tech/en/plans/).
+
+<!-- markdownlint-disable MD041 MD022 MD032 -->

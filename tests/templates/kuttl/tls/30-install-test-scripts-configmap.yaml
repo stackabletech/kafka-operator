@@ -1,0 +1,11 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      kubectl create configmap test-scripts \
+        --namespace $NAMESPACE \
+        --from-file=test_client_auth_tls.sh=30_test_client_auth_tls.sh \
+        --from-file=test_client_tls.sh=30_test_client_tls.sh \
+        --from-file=wrong_keystore.p12=30_wrong_keystore.p12 \
+        --from-file=wrong_truststore.p12=30_wrong_truststore.p12

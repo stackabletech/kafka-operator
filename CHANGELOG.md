@@ -6,18 +6,107 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Default stackableVersion to operator version. It is recommended to remove `spec.image.stackableVersion` from your custom resources ([#611], [#613]).
-- Configuration overrides for the JVM security properties, such as DNS caching ([#616]).
+- Support version `3.8.0` ([#753]).
 
 ### Changed
 
-- `vector` `0.26.0` -> `0.31.0` ([#612]).
-- `operator-rs` `0.44.0` -> `0.45.1` ([#611]).
+- Reduce CRD size from `479KB` to `53KB` by accepting arbitrary YAML input instead of the underlying schema for the following fields ([#750]):
+  - `podOverrides`
+  - `affinity`
+
+### Fixed
+
+- Include the global Kafka bootstrap service (not the rolegroup-specific) DNS record as SAN entry in the generated
+  certificates used by Kafka. This allows you to access Kafka brokers secured using TLS via the global bootstrap
+  service ([#741]).
+
+### Removed
+
+- Remove versions `3.4.1`, `3.6.1`, `3.6.2` ([#753]).
+
+[#741]: https://github.com/stackabletech/kafka-operator/pull/741
+[#750]: https://github.com/stackabletech/kafka-operator/pull/750
+[#753]: https://github.com/stackabletech/kafka-operator/pull/753
+
+## [24.7.0] - 2024-07-24
+
+### Added
+
+- Support for versions `3.6.2`, `3.7.1` ([#723]).
+
+### Changed
+
+- Bump `stackable-operator` from `0.64.0` to `0.70.0` ([#725]).
+- Bump `product-config` from `0.6.0` to `0.7.0` ([#725]).
+- Bump other dependencies ([#728]).
+
+### Removed
+
+- Support for version `3.5.2` ([#723]).
+- BREAKING: Remove field/arg `controller_config` from `kafka_controller::Ctx`
+  struct and `create_controller` function ([#726]).
+
+[#723]: https://github.com/stackabletech/kafka-operator/pull/723
+[#725]: https://github.com/stackabletech/kafka-operator/pull/725
+[#726]: https://github.com/stackabletech/kafka-operator/pull/726
+[#728]: https://github.com/stackabletech/kafka-operator/pull/728
+
+## [24.3.0] - 2024-03-20
+
+### Added
+
+- Various documentation of the CRD ([#645]).
+- Helm: support labels in values.yaml ([#657]).
+- Support new versions `3.5.2`, `3.6.1` ([#664]).
+
+### Removed
+
+- Support for versions `2.8.2`, `3.4.0`, `3.5.1` ([#664]).
+
+### Fixed
+
+- Processing of corrupted log events fixed; If errors occur, the error
+  messages are added to the log event ([#715]).
+
+[#645]: https://github.com/stackabletech/kafka-operator/pull/645
+[#657]: https://github.com/stackabletech/kafka-operator/pull/657
+[#664]: https://github.com/stackabletech/kafka-operator/pull/664
+[#715]: https://github.com/stackabletech/kafka-operator/pull/715
+
+## [23.11.0] - 2023-11-24
+
+### Added
+
+- Default stackableVersion to operator version. It is recommended to remove `spec.image.stackableVersion` from your custom resources ([#611], [#613]).
+- Configuration overrides for the JVM security properties, such as DNS caching ([#616]).
+- Support PodDisruptionBudgets ([#625]).
+- Support new versions 2.8.2, 3.4.1, 3.5.1 ([#627]).
+- Document internal clusterId check ([#631]).
+- Support graceful shutdown ([#635]).
+
+### Changed
+
+- `vector` `0.26.0` -> `0.33.0` ([#612], [#627]).
+- `operator-rs` `0.44.0` -> `0.55.0` ([#611], [#621], [#625], [#627]).
+- [BREAKING]: Let secret-operator handle certificate conversion. Doing so we were able to remove the `prepare` init container
+  with the effect, that you can't configure the log level for this container anymore.
+  You need to remove the field `spec.brokers.config.logging.container.prepare` in case you have specified it ([#621]).
+- Combine the operator lib and binary crates ([#638]).
+
+### Removed
+
+- Removed support for versions 2.7.1, 3.1.0, 3.2.0, 3.3.1 ([#627]).
 
 [#611]: https://github.com/stackabletech/kafka-operator/pull/611
 [#612]: https://github.com/stackabletech/kafka-operator/pull/612
 [#613]: https://github.com/stackabletech/kafka-operator/pull/613
 [#616]: https://github.com/stackabletech/kafka-operator/pull/616
+[#621]: https://github.com/stackabletech/kafka-operator/pull/621
+[#625]: https://github.com/stackabletech/kafka-operator/pull/625
+[#627]: https://github.com/stackabletech/kafka-operator/pull/627
+[#631]: https://github.com/stackabletech/kafka-operator/pull/631
+[#635]: https://github.com/stackabletech/kafka-operator/pull/635
+[#638]: https://github.com/stackabletech/kafka-operator/pull/638
 
 ## [23.7.0] - 2023-07-14
 
@@ -213,13 +302,12 @@ All notable changes to this project will be documented in this file.
 - `kube-runtime` dependency ([#167]).
 
 [#207]: https://github.com/stackabletech/kafka-operator/pull/207
-[#167]: https://github.com/stackabletech/kafka-operator/pull/167
 [#181]: https://github.com/stackabletech/kafka-operator/pull/181
 [#194]: https://github.com/stackabletech/kafka-operator/pull/194
 
 ## [0.2.1] - 2021-09-14
 
-- Fixed Dockerfile to use the correct binary ([#167])
+- Fixed Dockerfile to use the correct binary ([#167]).
 
 [#167]: https://github.com/stackabletech/kafka-operator/pull/167
 

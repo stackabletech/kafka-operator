@@ -12,7 +12,7 @@ brokers:
       config:
         resources:
           storage:
-            data:
+            logDirs:
               capacity: 2Gi
 ----
 
