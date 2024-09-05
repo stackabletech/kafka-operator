@@ -952,7 +952,11 @@ fn build_broker_rolegroup_statefulset(
             }),
             ..Volume::default()
         })
-        .add_listener_volume_by_listener_class("listener", "external-unstable", &Labels::new())
+        .add_listener_volume_by_listener_class(
+            "listener",
+            &merged_config.listener_class,
+            &Labels::new(),
+        )
         .context(AddListenerVolumeSnafu)?
         .add_empty_dir_volume(
             "log",

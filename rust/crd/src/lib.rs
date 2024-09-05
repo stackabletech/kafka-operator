@@ -405,6 +405,9 @@ pub struct KafkaConfig {
     /// Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
     #[fragment_attrs(serde(default))]
     pub graceful_shutdown_timeout: Option<Duration>,
+
+    #[fragment_attrs(serde(default))]
+    pub listener_class: String,
 }
 
 impl KafkaConfig {
@@ -430,6 +433,7 @@ impl KafkaConfig {
             },
             affinity: get_affinity(cluster_name, role),
             graceful_shutdown_timeout: Some(DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT),
+            listener_class: Some("cluster-internal".to_string()),
         }
     }
 }
