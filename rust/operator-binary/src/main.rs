@@ -7,6 +7,7 @@ use stackable_kafka_crd::{KafkaCluster, APP_NAME, OPERATOR_NAME};
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
     client::{self, Client},
+    commons::listener::Listener,
     k8s_openapi::api::{
         apps::v1::StatefulSet,
         core::v1::{ConfigMap, Service, ServiceAccount},
@@ -104,6 +105,10 @@ pub async fn create_controller(
     )
     .owns(
         namespace.get_api::<Service>(&client),
+        watcher::Config::default(),
+    )
+    .owns(
+        namespace.get_api::<Listener>(&client),
         watcher::Config::default(),
     )
     .owns(

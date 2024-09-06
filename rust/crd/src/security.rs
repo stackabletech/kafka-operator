@@ -26,9 +26,10 @@ use stackable_operator::{
 use crate::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, KafkaListenerConfig},
-    tls, KafkaCluster, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
+    tls, KafkaCluster, LISTENER_BOOTSTRAP_VOLUME_NAME, SERVER_PROPERTIES_FILE,
+    STACKABLE_CONFIG_DIR,
 };
-use crate::{LISTENER_VOLUME_NAME, STACKABLE_LOG_DIR};
+use crate::{LISTENER_BROKER_VOLUME_NAME, STACKABLE_LOG_DIR};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -282,7 +283,6 @@ impl<'a> KafkaTlsSecurity<'a> {
             );
             // Keystores fore the kafka container
             pod_builder.add_volume(Self::create_tls_keystore_volume(
-                &self.kafka.bootstrap_service_name(),
                 Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
                 tls_server_secret_class,
             )?);
@@ -294,7 +294,6 @@ impl<'a> KafkaTlsSecurity<'a> {
 
         if let Some(tls_internal_secret_class) = self.tls_internal_secret_class() {
             pod_builder.add_volume(Self::create_tls_keystore_volume(
-                &self.kafka.bootstrap_service_name(),
                 Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
                 tls_internal_secret_class,
             )?);
@@ -447,7 +446,6 @@ impl<'a> KafkaTlsSecurity<'a> {
 
     /// Creates ephemeral volumes to mount the `SecretClass` into the Pods as keystores
     fn create_tls_keystore_volume(
-        kafka_bootstrap_service_name: &str,
         volume_name: &str,
         secret_class_name: &str,
     ) -> Result<Volume, Error> {
@@ -455,8 +453,8 @@ impl<'a> KafkaTlsSecurity<'a> {
             .ephemeral(
                 SecretOperatorVolumeSourceBuilder::new(secret_class_name)
                     .with_pod_scope()
-                    .with_listener_volume_scope(LISTENER_VOLUME_NAME)
-                    .with_service_scope(kafka_bootstrap_service_name)
+                    .with_listener_volume_scope(LISTENER_BROKER_VOLUME_NAME)
+                    .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
                     .with_format(SecretFormat::TlsPkcs12)
                     .build()
                     .context(SecretVolumeBuildSnafu)?,

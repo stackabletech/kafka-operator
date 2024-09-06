@@ -52,8 +52,10 @@ pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 // directories
-pub const LISTENER_VOLUME_NAME: &str = "listener";
-pub const STACKABLE_LISTENER_DIR: &str = "/stackable/listener";
+pub const LISTENER_BROKER_VOLUME_NAME: &str = "listener-broker";
+pub const LISTENER_BOOTSTRAP_VOLUME_NAME: &str = "listener-bootstrap";
+pub const STACKABLE_LISTENER_BROKER_DIR: &str = "/stackable/listener-broker";
+pub const STACKABLE_LISTENER_BOOTSTRAP_DIR: &str = "/stackable/listener-bootstrap";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
@@ -160,6 +162,15 @@ pub struct KafkaClusterConfig {
     /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
     /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
     pub zookeeper_config_map_name: String,
+
+    #[serde(default = "KafkaClusterConfig::default_bootstrap_listener_class")]
+    pub bootstrap_listener_class: String,
+}
+
+impl KafkaClusterConfig {
+    fn default_bootstrap_listener_class() -> String {
+        "cluster-internal".to_string()
+    }
 }
 
 impl KafkaCluster {
@@ -407,8 +418,7 @@ pub struct KafkaConfig {
     #[fragment_attrs(serde(default))]
     pub graceful_shutdown_timeout: Option<Duration>,
 
-    #[fragment_attrs(serde(default))]
-    pub listener_class: String,
+    pub broker_listener_class: String,
 }
 
 impl KafkaConfig {
@@ -434,7 +444,7 @@ impl KafkaConfig {
             },
             affinity: get_affinity(cluster_name, role),
             graceful_shutdown_timeout: Some(DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT),
-            listener_class: Some("cluster-internal".to_string()),
+            broker_listener_class: Some("cluster-internal".to_string()),
         }
     }
 }

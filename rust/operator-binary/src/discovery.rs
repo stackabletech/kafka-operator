@@ -5,11 +5,11 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
-    commons::product_image_selection::ResolvedProductImage,
-    k8s_openapi::api::core::v1::{ConfigMap, Endpoints, Service, ServicePort},
+    commons::{listener::Listener, product_image_selection::ResolvedProductImage},
+    k8s_openapi::api::core::v1::{ConfigMap, Service},
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
-use std::{collections::BTreeSet, num::TryFromIntError};
+use std::num::TryFromIntError;
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -56,9 +56,8 @@ pub async fn build_discovery_configmaps(
     kafka: &KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
     resolved_product_image: &ResolvedProductImage,
-    client: &stackable_operator::client::Client,
     kafka_security: &KafkaTlsSecurity<'_>,
-    svc: &Service,
+    listener: &Listener,
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name_unchecked();
     let port_name = kafka_security.client_port_name();
@@ -68,14 +67,17 @@ pub async fn build_discovery_configmaps(
             owner,
             resolved_product_image,
             &name,
-            service_hosts(svc, port_name)?,
+            listener_hosts(listener, port_name)?,
         )?,
+        // backwards compat: nodeport service is now the same as the main service, access type
+        // is determined by the listenerclass.
+        // do we want to deprecate/remove this?
         build_discovery_configmap(
             kafka,
             owner,
             resolved_product_image,
-            &format!("{}-nodeport", name),
-            nodeport_hosts(client, svc, port_name).await?,
+            &format!("{name}-nodeport"),
+            listener_hosts(listener, port_name)?,
         )?,
     ])
 }
@@ -121,64 +123,26 @@ fn build_discovery_configmap(
         .context(BuildConfigMapSnafu)
 }
 
-fn find_named_svc_port<'a>(svc: &'a Service, port_name: &str) -> Option<&'a ServicePort> {
-    svc.spec
-        .as_ref()?
-        .ports
-        .as_ref()?
+fn listener_hosts(
+    listener: &Listener,
+    port_name: &str,
+) -> Result<impl IntoIterator<Item = (String, u16)>, Error> {
+    listener
+        .status
+        .as_ref()
+        .and_then(|s| s.ingress_addresses.as_deref())
+        .unwrap_or_default()
         .iter()
-        .find(|port| port.name.as_deref() == Some(port_name))
-}
-
-/// Lists the [`Service`]'s FQDN (fully qualified domain name)
-fn service_hosts(
-    svc: &Service,
-    port_name: &str,
-) -> Result<impl IntoIterator<Item = (String, u16)>, Error> {
-    let svc_fqdn = format!(
-        "{}.{}.svc.cluster.local",
-        svc.metadata.name.as_deref().context(NoNameSnafu)?,
-        svc.metadata
-            .namespace
-            .as_deref()
-            .context(NoNamespaceSnafu)?
-    );
-    let svc_port = find_named_svc_port(svc, port_name).context(NoServicePortSnafu { port_name })?;
-    Ok([(
-        svc_fqdn,
-        svc_port.port.try_into().context(InvalidNodePortSnafu)?,
-    )])
-}
-
-/// Lists all nodes currently hosting Pods participating in the [`Service`]
-async fn nodeport_hosts(
-    client: &stackable_operator::client::Client,
-    svc: &Service,
-    port_name: &str,
-) -> Result<impl IntoIterator<Item = (String, u16)>, Error> {
-    let svc_port = find_named_svc_port(svc, port_name).context(NoServicePortSnafu { port_name })?;
-    let node_port = svc_port.node_port.context(NoNodePortSnafu { port_name })?;
-    let endpoints = client
-        .get::<Endpoints>(
-            svc.metadata.name.as_deref().context(NoNameSnafu)?,
-            svc.metadata
-                .namespace
-                .as_deref()
-                .context(NoNamespaceSnafu)?,
-        )
-        .await
-        .with_context(|_| FindEndpointsSnafu {
-            svc: ObjectRef::from_obj(svc),
-        })?;
-    let nodes = endpoints
-        .subsets
-        .into_iter()
-        .flatten()
-        .flat_map(|subset| subset.addresses)
-        .flatten()
-        .flat_map(|addr| addr.node_name);
-    let addrs = nodes
-        .map(|node| Ok((node, node_port.try_into().context(InvalidNodePortSnafu)?)))
-        .collect::<Result<BTreeSet<_>, _>>()?;
-    Ok(addrs)
+        .map(|x| {
+            Ok((
+                x.address.clone(),
+                x.ports
+                    .get(port_name)
+                    .copied()
+                    .context(NoServicePortSnafu { port_name })?
+                    .try_into()
+                    .context(InvalidNodePortSnafu)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()
 }
