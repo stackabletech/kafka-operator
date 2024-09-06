@@ -23,12 +23,12 @@ use stackable_operator::{
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
-use crate::STACKABLE_LOG_DIR;
 use crate::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, KafkaListenerConfig},
     tls, KafkaCluster, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
 };
+use crate::{LISTENER_VOLUME_NAME, STACKABLE_LOG_DIR};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -455,7 +455,7 @@ impl<'a> KafkaTlsSecurity<'a> {
             .ephemeral(
                 SecretOperatorVolumeSourceBuilder::new(secret_class_name)
                     .with_pod_scope()
-                    .with_node_scope()
+                    .with_listener_volume_scope(LISTENER_VOLUME_NAME)
                     .with_service_scope(kafka_bootstrap_service_name)
                     .with_format(SecretFormat::TlsPkcs12)
                     .build()

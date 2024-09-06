@@ -52,6 +52,7 @@ pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 // directories
+pub const LISTENER_VOLUME_NAME: &str = "listener";
 pub const STACKABLE_LISTENER_DIR: &str = "/stackable/listener";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";

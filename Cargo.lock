@@ -2160,7 +2160,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.74.0"
-source = "git+https://github.com/stackabletech//operator-rs.git?branch=main#2cf690bfa6c244862d7866da95620ccaab4ab17a"
+source = "git+https://github.com/stackabletech//operator-rs.git?branch=feature/secret-listener-volume#674b9b96ab3c2fa96ce7f1d45bf8ffa40bf56fd8"
 dependencies = [
  "chrono",
  "clap",
@@ -2196,7 +2196,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator-derive"
 version = "0.3.1"
-source = "git+https://github.com/stackabletech//operator-rs.git?branch=main#2cf690bfa6c244862d7866da95620ccaab4ab17a"
+source = "git+https://github.com/stackabletech//operator-rs.git?branch=feature/secret-listener-volume#674b9b96ab3c2fa96ce7f1d45bf8ffa40bf56fd8"
 dependencies = [
  "darling",
  "proc-macro2",

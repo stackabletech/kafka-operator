@@ -14,8 +14,8 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
     listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
     KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME,
-    JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
-    METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
+    JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, LISTENER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
+    METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
     STACKABLE_DATA_DIR, STACKABLE_LISTENER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
 };
 use stackable_operator::{
@@ -871,7 +871,7 @@ fn build_broker_rolegroup_statefulset(
         .add_container_ports(container_ports(kafka_security))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .add_volume_mount("config", STACKABLE_CONFIG_DIR)
-        .add_volume_mount("listener", STACKABLE_LISTENER_DIR)
+        .add_volume_mount(LISTENER_VOLUME_NAME, STACKABLE_LISTENER_DIR)
         .add_volume_mount("log-config", STACKABLE_LOG_CONFIG_DIR)
         .add_volume_mount("log", STACKABLE_LOG_DIR)
         .resources(merged_config.resources.clone().into());
@@ -953,7 +953,7 @@ fn build_broker_rolegroup_statefulset(
             ..Volume::default()
         })
         .add_listener_volume_by_listener_class(
-            "listener",
+            LISTENER_VOLUME_NAME,
             &merged_config.listener_class,
             &Labels::new(),
         )
