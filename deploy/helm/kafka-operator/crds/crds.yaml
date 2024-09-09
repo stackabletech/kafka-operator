@@ -66,16 +66,12 @@ spec:
                               nullable: true
                               type: object
                               x-kubernetes-preserve-unknown-fields: true
-                          required:
-                            - nodeAffinity
-                            - podAffinity
-                            - podAntiAffinity
                           type: object
-                        gracefulShutdownTimeout:
-                          description: Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
+                        brokerListenerClass:
                           nullable: true
                           type: string
-                        listenerClass:
+                        gracefulShutdownTimeout:
+                          description: Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
                           nullable: true
                           type: string
                         logging:
@@ -336,16 +332,12 @@ spec:
                                     nullable: true
                                     type: object
                                     x-kubernetes-preserve-unknown-fields: true
-                                required:
-                                  - nodeAffinity
-                                  - podAffinity
-                                  - podAntiAffinity
                                 type: object
-                              gracefulShutdownTimeout:
-                                description: Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
+                              brokerListenerClass:
                                 nullable: true
                                 type: string
-                              listenerClass:
+                              gracefulShutdownTimeout:
+                                description: Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
                                 nullable: true
                                 type: string
                               logging:
@@ -588,6 +580,9 @@ spec:
                             - configMapName
                           type: object
                       type: object
+                    bootstrapListenerClass:
+                      default: cluster-internal
+                      type: string
                     tls:
                       default:
                         internalSecretClass: tls
