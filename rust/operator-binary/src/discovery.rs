@@ -56,7 +56,7 @@ pub async fn build_discovery_configmaps(
     kafka: &KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
     resolved_product_image: &ResolvedProductImage,
-    kafka_security: &KafkaTlsSecurity<'_>,
+    kafka_security: &KafkaTlsSecurity,
     listener: &Listener,
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name_unchecked();

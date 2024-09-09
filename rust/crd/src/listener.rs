@@ -240,7 +240,6 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
-            &kafka,
             ResolvedAuthenticationClasses::new(vec![AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),
                 spec: AuthenticationClassSpec {
@@ -310,7 +309,6 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
-            &kafka,
             ResolvedAuthenticationClasses::new(vec![]),
             "tls".to_string(),
             Some("tls".to_string()),
@@ -375,7 +373,6 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
-            &kafka,
             ResolvedAuthenticationClasses::new(vec![]),
             "".to_string(),
             None,
