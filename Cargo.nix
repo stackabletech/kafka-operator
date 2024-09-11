@@ -446,7 +446,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "full" "visit-mut" ];
           }
         ];
@@ -473,7 +473,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             usesDefaultFeatures = false;
             features = [ "full" "visit-mut" "parsing" "printing" "proc-macro" ];
           }
@@ -983,7 +983,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "full" ];
           }
         ];
@@ -1287,7 +1287,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "full" "extra-traits" ];
           }
         ];
@@ -1317,7 +1317,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
           }
         ];
 
@@ -1343,7 +1343,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "full" "visit-mut" ];
           }
         ];
@@ -1888,7 +1888,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "full" ];
           }
         ];
@@ -3693,7 +3693,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "extra-traits" ];
           }
         ];
@@ -4788,7 +4788,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
           }
         ];
         features = {
@@ -4861,7 +4861,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "full" "visit-mut" ];
           }
         ];
@@ -5498,7 +5498,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "full" "parsing" "extra-traits" "visit" "visit-mut" ];
           }
           {
@@ -5863,7 +5863,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "extra-traits" ];
           }
         ];
@@ -6081,7 +6081,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             usesDefaultFeatures = false;
             features = [ "clone-impls" "derive" "parsing" "printing" "proc-macro" ];
           }
@@ -6113,7 +6113,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             usesDefaultFeatures = false;
             features = [ "clone-impls" "derive" "parsing" "printing" ];
           }
@@ -6484,7 +6484,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "full" ];
           }
         ];
@@ -6691,8 +6691,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech//operator-rs.git";
-          rev = "04f3b11719725e144c50f14f0c430191ca26aea0";
-          sha256 = "0xz4hyca5pyjabwryngq74q1qq7cnhfjrn0b84nc78nv7lynw5g0";
+          rev = "fcb74606adc66a69b8a793da15778b928b20bde1";
+          sha256 = "16wkpf50np10j8znhjmqvni3pbik1k6ba3z1kqf199yl76079x10";
         };
         libName = "stackable_operator";
         authors = [
@@ -6841,8 +6841,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech//operator-rs.git";
-          rev = "04f3b11719725e144c50f14f0c430191ca26aea0";
-          sha256 = "0xz4hyca5pyjabwryngq74q1qq7cnhfjrn0b84nc78nv7lynw5g0";
+          rev = "fcb74606adc66a69b8a793da15778b928b20bde1";
+          sha256 = "16wkpf50np10j8znhjmqvni3pbik1k6ba3z1kqf199yl76079x10";
         };
         procMacro = true;
         libName = "stackable_operator_derive";
@@ -6864,7 +6864,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
           }
         ];
 
@@ -6937,7 +6937,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "parsing" "extra-traits" ];
           }
         ];
@@ -6990,11 +6990,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "clone-impls" "default" "derive" "extra-traits" "full" "parsing" "printing" "proc-macro" "quote" "visit" ];
       };
-      "syn 2.0.76" = rec {
+      "syn 2.0.77" = rec {
         crateName = "syn";
-        version = "2.0.76";
+        version = "2.0.77";
         edition = "2021";
-        sha256 = "09fmdkmqqkkfkg53qnldl10ppwqkqlw22ixhg4rgrkp02hd0i3jp";
+        sha256 = "1vbkwfp9ymmi0fsyyjsqfvnv7gm8vjgl4pzprbk7p3pxc7gvqdcz";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
@@ -7060,7 +7060,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
           }
         ];
 
@@ -7422,7 +7422,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "full" ];
           }
         ];
@@ -7956,7 +7956,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             usesDefaultFeatures = false;
             features = [ "full" "parsing" "printing" "visit-mut" "clone-impls" "extra-traits" "proc-macro" ];
           }
@@ -8594,7 +8594,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "full" ];
           }
           {
@@ -8653,7 +8653,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
             features = [ "visit" "full" ];
           }
           {
@@ -9250,7 +9250,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.76";
+            packageId = "syn 2.0.77";
           }
         ];
 
