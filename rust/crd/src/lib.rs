@@ -5,11 +5,11 @@ pub mod listener;
 pub mod security;
 pub mod tls;
 
-use crate::authentication::KafkaAuthentication;
 use crate::authorization::KafkaAuthorization;
 use crate::tls::KafkaTls;
 
 use affinity::get_affinity;
+use authentication::KafkaAuthenticationClass;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
@@ -132,9 +132,9 @@ pub struct KafkaClusterSpec {
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterConfig {
-    /// Authentication class settings for Kafka like mTLS authentication.
-    #[serde(default)]
-    pub authentication: Vec<KafkaAuthentication>,
+    /// Authentication class settings for Kafka like mTLS authentication or Kerberos secret name.
+    #[serde(flatten)]
+    pub authentication: Option<KafkaAuthenticationEnum>,
 
     /// Authorization settings for Kafka like OPA.
     #[serde(default)]
@@ -159,6 +159,32 @@ pub struct KafkaClusterConfig {
     /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
     /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
     pub zookeeper_config_map_name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Display, JsonSchema, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum KafkaAuthenticationEnum {
+    AuthenticationClasses {
+        #[serde(default)]
+        authentication: Vec<KafkaAuthenticationClass>,
+    },
+
+    KerberosAuthentication {
+        authentication: AuthenticationConfig,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthenticationConfig {
+    pub kerberos: KerberosConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KerberosConfig {
+    /// Name of the SecretClass providing the keytab for the Kafka services.
+    pub secret_class: String,
 }
 
 impl KafkaCluster {
@@ -669,6 +695,77 @@ mod tests {
         assert_eq!(
             get_internal_secret_class(&kafka),
             tls::internal_tls_default()
+        );
+    }
+
+    #[test]
+    fn test_get_kerberos_config() {
+        let kafka_cluster = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+          namespace: default
+        spec:
+          image:
+            productVersion: 3.7.1
+          clusterConfig:
+            authentication:
+              kerberos:
+                secretClass: kafka-kerberos
+            zookeeperConfigMapName: xyz
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
+        println!("{:#?}", kafka);
+
+        assert_eq!(
+            Some(KafkaAuthenticationEnum::KerberosAuthentication {
+                authentication: AuthenticationConfig {
+                    kerberos: KerberosConfig {
+                        secret_class: "kafka-kerberos".to_string()
+                    }
+                }
+            }),
+            kafka.spec.cluster_config.authentication
+        );
+    }
+
+    #[test]
+    fn test_get_kafka_tls_config() {
+        let kafka_cluster = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+          namespace: default
+        spec:
+          image:
+            productVersion: 3.7.1
+          clusterConfig:
+            authentication:
+              - authenticationClass: kafka-client-tls1
+              - authenticationClass: kafka-client-tls2
+            tls:
+              internalSecretClass: internalTls
+              serverSecretClass: tls
+            zookeeperConfigMapName: xyz
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
+
+        println!("{:#?}", kafka);
+
+        assert_eq!(
+            Some(KafkaAuthenticationEnum::AuthenticationClasses {
+                authentication: vec![
+                    KafkaAuthenticationClass {
+                        authentication_class: "kafka-client-tls1".to_string()
+                    },
+                    KafkaAuthenticationClass {
+                        authentication_class: "kafka-client-tls2".to_string()
+                    }
+                ]
+            }),
+            kafka.spec.cluster_config.authentication
         );
     }
 }

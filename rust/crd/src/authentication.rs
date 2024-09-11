@@ -32,7 +32,7 @@ pub enum Error {
 
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KafkaAuthentication {
+pub struct KafkaAuthenticationClass {
     /// The AuthenticationClass <https://docs.stackable.tech/home/nightly/concepts/authenticationclass.html> to use.
     ///
     /// ## TLS provider
@@ -64,7 +64,7 @@ impl ResolvedAuthenticationClasses {
     /// - Validation failed
     pub async fn from_references(
         client: &Client,
-        auth_classes: &Vec<KafkaAuthentication>,
+        auth_classes: &Vec<KafkaAuthenticationClass>,
     ) -> Result<ResolvedAuthenticationClasses, Error> {
         let mut resolved_authentication_classes: Vec<AuthenticationClass> = vec![];
 
