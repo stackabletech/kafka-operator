@@ -409,7 +409,10 @@ pub struct KafkaConfig {
     #[fragment_attrs(serde(default))]
     pub graceful_shutdown_timeout: Option<Duration>,
 
+    /// The ListenerClass used for bootstrapping new clients. Should use a stable ListenerClass to avoid unnecessary client restarts (such as `cluster-internal` or `external-stable`).
     pub bootstrap_listener_class: String,
+
+    /// The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
     pub broker_listener_class: String,
 }
 

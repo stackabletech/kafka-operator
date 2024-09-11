@@ -68,9 +68,11 @@ spec:
                               x-kubernetes-preserve-unknown-fields: true
                           type: object
                         bootstrapListenerClass:
+                          description: The ListenerClass used for bootstrapping new clients. Should use a stable ListenerClass to avoid unnecessary client restarts (such as `cluster-internal` or `external-stable`).
                           nullable: true
                           type: string
                         brokerListenerClass:
+                          description: The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
                           nullable: true
                           type: string
                         gracefulShutdownTimeout:
@@ -337,9 +339,11 @@ spec:
                                     x-kubernetes-preserve-unknown-fields: true
                                 type: object
                               bootstrapListenerClass:
+                                description: The ListenerClass used for bootstrapping new clients. Should use a stable ListenerClass to avoid unnecessary client restarts (such as `cluster-internal` or `external-stable`).
                                 nullable: true
                                 type: string
                               brokerListenerClass:
+                                description: The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
                                 nullable: true
                                 type: string
                               gracefulShutdownTimeout:
