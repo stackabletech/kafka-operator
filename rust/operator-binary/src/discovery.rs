@@ -84,7 +84,7 @@ pub async fn build_discovery_configmaps(
 
 /// Build a discovery [`ConfigMap`] containing information about how to connect to a certain [`KafkaCluster`]
 ///
-/// `hosts` will usually come from either [`service_hosts`] or [`nodeport_hosts`].
+/// `hosts` will usually come from [`listener_hosts`].
 fn build_discovery_configmap(
     kafka: &KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
