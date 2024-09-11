@@ -67,6 +67,9 @@ spec:
                               type: object
                               x-kubernetes-preserve-unknown-fields: true
                           type: object
+                        bootstrapListenerClass:
+                          nullable: true
+                          type: string
                         brokerListenerClass:
                           nullable: true
                           type: string
@@ -333,6 +336,9 @@ spec:
                                     type: object
                                     x-kubernetes-preserve-unknown-fields: true
                                 type: object
+                              bootstrapListenerClass:
+                                nullable: true
+                                type: string
                               brokerListenerClass:
                                 nullable: true
                                 type: string
@@ -580,9 +586,6 @@ spec:
                             - configMapName
                           type: object
                       type: object
-                    bootstrapListenerClass:
-                      default: cluster-internal
-                      type: string
                     tls:
                       default:
                         internalSecretClass: tls

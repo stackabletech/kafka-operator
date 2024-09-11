@@ -597,7 +597,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     Ok(Action::await_change())
 }
 
-/// Kafka clients will use the load-balanced bootstrap service to get a list of broker addresses and will use those to
+/// Kafka clients will use the load-balanced bootstrap listener to get a list of broker addresses and will use those to
 /// transmit data to the correct broker.
 pub fn build_broker_rolegroup_bootstrap_listener(
     kafka: &KafkaCluster,
