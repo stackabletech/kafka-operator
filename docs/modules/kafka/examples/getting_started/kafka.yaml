@@ -11,6 +11,9 @@ spec:
       serverSecretClass: null
     zookeeperConfigMapName: simple-kafka-znode
   brokers:
+    config:
+      bootstrapListenerClass: cluster-internal
+      brokerListenerClass: cluster-internal
     roleGroups:
       default:
         replicas: 3
