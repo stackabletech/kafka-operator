@@ -162,22 +162,13 @@ pub struct KafkaClusterConfig {
     /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
     /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
     pub zookeeper_config_map_name: String,
-
-    #[serde(default = "KafkaClusterConfig::default_bootstrap_listener_class")]
-    pub bootstrap_listener_class: String,
-}
-
-impl KafkaClusterConfig {
-    fn default_bootstrap_listener_class() -> String {
-        "cluster-internal".to_string()
-    }
 }
 
 impl KafkaCluster {
     /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
     /// to get a list of broker addresses and will use those to transmit data to the correct broker.
-    pub fn bootstrap_service_name(&self) -> String {
-        self.name_any()
+    pub fn bootstrap_service_name(&self, rolegroup: &RoleGroupRef<Self>) -> String {
+        format!("{}-bootstrap", rolegroup.object_name())
     }
 
     /// Metadata about a broker rolegroup
@@ -418,6 +409,7 @@ pub struct KafkaConfig {
     #[fragment_attrs(serde(default))]
     pub graceful_shutdown_timeout: Option<Duration>,
 
+    pub bootstrap_listener_class: String,
     pub broker_listener_class: String,
 }
 
@@ -444,6 +436,7 @@ impl KafkaConfig {
             },
             affinity: get_affinity(cluster_name, role),
             graceful_shutdown_timeout: Some(DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT),
+            bootstrap_listener_class: Some("cluster-internal".to_string()),
             broker_listener_class: Some("cluster-internal".to_string()),
         }
     }

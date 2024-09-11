@@ -451,14 +451,6 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         None
     };
 
-    let bootstrap_listener =
-        build_bootstrap_listener(&kafka, &resolved_product_image, &kafka_security)?;
-
-    let bootstrap_listener = cluster_resources
-        .add(client, bootstrap_listener)
-        .await
-        .context(ApplyRoleServiceSnafu)?;
-
     let vector_aggregator_address = resolve_vector_aggregator_address(&kafka, client)
         .await
         .context(ResolveVectorAggregatorAddressSnafu)?;
@@ -482,6 +474,8 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .add(client, rbac_rolebinding)
         .await
         .context(ApplyRoleBindingSnafu)?;
+
+    let mut bootstrap_listeners = Vec::<Listener>::new();
 
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
@@ -516,6 +510,20 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             &merged_config,
             &rbac_sa.name_any(),
         )?;
+        let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
+            &kafka,
+            &resolved_product_image,
+            &kafka_security,
+            &rolegroup_ref,
+            &merged_config,
+        )?;
+
+        bootstrap_listeners.push(
+            cluster_resources
+                .add(client, rg_bootstrap_listener)
+                .await
+                .context(ApplyRoleServiceSnafu)?,
+        );
         cluster_resources
             .add(client, rg_service)
             .await
@@ -554,7 +562,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         &*kafka,
         &resolved_product_image,
         &kafka_security,
-        &bootstrap_listener,
+        &bootstrap_listeners,
     )
     .await
     .context(BuildDiscoveryConfigSnafu)?
@@ -591,16 +599,18 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
 
 /// Kafka clients will use the load-balanced bootstrap service to get a list of broker addresses and will use those to
 /// transmit data to the correct broker.
-pub fn build_bootstrap_listener(
+pub fn build_broker_rolegroup_bootstrap_listener(
     kafka: &KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
+    rolegroup: &RoleGroupRef<KafkaCluster>,
+    merged_config: &KafkaConfig,
 ) -> Result<Listener> {
     let role_name = KafkaRole::Broker.to_string();
     Ok(Listener {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
-            .name(kafka.bootstrap_service_name())
+            .name(kafka.bootstrap_service_name(rolegroup))
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(build_recommended_labels(
@@ -613,7 +623,7 @@ pub fn build_bootstrap_listener(
             .context(MetadataBuildSnafu)?
             .build(),
         spec: ListenerSpec {
-            class_name: Some(kafka.spec.cluster_config.bootstrap_listener_class.clone()),
+            class_name: Some(merged_config.bootstrap_listener_class.clone()),
             ports: Some(
                 // TODO:; produce ListenerPorts natively
                 service_ports(kafka_security)
@@ -802,11 +812,11 @@ fn build_broker_rolegroup_statefulset(
 
     let mut pvcs = merged_config.resources.storage.build_pvcs();
 
+    // bootstrap listener should be persistent,
     // main broker listener is an ephemeral PVC instead
     pvcs.push(
         ListenerOperatorVolumeSourceBuilder::new(
-            // FIXME: error handling
-            &ListenerReference::ListenerName(kafka.name_unchecked()),
+            &ListenerReference::ListenerName(kafka.bootstrap_service_name(rolegroup_ref)),
             &Labels::new(),
         )
         .and_then(|builder| builder.build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME))

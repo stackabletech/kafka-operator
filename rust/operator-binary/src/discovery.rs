@@ -57,7 +57,7 @@ pub async fn build_discovery_configmaps(
     owner: &impl Resource<DynamicType = ()>,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
-    listener: &Listener,
+    listeners: &[Listener],
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name_unchecked();
     let port_name = kafka_security.client_port_name();
@@ -67,7 +67,7 @@ pub async fn build_discovery_configmaps(
             owner,
             resolved_product_image,
             &name,
-            listener_hosts(listener, port_name)?,
+            listener_hosts(listeners, port_name)?,
         )?,
         // backwards compat: nodeport service is now the same as the main service, access type
         // is determined by the listenerclass.
@@ -77,7 +77,7 @@ pub async fn build_discovery_configmaps(
             owner,
             resolved_product_image,
             &format!("{name}-nodeport"),
-            listener_hosts(listener, port_name)?,
+            listener_hosts(listeners, port_name)?,
         )?,
     ])
 }
@@ -124,19 +124,22 @@ fn build_discovery_configmap(
 }
 
 fn listener_hosts(
-    listener: &Listener,
+    listeners: &[Listener],
     port_name: &str,
 ) -> Result<impl IntoIterator<Item = (String, u16)>, Error> {
-    listener
-        .status
-        .as_ref()
-        .and_then(|s| s.ingress_addresses.as_deref())
-        .unwrap_or_default()
+    listeners
         .iter()
-        .map(|x| {
+        .flat_map(|listener| {
+            listener
+                .status
+                .as_ref()
+                .and_then(|s| s.ingress_addresses.as_deref())
+        })
+        .flatten()
+        .map(|addr| {
             Ok((
-                x.address.clone(),
-                x.ports
+                addr.address.clone(),
+                addr.ports
                     .get(port_name)
                     .copied()
                     .context(NoServicePortSnafu { port_name })?
