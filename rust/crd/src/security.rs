@@ -24,7 +24,8 @@ use stackable_operator::{
 };
 
 use crate::{
-    authentication::KafkaAuthenticationClass, KafkaAuthenticationMethod, STACKABLE_LOG_DIR,
+    authentication::KafkaAuthenticationClass, KafkaAuthenticationMethod, KafkaRole,
+    STACKABLE_LOG_DIR,
 };
 use crate::{
     authentication::{self, ResolvedAuthenticationClasses},
@@ -260,12 +261,15 @@ impl<'a> KafkaTlsSecurity<'a> {
         &self,
         kafka_listeners: &KafkaListenerConfig,
         opa_connect_string: Option<&str>,
+        kerberos_enabled: bool,
+        pod_fqdn: &String,
     ) -> Vec<String> {
         vec![formatdoc! {"
             {COMMON_BASH_TRAP_FUNCTIONS}
             {remove_vector_shutdown_file_command}
             prepare_signal_handlers
-            bin/kafka-server-start.sh {STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE} --override \"zookeeper.connect=$ZOOKEEPER\" --override \"listeners={listeners}\" --override \"advertised.listeners={advertised_listeners}\" --override \"listener.security.protocol.map={listener_security_protocol_map}\"{opa_config} &
+            {set_realm_env}
+            bin/kafka-server-start.sh {STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE} --override \"zookeeper.connect=$ZOOKEEPER\" --override \"listeners={listeners}\" --override \"advertised.listeners={advertised_listeners}\" --override \"listener.security.protocol.map={listener_security_protocol_map}\"{opa_config}{jaas_config} &
             wait_for_termination $!
             {create_vector_shutdown_file_command}
             ",
@@ -273,13 +277,23 @@ impl<'a> KafkaTlsSecurity<'a> {
             remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         create_vector_shutdown_file_command =
             create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+            set_realm_env = match kerberos_enabled {
+                true => "KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' /stackable/kerberos/krb5.conf)",
+                false => "",
+            },
             listeners = kafka_listeners.listeners(),
             advertised_listeners = kafka_listeners.advertised_listeners(),
             listener_security_protocol_map = kafka_listeners.listener_security_protocol_map(),
             opa_config = match opa_connect_string {
                 None => "".to_string(),
                 Some(opa_connect_string) => format!(" --override \"opa.authorizer.url={opa_connect_string}\""),
-            }
+            },
+            jaas_config = match kerberos_enabled {
+                true => {
+                    let service_name = KafkaRole::Broker.kerberos_service_name();
+                    format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true keyTab=\"/stackable/kerberos/keytab\" principal=\"{service_name}/{pod_fqdn}@$KERBEROS_REALM\";\"")},
+                false => "".to_string(),
+            },
         }]
     }
 

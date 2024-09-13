@@ -285,6 +285,23 @@ impl KafkaCluster {
         tracing::debug!("Merged config: {:?}", conf_role_group);
         fragment::validate(conf_role_group).context(FragmentValidationFailureSnafu)
     }
+
+    pub fn has_kerberos_enabled(&self) -> bool {
+        self.kerberos_secret_class().is_some()
+    }
+
+    pub fn kerberos_secret_class(&self) -> Option<String> {
+        if let Some(authentication) = self.spec.cluster_config.authentication.clone() {
+            match authentication {
+                KafkaAuthenticationMethod::AuthenticationClasses(_) => None,
+                KafkaAuthenticationMethod::KerberosAuthentication(kerberos_authentication) => {
+                    Some(kerberos_authentication.kerberos.secret_class)
+                }
+            }
+        } else {
+            None
+        }
+    }
 }
 
 /// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
@@ -344,6 +361,12 @@ impl KafkaRole {
             roles.push(role.to_string())
         }
         roles
+    }
+
+    /// A Kerberos principal has three parts, with the form username/fully.qualified.domain.name@YOUR-REALM.COM.
+    /// We only have one role and will use "kafka" everywhere (which e.g. differs from the current hdfs implementation).
+    pub fn kerberos_service_name(&self) -> &'static str {
+        "kafka"
     }
 }
 
@@ -493,6 +516,21 @@ impl Configuration for KafkaConfigFragment {
                 config.insert(
                     "opa.authorizer.metrics.enabled".to_string(),
                     Some("true".to_string()),
+                );
+            }
+            // Kerberos
+            if resource.has_kerberos_enabled() {
+                config.insert(
+                    "sasl.enabled.mechanisms".to_string(),
+                    Some("GSSAPI".to_string()),
+                );
+                config.insert(
+                    "sasl.kerberos.service.name".to_string(),
+                    Some(KafkaRole::Broker.kerberos_service_name().to_string()),
+                );
+                config.insert(
+                    "sasl.mechanism.inter.broker.protocol".to_string(),
+                    Some("GSSAPI".to_string()),
                 );
             }
         }

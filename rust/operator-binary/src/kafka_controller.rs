@@ -12,10 +12,11 @@ use product_config::{
 };
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
-    listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
-    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME,
-    JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
-    METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
+    listener::{get_kafka_listener_config, pod_fqdn, KafkaListenerError},
+    security::KafkaTlsSecurity,
+    Container, KafkaCluster, KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME,
+    DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME,
+    METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
     STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR, STACKABLE_TMP_DIR,
 };
 use stackable_operator::{
@@ -71,6 +72,7 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     discovery::{self, build_discovery_configmaps},
+    kerberos::{self, add_kerberos_pod_config},
     operations::{
         graceful_shutdown::{add_graceful_shutdown_config, graceful_shutdown_config_properties},
         pdb::add_pdbs,
@@ -308,6 +310,12 @@ pub enum Error {
     AddVolumesAndVolumeMounts {
         source: stackable_kafka_crd::security::Error,
     },
+
+    #[snafu(display("failed to resolve the fully-qualified pod name"))]
+    ResolveNamespace { source: KafkaListenerError },
+
+    #[snafu(display("failed to add kerberos config"))]
+    AddKerberosConfig { source: kerberos::Error },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -365,6 +373,8 @@ impl ReconcilerError for Error {
             Error::MetadataBuild { .. } => None,
             Error::LabelBuild { .. } => None,
             Error::AddVolumesAndVolumeMounts { .. } => None,
+            Error::ResolveNamespace { .. } => None,
+            Error::AddKerberosConfig { .. } => None,
         }
     }
 }
@@ -749,7 +759,7 @@ fn build_broker_rolegroup_service(
 #[allow(clippy::too_many_arguments)]
 fn build_broker_rolegroup_statefulset(
     kafka: &KafkaCluster,
-    role: &KafkaRole,
+    kafka_role: &KafkaRole,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
@@ -758,7 +768,7 @@ fn build_broker_rolegroup_statefulset(
     merged_config: &KafkaConfig,
     sa_name: &str,
 ) -> Result<StatefulSet> {
-    let role = kafka.role(role).context(InternalOperatorSnafu)?;
+    let role = kafka.role(kafka_role).context(InternalOperatorSnafu)?;
     let rolegroup = kafka
         .rolegroup(rolegroup_ref)
         .context(InternalOperatorSnafu)?;
@@ -787,6 +797,17 @@ fn build_broker_rolegroup_statefulset(
     kafka_security
         .add_volume_and_volume_mounts(&mut pod_builder, &mut cb_kcat_prober, &mut cb_kafka)
         .context(AddVolumesAndVolumeMountsSnafu)?;
+
+    if kafka.has_kerberos_enabled() {
+        add_kerberos_pod_config(
+            kafka,
+            kafka_role,
+            &mut cb_kcat_prober,
+            &mut cb_kafka,
+            &mut pod_builder,
+        )
+        .context(AddKerberosConfigSnafu)?;
+    }
 
     cb_get_svc
         .image_from_product_image(resolved_product_image)
@@ -882,9 +903,9 @@ fn build_broker_rolegroup_statefulset(
     let jvm_args = format!(
         "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE} -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml",
     );
-    let kafka_listeners =
-        get_kafka_listener_config(kafka, kafka_security, &rolegroup_ref.object_name())
-            .context(InvalidKafkaListenersSnafu)?;
+    let pod_fqdn = pod_fqdn(kafka, &rolegroup_ref.object_name()).context(ResolveNamespaceSnafu)?;
+    let kafka_listeners = get_kafka_listener_config(kafka, kafka_security, &pod_fqdn)
+        .context(InvalidKafkaListenersSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -896,7 +917,12 @@ fn build_broker_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![kafka_security
-            .kafka_container_commands(&kafka_listeners, opa_connect_string)
+            .kafka_container_commands(
+                &kafka_listeners,
+                opa_connect_string,
+                kafka.has_kerberos_enabled(),
+                &pod_fqdn,
+            )
             .join("\n")])
         .add_env_var("EXTRA_ARGS", jvm_args)
         .add_env_var(
