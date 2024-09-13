@@ -133,8 +133,7 @@ pub struct KafkaClusterSpec {
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterConfig {
     /// Authentication class settings for Kafka like mTLS authentication or Kerberos secret name.
-    #[serde(flatten)]
-    pub authentication: Option<KafkaAuthenticationEnum>,
+    pub authentication: Option<KafkaAuthenticationMethod>,
 
     /// Authorization settings for Kafka like OPA.
     #[serde(default)]
@@ -163,15 +162,9 @@ pub struct KafkaClusterConfig {
 
 #[derive(Clone, Debug, Deserialize, Display, JsonSchema, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
-pub enum KafkaAuthenticationEnum {
-    AuthenticationClasses {
-        #[serde(default)]
-        authentication: Vec<KafkaAuthenticationClass>,
-    },
-
-    KerberosAuthentication {
-        authentication: AuthenticationConfig,
-    },
+pub enum KafkaAuthenticationMethod {
+    AuthenticationClasses(Vec<KafkaAuthenticationClass>),
+    KerberosAuthentication(AuthenticationConfig),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
@@ -699,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_kerberos_config() {
+    fn test_get_auth_kerberos() {
         let kafka_cluster = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
         kind: KafkaCluster
@@ -719,19 +712,19 @@ mod tests {
         println!("{:#?}", kafka);
 
         assert_eq!(
-            Some(KafkaAuthenticationEnum::KerberosAuthentication {
-                authentication: AuthenticationConfig {
+            Some(KafkaAuthenticationMethod::KerberosAuthentication(
+                AuthenticationConfig {
                     kerberos: KerberosConfig {
                         secret_class: "kafka-kerberos".to_string()
                     }
                 }
-            }),
+            )),
             kafka.spec.cluster_config.authentication
         );
     }
 
     #[test]
-    fn test_get_kafka_tls_config() {
+    fn test_get_auth_tls() {
         let kafka_cluster = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
         kind: KafkaCluster
@@ -755,17 +748,39 @@ mod tests {
         println!("{:#?}", kafka);
 
         assert_eq!(
-            Some(KafkaAuthenticationEnum::AuthenticationClasses {
-                authentication: vec![
-                    KafkaAuthenticationClass {
-                        authentication_class: "kafka-client-tls1".to_string()
-                    },
-                    KafkaAuthenticationClass {
-                        authentication_class: "kafka-client-tls2".to_string()
-                    }
-                ]
-            }),
+            Some(KafkaAuthenticationMethod::AuthenticationClasses(vec![
+                KafkaAuthenticationClass {
+                    authentication_class: "kafka-client-tls1".to_string()
+                },
+                KafkaAuthenticationClass {
+                    authentication_class: "kafka-client-tls2".to_string()
+                }
+            ])),
             kafka.spec.cluster_config.authentication
         );
+    }
+
+    #[test]
+    fn test_get_auth_none() {
+        let kafka_cluster = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+          namespace: default
+        spec:
+          image:
+            productVersion: 3.7.1
+          clusterConfig:
+            tls:
+              internalSecretClass: internalTls
+              serverSecretClass: tls
+            zookeeperConfigMapName: xyz
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
+
+        println!("{:#?}", kafka);
+
+        assert_eq!(None, kafka.spec.cluster_config.authentication);
     }
 }

@@ -23,7 +23,9 @@ use stackable_operator::{
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
-use crate::{authentication::KafkaAuthenticationClass, KafkaAuthenticationEnum, STACKABLE_LOG_DIR};
+use crate::{
+    authentication::KafkaAuthenticationClass, KafkaAuthenticationMethod, STACKABLE_LOG_DIR,
+};
 use crate::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, KafkaListenerConfig},
@@ -129,10 +131,10 @@ impl<'a> KafkaTlsSecurity<'a> {
         let kafka_authentication_classes: Vec<KafkaAuthenticationClass> =
             if let Some(authentication) = &kafka.spec.cluster_config.authentication {
                 match authentication {
-                    KafkaAuthenticationEnum::AuthenticationClasses { authentication } => {
-                        authentication.to_vec()
+                    KafkaAuthenticationMethod::AuthenticationClasses(auth_classes) => {
+                        auth_classes.to_vec()
                     }
-                    KafkaAuthenticationEnum::KerberosAuthentication { .. } => {
+                    KafkaAuthenticationMethod::KerberosAuthentication(_) => {
                         vec![]
                     }
                 }
