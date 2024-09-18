@@ -1,4 +1,5 @@
 = Storage and resource configuration
+:description: Configure storage and resource allocation for Kafka brokers using Stackable Operator, including PersistentVolumeClaims, CPU, memory, and storage defaults.
 
 == Storage for data volumes
 
