@@ -233,21 +233,31 @@ impl<'a> KafkaTlsSecurity<'a> {
     }
 
     /// Returns the commands for the kcat readiness probe.
-    pub fn kcat_prober_container_commands(&self) -> Vec<String> {
-        let mut args = vec!["/stackable/kcat".to_string()];
+    pub fn kcat_prober_container_commands(&self, pod_fqdn: &String) -> Vec<String> {
+        let mut args = vec![];
         let port = self.client_port();
 
         if self.tls_client_authentication_class().is_some() {
+            args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
             args.extend(Self::kcat_client_auth_ssl(
                 Self::STACKABLE_TLS_CERT_SERVER_DIR,
             ));
+        } else if self.kafka.has_kerberos_enabled() {
+            let service_name = KafkaRole::Broker.kerberos_service_name();
+            args.push("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' /stackable/kerberos/krb5.conf);".to_string());
+            args.push("/stackable/kcat".to_string());
+            args.push("-b".to_string());
+            args.push(format!("{pod_fqdn}:{port}"));
+            args.extend(Self::kcat_client_sasl_ssl(Self::STACKABLE_TLS_CERT_SERVER_DIR, service_name, pod_fqdn));
         } else if self.tls_server_secret_class().is_some() {
+            args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
             args.extend(Self::kcat_client_ssl(Self::STACKABLE_TLS_CERT_SERVER_DIR));
         } else {
+            args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
         }
@@ -278,7 +288,7 @@ impl<'a> KafkaTlsSecurity<'a> {
         create_vector_shutdown_file_command =
             create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
             set_realm_env = match kerberos_enabled {
-                true => "KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' /stackable/kerberos/krb5.conf)",
+                true => "export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' /stackable/kerberos/krb5.conf)",
                 false => "",
             },
             listeners = kafka_listeners.listeners(),
@@ -291,7 +301,7 @@ impl<'a> KafkaTlsSecurity<'a> {
             jaas_config = match kerberos_enabled {
                 true => {
                     let service_name = KafkaRole::Broker.kerberos_service_name();
-                    format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true keyTab=\"/stackable/kerberos/keytab\" principal=\"{service_name}/{pod_fqdn}@$KERBEROS_REALM\";\"")},
+                    format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{pod_fqdn}@$KERBEROS_REALM\\\";\"")},
                 false => "".to_string(),
             },
         }]
@@ -520,6 +530,26 @@ impl<'a> KafkaTlsSecurity<'a> {
             "security.protocol=SSL".to_string(),
             "-X".to_string(),
             format!("ssl.ca.location={cert_directory}/ca.crt"),
+        ]
+    }
+
+    fn kcat_client_sasl_ssl(
+        cert_directory: &str, 
+        service_name: &str,
+        pod_fqdn: &String) -> Vec<String> {
+        vec![
+            "-X".to_string(),
+            "security.protocol=SASL_SSL".to_string(),
+            "-X".to_string(),
+            format!("ssl.ca.location={cert_directory}/ca.crt"),
+            "-X".to_string(),
+            "sasl.kerberos.keytab=/stackable/kerberos/keytab".to_string(),
+            "-X".to_string(),
+            "sasl.mechanism=GSSAPI".to_string(),
+            "-X".to_string(),
+            format!("sasl.kerberos.service.name={service_name}"),
+            "-X".to_string(),
+            format!("sasl.kerberos.principal={service_name}/{pod_fqdn}@$KERBEROS_REALM"),
         ]
     }
 }

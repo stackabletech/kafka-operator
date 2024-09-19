@@ -43,9 +43,11 @@ pub fn add_kerberos_pod_config(
         );
         cb_kcat_prober.add_volume_mount("kerberos", "/stackable/kerberos");
         cb_kcat_prober.add_env_var("KRB5_CONFIG", "/stackable/kerberos/krb5.conf");
+        cb_kcat_prober.add_env_var("KAFKA_OPTS", "-Djava.security.krb5.conf=/stackable/kerberos/krb5.conf");
 
         cb_kafka.add_volume_mount("kerberos", "/stackable/kerberos");
         cb_kafka.add_env_var("KRB5_CONFIG", "/stackable/kerberos/krb5.conf");
+        cb_kafka.add_env_var("KAFKA_OPTS", "-Djava.security.krb5.conf=/stackable/kerberos/krb5.conf");
     }
 
     Ok(())

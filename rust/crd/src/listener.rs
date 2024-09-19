@@ -114,22 +114,8 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::ClientAuth, KafkaListenerProtocol::Ssl);
-    } else if kafka_security.tls_server_secret_class().is_some() {
-        // 2) If no client authentication but tls is required we expose CLIENT with SSL
-        listeners.push(KafkaListener {
-            name: KafkaListenerName::Client,
-            host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: kafka_security.client_port().to_string(),
-        });
-        advertised_listeners.push(KafkaListener {
-            name: KafkaListenerName::Client,
-            host: LISTENER_NODE_ADDRESS.to_string(),
-            port: node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
-        });
-        listener_security_protocol_map
-            .insert(KafkaListenerName::Client, KafkaListenerProtocol::Ssl);
     } else if kafka.has_kerberos_enabled() {
-        // 3) Kerberos and TLS authentication classes are mutually exclusive
+        // 2) Kerberos and TLS authentication classes are mutually exclusive and Kerberos takes preference
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -142,6 +128,20 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::SaslSsl);
+    } else if kafka_security.tls_server_secret_class().is_some() {
+        // 3) If no client authentication but tls is required we expose CLIENT with SSL
+        listeners.push(KafkaListener {
+            name: KafkaListenerName::Client,
+            host: LISTENER_LOCAL_ADDRESS.to_string(),
+            port: kafka_security.client_port().to_string(),
+        });
+        advertised_listeners.push(KafkaListener {
+            name: KafkaListenerName::Client,
+            host: LISTENER_NODE_ADDRESS.to_string(),
+            port: node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
+        });
+        listener_security_protocol_map
+            .insert(KafkaListenerName::Client, KafkaListenerProtocol::Ssl);
     } else {
         // 4) If no client auth or tls is required we expose CLIENT with PLAINTEXT
         listeners.push(KafkaListener {
@@ -159,31 +159,31 @@ pub fn get_kafka_listener_config(
     }
 
     // INTERNAL
-    if kafka_security.tls_internal_secret_class().is_some() {
-        // 5) If internal tls is required we expose INTERNAL as SSL
+    if kafka.has_kerberos_enabled() {
+        // 5) Kerberos and TLS authentication classes are mutually exclusive and Kerberos takes preference
         listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: kafka_security.internal_port().to_string(),
+            port: KafkaTlsSecurity::SECURE_INTERNAL_PORT.to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: pod_fqdn.to_string(),
-            port: kafka_security.internal_port().to_string(),
+            port: KafkaTlsSecurity::SECURE_INTERNAL_PORT.to_string(),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
-    } else if kafka.has_kerberos_enabled() {
-        // 6) Kerberos and TLS authentication classes are mutually exclusive
+    } else if kafka_security.tls_internal_secret_class().is_some() {
+        // 6) If internal tls is required we expose INTERNAL as SSL
         listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: KafkaTlsSecurity::SECURE_INTERNAL_PORT.to_string(),
+            port: kafka_security.internal_port().to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: pod_fqdn.to_string(),
-            port: KafkaTlsSecurity::SECURE_INTERNAL_PORT.to_string(),
+            port: kafka_security.internal_port().to_string(),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);

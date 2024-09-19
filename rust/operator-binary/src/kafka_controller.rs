@@ -691,6 +691,9 @@ fn build_broker_rolegroup_config_map(
             })?,
         );
 
+        tracing::debug!("Applied server config: [{:#?}]", server_cfg);
+        tracing::debug!("Applied JVM config: [{:#?}]", jvm_sec_props);
+
     extend_role_group_config_map(
         rolegroup,
         vector_aggregator_address,
@@ -943,6 +946,17 @@ fn build_broker_rolegroup_statefulset(
     cb_kcat_prober
         .image_from_product_image(resolved_product_image)
         .command(vec!["sleep".to_string(), "infinity".to_string()])
+        .add_env_vars(vec![EnvVar {
+            name: "POD_NAME".to_string(),
+            value_from: Some(EnvVarSource {
+                field_ref: Some(ObjectFieldSelector {
+                    api_version: Some("v1".to_string()),
+                    field_path: "metadata.name".to_string(),
+                }),
+                ..EnvVarSource::default()
+            }),
+            ..EnvVar::default()
+        }])
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -956,7 +970,7 @@ fn build_broker_rolegroup_statefulset(
         .readiness_probe(Probe {
             exec: Some(ExecAction {
                 // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(kafka_security.kcat_prober_container_commands()),
+                command: Some(kafka_security.kcat_prober_container_commands(&pod_fqdn)),
             }),
             timeout_seconds: Some(5),
             period_seconds: Some(2),

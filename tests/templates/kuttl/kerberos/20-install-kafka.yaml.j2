@@ -1,0 +1,69 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      kubectl apply -n $NAMESPACE -f - <<EOF
+      ---
+      apiVersion: zookeeper.stackable.tech/v1alpha1
+      kind: ZookeeperZnode
+      metadata:
+        name: test-kafka-znode
+      spec:
+        clusterRef:
+          name: test-zk
+{% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
+      ---
+      apiVersion: authentication.stackable.tech/v1alpha1
+      kind: AuthenticationClass
+      metadata:
+        name: test-kafka-client-auth-tls
+      spec:
+        provider:
+          tls:
+            clientCertSecretClass: test-kafka-client-auth-tls
+      ---
+      apiVersion: secrets.stackable.tech/v1alpha1
+      kind: SecretClass
+      metadata:
+        name: test-kafka-client-auth-tls
+      spec:
+        backend:
+          autoTls:
+            ca:
+              secret:
+                name: secret-provisioner-tls-kafka-client-auth-ca
+                namespace: default
+              autoGenerate: true
+{% endif %}
+      ---
+      apiVersion: kafka.stackable.tech/v1alpha1
+      kind: KafkaCluster
+      metadata:
+        name: test-kafka
+      spec:
+        image:
+          productVersion: 3.7.1 #"{{ test_scenario['values']['kafka'] }}"
+          repo: docker.stackable.tech/apoc/stackable # TODO merge images PR
+          pullPolicy: IfNotPresent
+        clusterConfig:
+          kerberos:
+            secretClass: kerberos-$NAMESPACE
+          tls:
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+            serverSecretClass: tls
+{% else %}
+            serverSecretClass: null
+{% endif %}
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
+          vectorAggregatorConfigMapName: vector-aggregator-discovery
+{% endif %}
+          zookeeperConfigMapName: test-kafka-znode
+        brokers:
+          config:
+            logging:
+              enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+          roleGroups:
+            default:
+              replicas: 3
+      EOF

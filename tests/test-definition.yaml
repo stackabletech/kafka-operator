@@ -34,6 +34,19 @@ dimensions:
   - name: openshift
     values:
       - "false"
+  - name: krb5
+    values:
+      - 1.21.1
+  - name: kerberos-realm
+    values:
+      - "CLUSTER.LOCAL"
+      - "PROD.MYCORP"
+  - name: kerberos-backend
+    values:
+      - mit
+      # Requires manual setup, see create-kerberos-secretclass.yaml
+      # This will *not* respect the kerberos-realm test attribute, but instead use a hard-coded realm
+      # - activeDirectory
 tests:
   - name: smoke
     dimensions:
@@ -75,6 +88,14 @@ tests:
     dimensions:
       - zookeeper-latest
       - kafka-latest
+      - openshift
+  - name: kerberos
+    dimensions:
+      - kafka
+      - zookeeper-latest
+      - krb5
+      - kerberos-realm
+      - kerberos-backend
       - openshift
 
 suites:
