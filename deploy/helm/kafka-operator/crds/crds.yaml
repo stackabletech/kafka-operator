@@ -544,37 +544,24 @@ spec:
                   description: Kafka settings that affect all roles and role groups. The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
                   properties:
                     authentication:
-                      anyOf:
-                        - items:
-                            properties:
-                              authenticationClass:
-                                description: |-
-                                  The AuthenticationClass <https://docs.stackable.tech/home/nightly/concepts/authenticationclass.html> to use.
+                      default: []
+                      description: Authentication class settings for Kafka like mTLS authentication.
+                      items:
+                        properties:
+                          authenticationClass:
+                            description: |-
+                              The AuthenticationClass <https://docs.stackable.tech/home/nightly/concepts/authenticationclass.html> to use.
 
-                                  ## TLS provider
+                              ## TLS provider
 
-                                  Only affects client connections. This setting controls: - If clients need to authenticate themselves against the broker via TLS - Which ca.crt to use when validating the provided client certs
+                              Only affects client connections. This setting controls: - If clients need to authenticate themselves against the broker via TLS - Which ca.crt to use when validating the provided client certs
 
-                                  This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
-                                type: string
-                            required:
-                              - authenticationClass
-                            type: object
-                          type: array
-                        - required:
-                            - kerberos
-                      description: Authentication class settings for Kafka like mTLS authentication or Kerberos secret name.
-                      nullable: true
-                      properties:
-                        kerberos:
-                          properties:
-                            secretClass:
-                              description: Name of the SecretClass providing the keytab for the Kafka services.
-                              type: string
-                          required:
-                            - secretClass
-                          type: object
-                      type: object
+                              This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
+                            type: string
+                        required:
+                          - authenticationClass
+                        type: object
+                      type: array
                     authorization:
                       default:
                         opa: null
@@ -594,6 +581,16 @@ spec:
                           required:
                             - configMapName
                           type: object
+                      type: object
+                    kerberos:
+                      description: Struct containing Kerberos secret name.
+                      nullable: true
+                      properties:
+                        secretClass:
+                          description: Name of the SecretClass providing the keytab for the Kafka services.
+                          type: string
+                      required:
+                        - secretClass
                       type: object
                     tls:
                       default:

@@ -24,14 +24,11 @@ use stackable_operator::{
 };
 
 use crate::{
-    authentication::KafkaAuthenticationClass, KafkaAuthenticationMethod, KafkaRole,
-    STACKABLE_LOG_DIR,
-};
-use crate::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, KafkaListenerConfig},
     tls, KafkaCluster, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_TMP_DIR,
 };
+use crate::{KafkaRole, STACKABLE_LOG_DIR};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -129,25 +126,11 @@ impl<'a> KafkaTlsSecurity<'a> {
         client: &Client,
         kafka: &'a KafkaCluster,
     ) -> Result<Self, Error> {
-        let kafka_authentication_classes: Vec<KafkaAuthenticationClass> =
-            if let Some(authentication) = &kafka.spec.cluster_config.authentication {
-                match authentication {
-                    KafkaAuthenticationMethod::AuthenticationClasses(auth_classes) => {
-                        auth_classes.to_vec()
-                    }
-                    KafkaAuthenticationMethod::KerberosAuthentication(_) => {
-                        vec![]
-                    }
-                }
-            } else {
-                vec![]
-            };
-
         Ok(KafkaTlsSecurity {
             kafka,
             resolved_authentication_classes: ResolvedAuthenticationClasses::from_references(
                 client,
-                &kafka_authentication_classes,
+                &kafka.spec.cluster_config.authentication,
             )
             .await
             .context(InvalidAuthenticationClassConfigurationSnafu)?,

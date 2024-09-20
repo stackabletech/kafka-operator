@@ -132,8 +132,12 @@ pub struct KafkaClusterSpec {
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterConfig {
-    /// Authentication class settings for Kafka like mTLS authentication or Kerberos secret name.
-    pub authentication: Option<KafkaAuthenticationMethod>,
+    /// Authentication class settings for Kafka like mTLS authentication.
+    #[serde(default)]
+    pub authentication: Vec<KafkaAuthenticationClass>,
+
+    /// Struct containing Kerberos secret name.
+    pub kerberos: Option<KerberosConfig>,
 
     /// Authorization settings for Kafka like OPA.
     #[serde(default)]
@@ -158,13 +162,6 @@ pub struct KafkaClusterConfig {
     /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
     /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
     pub zookeeper_config_map_name: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Display, JsonSchema, Eq, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum KafkaAuthenticationMethod {
-    AuthenticationClasses(Vec<KafkaAuthenticationClass>),
-    KerberosAuthentication(AuthenticationConfig),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
@@ -291,13 +288,8 @@ impl KafkaCluster {
     }
 
     pub fn kerberos_secret_class(&self) -> Option<String> {
-        if let Some(authentication) = self.spec.cluster_config.authentication.clone() {
-            match authentication {
-                KafkaAuthenticationMethod::AuthenticationClasses(_) => None,
-                KafkaAuthenticationMethod::KerberosAuthentication(kerberos_authentication) => {
-                    Some(kerberos_authentication.kerberos.secret_class)
-                }
-            }
+        if let Some(kerberos) = self.spec.cluster_config.kerberos.clone() {
+            Some(kerberos.secret_class)
         } else {
             None
         }
@@ -532,6 +524,7 @@ impl Configuration for KafkaConfigFragment {
                     "sasl.mechanism.inter.broker.protocol".to_string(),
                     Some("GSSAPI".to_string()),
                 );
+                tracing::debug!("Kerberos configs added: [{:#?}]", config);
             }
         }
 
@@ -741,23 +734,18 @@ mod tests {
           image:
             productVersion: 3.7.1
           clusterConfig:
-            authentication:
-              kerberos:
-                secretClass: kafka-kerberos
+            kerberos:
+              secretClass: kafka-kerberos
             zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
         println!("{:#?}", kafka);
 
         assert_eq!(
-            Some(KafkaAuthenticationMethod::KerberosAuthentication(
-                AuthenticationConfig {
-                    kerberos: KerberosConfig {
-                        secret_class: "kafka-kerberos".to_string()
-                    }
-                }
-            )),
-            kafka.spec.cluster_config.authentication
+            Some(KerberosConfig {
+                secret_class: "kafka-kerberos".to_string()
+            }),
+            kafka.spec.cluster_config.kerberos
         );
     }
 
@@ -786,14 +774,14 @@ mod tests {
         println!("{:#?}", kafka);
 
         assert_eq!(
-            Some(KafkaAuthenticationMethod::AuthenticationClasses(vec![
+            vec![
                 KafkaAuthenticationClass {
                     authentication_class: "kafka-client-tls1".to_string()
                 },
                 KafkaAuthenticationClass {
                     authentication_class: "kafka-client-tls2".to_string()
-                }
-            ])),
+                },
+            ],
             kafka.spec.cluster_config.authentication
         );
     }
@@ -819,6 +807,6 @@ mod tests {
 
         println!("{:#?}", kafka);
 
-        assert_eq!(None, kafka.spec.cluster_config.authentication);
+        assert_eq!(0, kafka.spec.cluster_config.authentication.len());
     }
 }
