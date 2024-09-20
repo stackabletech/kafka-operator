@@ -229,6 +229,13 @@ impl<'a> KafkaTlsSecurity<'a> {
             ));
         } else if self.kafka.has_kerberos_enabled() {
             let service_name = KafkaRole::Broker.kerberos_service_name();
+            // here we need to specify a shell so that variable substitution will work
+            // see e.g. https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/V1ExecAction.md
+            args.push("/bin/bash".to_string());
+            args.push("-x".to_string());
+            args.push("-euo".to_string());
+            args.push("pipefail".to_string());
+            args.push("-c".to_string());
             args.push("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' /stackable/kerberos/krb5.conf);".to_string());
             args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
