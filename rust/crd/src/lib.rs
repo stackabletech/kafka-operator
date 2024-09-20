@@ -92,6 +92,9 @@ pub enum Error {
 
     #[snafu(display("fragment validation failure"))]
     FragmentValidationFailure { source: ValidationError },
+
+    #[snafu(display("only one authentication method is possible, TLS or Kerberos"))]
+    MultipleAuthenticationMethodsProvided,
 }
 
 /// A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.
@@ -293,6 +296,14 @@ impl KafkaCluster {
         } else {
             None
         }
+    }
+
+    pub fn validate_authentication_methods(&self) -> Result<(), Error> {
+        // TLS authentication and Kerberos authentication are mutually exclusive
+        if !self.spec.cluster_config.authentication.is_empty() && self.has_kerberos_enabled() {
+            return Err(Error::MultipleAuthenticationMethodsProvided);
+        }
+        Ok(())
     }
 }
 
@@ -739,7 +750,6 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
-        println!("{:#?}", kafka);
 
         assert_eq!(
             Some(KerberosConfig {
@@ -771,8 +781,6 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
 
-        println!("{:#?}", kafka);
-
         assert_eq!(
             vec![
                 KafkaAuthentication {
@@ -787,7 +795,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_auth_none() {
+    fn test_get_auth_multiple() {
         let kafka_cluster = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
         kind: KafkaCluster
@@ -798,6 +806,10 @@ mod tests {
           image:
             productVersion: 3.7.1
           clusterConfig:
+            authentication:
+              - authenticationClass: kafka-client-tls1
+            kerberos:
+              secretClass: kafka-kerberos
             tls:
               internalSecretClass: internalTls
               serverSecretClass: tls
@@ -805,8 +817,8 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
 
-        println!("{:#?}", kafka);
-
-        assert_eq!(0, kafka.spec.cluster_config.authentication.len());
+        assert_eq!(1, kafka.spec.cluster_config.authentication.len());
+        let validation = &kafka.validate_authentication_methods();
+        assert!(validation.is_err());
     }
 }

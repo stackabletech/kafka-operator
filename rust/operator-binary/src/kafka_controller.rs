@@ -316,6 +316,9 @@ pub enum Error {
 
     #[snafu(display("failed to add kerberos config"))]
     AddKerberosConfig { source: kerberos::Error },
+
+    #[snafu(display("failed to validate authentication method"))]
+    FailedToValidateAuthenticationMethod { source: stackable_kafka_crd::Error },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -375,6 +378,7 @@ impl ReconcilerError for Error {
             Error::AddVolumesAndVolumeMounts { .. } => None,
             Error::ResolveNamespace { .. } => None,
             Error::AddKerberosConfig { .. } => None,
+            Error::FailedToValidateAuthenticationMethod { .. } => None,
         }
     }
 }
@@ -425,6 +429,10 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .get(&KafkaRole::Broker.to_string())
         .map(Cow::Borrowed)
         .unwrap_or_default();
+
+    kafka
+        .validate_authentication_methods()
+        .context(FailedToValidateAuthenticationMethodSnafu)?;
 
     let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, &kafka)
         .await
