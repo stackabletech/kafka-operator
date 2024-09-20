@@ -1,6 +1,8 @@
 = Getting started
+:description: Start with Apache Kafka using Stackable Operator: Install, set up Kafka, and manage topics in a Kubernetes cluster.
 
-This guide will get you started with Apache Kafka using the Stackable Operator. It will guide you through the installation of the Operator and its dependencies, setting up your first Kafka instance and create, write to and read from a topic.
+This guide will get you started with Apache Kafka using the Stackable Operator.
+It will guide you through the installation of the Operator and its dependencies, setting up your first Kafka instance and create, write to and read from a topic.
 
 == Prerequisites
 
