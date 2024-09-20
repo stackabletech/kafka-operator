@@ -847,7 +847,7 @@ fn build_broker_rolegroup_statefulset(
         name: "ZOOKEEPER".to_string(),
         value_from: Some(EnvVarSource {
             config_map_key_ref: Some(ConfigMapKeySelector {
-                name: Some(kafka.spec.cluster_config.zookeeper_config_map_name.clone()),
+                name: kafka.spec.cluster_config.zookeeper_config_map_name.clone(),
                 key: "ZOOKEEPER".to_string(),
                 ..ConfigMapKeySelector::default()
             }),
@@ -947,7 +947,7 @@ fn build_broker_rolegroup_statefulset(
         pod_builder.add_volume(Volume {
             name: "log-config".to_string(),
             config_map: Some(ConfigMapVolumeSource {
-                name: Some(config_map.into()),
+                name: config_map.into(),
                 ..ConfigMapVolumeSource::default()
             }),
             ..Volume::default()
@@ -956,7 +956,7 @@ fn build_broker_rolegroup_statefulset(
         pod_builder.add_volume(Volume {
             name: "log-config".to_string(),
             config_map: Some(ConfigMapVolumeSource {
-                name: Some(rolegroup_ref.object_name()),
+                name: rolegroup_ref.object_name(),
                 ..ConfigMapVolumeSource::default()
             }),
             ..Volume::default()
@@ -987,7 +987,7 @@ fn build_broker_rolegroup_statefulset(
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {
-                name: Some(rolegroup_ref.object_name()),
+                name: rolegroup_ref.object_name(),
                 ..ConfigMapVolumeSource::default()
             }),
             ..Volume::default()
