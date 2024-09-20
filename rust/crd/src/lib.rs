@@ -9,7 +9,7 @@ use crate::authorization::KafkaAuthorization;
 use crate::tls::KafkaTls;
 
 use affinity::get_affinity;
-use authentication::KafkaAuthenticationClass;
+use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
@@ -134,7 +134,7 @@ pub struct KafkaClusterSpec {
 pub struct KafkaClusterConfig {
     /// Authentication class settings for Kafka like mTLS authentication.
     #[serde(default)]
-    pub authentication: Vec<KafkaAuthenticationClass>,
+    pub authentication: Vec<KafkaAuthentication>,
 
     /// Struct containing Kerberos secret name.
     pub kerberos: Option<KerberosConfig>,
@@ -775,10 +775,10 @@ mod tests {
 
         assert_eq!(
             vec![
-                KafkaAuthenticationClass {
+                KafkaAuthentication {
                     authentication_class: "kafka-client-tls1".to_string()
                 },
-                KafkaAuthenticationClass {
+                KafkaAuthentication {
                     authentication_class: "kafka-client-tls2".to_string()
                 },
             ],

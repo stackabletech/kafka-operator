@@ -691,8 +691,8 @@ fn build_broker_rolegroup_config_map(
             })?,
         );
 
-        tracing::debug!("Applied server config: [{:#?}]", server_cfg);
-        tracing::debug!("Applied JVM config: [{:#?}]", jvm_sec_props);
+    tracing::debug!("Applied server config: [{:#?}]", server_cfg);
+    tracing::debug!("Applied JVM config: [{:#?}]", jvm_sec_props);
 
     extend_role_group_config_map(
         rolegroup,

@@ -240,7 +240,11 @@ impl<'a> KafkaTlsSecurity<'a> {
             args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
             args.push(format!("{pod_fqdn}:{port}"));
-            args.extend(Self::kcat_client_sasl_ssl(Self::STACKABLE_TLS_CERT_SERVER_DIR, service_name, pod_fqdn));
+            args.extend(Self::kcat_client_sasl_ssl(
+                Self::STACKABLE_TLS_CERT_SERVER_DIR,
+                service_name,
+                pod_fqdn,
+            ));
         } else if self.tls_server_secret_class().is_some() {
             args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
@@ -524,9 +528,10 @@ impl<'a> KafkaTlsSecurity<'a> {
     }
 
     fn kcat_client_sasl_ssl(
-        cert_directory: &str, 
+        cert_directory: &str,
         service_name: &str,
-        pod_fqdn: &String) -> Vec<String> {
+        pod_fqdn: &String,
+    ) -> Vec<String> {
         vec![
             "-X".to_string(),
             "security.protocol=SASL_SSL".to_string(),
