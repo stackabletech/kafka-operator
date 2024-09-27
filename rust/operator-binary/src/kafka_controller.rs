@@ -318,7 +318,9 @@ pub enum Error {
     AddKerberosConfig { source: kerberos::Error },
 
     #[snafu(display("failed to validate authentication method"))]
-    FailedToValidateAuthenticationMethod { source: stackable_kafka_crd::Error },
+    FailedToValidateAuthenticationMethod {
+        source: stackable_kafka_crd::security::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -430,13 +432,19 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .map(Cow::Borrowed)
         .unwrap_or_default();
 
-    kafka
-        .validate_authentication_methods()
-        .context(FailedToValidateAuthenticationMethodSnafu)?;
-
     let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, &kafka)
         .await
         .context(FailedToInitializeSecurityContextSnafu)?;
+
+    tracing::debug!("Security settings: kerberos enabled/secret-class: {}/{:#?} tls enabled/client-auth-class: {}/{:#?}",
+        kafka_security.has_kerberos_enabled(),
+        kafka_security.kerberos_secret_class(),
+        kafka_security.tls_enabled(),
+        kafka_security.tls_client_authentication_class());
+
+    kafka_security
+        .validate_authentication_methods()
+        .context(FailedToValidateAuthenticationMethodSnafu)?;
 
     // Assemble the OPA connection string from the discovery and the given path if provided
     // Will be passed as --override parameter in the cli in the state ful set
@@ -809,9 +817,10 @@ fn build_broker_rolegroup_statefulset(
         .add_volume_and_volume_mounts(&mut pod_builder, &mut cb_kcat_prober, &mut cb_kafka)
         .context(AddVolumesAndVolumeMountsSnafu)?;
 
-    if kafka.has_kerberos_enabled() {
+    if kafka_security.has_kerberos_enabled() {
         add_kerberos_pod_config(
             kafka,
+            kafka_security,
             kafka_role,
             &mut cb_kcat_prober,
             &mut cb_kafka,
@@ -915,8 +924,8 @@ fn build_broker_rolegroup_statefulset(
         "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE} -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml",
     );
     let pod_fqdn = pod_fqdn(kafka, &rolegroup_ref.object_name()).context(ResolveNamespaceSnafu)?;
-    let kafka_listeners = get_kafka_listener_config(kafka, kafka_security, &pod_fqdn)
-        .context(InvalidKafkaListenersSnafu)?;
+    let kafka_listeners =
+        get_kafka_listener_config(kafka_security, &pod_fqdn).context(InvalidKafkaListenersSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -931,7 +940,7 @@ fn build_broker_rolegroup_statefulset(
             .kafka_container_commands(
                 &kafka_listeners,
                 opa_connect_string,
-                kafka.has_kerberos_enabled(),
+                kafka_security.has_kerberos_enabled(),
                 &pod_fqdn,
             )
             .join("\n")])

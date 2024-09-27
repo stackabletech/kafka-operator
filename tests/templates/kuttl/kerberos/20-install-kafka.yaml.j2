@@ -37,18 +37,26 @@ commands:
               autoGenerate: true
 {% endif %}
       ---
+      apiVersion: authentication.stackable.tech/v1alpha1
+      kind: AuthenticationClass
+      metadata:
+        name: kerberos-auth
+      spec:
+        provider:
+          kerberos:
+            kerberosSecretClass: kerberos-$NAMESPACE
+      ---
       apiVersion: kafka.stackable.tech/v1alpha1
       kind: KafkaCluster
       metadata:
         name: test-kafka
       spec:
         image:
-          productVersion: 3.7.1 #"{{ test_scenario['values']['kafka'] }}"
-          repo: docker.stackable.tech/apoc/stackable # TODO merge images PR
+          productVersion: "{{ test_scenario['values']['kafka'] }}"
           pullPolicy: IfNotPresent
         clusterConfig:
-          kerberos:
-            secretClass: kerberos-$NAMESPACE
+          authentication:
+            - authenticationClass: kerberos-auth
           tls:
 {% if test_scenario['values']['use-client-tls'] == 'true' %}
             serverSecretClass: tls

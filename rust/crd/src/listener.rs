@@ -91,7 +91,6 @@ impl Display for KafkaListener {
 }
 
 pub fn get_kafka_listener_config(
-    kafka: &KafkaCluster,
     kafka_security: &KafkaTlsSecurity,
     pod_fqdn: &String,
 ) -> Result<KafkaListenerConfig, KafkaListenerError> {
@@ -114,7 +113,7 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::ClientAuth, KafkaListenerProtocol::Ssl);
-    } else if kafka.has_kerberos_enabled() {
+    } else if kafka_security.has_kerberos_enabled() {
         // 2) Kerberos and TLS authentication classes are mutually exclusive and Kerberos takes preference
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
@@ -159,7 +158,7 @@ pub fn get_kafka_listener_config(
     }
 
     // INTERNAL
-    if kafka.has_kerberos_enabled() {
+    if kafka_security.has_kerberos_enabled() {
         // 5) Kerberos and TLS authentication classes are mutually exclusive and Kerberos takes preference
         listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
@@ -273,7 +272,7 @@ mod tests {
             Some("tls".to_string()),
         );
         let pod_fqdn = pod_fqdn(&kafka, object_name).unwrap();
-        let config = get_kafka_listener_config(&kafka, &kafka_security, &pod_fqdn).unwrap();
+        let config = get_kafka_listener_config(&kafka_security, &pod_fqdn).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -333,7 +332,7 @@ mod tests {
             "tls".to_string(),
             Some("tls".to_string()),
         );
-        let config = get_kafka_listener_config(&kafka, &kafka_security, &pod_fqdn).unwrap();
+        let config = get_kafka_listener_config(&kafka_security, &pod_fqdn).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -395,7 +394,7 @@ mod tests {
             "".to_string(),
             None,
         );
-        let config = get_kafka_listener_config(&kafka, &kafka_security, &pod_fqdn).unwrap();
+        let config = get_kafka_listener_config(&kafka_security, &pod_fqdn).unwrap();
 
         assert_eq!(
             config.listeners(),

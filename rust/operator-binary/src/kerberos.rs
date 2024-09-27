@@ -1,5 +1,5 @@
 use snafu::{ResultExt, Snafu};
-use stackable_kafka_crd::{KafkaCluster, KafkaRole};
+use stackable_kafka_crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole};
 use stackable_operator::{
     builder::pod::{
         container::ContainerBuilder,
@@ -22,12 +22,13 @@ pub enum Error {
 
 pub fn add_kerberos_pod_config(
     kafka: &KafkaCluster,
+    kafka_security: &KafkaTlsSecurity,
     role: &KafkaRole,
     cb_kcat_prober: &mut ContainerBuilder,
     cb_kafka: &mut ContainerBuilder,
     pb: &mut PodBuilder,
 ) -> Result<(), Error> {
-    if let Some(kerberos_secret_class) = kafka.kerberos_secret_class() {
+    if let Some(kerberos_secret_class) = kafka_security.kerberos_secret_class() {
         // Mount keytab
         let kerberos_secret_operator_volume =
             SecretOperatorVolumeSourceBuilder::new(kerberos_secret_class)

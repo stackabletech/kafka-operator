@@ -9,7 +9,7 @@ spec:
       serviceAccountName: test-sa
       containers:
         - name: access-kafka
-          image: docker.stackable.tech/apoc/stackable/kafka:3.7.1-stackable0.0.0-cyrus-sasl-gssapi
+          image: docker.stackable.tech/stackable/kafka:{{ test_scenario['values']['kafka'] }}-stackable0.0.0-dev
           command:
             - /bin/bash
             - /tmp/script/script.sh

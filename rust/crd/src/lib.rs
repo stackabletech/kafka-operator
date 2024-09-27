@@ -92,9 +92,6 @@ pub enum Error {
 
     #[snafu(display("fragment validation failure"))]
     FragmentValidationFailure { source: ValidationError },
-
-    #[snafu(display("only one authentication method is possible, TLS or Kerberos"))]
-    MultipleAuthenticationMethodsProvided,
 }
 
 /// A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.
@@ -139,9 +136,6 @@ pub struct KafkaClusterConfig {
     #[serde(default)]
     pub authentication: Vec<KafkaAuthentication>,
 
-    /// Struct containing Kerberos secret name.
-    pub kerberos: Option<KerberosConfig>,
-
     /// Authorization settings for Kafka like OPA.
     #[serde(default)]
     pub authorization: KafkaAuthorization,
@@ -165,19 +159,6 @@ pub struct KafkaClusterConfig {
     /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
     /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
     pub zookeeper_config_map_name: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthenticationConfig {
-    pub kerberos: KerberosConfig,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct KerberosConfig {
-    /// Name of the SecretClass providing the keytab for the Kafka services.
-    pub secret_class: String,
 }
 
 impl KafkaCluster {
@@ -284,26 +265,6 @@ impl KafkaCluster {
 
         tracing::debug!("Merged config: {:?}", conf_role_group);
         fragment::validate(conf_role_group).context(FragmentValidationFailureSnafu)
-    }
-
-    pub fn has_kerberos_enabled(&self) -> bool {
-        self.kerberos_secret_class().is_some()
-    }
-
-    pub fn kerberos_secret_class(&self) -> Option<String> {
-        if let Some(kerberos) = self.spec.cluster_config.kerberos.clone() {
-            Some(kerberos.secret_class)
-        } else {
-            None
-        }
-    }
-
-    pub fn validate_authentication_methods(&self) -> Result<(), Error> {
-        // TLS authentication and Kerberos authentication are mutually exclusive
-        if !self.spec.cluster_config.authentication.is_empty() && self.has_kerberos_enabled() {
-            return Err(Error::MultipleAuthenticationMethodsProvided);
-        }
-        Ok(())
     }
 }
 
@@ -521,22 +482,6 @@ impl Configuration for KafkaConfigFragment {
                     Some("true".to_string()),
                 );
             }
-            // Kerberos
-            if resource.has_kerberos_enabled() {
-                config.insert(
-                    "sasl.enabled.mechanisms".to_string(),
-                    Some("GSSAPI".to_string()),
-                );
-                config.insert(
-                    "sasl.kerberos.service.name".to_string(),
-                    Some(KafkaRole::Broker.kerberos_service_name().to_string()),
-                );
-                config.insert(
-                    "sasl.mechanism.inter.broker.protocol".to_string(),
-                    Some("GSSAPI".to_string()),
-                );
-                tracing::debug!("Kerberos configs added: [{:#?}]", config);
-            }
         }
 
         Ok(config)
@@ -734,32 +679,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_auth_kerberos() {
-        let kafka_cluster = r#"
-        apiVersion: kafka.stackable.tech/v1alpha1
-        kind: KafkaCluster
-        metadata:
-          name: simple-kafka
-          namespace: default
-        spec:
-          image:
-            productVersion: 3.7.1
-          clusterConfig:
-            kerberos:
-              secretClass: kafka-kerberos
-            zookeeperConfigMapName: xyz
-        "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
-
-        assert_eq!(
-            Some(KerberosConfig {
-                secret_class: "kafka-kerberos".to_string()
-            }),
-            kafka.spec.cluster_config.kerberos
-        );
-    }
-
-    #[test]
     fn test_get_auth_tls() {
         let kafka_cluster = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
@@ -792,33 +711,5 @@ mod tests {
             ],
             kafka.spec.cluster_config.authentication
         );
-    }
-
-    #[test]
-    fn test_get_auth_multiple() {
-        let kafka_cluster = r#"
-        apiVersion: kafka.stackable.tech/v1alpha1
-        kind: KafkaCluster
-        metadata:
-          name: simple-kafka
-          namespace: default
-        spec:
-          image:
-            productVersion: 3.7.1
-          clusterConfig:
-            authentication:
-              - authenticationClass: kafka-client-tls1
-            kerberos:
-              secretClass: kafka-kerberos
-            tls:
-              internalSecretClass: internalTls
-              serverSecretClass: tls
-            zookeeperConfigMapName: xyz
-        "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
-
-        assert_eq!(1, kafka.spec.cluster_config.authentication.len());
-        let validation = &kafka.validate_authentication_methods();
-        assert!(validation.is_err());
     }
 }

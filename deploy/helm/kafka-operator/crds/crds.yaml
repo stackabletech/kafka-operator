@@ -549,6 +549,8 @@ spec:
                               Only affects client connections. This setting controls: - If clients need to authenticate themselves against the broker via TLS - Which ca.crt to use when validating the provided client certs
 
                               This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
+
+                              ## Kerberos provider
                             type: string
                         required:
                           - authenticationClass
@@ -573,16 +575,6 @@ spec:
                           required:
                             - configMapName
                           type: object
-                      type: object
-                    kerberos:
-                      description: Struct containing Kerberos secret name.
-                      nullable: true
-                      properties:
-                        secretClass:
-                          description: Name of the SecretClass providing the keytab for the Kafka services.
-                          type: string
-                      required:
-                        - secretClass
                       type: object
                     tls:
                       default:

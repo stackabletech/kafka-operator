@@ -39,6 +39,9 @@ pub enum Error {
     SecretVolumeBuild {
         source: stackable_operator::builder::pod::volume::SecretOperatorVolumeSourceBuilderError,
     },
+
+    #[snafu(display("only one authentication method is possible, TLS or Kerberos"))]
+    MultipleAuthenticationMethodsProvided,
 }
 
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
@@ -181,6 +184,34 @@ impl<'a> KafkaTlsSecurity<'a> {
         }
     }
 
+    pub fn has_kerberos_enabled(&self) -> bool {
+        self.kerberos_secret_class().is_some()
+    }
+
+    pub fn kerberos_secret_class(&self) -> Option<String> {
+        if let Some(kerberos) = self
+            .resolved_authentication_classes
+            .get_kerberos_authentication_class()
+        {
+            match &kerberos.spec.provider {
+                AuthenticationClassProvider::Kerberos(kerberos) => {
+                    Some(kerberos.kerberos_secret_class.clone())
+                }
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn validate_authentication_methods(&self) -> Result<(), Error> {
+        // Client TLS authentication and Kerberos authentication are mutually exclusive
+        if self.tls_client_authentication_class().is_some() && self.has_kerberos_enabled() {
+            return Err(Error::MultipleAuthenticationMethodsProvided);
+        }
+        Ok(())
+    }
+
     /// Return the Kafka (secure) client port depending on tls or authentication settings.
     pub fn client_port(&self) -> u16 {
         if self.tls_enabled() {
@@ -227,7 +258,7 @@ impl<'a> KafkaTlsSecurity<'a> {
             args.extend(Self::kcat_client_auth_ssl(
                 Self::STACKABLE_TLS_CERT_SERVER_DIR,
             ));
-        } else if self.kafka.has_kerberos_enabled() {
+        } else if self.has_kerberos_enabled() {
             let service_name = KafkaRole::Broker.kerberos_service_name();
             // here we need to specify a shell so that variable substitution will work
             // see e.g. https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/V1ExecAction.md
@@ -446,6 +477,20 @@ impl<'a> KafkaTlsSecurity<'a> {
                 Self::INTER_SSL_CLIENT_AUTH.to_string(),
                 "required".to_string(),
             );
+        }
+
+        // Kerberos
+        if self.has_kerberos_enabled() {
+            config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
+            config.insert(
+                "sasl.kerberos.service.name".to_string(),
+                KafkaRole::Broker.kerberos_service_name().to_string(),
+            );
+            config.insert(
+                "sasl.mechanism.inter.broker.protocol".to_string(),
+                "GSSAPI".to_string(),
+            );
+            tracing::debug!("Kerberos configs added: [{:#?}]", config);
         }
 
         // common
