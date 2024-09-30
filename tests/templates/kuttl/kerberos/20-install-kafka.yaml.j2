@@ -40,7 +40,7 @@ commands:
       apiVersion: authentication.stackable.tech/v1alpha1
       kind: AuthenticationClass
       metadata:
-        name: kerberos-auth
+        name: kerberos-auth-$NAMESPACE
       spec:
         provider:
           kerberos:
@@ -56,7 +56,7 @@ commands:
           pullPolicy: IfNotPresent
         clusterConfig:
           authentication:
-            - authenticationClass: kerberos-auth
+            - authenticationClass: kerberos-auth-$NAMESPACE
           tls:
 {% if test_scenario['values']['use-client-tls'] == 'true' %}
             serverSecretClass: tls
