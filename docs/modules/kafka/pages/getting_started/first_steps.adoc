@@ -2,7 +2,8 @@
 :description: Deploy and verify a Kafka cluster on Kubernetes with Stackable Operators, including ZooKeeper setup and data testing using kcat.
 :kcat-install: https://github.com/edenhill/kcat#install
 
-After going through the xref:getting_started/installation.adoc[] section and having installed all the operators, you now deploy a Kafka cluster and the required dependencies. Afterwards you can <<_verify_that_it_works, verify that it works>> by producing test data into a topic and consuming it.
+After going through the xref:getting_started/installation.adoc[] section and having installed all the operators, you now deploy a Kafka cluster and the required dependencies.
+Afterward you can <<_verify_that_it_works, verify that it works>> by producing test data into a topic and consuming it.
 
 == Setup
 
