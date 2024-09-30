@@ -53,6 +53,10 @@ You can create your own secrets and reference them e.g. in the `spec.clusterConf
 == Authentication
 
 The internal or broker-to-broker communication is authenticated via TLS.
+For client-to-server communication, authentication can be achieved with either TLS or Kerberos.
+
+=== TLS
+
 In order to enforce TLS authentication for client-to-server communication, you can set an `AuthenticationClass` reference in the custom resource provided by the xref:commons-operator:index.adoc[Commons Operator].
 
 [source,yaml]
@@ -101,6 +105,50 @@ spec:
 <3> The reference to a `SecretClass`.
 <4> The `SecretClass` that is referenced by the `AuthenticationClass` in order to provide certificates.
 
+=== Kerberos
+
+Similarly, you can set an `AuthenticationClass` reference for a Kerberos authentication provider:
+
+[source,yaml]
+----
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: kafka-client-kerberos # <2>
+spec:
+  provider:
+    kerberos:
+      kerberosSecretClass: kafka-client-auth-secret # <3>
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-client-auth-secret # <4>
+spec:
+  backend:
+    kerberosKeytab:
+      ...
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  image:
+    productVersion: 3.7.1
+  clusterConfig:
+    authentication:
+      - authenticationClass: kafka-client-kerberos # <1>
+    zookeeperConfigMapName: simple-kafka-znode
+  brokers:
+    roleGroups:
+      default:
+        replicas: 3
+----
+<1> The `clusterConfig.authentication.authenticationClass` can be set to use Kerberos for authentication. This is optional.
+<2> The referenced `AuthenticationClass` that references a `SecretClass` to provide Kerberos keytabs.
+<3> The reference to a `SecretClass`.
+<4> The `SecretClass` that is referenced by the `AuthenticationClass` in order to provide keytabs.
 
 == [[authorization]]Authorization
 
