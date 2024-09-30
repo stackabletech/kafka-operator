@@ -114,7 +114,7 @@ pub fn get_kafka_listener_config(
         listener_security_protocol_map
             .insert(KafkaListenerName::ClientAuth, KafkaListenerProtocol::Ssl);
     } else if kafka_security.has_kerberos_enabled() {
-        // 2) Kerberos and TLS authentication classes are mutually exclusive and Kerberos takes preference
+        // 2) Kerberos and TLS authentication classes are mutually exclusive
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -159,7 +159,7 @@ pub fn get_kafka_listener_config(
 
     // INTERNAL
     if kafka_security.has_kerberos_enabled() {
-        // 5) Kerberos and TLS authentication classes are mutually exclusive and Kerberos takes preference
+        // 5) Kerberos and TLS authentication classes are mutually exclusive
         listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: LISTENER_LOCAL_ADDRESS.to_string(),

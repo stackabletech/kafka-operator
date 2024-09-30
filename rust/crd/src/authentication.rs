@@ -44,6 +44,10 @@ pub struct KafkaAuthentication {
     /// This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
     ///
     /// ## Kerberos provider
+    ///
+    /// This affects client connections and also sets internal connections to use TLS for encryption.
+    /// This setting is used to reference an `AuthenticationClass` and in turn, a `SecretClass` that is
+    /// used to create keytabs).
     pub authentication_class: String,
 }
 
