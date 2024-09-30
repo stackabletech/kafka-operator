@@ -1,8 +1,9 @@
 = Cluster ID
 
-Kafka has an internal check to ensure that a broker cannot join a different cluster to the one in which it was previously registered  (this is important to avoid various kinds of metadata inconsistencies in the cluster). The clusterId is stored locally after initial registration and is verified upon cluster startup that it still matches what is in ZooKeeper.
+Kafka has an internal check to ensure that a broker cannot join a different cluster to the one in which it was previously registered (this is important to avoid various kinds of metadata inconsistencies in the cluster).
+The clusterId is stored locally after initial registration and is verified upon cluster startup that it still matches what is in ZooKeeper.
 
-This clusterId is stored in the `meta.properties` file in the folder specified by the `log.dirs` setting: this is persisted on a PVC created by Kafka. This PVC is not removed when the Kafka ZNode is deleted, which means that there are circumstances where this internal check will fail with the following error:
+This clusterId is stored in the `meta.properties` file in the folder specified by the `log.dirs` setting: this is persisted on a PVC created by Kafka. This PVC is not removed when the Kafka ZNode is deleted, which means that there are circumstances where this internal check fails with the following error:
 
 [source,bash]
 ----
@@ -13,12 +14,15 @@ The Cluster ID <new Cluster ID> doesn't match stored clusterId <old Cluster ID> 
 
 === Restarting a Kafka cluster
 
-When re-starting a Kafka cluster, ensure that the Kafka ZNode is not removed: upon restart the cluster will attempt to register with the ZooKeeper cluster referenced in the ZNode and will check that the cluster IDs match. As the `meta.properties` file has not been changed this should not cause any problems.
+When re-starting a Kafka cluster, ensure that the Kafka ZNode is not removed: upon restart the cluster attempts to register with the ZooKeeper cluster referenced in the ZNode and checks that the cluster IDs match. As the `meta.properties` file has not been changed this should not cause any problems.
 
 === Replacing an existing ZNode
 
-If the ZNode has been removed, then the Kafka PVC prefixed with `log-dirs-` will also have to be removed. This will result in the loss of topic metadata but is unavoidable since Kafka will need to re-register with ZooKeeper anyway. For instance, this will apply when breaking changes have been made to the ZooKeeper operator.
+If the ZNode has been removed, then the Kafka PVC prefixed with `log-dirs-` also has to be removed.
+This results in the loss of topic metadata but is unavoidable since Kafka needs to re-register with ZooKeeper anyway.
+For instance, this applies when breaking changes have been made to the ZooKeeper operator.
 
 === Updating the SDP release
 
-Depending on the scope of any breaking changes, it may be possible to upgrade SDP and re-create clusters without having to touch the Kafka PVCs. In cases where deleting the aforementioned PVC is unavoidable this will also result in the loss of topic offset metadata.
+Depending on the scope of any breaking changes, it may be possible to upgrade SDP and re-create clusters without having to touch the Kafka PVCs.
+In cases where deleting the aforementioned PVC is unavoidable this also results in the loss of topic offset metadata.
