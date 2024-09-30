@@ -7,7 +7,7 @@ You can configure the graceful shutdown as described in xref:concepts:operations
 As a default, Kafka brokers have `30 minutes` to shut down gracefully.
 
 The Kafka broker process receives a `SIGTERM` signal when Kubernetes wants to terminate the Pod.
-After the graceful shutdown timeout runs out, and the process still didn't exit, Kubernetes issues a `SIGKILL` signal.
+After the graceful shutdown timeout runs out, and the process is still running, Kubernetes issues a `SIGKILL` signal.
 
 This is equivalent to executing the `bin/kafka-server-stop.sh` command, which internally executes `kill <kafka-pid>` (https://github.com/apache/kafka/blob/2c6fb6c54472e90ae17439e62540ef3cb0426fe3/bin/kafka-server-stop.sh#L34[code]).
 
