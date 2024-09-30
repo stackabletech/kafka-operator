@@ -1,13 +1,16 @@
 use snafu::{ResultExt, Snafu};
 use stackable_kafka_crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole};
 use stackable_operator::{
-    builder::pod::{
-        container::ContainerBuilder,
-        volume::{
-            SecretOperatorVolumeSourceBuilder, SecretOperatorVolumeSourceBuilderError,
-            VolumeBuilder,
+    builder::{
+        self,
+        pod::{
+            container::ContainerBuilder,
+            volume::{
+                SecretOperatorVolumeSourceBuilder, SecretOperatorVolumeSourceBuilderError,
+                VolumeBuilder,
+            },
+            PodBuilder,
         },
-        PodBuilder,
     },
     kube::ResourceExt,
 };
@@ -15,8 +18,16 @@ use stackable_operator::{
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("failed to add Kerberos secret volume"))]
-    AddKerberosSecretVolume {
+    KerberosSecretVolume {
         source: SecretOperatorVolumeSourceBuilderError,
+    },
+
+    #[snafu(display("failed to add needed volume"))]
+    AddVolume { source: builder::pod::Error },
+
+    #[snafu(display("failed to add needed volumeMount"))]
+    AddVolumeMount {
+        source: builder::pod::container::Error,
     },
 }
 
@@ -36,20 +47,25 @@ pub fn add_kerberos_pod_config(
                 .with_pod_scope()
                 .with_kerberos_service_name(role.kerberos_service_name())
                 .build()
-                .context(AddKerberosSecretVolumeSnafu)?;
+                .context(KerberosSecretVolumeSnafu)?;
         pb.add_volume(
             VolumeBuilder::new("kerberos")
                 .ephemeral(kerberos_secret_operator_volume)
                 .build(),
-        );
-        cb_kcat_prober.add_volume_mount("kerberos", "/stackable/kerberos");
+        )
+        .context(AddVolumeSnafu)?;
+        cb_kcat_prober
+            .add_volume_mount("kerberos", "/stackable/kerberos")
+            .context(AddVolumeMountSnafu)?;
         cb_kcat_prober.add_env_var("KRB5_CONFIG", "/stackable/kerberos/krb5.conf");
         cb_kcat_prober.add_env_var(
             "KAFKA_OPTS",
             "-Djava.security.krb5.conf=/stackable/kerberos/krb5.conf",
         );
 
-        cb_kafka.add_volume_mount("kerberos", "/stackable/kerberos");
+        cb_kafka
+            .add_volume_mount("kerberos", "/stackable/kerberos")
+            .context(AddVolumeMountSnafu)?;
         cb_kafka.add_env_var("KRB5_CONFIG", "/stackable/kerberos/krb5.conf");
         cb_kafka.add_env_var(
             "KAFKA_OPTS",
