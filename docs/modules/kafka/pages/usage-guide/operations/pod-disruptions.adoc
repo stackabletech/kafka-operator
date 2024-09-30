@@ -3,7 +3,7 @@
 
 You can configure the permitted Pod disruptions for Kafka nodes as described in xref:concepts:operations/pod_disruptions.adoc[].
 
-Unless you configure something else or disable the default PodDisruptionBudgets (PDBs), the operator write the following PDBs:
+Unless you configure something else or disable the default PodDisruptionBudgets (PDBs), the operator writes the following PDBs:
 
 == Brokers
 Allow only a single Broker to be offline at any given time, regardless of the number of replicas or `roleGroups`.
