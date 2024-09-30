@@ -12,7 +12,7 @@ Two things need to be installed to create a Kafka cluster:
 * A ZooKeeper instance for internal use by Kafka
 * The Kafka cluster itself
 
-Create them in this order, each one is created by applying a manifest file.
+Create them in this order by applying the corresponding manifest files.
 The operators you just installed then create the resources according to the manifest.
 
 === ZooKeeper
