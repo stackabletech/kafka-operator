@@ -96,12 +96,12 @@ impl KafkaTlsSecurity {
     const INTER_SSL_TRUSTSTORE_TYPE: &'static str = "listener.name.internal.ssl.truststore.type";
     const INTER_SSL_CLIENT_AUTH: &'static str = "listener.name.internal.ssl.client.auth";
     // directories
-    const STACKABLE_TLS_KCAT_DIR: &'static str = "/stackable/tls_cert_kcat";
-    const STACKABLE_TLS_KCAT_VOLUME_NAME: &'static str = "tls-cert-kcat";
-    const STACKABLE_TLS_KAFKA_SERVER_DIR: &'static str = "/stackable/tls_keystore_server";
-    const STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME: &'static str = "tls-keystore-server";
-    const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &'static str = "/stackable/tls_keystore_internal";
-    const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &'static str = "tls-keystore-internal";
+    const STACKABLE_TLS_KCAT_DIR: &'static str = "/stackable/tls-kcat";
+    const STACKABLE_TLS_KCAT_VOLUME_NAME: &'static str = "tls-kcat";
+    const STACKABLE_TLS_KAFKA_SERVER_DIR: &'static str = "/stackable/tls-kafka-server";
+    const STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME: &'static str = "tls-kafka-server";
+    const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &'static str = "/stackable/tls-kafka-internal";
+    const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &'static str = "tls-kafka-internal";
 
     #[cfg(test)]
     pub fn new(
