@@ -96,14 +96,12 @@ impl KafkaTlsSecurity {
     const INTER_SSL_TRUSTSTORE_TYPE: &'static str = "listener.name.internal.ssl.truststore.type";
     const INTER_SSL_CLIENT_AUTH: &'static str = "listener.name.internal.ssl.client.auth";
     // directories
-    // for kcat container
-    const STACKABLE_TLS_CERT_KCAT_DIR: &'static str = "/stackable/tls_cert_kcat";
-    const STACKABLE_TLS_CERT_KCAT_DIR_NAME: &'static str = "tls-cert-kcat";
-    // kafka container
-    const STACKABLE_TLS_KEYSTORE_SERVER_DIR: &'static str = "/stackable/tls_keystore_server";
-    const STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME: &'static str = "tls-keystore-server";
-    const STACKABLE_TLS_KEYSTORE_INTERNAL_DIR: &'static str = "/stackable/tls_keystore_internal";
-    const STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME: &'static str = "tls-keystore-internal";
+    const STACKABLE_TLS_KCAT_DIR: &'static str = "/stackable/tls_cert_kcat";
+    const STACKABLE_TLS_KCAT_VOLUME_NAME: &'static str = "tls-cert-kcat";
+    const STACKABLE_TLS_KAFKA_SERVER_DIR: &'static str = "/stackable/tls_keystore_server";
+    const STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME: &'static str = "tls-keystore-server";
+    const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &'static str = "/stackable/tls_keystore_internal";
+    const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &'static str = "tls-keystore-internal";
 
     #[cfg(test)]
     pub fn new(
@@ -213,13 +211,11 @@ impl KafkaTlsSecurity {
         if self.tls_client_authentication_class().is_some() {
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
-            args.extend(Self::kcat_client_auth_ssl(
-                Self::STACKABLE_TLS_CERT_KCAT_DIR,
-            ));
+            args.extend(Self::kcat_client_auth_ssl(Self::STACKABLE_TLS_KCAT_DIR));
         } else if self.tls_server_secret_class().is_some() {
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
-            args.extend(Self::kcat_client_ssl(Self::STACKABLE_TLS_CERT_KCAT_DIR));
+            args.extend(Self::kcat_client_ssl(Self::STACKABLE_TLS_KCAT_DIR));
         } else {
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
@@ -269,32 +265,32 @@ impl KafkaTlsSecurity {
         if let Some(tls_server_secret_class) = self.get_tls_secret_class() {
             // We have to mount tls pem files for kcat (the mount can be used directly)
             pod_builder.add_volume(Self::create_kcat_tls_volume(
-                Self::STACKABLE_TLS_CERT_KCAT_DIR_NAME,
+                Self::STACKABLE_TLS_KCAT_VOLUME_NAME,
                 tls_server_secret_class,
             )?);
             cb_kcat_prober.add_volume_mount(
-                Self::STACKABLE_TLS_CERT_KCAT_DIR_NAME,
-                Self::STACKABLE_TLS_CERT_KCAT_DIR,
+                Self::STACKABLE_TLS_KCAT_VOLUME_NAME,
+                Self::STACKABLE_TLS_KCAT_DIR,
             );
             // Keystores fore the kafka container
             pod_builder.add_volume(Self::create_tls_keystore_volume(
-                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
+                Self::STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
                 tls_server_secret_class,
             )?);
             cb_kafka.add_volume_mount(
-                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
-                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR,
+                Self::STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
+                Self::STACKABLE_TLS_KAFKA_SERVER_DIR,
             );
         }
 
         if let Some(tls_internal_secret_class) = self.tls_internal_secret_class() {
             pod_builder.add_volume(Self::create_tls_keystore_volume(
-                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
+                Self::STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                 tls_internal_secret_class,
             )?);
             cb_kafka.add_volume_mount(
-                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
-                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR,
+                Self::STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
+                Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR,
             );
         }
 
@@ -312,7 +308,7 @@ impl KafkaTlsSecurity {
         if self.tls_client_authentication_class().is_some() {
             config.insert(
                 Self::CLIENT_AUTH_SSL_KEYSTORE_LOCATION.to_string(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR),
+                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
             );
             config.insert(
                 Self::CLIENT_AUTH_SSL_KEYSTORE_PASSWORD.to_string(),
@@ -324,7 +320,7 @@ impl KafkaTlsSecurity {
             );
             config.insert(
                 Self::CLIENT_AUTH_SSL_TRUSTSTORE_LOCATION.to_string(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR),
+                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
             );
             config.insert(
                 Self::CLIENT_AUTH_SSL_TRUSTSTORE_PASSWORD.to_string(),
@@ -342,7 +338,7 @@ impl KafkaTlsSecurity {
         } else if self.tls_server_secret_class().is_some() {
             config.insert(
                 Self::CLIENT_SSL_KEYSTORE_LOCATION.to_string(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR),
+                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
             );
             config.insert(
                 Self::CLIENT_SSL_KEYSTORE_PASSWORD.to_string(),
@@ -354,7 +350,7 @@ impl KafkaTlsSecurity {
             );
             config.insert(
                 Self::CLIENT_SSL_TRUSTSTORE_LOCATION.to_string(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR),
+                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
             );
             config.insert(
                 Self::CLIENT_SSL_TRUSTSTORE_PASSWORD.to_string(),
@@ -370,7 +366,7 @@ impl KafkaTlsSecurity {
         if self.tls_internal_secret_class().is_some() {
             config.insert(
                 Self::INTER_SSL_KEYSTORE_LOCATION.to_string(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR),
+                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
             );
             config.insert(
                 Self::INTER_SSL_KEYSTORE_PASSWORD.to_string(),
@@ -382,10 +378,7 @@ impl KafkaTlsSecurity {
             );
             config.insert(
                 Self::INTER_SSL_TRUSTSTORE_LOCATION.to_string(),
-                format!(
-                    "{}/truststore.p12",
-                    Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR
-                ),
+                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
             );
             config.insert(
                 Self::INTER_SSL_TRUSTSTORE_PASSWORD.to_string(),
