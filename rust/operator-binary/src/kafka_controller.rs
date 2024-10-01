@@ -46,7 +46,7 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar,
                 EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe, Service,
-                ServicePort, ServiceSpec, Volume,
+                ServiceSpec, Volume,
             },
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
@@ -484,12 +484,8 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             .merged_config(&KafkaRole::Broker, &rolegroup_ref)
             .context(FailedToResolveConfigSnafu)?;
 
-        let rg_service = build_broker_rolegroup_service(
-            &kafka,
-            &resolved_product_image,
-            &kafka_security,
-            &rolegroup_ref,
-        )?;
+        let rg_service =
+            build_broker_rolegroup_service(&kafka, &resolved_product_image, &rolegroup_ref)?;
         let rg_configmap = build_broker_rolegroup_config_map(
             &kafka,
             &resolved_product_image,
@@ -623,17 +619,7 @@ pub fn build_broker_rolegroup_bootstrap_listener(
             .build(),
         spec: ListenerSpec {
             class_name: Some(merged_config.bootstrap_listener_class.clone()),
-            ports: Some(
-                // TODO:; produce ListenerPorts natively
-                service_ports(kafka_security)
-                    .into_iter()
-                    .map(|port| ListenerPort {
-                        name: port.name.unwrap_or_default(),
-                        port: port.port,
-                        protocol: port.protocol,
-                    })
-                    .collect(),
-            ),
+            ports: Some(listener_ports(kafka_security)),
             ..ListenerSpec::default()
         },
         status: None,
@@ -731,7 +717,6 @@ fn build_broker_rolegroup_config_map(
 fn build_broker_rolegroup_service(
     kafka: &KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
-    kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<KafkaCluster>,
 ) -> Result<Service> {
     Ok(Service {
@@ -752,7 +737,6 @@ fn build_broker_rolegroup_service(
             .build(),
         spec: Some(ServiceSpec {
             cluster_ip: Some("None".to_string()),
-            ports: Some(service_ports(kafka_security)),
             selector: Some(
                 Labels::role_group_selector(
                     kafka,
@@ -1083,19 +1067,17 @@ pub fn error_policy(_obj: Arc<KafkaCluster>, _error: &Error, _ctx: Arc<Ctx>) -> 
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
-fn service_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ServicePort> {
+fn listener_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ListenerPort> {
     vec![
-        ServicePort {
-            name: Some(METRICS_PORT_NAME.to_string()),
+        ListenerPort {
+            name: METRICS_PORT_NAME.to_string(),
             port: METRICS_PORT.into(),
             protocol: Some("TCP".to_string()),
-            ..ServicePort::default()
         },
-        ServicePort {
-            name: Some(kafka_security.client_port_name().to_string()),
+        ListenerPort {
+            name: kafka_security.client_port_name().to_string(),
             port: kafka_security.client_port().into(),
             protocol: Some("TCP".to_string()),
-            ..ServicePort::default()
         },
     ]
 }
