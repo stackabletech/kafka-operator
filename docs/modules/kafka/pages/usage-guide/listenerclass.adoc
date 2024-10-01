@@ -18,3 +18,5 @@ spec:
 ----
 <1> Bootstrap listeners should prioritize having a stable address, since they will be baked into the client configuration.
 <2> Broker listeners should prioritize having a direct connection, to minimize network transfer overhead.
+
+NOTE: All rolegroups should use the same ListenerClass, or at least ones with similar properties. Clients will be unable to access data stored on replicas in rolegroups with inaccessible ListenerClasses.
