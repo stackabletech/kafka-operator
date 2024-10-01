@@ -583,7 +583,6 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         ),
     };
 
-    // FIXME: https://github.com/stackabletech/operator-rs/issues/861
     cluster_resources
         .delete_orphaned_resources(client)
         .await
