@@ -671,7 +671,7 @@ fn build_broker_rolegroup_config_map(
                     KAFKA_CONTROLLER_NAME,
                     &resolved_product_image.app_version_label,
                     &rolegroup.role,
-                    "global",
+                    &rolegroup.role_group,
                 ))
                 .context(MetadataBuildSnafu)?
                 .build(),
