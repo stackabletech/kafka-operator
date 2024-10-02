@@ -1,4 +1,5 @@
 = Storage and resource configuration
+:description: Configure storage and resource allocation for Kafka brokers using Stackable Operator, including PersistentVolumeClaims, CPU, memory, and storage defaults.
 
 == Storage for data volumes
 
@@ -16,9 +17,9 @@ brokers:
               capacity: 2Gi
 ----
 
-In the above example, all Kafka brokers in the default group will store data (the location of the property `log.dirs`) on a `2Gi` volume.
+In the above example, all Kafka brokers in the default group store data (the location of the property `log.dirs`) on a `2Gi` volume.
 
-If nothing is configured in the custom resource for a certain role group, then by default each Pod will have a `1Gi` large local volume mount for the data location.
+If nothing is configured in the custom resource for a certain role group, then by default each Pod has a `1Gi` large local volume mount for the data location.
 
 == Resource Requests
 
@@ -31,7 +32,8 @@ A minimal HA setup consisting of 2 Brokers has the following https://kubernetes.
 * `2560Mi` memory request and limit
 * `4Gi` persistent storage
 
-Of course, additional services, require additional resources. For Stackable components, see the corresponding documentation on further resource requirements.
+Of course, additional services, require additional resources.
+For Stackable components, see the corresponding documentation on further resource requirements.
 
 Corresponding to the values above, the operator uses the following resource defaults:
 

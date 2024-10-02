@@ -2,16 +2,16 @@
 
 The cluster definition also supports overriding configuration properties and environment variables, either per role or per role group, where the more specific override (role group) has precedence over the less specific one (role).
 
-IMPORTANT: Overriding certain properties which are set by operator (such as the ports) can interfere with the operator and can lead to problems.
+IMPORTANT: Overriding operator-set properties (such as the ports) can interfere with the operator and can lead to problems.
 
 == Configuration Properties
 
 For a role or role group, at the same level of `config`, you can specify: `configOverrides` for the following files:
 
-- `server.properties`
-- `security.properties`
+* `server.properties`
+* `security.properties`
 
-For example, if you want to set the `auto.create.topics.enable` to disable automatic topic creation, it can be configured in the `KafkaCluster` resource like so:
+For example, if you want to set the `auto.create.topics.enable` to disable automatic topic creation, it can be configured in the KafkaCluster resource like so:
 
 [source,yaml]
 ----
@@ -43,9 +43,13 @@ For a full list of configuration options we refer to the Apache Kafka https://ka
 
 === The security.properties file
 
-The `security.properties` file is used to configure JVM security properties. It is very seldom that users need to tweak any of these, but there is one use-case that stands out, and that users need to be aware of: the JVM DNS cache.
+The `security.properties` file is used to configure JVM security properties.
+It is very seldom that users need to tweak any of these, but there is one use-case that stands out, and that users need to be aware of: the JVM DNS cache.
 
-The JVM manages it's own cache of successfully resolved host names as well as a cache of host names that cannot be resolved. Some products of the Stackable platform are very sensible to the contents of these caches and their performance is heavily affected by them. As of version 3.4.0 Apache Kafka performs poorly if the positive cache is disabled. To cache resolved host names, you can configure the TTL of entries in the positive cache like this:
+The JVM manages it's own cache of successfully resolved host names as well as a cache of host names that cannot be resolved.
+Some products of the Stackable platform are very sensible to the contents of these caches and their performance is heavily affected by them.
+As of version 3.4.0 Apache Kafka performs poorly if the positive cache is disabled.
+To cache resolved host names, you can configure the TTL of entries in the positive cache like this:
 
 [source,yaml]
 ----
@@ -86,3 +90,8 @@ servers:
     default:
       replicas: 1
 ----
+
+== Pod overrides
+
+The Kafka operator also supports Pod overrides, allowing you to override any property that you can set on a Kubernetes Pod.
+Read the xref:concepts:overrides.adoc#pod-overrides[Pod overrides documentation] to learn more about this feature.

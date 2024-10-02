@@ -22,13 +22,14 @@ use stackable_kafka_crd::{
 };
 use stackable_operator::{
     builder::{
+        self,
         configmap::ConfigMapBuilder,
         meta::ObjectMetaBuilder,
         pod::{
             container::ContainerBuilder,
             resources::ResourceRequirementsBuilder,
             security::PodSecurityContextBuilder,
-            volume::{ListenerOperatorVolumeSourceBuilder, ListenerReference},
+            volume::{ListenerOperatorVolumeSourceBuilder, ListenerReference, VolumeBuilder},
             PodBuilder,
         },
     },
@@ -63,6 +64,7 @@ use stackable_operator::{
     product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
     product_logging::{
         self,
+        framework::LoggingError,
         spec::{
             ConfigMapLogConfig, ContainerLogConfig, ContainerLogConfigChoice,
             CustomContainerLogConfig,
@@ -320,6 +322,17 @@ pub enum Error {
     AddVolumesAndVolumeMounts {
         source: stackable_kafka_crd::security::Error,
     },
+
+    #[snafu(display("failed to configure logging"))]
+    ConfigureLogging { source: LoggingError },
+
+    #[snafu(display("failed to add needed volume"))]
+    AddVolume { source: builder::pod::Error },
+
+    #[snafu(display("failed to add needed volumeMount"))]
+    AddVolumeMount {
+        source: builder::pod::container::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -378,6 +391,9 @@ impl ReconcilerError for Error {
             Error::MetadataBuild { .. } => None,
             Error::LabelBuild { .. } => None,
             Error::AddVolumesAndVolumeMounts { .. } => None,
+            Error::ConfigureLogging { .. } => None,
+            Error::AddVolume { .. } => None,
+            Error::AddVolumeMount { .. } => None,
         }
     }
 }
@@ -847,7 +863,7 @@ fn build_broker_rolegroup_statefulset(
         name: "ZOOKEEPER".to_string(),
         value_from: Some(EnvVarSource {
             config_map_key_ref: Some(ConfigMapKeySelector {
-                name: Some(kafka.spec.cluster_config.zookeeper_config_map_name.clone()),
+                name: kafka.spec.cluster_config.zookeeper_config_map_name.clone(),
                 key: "ZOOKEEPER".to_string(),
                 ..ConfigMapKeySelector::default()
             }),
@@ -895,14 +911,20 @@ fn build_broker_rolegroup_statefulset(
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
+        .context(AddVolumeMountSnafu)?
         .add_volume_mount("config", STACKABLE_CONFIG_DIR)
+        .context(AddVolumeMountSnafu)?
         .add_volume_mount(
             LISTENER_BOOTSTRAP_VOLUME_NAME,
             STACKABLE_LISTENER_BOOTSTRAP_DIR,
         )
+        .context(AddVolumeMountSnafu)?
         .add_volume_mount(LISTENER_BROKER_VOLUME_NAME, STACKABLE_LISTENER_BROKER_DIR)
+        .context(AddVolumeMountSnafu)?
         .add_volume_mount("log-config", STACKABLE_LOG_CONFIG_DIR)
+        .context(AddVolumeMountSnafu)?
         .add_volume_mount("log", STACKABLE_LOG_DIR)
+        .context(AddVolumeMountSnafu)?
         .resources(merged_config.resources.clone().into());
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
@@ -937,23 +959,21 @@ fn build_broker_rolegroup_statefulset(
             })),
     }) = merged_config.logging.containers.get(&Container::Kafka)
     {
-        pod_builder.add_volume(Volume {
-            name: "log-config".to_string(),
-            config_map: Some(ConfigMapVolumeSource {
-                name: Some(config_map.into()),
-                ..ConfigMapVolumeSource::default()
-            }),
-            ..Volume::default()
-        });
+        pod_builder
+            .add_volume(
+                VolumeBuilder::new("log-config")
+                    .with_config_map(config_map)
+                    .build(),
+            )
+            .context(AddVolumeSnafu)?;
     } else {
-        pod_builder.add_volume(Volume {
-            name: "log-config".to_string(),
-            config_map: Some(ConfigMapVolumeSource {
-                name: Some(rolegroup_ref.object_name()),
-                ..ConfigMapVolumeSource::default()
-            }),
-            ..Volume::default()
-        });
+        pod_builder
+            .add_volume(
+                VolumeBuilder::new("log-config")
+                    .with_config_map(rolegroup_ref.object_name())
+                    .build(),
+            )
+            .context(AddVolumeSnafu)?;
     }
 
     let metadata = ObjectMetaBuilder::new()
@@ -970,11 +990,12 @@ fn build_broker_rolegroup_statefulset(
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {
-                name: Some(rolegroup_ref.object_name()),
+                name: rolegroup_ref.object_name(),
                 ..ConfigMapVolumeSource::default()
             }),
             ..Volume::default()
         })
+        .context(AddVolumeSnafu)?
         // bootstrap volume is a persistent volume template instead, to keep addresses persistent
         .add_listener_volume_by_listener_class(
             LISTENER_BROKER_VOLUME_NAME,
@@ -988,6 +1009,7 @@ fn build_broker_rolegroup_statefulset(
                 &[MAX_KAFKA_LOG_FILES_SIZE],
             )),
         )
+        .context(AddVolumeSnafu)?
         .service_account_name(sa_name)
         .security_context(
             PodSecurityContextBuilder::new()
@@ -999,18 +1021,21 @@ fn build_broker_rolegroup_statefulset(
 
     // Add vector container after kafka container to keep the defaulting into kafka container
     if merged_config.logging.enable_vector_agent {
-        pod_builder.add_container(product_logging::framework::vector_container(
-            resolved_product_image,
-            "config",
-            "log",
-            merged_config.logging.containers.get(&Container::Vector),
-            ResourceRequirementsBuilder::new()
-                .with_cpu_request("250m")
-                .with_cpu_limit("500m")
-                .with_memory_request("128Mi")
-                .with_memory_limit("128Mi")
-                .build(),
-        ));
+        pod_builder.add_container(
+            product_logging::framework::vector_container(
+                resolved_product_image,
+                "config",
+                "log",
+                merged_config.logging.containers.get(&Container::Vector),
+                ResourceRequirementsBuilder::new()
+                    .with_cpu_request("250m")
+                    .with_cpu_limit("500m")
+                    .with_memory_request("128Mi")
+                    .with_memory_limit("128Mi")
+                    .build(),
+            )
+            .context(ConfigureLoggingSnafu)?,
+        );
     }
 
     add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;

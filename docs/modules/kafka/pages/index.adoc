@@ -1,5 +1,5 @@
 = Stackable Operator for Apache Kafka
-:description: The Stackable operator for Apache Superset is a Kubernetes operator that can manage Apache Kafka clusters. Learn about its features, resources, dependencies and demos, and see the list of supported Kafka versions.
+:description: Deploy and manage Apache Kafka clusters on Kubernetes using Stackable Operator.
 :keywords: Stackable operator, Apache Kafka, Kubernetes, operator, SQL, engineer, broker, big data, CRD, StatefulSet, ConfigMap, Service, Druid, ZooKeeper, NiFi, S3, demo, version
 :kafka: https://kafka.apache.org/
 :github: https://github.com/stackabletech/kafka-operator/
@@ -21,7 +21,7 @@ It is commonly used for real-time data processing, data ingestion, event streami
 
 == Getting started
 
-Follow the xref:kafka:getting_started/index.adoc[] which will guide you through installing The Stackable Kafka and ZooKeeper operators, setting up ZooKeeper and Kafka and testing your Kafka using `kcat`.
+Follow the xref:kafka:getting_started/index.adoc[] which guides you through installing The Stackable Kafka and ZooKeeper operators, setting up ZooKeeper and Kafka and testing your Kafka using `kcat`.
 
 == Resources
 
@@ -45,7 +45,7 @@ Kafka requires xref:zookeeper:index.adoc[Apache ZooKeeper] for coordination purp
 == Connections to other products
 
 Since Kafka often takes on a bridging role, many other products connect to it.
-In the <<demos, demos>> below you will find example data pipelines that use xref:nifi:index.adoc[Apache NiFi with the Stackable operator] to write to Kafka and xref:nifi:index.adoc[Apache Druid with the Stackable operator] to read from Kafka.
+In the <<demos, demos>> below you find example data pipelines that use xref:nifi:index.adoc[Apache NiFi with the Stackable operator] to write to Kafka and xref:nifi:index.adoc[Apache Druid with the Stackable operator] to read from Kafka.
 But you can also connect using xref:spark-k8s:index.adoc[Apache Spark] or with a custom Job written in various languages.
 
 == [[demos]]Demos
