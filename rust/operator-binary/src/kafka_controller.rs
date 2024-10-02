@@ -948,14 +948,15 @@ fn build_broker_rolegroup_statefulset(
         });
     }
 
+    let recommended_labels = build_recommended_labels(
+        kafka,
+        KAFKA_CONTROLLER_NAME,
+        &resolved_product_image.app_version_label,
+        &rolegroup_ref.role,
+        &rolegroup_ref.role_group,
+    );
     let metadata = ObjectMetaBuilder::new()
-        .with_recommended_labels(build_recommended_labels(
-            kafka,
-            KAFKA_CONTROLLER_NAME,
-            &resolved_product_image.app_version_label,
-            &rolegroup_ref.role,
-            &rolegroup_ref.role_group,
-        ))
+        .with_recommended_labels(recommended_labels.clone())
         .context(MetadataBuildSnafu)?
         .build();
 
@@ -977,7 +978,7 @@ fn build_broker_rolegroup_statefulset(
         .add_listener_volume_by_listener_class(
             LISTENER_BROKER_VOLUME_NAME,
             &merged_config.broker_listener_class,
-            &Labels::new(),
+            &Labels::recommended(recommended_labels).context(LabelBuildSnafu)?,
         )
         .context(AddListenerVolumeSnafu)?
         .add_empty_dir_volume(
