@@ -772,6 +772,15 @@ fn build_broker_rolegroup_statefulset(
     let rolegroup = kafka
         .rolegroup(rolegroup_ref)
         .context(InternalOperatorSnafu)?;
+    let recommended_object_labels = build_recommended_labels(
+        kafka,
+        KAFKA_CONTROLLER_NAME,
+        &resolved_product_image.app_version_label,
+        &rolegroup_ref.role,
+        &rolegroup_ref.role_group,
+    );
+    let recommended_labels =
+        Labels::recommended(recommended_object_labels.clone()).context(LabelBuildSnafu)?;
 
     let kcat_prober_container_name = Container::KcatProber.to_string();
     let mut cb_kcat_prober =
@@ -799,7 +808,7 @@ fn build_broker_rolegroup_statefulset(
     pvcs.push(
         ListenerOperatorVolumeSourceBuilder::new(
             &ListenerReference::ListenerName(kafka.bootstrap_service_name(rolegroup_ref)),
-            &Labels::new(),
+            &recommended_labels,
         )
         .and_then(|builder| builder.build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME))
         .unwrap(),
@@ -947,15 +956,8 @@ fn build_broker_rolegroup_statefulset(
         });
     }
 
-    let recommended_labels = build_recommended_labels(
-        kafka,
-        KAFKA_CONTROLLER_NAME,
-        &resolved_product_image.app_version_label,
-        &rolegroup_ref.role,
-        &rolegroup_ref.role_group,
-    );
     let metadata = ObjectMetaBuilder::new()
-        .with_recommended_labels(recommended_labels.clone())
+        .with_recommended_labels(recommended_object_labels)
         .context(MetadataBuildSnafu)?
         .build();
 
@@ -977,7 +979,7 @@ fn build_broker_rolegroup_statefulset(
         .add_listener_volume_by_listener_class(
             LISTENER_BROKER_VOLUME_NAME,
             &merged_config.broker_listener_class,
-            &Labels::recommended(recommended_labels).context(LabelBuildSnafu)?,
+            &recommended_labels,
         )
         .context(AddListenerVolumeSnafu)?
         .add_empty_dir_volume(
