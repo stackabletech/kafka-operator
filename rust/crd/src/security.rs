@@ -9,10 +9,13 @@ use std::collections::BTreeMap;
 use indoc::formatdoc;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    builder::pod::{
-        container::ContainerBuilder,
-        volume::{SecretFormat, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
-        PodBuilder,
+    builder::{
+        self,
+        pod::{
+            container::ContainerBuilder,
+            volume::{SecretFormat, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
+            PodBuilder,
+        },
     },
     client::Client,
     commons::authentication::{AuthenticationClass, AuthenticationClassProvider},
@@ -38,6 +41,14 @@ pub enum Error {
     #[snafu(display("failed to build the secret operator Volume"))]
     SecretVolumeBuild {
         source: stackable_operator::builder::pod::volume::SecretOperatorVolumeSourceBuilderError,
+    },
+
+    #[snafu(display("failed to add needed volume"))]
+    AddVolume { source: builder::pod::Error },
+
+    #[snafu(display("failed to add needed volumeMount"))]
+    AddVolumeMount {
+        source: builder::pod::container::Error,
     },
 }
 
@@ -278,37 +289,49 @@ impl<'a> KafkaTlsSecurity<'a> {
         // add tls (server or client authentication volumes) if required
         if let Some(tls_server_secret_class) = self.get_tls_secret_class() {
             // We have to mount tls pem files for kcat (the mount can be used directly)
-            pod_builder.add_volume(Self::create_tls_volume(
-                &self.kafka.bootstrap_service_name(),
-                Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
-                tls_server_secret_class,
-            )?);
-            cb_kcat_prober.add_volume_mount(
-                Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
-                Self::STACKABLE_TLS_CERT_SERVER_DIR,
-            );
+            pod_builder
+                .add_volume(Self::create_tls_volume(
+                    &self.kafka.bootstrap_service_name(),
+                    Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
+                    tls_server_secret_class,
+                )?)
+                .context(AddVolumeSnafu)?;
+            cb_kcat_prober
+                .add_volume_mount(
+                    Self::STACKABLE_TLS_CERT_SERVER_DIR_NAME,
+                    Self::STACKABLE_TLS_CERT_SERVER_DIR,
+                )
+                .context(AddVolumeMountSnafu)?;
             // Keystores fore the kafka container
-            pod_builder.add_volume(Self::create_tls_keystore_volume(
-                &self.kafka.bootstrap_service_name(),
-                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
-                tls_server_secret_class,
-            )?);
-            cb_kafka.add_volume_mount(
-                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
-                Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR,
-            );
+            pod_builder
+                .add_volume(Self::create_tls_keystore_volume(
+                    &self.kafka.bootstrap_service_name(),
+                    Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
+                    tls_server_secret_class,
+                )?)
+                .context(AddVolumeSnafu)?;
+            cb_kafka
+                .add_volume_mount(
+                    Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR_NAME,
+                    Self::STACKABLE_TLS_KEYSTORE_SERVER_DIR,
+                )
+                .context(AddVolumeMountSnafu)?;
         }
 
         if let Some(tls_internal_secret_class) = self.tls_internal_secret_class() {
-            pod_builder.add_volume(Self::create_tls_keystore_volume(
-                &self.kafka.bootstrap_service_name(),
-                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
-                tls_internal_secret_class,
-            )?);
-            cb_kafka.add_volume_mount(
-                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
-                Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR,
-            );
+            pod_builder
+                .add_volume(Self::create_tls_keystore_volume(
+                    &self.kafka.bootstrap_service_name(),
+                    Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
+                    tls_internal_secret_class,
+                )?)
+                .context(AddVolumeSnafu)?;
+            cb_kafka
+                .add_volume_mount(
+                    Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR_NAME,
+                    Self::STACKABLE_TLS_KEYSTORE_INTERNAL_DIR,
+                )
+                .context(AddVolumeMountSnafu)?;
         }
 
         Ok(())
