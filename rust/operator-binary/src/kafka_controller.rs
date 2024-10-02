@@ -601,7 +601,6 @@ pub fn build_broker_rolegroup_bootstrap_listener(
     rolegroup: &RoleGroupRef<KafkaCluster>,
     merged_config: &KafkaConfig,
 ) -> Result<Listener> {
-    let role_name = KafkaRole::Broker.to_string();
     Ok(Listener {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
@@ -612,8 +611,8 @@ pub fn build_broker_rolegroup_bootstrap_listener(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
                 &resolved_product_image.app_version_label,
-                &role_name,
-                "global",
+                &rolegroup.role,
+                &rolegroup.role_group,
             ))
             .context(MetadataBuildSnafu)?
             .build(),
