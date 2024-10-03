@@ -797,6 +797,16 @@ fn build_broker_rolegroup_statefulset(
     );
     let recommended_labels =
         Labels::recommended(recommended_object_labels.clone()).context(LabelBuildSnafu)?;
+    // Used for PVC templates that cannot be modified once they are deployed
+    let unversioned_recommended_labels = Labels::recommended(build_recommended_labels(
+        kafka,
+        KAFKA_CONTROLLER_NAME,
+        // A version value is required, and we do want to use the "recommended" format for the other desired labels
+        "none",
+        &rolegroup_ref.role,
+        &rolegroup_ref.role_group,
+    ))
+    .context(LabelBuildSnafu)?;
 
     let kcat_prober_container_name = Container::KcatProber.to_string();
     let mut cb_kcat_prober =
@@ -824,7 +834,7 @@ fn build_broker_rolegroup_statefulset(
     pvcs.push(
         ListenerOperatorVolumeSourceBuilder::new(
             &ListenerReference::ListenerName(kafka.bootstrap_service_name(rolegroup_ref)),
-            &recommended_labels,
+            &unversioned_recommended_labels,
         )
         .and_then(|builder| builder.build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME))
         .unwrap(),
