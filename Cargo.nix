@@ -1725,11 +1725,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" "use_std" "with-deprecated" ];
       };
-      "futures 0.3.30" = rec {
+      "futures 0.3.31" = rec {
         crateName = "futures";
-        version = "0.3.30";
+        version = "0.3.31";
         edition = "2018";
-        sha256 = "1c04g14bccmprwsvx2j9m2blhwrynq7vhl151lsvcv4gi0b6jp34";
+        sha256 = "0xh8ddbkm9jy8kc5gbvjp9a4b6rqqxvc8471yb2qaz5wm2qhgg35";
         dependencies = [
           {
             name = "futures-channel";
@@ -1788,9 +1788,9 @@ rec {
       };
       "futures-channel" = rec {
         crateName = "futures-channel";
-        version = "0.3.30";
+        version = "0.3.31";
         edition = "2018";
-        sha256 = "0y6b7xxqdjm9hlcjpakcg41qfl7lihf6gavk8fyqijsxhvbzgj7a";
+        sha256 = "040vpqpqlbk099razq8lyn74m0f161zd0rp36hciqrwcg2zibzrd";
         libName = "futures_channel";
         dependencies = [
           {
@@ -1816,9 +1816,9 @@ rec {
       };
       "futures-core" = rec {
         crateName = "futures-core";
-        version = "0.3.30";
+        version = "0.3.31";
         edition = "2018";
-        sha256 = "07aslayrn3lbggj54kci0ishmd1pr367fp7iks7adia1p05miinz";
+        sha256 = "0gk6yrxgi5ihfanm2y431jadrll00n5ifhnpx090c2f2q1cr1wh5";
         libName = "futures_core";
         features = {
           "default" = [ "std" ];
@@ -1829,9 +1829,9 @@ rec {
       };
       "futures-executor" = rec {
         crateName = "futures-executor";
-        version = "0.3.30";
+        version = "0.3.31";
         edition = "2018";
-        sha256 = "07dh08gs9vfll2h36kq32q9xd86xm6lyl9xikmmwlkqnmrrgqxm5";
+        sha256 = "17vcci6mdfzx4gbk0wx64chr2f13wwwpvyf3xd5fb1gmjzcx2a0y";
         libName = "futures_executor";
         dependencies = [
           {
@@ -1860,9 +1860,9 @@ rec {
       };
       "futures-io" = rec {
         crateName = "futures-io";
-        version = "0.3.30";
+        version = "0.3.31";
         edition = "2018";
-        sha256 = "1hgh25isvsr4ybibywhr4dpys8mjnscw4wfxxwca70cn1gi26im4";
+        sha256 = "1ikmw1yfbgvsychmsihdkwa8a1knank2d9a8dk01mbjar9w1np4y";
         libName = "futures_io";
         features = {
           "default" = [ "std" ];
@@ -1871,9 +1871,9 @@ rec {
       };
       "futures-macro" = rec {
         crateName = "futures-macro";
-        version = "0.3.30";
+        version = "0.3.31";
         edition = "2018";
-        sha256 = "1b49qh9d402y8nka4q6wvvj0c88qq91wbr192mdn5h54nzs0qxc7";
+        sha256 = "0l1n7kqzwwmgiznn0ywdc5i24z72zvh9q1dwps54mimppi7f6bhn";
         procMacro = true;
         libName = "futures_macro";
         dependencies = [
@@ -1895,9 +1895,9 @@ rec {
       };
       "futures-sink" = rec {
         crateName = "futures-sink";
-        version = "0.3.30";
+        version = "0.3.31";
         edition = "2018";
-        sha256 = "1dag8xyyaya8n8mh8smx7x6w2dpmafg2din145v973a3hw7f1f4z";
+        sha256 = "1xyly6naq6aqm52d5rh236snm08kw8zadydwqz8bip70s6vzlxg5";
         libName = "futures_sink";
         features = {
           "default" = [ "std" ];
@@ -1907,9 +1907,9 @@ rec {
       };
       "futures-task" = rec {
         crateName = "futures-task";
-        version = "0.3.30";
+        version = "0.3.31";
         edition = "2018";
-        sha256 = "013h1724454hj8qczp8vvs10qfiqrxr937qsrv6rhii68ahlzn1q";
+        sha256 = "124rv4n90f5xwfsm9qw6y99755y021cmi5dhzh253s920z77s3zr";
         libName = "futures_task";
         features = {
           "default" = [ "std" ];
@@ -1934,9 +1934,9 @@ rec {
       };
       "futures-util" = rec {
         crateName = "futures-util";
-        version = "0.3.30";
+        version = "0.3.31";
         edition = "2018";
-        sha256 = "0j0xqhcir1zf2dcbpd421kgw6wvsk0rpxflylcysn1rlp3g02r1x";
+        sha256 = "10aa1ar8bgkgbr4wzxlidkqkcxf77gffyj8j7768h831pcaq784z";
         libName = "futures_util";
         dependencies = [
           {
@@ -3398,7 +3398,7 @@ rec {
           }
           {
             name = "futures";
-            packageId = "futures 0.3.30";
+            packageId = "futures 0.3.31";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -3539,7 +3539,7 @@ rec {
         devDependencies = [
           {
             name = "futures";
-            packageId = "futures 0.3.30";
+            packageId = "futures 0.3.31";
             usesDefaultFeatures = false;
             features = [ "async-await" ];
           }
@@ -3757,7 +3757,7 @@ rec {
           }
           {
             name = "futures";
-            packageId = "futures 0.3.30";
+            packageId = "futures 0.3.31";
             usesDefaultFeatures = false;
             features = [ "async-await" ];
           }
@@ -5476,7 +5476,7 @@ rec {
         dependencies = [
           {
             name = "futures";
-            packageId = "futures 0.3.30";
+            packageId = "futures 0.3.31";
             optional = true;
           }
           {
@@ -6697,7 +6697,7 @@ rec {
           }
           {
             name = "futures";
-            packageId = "futures 0.3.30";
+            packageId = "futures 0.3.31";
             features = [ "compat" ];
           }
           {
@@ -6802,7 +6802,7 @@ rec {
           }
           {
             name = "futures";
-            packageId = "futures 0.3.30";
+            packageId = "futures 0.3.31";
           }
           {
             name = "indexmap";
