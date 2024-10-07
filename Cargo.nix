@@ -1712,20 +1712,7 @@ rec {
         };
         resolvedDefaultFeatures = [ "alloc" "default" "std" ];
       };
-      "futures 0.1.31" = rec {
-        crateName = "futures";
-        version = "0.1.31";
-        edition = "2015";
-        sha256 = "0y46qbmhi37dqkch8dlfq5aninqpzqgrr98awkb3rn4fxww1lirs";
-        authors = [
-          "Alex Crichton <alex@alexcrichton.com>"
-        ];
-        features = {
-          "default" = [ "use_std" "with-deprecated" ];
-        };
-        resolvedDefaultFeatures = [ "default" "use_std" "with-deprecated" ];
-      };
-      "futures 0.3.31" = rec {
+      "futures" = rec {
         crateName = "futures";
         version = "0.3.31";
         edition = "2018";
@@ -1784,7 +1771,7 @@ rec {
           "unstable" = [ "futures-core/unstable" "futures-task/unstable" "futures-channel/unstable" "futures-io/unstable" "futures-util/unstable" ];
           "write-all-vectored" = [ "futures-util/write-all-vectored" ];
         };
-        resolvedDefaultFeatures = [ "alloc" "async-await" "compat" "default" "executor" "futures-executor" "std" ];
+        resolvedDefaultFeatures = [ "alloc" "async-await" "default" "executor" "futures-executor" "std" ];
       };
       "futures-channel" = rec {
         crateName = "futures-channel";
@@ -1940,12 +1927,6 @@ rec {
         libName = "futures_util";
         dependencies = [
           {
-            name = "futures";
-            packageId = "futures 0.1.31";
-            rename = "futures_01";
-            optional = true;
-          }
-          {
             name = "futures-channel";
             packageId = "futures-channel";
             optional = true;
@@ -2022,7 +2003,7 @@ rec {
           "unstable" = [ "futures-core/unstable" "futures-task/unstable" ];
           "write-all-vectored" = [ "io" ];
         };
-        resolvedDefaultFeatures = [ "alloc" "async-await" "async-await-macro" "channel" "compat" "futures-channel" "futures-io" "futures-macro" "futures-sink" "futures_01" "io" "memchr" "sink" "slab" "std" ];
+        resolvedDefaultFeatures = [ "alloc" "async-await" "async-await-macro" "channel" "futures-channel" "futures-io" "futures-macro" "futures-sink" "io" "memchr" "sink" "slab" "std" ];
       };
       "generic-array" = rec {
         crateName = "generic-array";
@@ -3398,7 +3379,7 @@ rec {
           }
           {
             name = "futures";
-            packageId = "futures 0.3.31";
+            packageId = "futures";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -3539,7 +3520,7 @@ rec {
         devDependencies = [
           {
             name = "futures";
-            packageId = "futures 0.3.31";
+            packageId = "futures";
             usesDefaultFeatures = false;
             features = [ "async-await" ];
           }
@@ -3757,7 +3738,7 @@ rec {
           }
           {
             name = "futures";
-            packageId = "futures 0.3.31";
+            packageId = "futures";
             usesDefaultFeatures = false;
             features = [ "async-await" ];
           }
@@ -5476,7 +5457,7 @@ rec {
         dependencies = [
           {
             name = "futures";
-            packageId = "futures 0.3.31";
+            packageId = "futures";
             optional = true;
           }
           {
@@ -6697,8 +6678,7 @@ rec {
           }
           {
             name = "futures";
-            packageId = "futures 0.3.31";
-            features = [ "compat" ];
+            packageId = "futures";
           }
           {
             name = "product-config";
@@ -6802,7 +6782,7 @@ rec {
           }
           {
             name = "futures";
-            packageId = "futures 0.3.31";
+            packageId = "futures";
           }
           {
             name = "indexmap";

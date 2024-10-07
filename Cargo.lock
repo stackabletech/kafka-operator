@@ -613,12 +613,6 @@ dependencies = [
 
 [[package]]
 name = "futures"
-version = "0.1.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a471a38ef8ed83cd6e40aa59c1ffe17db6855c18e3604d9c4ed8c08ebc28678"
-
-[[package]]
-name = "futures"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65bc07b1a8bc7c85c5f2e110c476c7389b4554ba72af57d8445ea63a576b0876"
@@ -700,7 +694,6 @@ version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fa08315bb612088cc391249efdc3bc77536f16c91f6cf495e6fbe85b20a4a81"
 dependencies = [
- "futures 0.1.31",
  "futures-channel",
  "futures-core",
  "futures-io",
@@ -1142,7 +1135,7 @@ dependencies = [
  "bytes",
  "chrono",
  "either",
- "futures 0.3.31",
+ "futures",
  "home",
  "http",
  "http-body",
@@ -1213,7 +1206,7 @@ dependencies = [
  "async-trait",
  "backoff",
  "derivative",
- "futures 0.3.31",
+ "futures",
  "hashbrown 0.14.5",
  "json-patch",
  "jsonptr",
@@ -1766,7 +1759,7 @@ version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0a2c585be59b6b5dd66a9d2084aa1d8bd52fbdb806eafdeffb52791147862035"
 dependencies = [
- "futures 0.3.31",
+ "futures",
  "futures-timer",
  "rstest_macros",
  "rustc_version",
@@ -2171,7 +2164,7 @@ dependencies = [
  "anyhow",
  "built",
  "clap",
- "futures 0.3.31",
+ "futures",
  "product-config",
  "serde",
  "serde_json",
@@ -2196,7 +2189,7 @@ dependencies = [
  "derivative",
  "dockerfile-parser",
  "either",
- "futures 0.3.31",
+ "futures",
  "indexmap",
  "json-patch",
  "k8s-openapi",
