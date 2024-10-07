@@ -3,7 +3,8 @@
 The operator deploys a bootstrap xref:listener-operator:listener.adoc[Listener] for each broker rolegroup, as well as a xref:listener-operator:listener.adoc[Listener] for each broker pod.
 
 The bootstrap Listener is used to negotiate clients' initial connection to the cluster, after which a connection is made to the relevant broker Listeners.
-Please note that every bootstrap Listener (regardless of the underlying rolegroup) will return all brokers of all rolegroups.
+
+NOTE: Every bootstrap xref:listener-operator:listener.adoc[Listener] (regardless of the underlying rolegroup) will direct clients to the broker listeners of all brokers of all rolegroups.
 
 They both default to only being accessible from within the Kubernetes cluster, but this can be changed by setting `.spec.brokers.config.{bootstrap,broker}ListenerClass`.
 
