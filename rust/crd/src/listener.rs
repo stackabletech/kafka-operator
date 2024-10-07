@@ -1,4 +1,4 @@
-use crate::{KafkaCluster, STACKABLE_TMP_DIR};
+use crate::{KafkaCluster, STACKABLE_LISTENER_BROKER_DIR};
 
 use crate::security::KafkaTlsSecurity;
 use snafu::{OptionExt, Snafu};
@@ -8,7 +8,6 @@ use std::fmt::{Display, Formatter};
 use strum::{EnumDiscriminants, EnumString};
 
 const LISTENER_LOCAL_ADDRESS: &str = "0.0.0.0";
-const LISTENER_NODE_ADDRESS: &str = "$NODE";
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
 pub enum KafkaListenerError {
@@ -106,8 +105,11 @@ pub fn get_kafka_listener_config(
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::ClientAuth,
-            host: LISTENER_NODE_ADDRESS.to_string(),
-            port: node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
+            host: node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+            port: node_port_cmd(
+                STACKABLE_LISTENER_BROKER_DIR,
+                kafka_security.client_port_name(),
+            ),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::ClientAuth, KafkaListenerProtocol::Ssl);
@@ -120,8 +122,11 @@ pub fn get_kafka_listener_config(
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
-            host: LISTENER_NODE_ADDRESS.to_string(),
-            port: node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
+            host: node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+            port: node_port_cmd(
+                STACKABLE_LISTENER_BROKER_DIR,
+                kafka_security.client_port_name(),
+            ),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::Ssl);
@@ -134,8 +139,11 @@ pub fn get_kafka_listener_config(
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
-            host: LISTENER_NODE_ADDRESS.to_string(),
-            port: node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
+            host: node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+            port: node_port_cmd(
+                STACKABLE_LISTENER_BROKER_DIR,
+                kafka_security.client_port_name(),
+            ),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::Plaintext);
@@ -180,8 +188,12 @@ pub fn get_kafka_listener_config(
     })
 }
 
+fn node_address_cmd(directory: &str) -> String {
+    format!("$(cat {directory}/default-address/address)")
+}
+
 fn node_port_cmd(directory: &str, port_name: &str) -> String {
-    format!("$(cat {directory}/{port_name}_nodeport)")
+    format!("$(cat {directory}/default-address/ports/{port_name})")
 }
 
 fn pod_fqdn(kafka: &KafkaCluster, object_name: &str) -> Result<String, KafkaListenerError> {
@@ -228,7 +240,6 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
-            &kafka,
             ResolvedAuthenticationClasses::new(vec![AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),
                 spec: AuthenticationClassSpec {
@@ -260,8 +271,11 @@ mod tests {
             format!(
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::ClientAuth,
-                host = LISTENER_NODE_ADDRESS,
-                port = node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
+                host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+                port = node_port_cmd(
+                    STACKABLE_LISTENER_BROKER_DIR,
+                    kafka_security.client_port_name()
+                ),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name).unwrap(),
                 internal_port = kafka_security.internal_port(),
@@ -295,7 +309,6 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
-            &kafka,
             ResolvedAuthenticationClasses::new(vec![]),
             "tls".to_string(),
             Some("tls".to_string()),
@@ -320,8 +333,11 @@ mod tests {
             format!(
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
-                host = LISTENER_NODE_ADDRESS,
-                port = node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
+                host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+                port = node_port_cmd(
+                    STACKABLE_LISTENER_BROKER_DIR,
+                    kafka_security.client_port_name()
+                ),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name).unwrap(),
                 internal_port = kafka_security.internal_port(),
@@ -357,7 +373,6 @@ mod tests {
         "#;
         let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
-            &kafka,
             ResolvedAuthenticationClasses::new(vec![]),
             "".to_string(),
             None,
@@ -382,8 +397,11 @@ mod tests {
             format!(
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
-                host = LISTENER_NODE_ADDRESS,
-                port = node_port_cmd(STACKABLE_TMP_DIR, kafka_security.client_port_name()),
+                host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+                port = node_port_cmd(
+                    STACKABLE_LISTENER_BROKER_DIR,
+                    kafka_security.client_port_name()
+                ),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name).unwrap(),
                 internal_port = kafka_security.internal_port(),

@@ -13,6 +13,10 @@ All notable changes to this project will be documented in this file.
 - Reduce CRD size from `479KB` to `53KB` by accepting arbitrary YAML input instead of the underlying schema for the following fields ([#750]):
   - `podOverrides`
   - `affinity`
+- Migrate to exposing Kafka using Listener Operator ([#443]).
+  - BREAKING: The existing services will be migrated to the new format. Clients will need to re-read settings from the discovery configmap.
+  - BREAKING: Kafka is now only accessible from within the Kubernetes cluster by default. Set listener classes manually to expose it to the outside world (again).
+  - BREAKING: To complete an upgrade to this kafka-operator, all existing Kafka StatefulSets must be deleted manually. This will cause some downtime.
 
 ### Fixed
 
@@ -24,6 +28,7 @@ All notable changes to this project will be documented in this file.
 
 - Remove versions `3.4.1`, `3.6.1`, `3.6.2` ([#753]).
 
+[#443]: https://github.com/stackabletech/kafka-operator/pull/443
 [#741]: https://github.com/stackabletech/kafka-operator/pull/741
 [#750]: https://github.com/stackabletech/kafka-operator/pull/750
 [#753]: https://github.com/stackabletech/kafka-operator/pull/753

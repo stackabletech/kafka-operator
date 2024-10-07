@@ -52,7 +52,10 @@ pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 // directories
-pub const STACKABLE_TMP_DIR: &str = "/stackable/tmp";
+pub const LISTENER_BROKER_VOLUME_NAME: &str = "listener-broker";
+pub const LISTENER_BOOTSTRAP_VOLUME_NAME: &str = "listener-bootstrap";
+pub const STACKABLE_LISTENER_BROKER_DIR: &str = "/stackable/listener-broker";
+pub const STACKABLE_LISTENER_BOOTSTRAP_DIR: &str = "/stackable/listener-bootstrap";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
@@ -164,8 +167,8 @@ pub struct KafkaClusterConfig {
 impl KafkaCluster {
     /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
     /// to get a list of broker addresses and will use those to transmit data to the correct broker.
-    pub fn bootstrap_service_name(&self) -> String {
-        self.name_any()
+    pub fn bootstrap_service_name(&self, rolegroup: &RoleGroupRef<Self>) -> String {
+        format!("{}-bootstrap", rolegroup.object_name())
     }
 
     /// Metadata about a broker rolegroup
@@ -405,6 +408,12 @@ pub struct KafkaConfig {
     /// Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
     #[fragment_attrs(serde(default))]
     pub graceful_shutdown_timeout: Option<Duration>,
+
+    /// The ListenerClass used for bootstrapping new clients. Should use a stable ListenerClass to avoid unnecessary client restarts (such as `cluster-internal` or `external-stable`).
+    pub bootstrap_listener_class: String,
+
+    /// The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
+    pub broker_listener_class: String,
 }
 
 impl KafkaConfig {
@@ -430,6 +439,8 @@ impl KafkaConfig {
             },
             affinity: get_affinity(cluster_name, role),
             graceful_shutdown_timeout: Some(DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT),
+            bootstrap_listener_class: Some("cluster-internal".to_string()),
+            broker_listener_class: Some("cluster-internal".to_string()),
         }
     }
 }
