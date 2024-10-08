@@ -20,9 +20,11 @@ pub enum KafkaListenerProtocol {
     /// Unencrypted and unauthenticated HTTP connections
     #[strum(serialize = "PLAINTEXT")]
     Plaintext,
+
     /// Encrypted and server-authenticated HTTPS connections
     #[strum(serialize = "SSL")]
     Ssl,
+    
     /// Kerberos authentication
     #[strum(serialize = "SASL_SSL")]
     SaslSsl,
