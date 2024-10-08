@@ -8,9 +8,15 @@ dimensions:
     values:
       - 3.7.1
       - 3.8.0
+      # Alternatively, if you want to use a custom image, append a comma and the full image name to the product version
+      # as in the example below.
+      # - 3.8.0,docker.stackable.tech/stackable/kafka:3.8.0-stackable0.0.0-dev
   - name: kafka-latest
     values:
       - 3.7.1 # Using LTS version here
+      # Alternatively, if you want to use a custom image, append a comma and the full image name to the product version
+      # as in the example below.
+      # - 3.7.1,docker.stackable.tech/stackable/kafka:3.7.1-stackable0.0.0-dev
   - name: zookeeper
     values:
       - 3.9.2
