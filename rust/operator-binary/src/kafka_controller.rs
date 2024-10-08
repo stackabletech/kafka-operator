@@ -452,7 +452,13 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .await
         .context(FailedToInitializeSecurityContextSnafu)?;
 
-    tracing::debug!("Security settings: kerberos enabled/secret-class: {}/{:#?} tls enabled/client-auth-class: {}/{:#?}",
+    tracing::debug!(
+        kerberos_enabled = kafka_security.has_kerberos_enabled(),
+        kerberos_secret_class = ?kafka_security.kerberos_secret_class(),
+        tls_enabled = kafka_security.tls_enabled(),
+        tls_client_authentication_class = ?kafka_security.tls_client_authentication_class(),
+        "The following security settings are used"
+    );
         kafka_security.has_kerberos_enabled(),
         kafka_security.kerberos_secret_class(),
         kafka_security.tls_enabled(),
