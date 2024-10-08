@@ -115,7 +115,7 @@ impl ResolvedAuthenticationClasses {
         for auth_class in &self.resolved_authentication_classes {
             match &auth_class.spec.provider {
                 // explicitly list each branch so new elements do not get overlooked
-                AuthenticationClassProvider::Tls(_) => {}
+                AuthenticationClassProvider::Tls(_) | AuthenticationClassProvider::Kerberos(_) => {}
                 AuthenticationClassProvider::Static(_)
                 | AuthenticationClassProvider::Ldap(_)
                 | AuthenticationClassProvider::Oidc(_) => {

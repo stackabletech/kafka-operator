@@ -476,10 +476,6 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         tls_client_authentication_class = ?kafka_security.tls_client_authentication_class(),
         "The following security settings are used"
     );
-        kafka_security.has_kerberos_enabled(),
-        kafka_security.kerberos_secret_class(),
-        kafka_security.tls_enabled(),
-        kafka_security.tls_client_authentication_class());
 
     kafka_security
         .validate_authentication_methods()
