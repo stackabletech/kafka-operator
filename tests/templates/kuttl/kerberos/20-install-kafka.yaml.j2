@@ -31,18 +31,15 @@ commands:
           productVersion: "{{ test_scenario['values']['kafka'] }}"
           pullPolicy: IfNotPresent
         clusterConfig:
+          zookeeperConfigMapName: test-kafka-znode
           authentication:
             - authenticationClass: kerberos-auth-$NAMESPACE
           tls:
-{% if test_scenario['values']['use-client-tls'] == 'true' %}
+            # Kerberos requires the use of server and internal TLS!
             serverSecretClass: tls
-{% else %}
-            serverSecretClass: null
-{% endif %}
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
           vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
-          zookeeperConfigMapName: test-kafka-znode
         brokers:
           config:
             logging:

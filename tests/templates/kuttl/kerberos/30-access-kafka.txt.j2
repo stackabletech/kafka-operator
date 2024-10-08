@@ -21,8 +21,8 @@ spec:
           volumeMounts:
             - name: script
               mountPath: /tmp/script
-            - mountPath: /stackable/tls_cert_server_mount
-              name: tls-cert-server-mount
+            - mountPath: /stackable/tls-ca-cert-mount
+              name: tls-ca-cert-mount
             - name: kerberos
               mountPath: /stackable/kerberos
       volumes:
@@ -44,14 +44,13 @@ spec:
                 resources:
                   requests:
                     storage: "1"
-        - name: tls-cert-server-mount
+        - name: tls-ca-cert-mount
           ephemeral:
             volumeClaimTemplate:
               metadata:
                 annotations:
                   secrets.stackable.tech/class: tls
-                  secrets.stackable.tech/scope: pod,node,service=kafka
-                creationTimestamp: null
+                  secrets.stackable.tech/scope: pod
               spec:
                 accessModes:
                 - ReadWriteOnce
@@ -83,7 +82,7 @@ data:
     metadata.broker.list=$BROKER\n\
     auto.offset.reset=beginning\n\
     security.protocol=SASL_SSL\n\
-    ssl.ca.location=/stackable/tls_cert_server_mount/ca.crt\n\
+    ssl.ca.location=/stackable/tls-ca-cert-mount/ca.crt\n\
     sasl.kerberos.keytab=/stackable/kerberos/keytab\n\
     sasl.kerberos.service.name=kafka\n\
     sasl.kerberos.principal=developer/access-kafka.$NAMESPACE.svc.cluster.local@{{ test_scenario['values']['kerberos-realm'] }}\n\
