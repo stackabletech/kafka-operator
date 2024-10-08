@@ -116,20 +116,9 @@ impl ResolvedAuthenticationClasses {
             match &auth_class.spec.provider {
                 // explicitly list each branch so new elements do not get overlooked
                 AuthenticationClassProvider::Tls(_) => {}
-                AuthenticationClassProvider::Kerberos(_) => {}
-                AuthenticationClassProvider::Static(_) => {
-                    return Err(Error::AuthenticationProviderNotSupported {
-                        authentication_class: ObjectRef::from_obj(auth_class),
-                        provider: auth_class.spec.provider.to_string(),
-                    })
-                }
-                AuthenticationClassProvider::Ldap(_) => {
-                    return Err(Error::AuthenticationProviderNotSupported {
-                        authentication_class: ObjectRef::from_obj(auth_class),
-                        provider: auth_class.spec.provider.to_string(),
-                    })
-                }
-                AuthenticationClassProvider::Oidc(_) => {
+                AuthenticationClassProvider::Static(_)
+                | AuthenticationClassProvider::Ldap(_)
+                | AuthenticationClassProvider::Oidc(_) => {
                     return Err(Error::AuthenticationProviderNotSupported {
                         authentication_class: ObjectRef::from_obj(auth_class),
                         provider: auth_class.spec.provider.to_string(),

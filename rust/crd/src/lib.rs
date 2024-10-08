@@ -331,7 +331,8 @@ impl KafkaRole {
     }
 
     /// A Kerberos principal has three parts, with the form username/fully.qualified.domain.name@YOUR-REALM.COM.
-    /// We only have one role and will use "kafka" everywhere (which e.g. differs from the current hdfs implementation).
+    /// We only have one role and will use "kafka" everywhere (which e.g. differs from the current hdfs implementation,
+    /// but is similar to HBase).
     pub fn kerberos_service_name(&self) -> &'static str {
         "kafka"
     }
