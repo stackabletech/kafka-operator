@@ -227,7 +227,7 @@ impl KafkaTlsSecurity {
         if self.has_kerberos_enabled() || self.tls_client_authentication_class().is_some() {
             ensure!(self.server_secret_class.is_some(), KerberosRequiresTlsSnafu);
         }
-        
+
         Ok(())
     }
 
