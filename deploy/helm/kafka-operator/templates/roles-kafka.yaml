@@ -2,10 +2,4 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ include "operator.fullname" . }}-kafka-broker-clusterrole
-rules:
-  - apiGroups:
-      - ""
-    resources:
-      - services
-    verbs:
-      - get
+rules: []

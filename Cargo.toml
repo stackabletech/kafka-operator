@@ -13,7 +13,7 @@ repository = "https://github.com/stackabletech/kafka-operator"
 anyhow = "1.0"
 built = { version = "0.7", features = ["chrono", "git2"] }
 clap = "4.5"
-futures = { version = "0.3", features = ["compat"] }
+futures = { version = "0.3" }
 indoc = "2.0"
 product-config = { git = "https://github.com/stackabletech/product-config.git", tag = "0.7.0" }
 rstest = "0.23"
@@ -28,4 +28,5 @@ tokio = { version = "1.40", features = ["full"] }
 tracing = "0.1"
 
 # [patch."https://github.com/stackabletech/operator-rs.git"]
+# stackable-operator = { path = "../operator-rs/crates/stackable-operator" }
 # stackable-operator = { git = "https://github.com/stackabletech//operator-rs.git", branch = "main" }

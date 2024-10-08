@@ -1,5 +1,5 @@
 {
-  "git+https://github.com/stackabletech//operator-rs.git?branch=chore%2Fadd-kerberos-auth-prov#stackable-operator-derive@0.3.1": "1s7lw82zdfw6frci5lh8rjzjhgjfa27xz11xlllb6p8dxpxhlcl0",
-  "git+https://github.com/stackabletech//operator-rs.git?branch=chore%2Fadd-kerberos-auth-prov#stackable-operator@0.76.0": "1s7lw82zdfw6frci5lh8rjzjhgjfa27xz11xlllb6p8dxpxhlcl0",
+  "git+https://github.com/stackabletech/operator-rs.git?tag=stackable-operator-0.78.0#stackable-operator-derive@0.3.1": "0nd05xk84s4jdd635ivvwp0lxqghxdxz45cf40xyx07k9bqq4fzg",
+  "git+https://github.com/stackabletech/operator-rs.git?tag=stackable-operator-0.78.0#stackable-operator@0.78.0": "0nd05xk84s4jdd635ivvwp0lxqghxdxz45cf40xyx07k9bqq4fzg",
   "git+https://github.com/stackabletech/product-config.git?tag=0.7.0#product-config@0.7.0": "0gjsm80g6r75pm3824dcyiz4ysq1ka4c1if6k1mjm9cnd5ym0gny"
 }
