@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use indoc::formatdoc;
-use snafu::{ResultExt, Snafu};
+use snafu::{ensure, ResultExt, Snafu};
 use stackable_operator::{
     builder::{
         self,
@@ -57,6 +57,9 @@ pub enum Error {
     AddVolumeMount {
         source: builder::pod::container::Error,
     },
+
+    #[snafu(display("kerberos enablement requires TLS activation"))]
+    KerberosRequiresTls,
 }
 
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
@@ -218,6 +221,13 @@ impl KafkaTlsSecurity {
         if self.tls_client_authentication_class().is_some() && self.has_kerberos_enabled() {
             return Err(Error::MultipleAuthenticationMethodsProvided);
         }
+
+        // When users enable Kerberos we require them to also enable TLS for maximum security and
+        // to limit the number of combinations we need to support.
+        if self.has_kerberos_enabled() || self.tls_client_authentication_class().is_some() {
+            ensure!(self.server_secret_class.is_some(), KerberosRequiresTlsSnafu);
+        }
+        
         Ok(())
     }
 

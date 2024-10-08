@@ -46,7 +46,7 @@ pub struct KafkaAuthentication {
     ///
     /// ## Kerberos provider
     ///
-    /// This affects client connections and also sets internal connections to use TLS for encryption.
+    /// This affects client connections and also requires TLS for encryption.
     /// This setting is used to reference an `AuthenticationClass` and in turn, a `SecretClass` that is
     /// used to create keytabs).
     pub authentication_class: String,

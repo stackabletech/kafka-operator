@@ -139,6 +139,8 @@ spec:
   clusterConfig:
     authentication:
       - authenticationClass: kafka-client-kerberos # <1>
+    tls:
+      serverSecretClass: tls # <5>
     zookeeperConfigMapName: simple-kafka-znode
   brokers:
     roleGroups:
@@ -149,6 +151,9 @@ spec:
 <2> The referenced `AuthenticationClass` that references a `SecretClass` to provide Kerberos keytabs.
 <3> The reference to a `SecretClass`.
 <4> The `SecretClass` that is referenced by the `AuthenticationClass` in order to provide keytabs.
+<5> The SecretClass that will be used for encryption.
+
+NOTE: When Kerberos is enabled it is also required to enable TLS for maximum security.
 
 == [[authorization]]Authorization
 
