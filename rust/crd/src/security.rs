@@ -26,7 +26,9 @@ use stackable_operator::{
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
-use crate::authentication::SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS;
+use crate::{
+    authentication::SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS, STACKABLE_KERBEROS_KRB5_PATH,
+};
 use crate::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, KafkaListenerConfig},
@@ -265,7 +267,13 @@ impl KafkaTlsSecurity {
             args.push("-euo".to_string());
             args.push("pipefail".to_string());
             args.push("-c".to_string());
-            args.push("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' /stackable/kerberos/krb5.conf);".to_string());
+            args.push(
+                format!(
+                    "export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {});",
+                    STACKABLE_KERBEROS_KRB5_PATH
+                )
+                .to_string(),
+            );
             args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
             args.push(format!("{pod_fqdn}:{port}"));
@@ -311,8 +319,8 @@ impl KafkaTlsSecurity {
         create_vector_shutdown_file_command =
             create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
             set_realm_env = match kerberos_enabled {
-                true => "export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' /stackable/kerberos/krb5.conf)",
-                false => "",
+                true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {})", STACKABLE_KERBEROS_KRB5_PATH),
+                false => "".to_string(),
             },
             listeners = kafka_listeners.listeners(),
             advertised_listeners = kafka_listeners.advertised_listeners(),

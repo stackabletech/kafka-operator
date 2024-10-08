@@ -1,5 +1,6 @@
 use snafu::{ResultExt, Snafu};
 use stackable_kafka_crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole};
+use stackable_kafka_crd::{STACKABLE_KERBEROS_DIR, STACKABLE_KERBEROS_KRB5_PATH};
 use stackable_operator::{
     builder::{
         self,
@@ -55,21 +56,21 @@ pub fn add_kerberos_pod_config(
         )
         .context(AddVolumeSnafu)?;
         cb_kcat_prober
-            .add_volume_mount("kerberos", "/stackable/kerberos")
+            .add_volume_mount("kerberos", STACKABLE_KERBEROS_DIR)
             .context(AddVolumeMountSnafu)?;
-        cb_kcat_prober.add_env_var("KRB5_CONFIG", "/stackable/kerberos/krb5.conf");
+        cb_kcat_prober.add_env_var("KRB5_CONFIG", STACKABLE_KERBEROS_KRB5_PATH);
         cb_kcat_prober.add_env_var(
             "KAFKA_OPTS",
-            "-Djava.security.krb5.conf=/stackable/kerberos/krb5.conf",
+            format!("-Djava.security.krb5.conf={}", STACKABLE_KERBEROS_KRB5_PATH),
         );
 
         cb_kafka
-            .add_volume_mount("kerberos", "/stackable/kerberos")
+            .add_volume_mount("kerberos", STACKABLE_KERBEROS_DIR)
             .context(AddVolumeMountSnafu)?;
-        cb_kafka.add_env_var("KRB5_CONFIG", "/stackable/kerberos/krb5.conf");
+        cb_kafka.add_env_var("KRB5_CONFIG", STACKABLE_KERBEROS_KRB5_PATH);
         cb_kafka.add_env_var(
             "KAFKA_OPTS",
-            "-Djava.security.krb5.conf=/stackable/kerberos/krb5.conf",
+            format!("-Djava.security.krb5.conf={}", STACKABLE_KERBEROS_KRB5_PATH),
         );
     }
 
