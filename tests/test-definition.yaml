@@ -96,6 +96,7 @@ tests:
       - krb5
       - kerberos-realm
       - kerberos-backend
+      - use-client-tls
       - openshift
 
 suites:
