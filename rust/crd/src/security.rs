@@ -224,7 +224,7 @@ impl KafkaTlsSecurity {
 
         // When users enable Kerberos we require them to also enable TLS for maximum security and
         // to limit the number of combinations we need to support.
-        if self.has_kerberos_enabled() || self.tls_client_authentication_class().is_some() {
+        if self.has_kerberos_enabled() {
             ensure!(self.server_secret_class.is_some(), KerberosRequiresTlsSnafu);
         }
 
