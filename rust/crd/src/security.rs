@@ -26,6 +26,7 @@ use stackable_operator::{
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
+use crate::authentication::SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS;
 use crate::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, KafkaListenerConfig},
@@ -44,7 +45,7 @@ pub enum Error {
         source: stackable_operator::builder::pod::volume::SecretOperatorVolumeSourceBuilderError,
     },
 
-    #[snafu(display("only one authentication method is possible, TLS or Kerberos"))]
+    #[snafu(display("only one authentication class at a time is currently supported. Possible Authentication class providers are {SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS:?}"))]
     MultipleAuthenticationMethodsProvided,
 
     #[snafu(display("failed to add needed volume"))]
