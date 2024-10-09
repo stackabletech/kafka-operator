@@ -12,13 +12,14 @@ use product_config::{
 };
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
-    listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
-    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME,
-    JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
-    LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
-    OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
-    STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
-    STACKABLE_LOG_DIR,
+    listener::{get_kafka_listener_config, pod_fqdn, KafkaListenerError},
+    security::KafkaTlsSecurity,
+    Container, KafkaCluster, KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME,
+    DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
+    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
+    METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
+    STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
+    STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
 };
 use stackable_operator::{
     builder::{
@@ -81,6 +82,7 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     discovery::{self, build_discovery_configmaps},
+    kerberos::{self, add_kerberos_pod_config},
     operations::{
         graceful_shutdown::{add_graceful_shutdown_config, graceful_shutdown_config_properties},
         pdb::add_pdbs,
@@ -323,8 +325,19 @@ pub enum Error {
         source: stackable_kafka_crd::security::Error,
     },
 
-    #[snafu(display("failed to configure logging"))]
-    ConfigureLogging { source: LoggingError },
+    #[snafu(display("failed to resolve the fully-qualified pod name"))]
+    ResolveNamespace { source: KafkaListenerError },
+
+    #[snafu(display("failed to add kerberos config"))]
+    AddKerberosConfig { source: kerberos::Error },
+
+    #[snafu(display("failed to validate authentication method"))]
+    FailedToValidateAuthenticationMethod {
+        source: stackable_kafka_crd::security::Error,
+    },
+
+    #[snafu(display("failed to build vector container"))]
+    BuildVectorContainer { source: LoggingError },
 
     #[snafu(display("failed to add needed volume"))]
     AddVolume { source: builder::pod::Error },
@@ -333,6 +346,9 @@ pub enum Error {
     AddVolumeMount {
         source: builder::pod::container::Error,
     },
+
+    #[snafu(display("failed to configure logging"))]
+    ConfigureLogging { source: LoggingError },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -394,6 +410,10 @@ impl ReconcilerError for Error {
             Error::ConfigureLogging { .. } => None,
             Error::AddVolume { .. } => None,
             Error::AddVolumeMount { .. } => None,
+            Error::ResolveNamespace { .. } => None,
+            Error::AddKerberosConfig { .. } => None,
+            Error::FailedToValidateAuthenticationMethod { .. } => None,
+            Error::BuildVectorContainer { .. } => None,
         }
     }
 }
@@ -448,6 +468,18 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, &kafka)
         .await
         .context(FailedToInitializeSecurityContextSnafu)?;
+
+    tracing::debug!(
+        kerberos_enabled = kafka_security.has_kerberos_enabled(),
+        kerberos_secret_class = ?kafka_security.kerberos_secret_class(),
+        tls_enabled = kafka_security.tls_enabled(),
+        tls_client_authentication_class = ?kafka_security.tls_client_authentication_class(),
+        "The following security settings are used"
+    );
+
+    kafka_security
+        .validate_authentication_methods()
+        .context(FailedToValidateAuthenticationMethodSnafu)?;
 
     // Assemble the OPA connection string from the discovery and the given path if provided
     // Will be passed as --override parameter in the cli in the state ful set
@@ -709,6 +741,9 @@ fn build_broker_rolegroup_config_map(
             })?,
         );
 
+    tracing::debug!(?server_cfg, "Applied server config");
+    tracing::debug!(?jvm_sec_props, "Applied JVM config");
+
     extend_role_group_config_map(
         rolegroup,
         vector_aggregator_address,
@@ -775,7 +810,7 @@ fn build_broker_rolegroup_service(
 #[allow(clippy::too_many_arguments)]
 fn build_broker_rolegroup_statefulset(
     kafka: &KafkaCluster,
-    role: &KafkaRole,
+    kafka_role: &KafkaRole,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
@@ -784,7 +819,7 @@ fn build_broker_rolegroup_statefulset(
     merged_config: &KafkaConfig,
     sa_name: &str,
 ) -> Result<StatefulSet> {
-    let role = kafka.role(role).context(InternalOperatorSnafu)?;
+    let role = kafka.role(kafka_role).context(InternalOperatorSnafu)?;
     let rolegroup = kafka
         .rolegroup(rolegroup_ref)
         .context(InternalOperatorSnafu)?;
@@ -839,6 +874,17 @@ fn build_broker_rolegroup_statefulset(
         .and_then(|builder| builder.build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME))
         .unwrap(),
     );
+
+    if kafka_security.has_kerberos_enabled() {
+        add_kerberos_pod_config(
+            kafka_security,
+            kafka_role,
+            &mut cb_kcat_prober,
+            &mut cb_kafka,
+            &mut pod_builder,
+        )
+        .context(AddKerberosConfigSnafu)?;
+    }
 
     let mut env = broker_config
         .get(&PropertyNameKind::Env)
@@ -897,9 +943,9 @@ fn build_broker_rolegroup_statefulset(
     let jvm_args = format!(
         "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE} -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml",
     );
+    let pod_fqdn = pod_fqdn(kafka, &rolegroup_ref.object_name()).context(ResolveNamespaceSnafu)?;
     let kafka_listeners =
-        get_kafka_listener_config(kafka, kafka_security, &rolegroup_ref.object_name())
-            .context(InvalidKafkaListenersSnafu)?;
+        get_kafka_listener_config(kafka_security, &pod_fqdn).context(InvalidKafkaListenersSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -911,7 +957,11 @@ fn build_broker_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![kafka_security
-            .kafka_container_commands(&kafka_listeners, opa_connect_string)
+            .kafka_container_commands(
+                &kafka_listeners,
+                opa_connect_string,
+                kafka_security.has_kerberos_enabled(),
+            )
             .join("\n")])
         .add_env_var("EXTRA_ARGS", jvm_args)
         .add_env_var(
@@ -942,6 +992,17 @@ fn build_broker_rolegroup_statefulset(
     cb_kcat_prober
         .image_from_product_image(resolved_product_image)
         .command(vec!["sleep".to_string(), "infinity".to_string()])
+        .add_env_vars(vec![EnvVar {
+            name: "POD_NAME".to_string(),
+            value_from: Some(EnvVarSource {
+                field_ref: Some(ObjectFieldSelector {
+                    api_version: Some("v1".to_string()),
+                    field_path: "metadata.name".to_string(),
+                }),
+                ..EnvVarSource::default()
+            }),
+            ..EnvVar::default()
+        }])
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -955,7 +1016,7 @@ fn build_broker_rolegroup_statefulset(
         .readiness_probe(Probe {
             exec: Some(ExecAction {
                 // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(kafka_security.kcat_prober_container_commands()),
+                command: Some(kafka_security.kcat_prober_container_commands(&pod_fqdn)),
             }),
             timeout_seconds: Some(5),
             period_seconds: Some(2),

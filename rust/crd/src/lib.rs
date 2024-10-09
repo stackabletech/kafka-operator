@@ -5,11 +5,11 @@ pub mod listener;
 pub mod security;
 pub mod tls;
 
-use crate::authentication::KafkaAuthentication;
 use crate::authorization::KafkaAuthorization;
 use crate::tls::KafkaTls;
 
 use affinity::get_affinity;
+use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
@@ -60,6 +60,9 @@ pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
 pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
+// kerberos
+pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
+pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
 const DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_minutes_unchecked(30);
 
@@ -328,6 +331,13 @@ impl KafkaRole {
             roles.push(role.to_string())
         }
         roles
+    }
+
+    /// A Kerberos principal has three parts, with the form username/fully.qualified.domain.name@YOUR-REALM.COM.
+    /// We only have one role and will use "kafka" everywhere (which e.g. differs from the current hdfs implementation,
+    /// but is similar to HBase).
+    pub fn kerberos_service_name(&self) -> &'static str {
+        "kafka"
     }
 }
 
@@ -680,6 +690,41 @@ mod tests {
         assert_eq!(
             get_internal_secret_class(&kafka),
             tls::internal_tls_default()
+        );
+    }
+
+    #[test]
+    fn test_get_auth_tls() {
+        let kafka_cluster = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+          namespace: default
+        spec:
+          image:
+            productVersion: 3.7.1
+          clusterConfig:
+            authentication:
+              - authenticationClass: kafka-client-tls1
+              - authenticationClass: kafka-client-tls2
+            tls:
+              internalSecretClass: internalTls
+              serverSecretClass: tls
+            zookeeperConfigMapName: xyz
+        "#;
+        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
+
+        assert_eq!(
+            vec![
+                KafkaAuthentication {
+                    authentication_class: "kafka-client-tls1".to_string()
+                },
+                KafkaAuthentication {
+                    authentication_class: "kafka-client-tls2".to_string()
+                },
+            ],
+            kafka.spec.cluster_config.authentication
         );
     }
 }
