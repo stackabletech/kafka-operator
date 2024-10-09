@@ -25,7 +25,12 @@ metadata:
   name: test-kafka
 spec:
   image:
+{% if test_scenario['values']['kafka'].find(",") > 0 %}
+    custom: "{{ test_scenario['values']['kafka'].split(',')[1] }}"
+    productVersion: "{{ test_scenario['values']['kafka'].split(',')[0] }}"
+{% else %}
     productVersion: "{{ test_scenario['values']['kafka'] }}"
+{% endif %}
     pullPolicy: IfNotPresent
   clusterConfig:
     tls:
