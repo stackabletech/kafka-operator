@@ -877,7 +877,6 @@ fn build_broker_rolegroup_statefulset(
 
     if kafka_security.has_kerberos_enabled() {
         add_kerberos_pod_config(
-            kafka,
             kafka_security,
             kafka_role,
             &mut cb_kcat_prober,
@@ -962,7 +961,6 @@ fn build_broker_rolegroup_statefulset(
                 &kafka_listeners,
                 opa_connect_string,
                 kafka_security.has_kerberos_enabled(),
-                &pod_fqdn,
             )
             .join("\n")])
         .add_env_var("EXTRA_ARGS", jvm_args)

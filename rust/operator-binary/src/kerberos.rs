@@ -1,19 +1,19 @@
 use snafu::{ResultExt, Snafu};
-use stackable_kafka_crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole};
-use stackable_kafka_crd::{STACKABLE_KERBEROS_DIR, STACKABLE_KERBEROS_KRB5_PATH};
-use stackable_operator::{
-    builder::{
-        self,
-        pod::{
-            container::ContainerBuilder,
-            volume::{
-                SecretOperatorVolumeSourceBuilder, SecretOperatorVolumeSourceBuilderError,
-                VolumeBuilder,
-            },
-            PodBuilder,
+use stackable_kafka_crd::{security::KafkaTlsSecurity, KafkaRole};
+use stackable_kafka_crd::{
+    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_DIR,
+    STACKABLE_KERBEROS_KRB5_PATH,
+};
+use stackable_operator::builder::{
+    self,
+    pod::{
+        container::ContainerBuilder,
+        volume::{
+            SecretOperatorVolumeSourceBuilder, SecretOperatorVolumeSourceBuilderError,
+            VolumeBuilder,
         },
+        PodBuilder,
     },
-    kube::ResourceExt,
 };
 
 #[derive(Snafu, Debug)]
@@ -33,7 +33,6 @@ pub enum Error {
 }
 
 pub fn add_kerberos_pod_config(
-    kafka: &KafkaCluster,
     kafka_security: &KafkaTlsSecurity,
     role: &KafkaRole,
     cb_kcat_prober: &mut ContainerBuilder,
@@ -44,8 +43,8 @@ pub fn add_kerberos_pod_config(
         // Mount keytab
         let kerberos_secret_operator_volume =
             SecretOperatorVolumeSourceBuilder::new(kerberos_secret_class)
-                .with_service_scope(kafka.name_any())
-                .with_pod_scope()
+                .with_listener_volume_scope(LISTENER_BROKER_VOLUME_NAME)
+                .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
                 .with_kerberos_service_name(role.kerberos_service_name())
                 .build()
                 .context(KerberosSecretVolumeSnafu)?;

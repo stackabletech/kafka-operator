@@ -126,8 +126,11 @@ pub fn get_kafka_listener_config(
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
-            host: pod_fqdn.clone(),
-            port: KafkaTlsSecurity::SECURE_CLIENT_PORT.to_string(),
+            host: node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+            port: node_port_cmd(
+                STACKABLE_LISTENER_BROKER_DIR,
+                kafka_security.client_port_name(),
+            ),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::SaslSsl);
@@ -221,7 +224,7 @@ pub fn get_kafka_listener_config(
     })
 }
 
-fn node_address_cmd(directory: &str) -> String {
+pub fn node_address_cmd(directory: &str) -> String {
     format!("$(cat {directory}/default-address/address)")
 }
 

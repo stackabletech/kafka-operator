@@ -313,7 +313,6 @@ impl KafkaTlsSecurity {
         kafka_listeners: &KafkaListenerConfig,
         opa_connect_string: Option<&str>,
         kerberos_enabled: bool,
-        pod_fqdn: &String,
     ) -> Vec<String> {
         vec![formatdoc! {"
             {COMMON_BASH_TRAP_FUNCTIONS}
@@ -341,8 +340,8 @@ impl KafkaTlsSecurity {
             },
             jaas_config = match kerberos_enabled {
                 true => {
-                    let service_name = KafkaRole::Broker.kerberos_service_name();
-                    format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{pod_fqdn}@$KERBEROS_REALM\\\";\"")},
+                    // N.B. See https://docs.oracle.com/en/java/javase/22/docs/api/jdk.security.auth/com/sun/security/auth/module/Krb5LoginModule.html for reasoning behind the use of the asterisk/isInitiator settings below.
+                    " --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"*\\\";\"".to_string()},
                 false => "".to_string(),
             },
         }]

@@ -18,6 +18,12 @@ spec:
               value: /stackable/kerberos/krb5.conf
             - name: KAFKA_OPTS
               value: -Djava.security.krb5.conf=/stackable/kerberos/krb5.conf
+            # Define the environment variable for the kafka bootstrap listener
+            - name: BROKER
+              valueFrom:
+                configMapKeyRef:
+                  name: test-kafka
+                  key: KAFKA
           volumeMounts:
             - name: script
               mountPath: /tmp/script
@@ -74,7 +80,6 @@ data:
     set -euxo pipefail
 
     export KCAT_CONFIG=/stackable/kcat.conf
-    BROKER=test-kafka-broker-default-0.test-kafka-broker-default.$NAMESPACE.svc.cluster.local:9093,test-kafka-broker-default-1.test-kafka-broker-default.$NAMESPACE.svc.cluster.local:9093,test-kafka-broker-default-2.test-kafka-broker-default.$NAMESPACE.svc.cluster.local:9093
     TOPIC=test-topic
     CONSUMER_GROUP=test-consumer-group
 
