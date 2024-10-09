@@ -55,23 +55,16 @@ pub fn add_kerberos_pod_config(
                 .build(),
         )
         .context(AddVolumeSnafu)?;
-        cb_kcat_prober
-            .add_volume_mount("kerberos", STACKABLE_KERBEROS_DIR)
-            .context(AddVolumeMountSnafu)?;
-        cb_kcat_prober.add_env_var("KRB5_CONFIG", STACKABLE_KERBEROS_KRB5_PATH);
-        cb_kcat_prober.add_env_var(
-            "KAFKA_OPTS",
-            format!("-Djava.security.krb5.conf={}", STACKABLE_KERBEROS_KRB5_PATH),
-        );
 
-        cb_kafka
-            .add_volume_mount("kerberos", STACKABLE_KERBEROS_DIR)
-            .context(AddVolumeMountSnafu)?;
-        cb_kafka.add_env_var("KRB5_CONFIG", STACKABLE_KERBEROS_KRB5_PATH);
-        cb_kafka.add_env_var(
-            "KAFKA_OPTS",
-            format!("-Djava.security.krb5.conf={}", STACKABLE_KERBEROS_KRB5_PATH),
-        );
+        for cb in [cb_kafka, cb_kcat_prober] {
+            cb.add_volume_mount("kerberos", STACKABLE_KERBEROS_DIR)
+                .context(AddVolumeMountSnafu)?;
+            cb.add_env_var("KRB5_CONFIG", STACKABLE_KERBEROS_KRB5_PATH);
+            cb.add_env_var(
+                "KAFKA_OPTS",
+                format!("-Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}",),
+            );
+        }
     }
 
     Ok(())
