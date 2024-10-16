@@ -48,7 +48,7 @@ pub struct KafkaAuthentication {
     ///
     /// This affects client connections and also requires TLS for encryption.
     /// This setting is used to reference an `AuthenticationClass` and in turn, a `SecretClass` that is
-    /// used to create keytabs).
+    /// used to create keytabs.
     pub authentication_class: String,
 }
 
