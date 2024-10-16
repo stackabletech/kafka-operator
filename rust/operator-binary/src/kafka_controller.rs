@@ -336,9 +336,6 @@ pub enum Error {
         source: stackable_kafka_crd::security::Error,
     },
 
-    #[snafu(display("failed to build vector container"))]
-    BuildVectorContainer { source: LoggingError },
-
     #[snafu(display("failed to add needed volume"))]
     AddVolume { source: builder::pod::Error },
 
@@ -413,7 +410,6 @@ impl ReconcilerError for Error {
             Error::ResolveNamespace { .. } => None,
             Error::AddKerberosConfig { .. } => None,
             Error::FailedToValidateAuthenticationMethod { .. } => None,
-            Error::BuildVectorContainer { .. } => None,
         }
     }
 }
