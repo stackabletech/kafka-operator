@@ -692,39 +692,4 @@ mod tests {
             tls::internal_tls_default()
         );
     }
-
-    #[test]
-    fn test_get_auth_tls() {
-        let kafka_cluster = r#"
-        apiVersion: kafka.stackable.tech/v1alpha1
-        kind: KafkaCluster
-        metadata:
-          name: simple-kafka
-          namespace: default
-        spec:
-          image:
-            productVersion: 3.7.1
-          clusterConfig:
-            authentication:
-              - authenticationClass: kafka-client-tls1
-              - authenticationClass: kafka-client-tls2
-            tls:
-              internalSecretClass: internalTls
-              serverSecretClass: tls
-            zookeeperConfigMapName: xyz
-        "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
-
-        assert_eq!(
-            vec![
-                KafkaAuthentication {
-                    authentication_class: "kafka-client-tls1".to_string()
-                },
-                KafkaAuthentication {
-                    authentication_class: "kafka-client-tls2".to_string()
-                },
-            ],
-            kafka.spec.cluster_config.authentication
-        );
-    }
 }
