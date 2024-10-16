@@ -171,8 +171,9 @@ pub fn get_kafka_listener_config(
     }
 
     // INTERNAL
-    if kafka_security.has_kerberos_enabled() {
-        // 5) Kerberos and TLS authentication classes are mutually exclusive
+    if kafka_security.has_kerberos_enabled() || kafka_security.tls_internal_secret_class().is_some()
+    {
+        // 5) & 6) Kerberos and TLS authentication classes are mutually exclusive but both require internal tls to be used
         listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -182,20 +183,6 @@ pub fn get_kafka_listener_config(
             name: KafkaListenerName::Internal,
             host: pod_fqdn.to_string(),
             port: KafkaTlsSecurity::SECURE_INTERNAL_PORT.to_string(),
-        });
-        listener_security_protocol_map
-            .insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
-    } else if kafka_security.tls_internal_secret_class().is_some() {
-        // 6) If internal tls is required we expose INTERNAL as SSL
-        listeners.push(KafkaListener {
-            name: KafkaListenerName::Internal,
-            host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: kafka_security.internal_port().to_string(),
-        });
-        advertised_listeners.push(KafkaListener {
-            name: KafkaListenerName::Internal,
-            host: pod_fqdn.to_string(),
-            port: kafka_security.internal_port().to_string(),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
