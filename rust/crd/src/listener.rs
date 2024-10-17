@@ -20,9 +20,14 @@ pub enum KafkaListenerProtocol {
     /// Unencrypted and unauthenticated HTTP connections
     #[strum(serialize = "PLAINTEXT")]
     Plaintext,
+
     /// Encrypted and server-authenticated HTTPS connections
     #[strum(serialize = "SSL")]
     Ssl,
+
+    /// Kerberos authentication
+    #[strum(serialize = "SASL_SSL")]
+    SaslSsl,
 }
 
 #[derive(strum::Display, Debug, EnumString, Ord, Eq, PartialEq, PartialOrd)]
@@ -87,15 +92,14 @@ impl Display for KafkaListener {
 }
 
 pub fn get_kafka_listener_config(
-    kafka: &KafkaCluster,
     kafka_security: &KafkaTlsSecurity,
-    object_name: &str,
+    pod_fqdn: &String,
 ) -> Result<KafkaListenerConfig, KafkaListenerError> {
-    let pod_fqdn = pod_fqdn(kafka, object_name)?;
     let mut listeners = vec![];
     let mut advertised_listeners = vec![];
     let mut listener_security_protocol_map = BTreeMap::new();
 
+    // CLIENT
     if kafka_security.tls_client_authentication_class().is_some() {
         // 1) If client authentication required, we expose only CLIENT_AUTH connection with SSL
         listeners.push(KafkaListener {
@@ -113,8 +117,25 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::ClientAuth, KafkaListenerProtocol::Ssl);
+    } else if kafka_security.has_kerberos_enabled() {
+        // 2) Kerberos and TLS authentication classes are mutually exclusive
+        listeners.push(KafkaListener {
+            name: KafkaListenerName::Client,
+            host: LISTENER_LOCAL_ADDRESS.to_string(),
+            port: KafkaTlsSecurity::SECURE_CLIENT_PORT.to_string(),
+        });
+        advertised_listeners.push(KafkaListener {
+            name: KafkaListenerName::Client,
+            host: node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+            port: node_port_cmd(
+                STACKABLE_LISTENER_BROKER_DIR,
+                kafka_security.client_port_name(),
+            ),
+        });
+        listener_security_protocol_map
+            .insert(KafkaListenerName::Client, KafkaListenerProtocol::SaslSsl);
     } else if kafka_security.tls_server_secret_class().is_some() {
-        // 2) If no client authentication but tls is required we expose CLIENT with SSL
+        // 3) If no client authentication but tls is required we expose CLIENT with SSL
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -131,7 +152,7 @@ pub fn get_kafka_listener_config(
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::Ssl);
     } else {
-        // 3) If no client auth or tls is required we expose CLIENT with PLAINTEXT
+        // 4) If no client auth or tls is required we expose CLIENT with PLAINTEXT
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -149,22 +170,24 @@ pub fn get_kafka_listener_config(
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::Plaintext);
     }
 
-    if kafka_security.tls_internal_secret_class().is_some() {
-        // 4) If internal tls is required we expose INTERNAL as SSL
+    // INTERNAL
+    if kafka_security.has_kerberos_enabled() || kafka_security.tls_internal_secret_class().is_some()
+    {
+        // 5) & 6) Kerberos and TLS authentication classes are mutually exclusive but both require internal tls to be used
         listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: kafka_security.internal_port().to_string(),
+            port: KafkaTlsSecurity::SECURE_INTERNAL_PORT.to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
-            host: pod_fqdn,
-            port: kafka_security.internal_port().to_string(),
+            host: pod_fqdn.to_string(),
+            port: KafkaTlsSecurity::SECURE_INTERNAL_PORT.to_string(),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
     } else {
-        // 5) If no internal tls is required we expose INTERNAL as PLAINTEXT
+        // 7) If no internal tls is required we expose INTERNAL as PLAINTEXT
         listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -172,7 +195,7 @@ pub fn get_kafka_listener_config(
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
-            host: pod_fqdn,
+            host: pod_fqdn.to_string(),
             port: kafka_security.internal_port().to_string(),
         });
         listener_security_protocol_map.insert(
@@ -188,7 +211,7 @@ pub fn get_kafka_listener_config(
     })
 }
 
-fn node_address_cmd(directory: &str) -> String {
+pub fn node_address_cmd(directory: &str) -> String {
     format!("$(cat {directory}/default-address/address)")
 }
 
@@ -196,7 +219,7 @@ fn node_port_cmd(directory: &str, port_name: &str) -> String {
     format!("$(cat {directory}/default-address/ports/{port_name})")
 }
 
-fn pod_fqdn(kafka: &KafkaCluster, object_name: &str) -> Result<String, KafkaListenerError> {
+pub fn pod_fqdn(kafka: &KafkaCluster, object_name: &str) -> Result<String, KafkaListenerError> {
     Ok(format!(
         "$POD_NAME.{}.{}.svc.cluster.local",
         object_name,
@@ -251,7 +274,8 @@ mod tests {
             "internalTls".to_string(),
             Some("tls".to_string()),
         );
-        let config = get_kafka_listener_config(&kafka, &kafka_security, object_name).unwrap();
+        let pod_fqdn = pod_fqdn(&kafka, object_name).unwrap();
+        let config = get_kafka_listener_config(&kafka_security, &pod_fqdn).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -277,7 +301,7 @@ mod tests {
                     kafka_security.client_port_name()
                 ),
                 internal_name = KafkaListenerName::Internal,
-                internal_host = pod_fqdn(&kafka, object_name).unwrap(),
+                internal_host = &pod_fqdn,
                 internal_port = kafka_security.internal_port(),
             )
         );
@@ -293,27 +317,12 @@ mod tests {
             )
         );
 
-        let input = r#"
-        apiVersion: kafka.stackable.tech/v1alpha1
-        kind: KafkaCluster
-        metadata:
-          name: simple-kafka
-          namespace: default
-        spec:
-          image:
-            productVersion: 3.7.1
-          clusterConfig:
-            tls:
-              serverSecretClass: tls
-            zookeeperConfigMapName: xyz
-        "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
             ResolvedAuthenticationClasses::new(vec![]),
             "tls".to_string(),
             Some("tls".to_string()),
         );
-        let config = get_kafka_listener_config(&kafka, &kafka_security, object_name).unwrap();
+        let config = get_kafka_listener_config(&kafka_security, &pod_fqdn).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -339,7 +348,7 @@ mod tests {
                     kafka_security.client_port_name()
                 ),
                 internal_name = KafkaListenerName::Internal,
-                internal_host = pod_fqdn(&kafka, object_name).unwrap(),
+                internal_host = &pod_fqdn,
                 internal_port = kafka_security.internal_port(),
             )
         );
@@ -355,29 +364,12 @@ mod tests {
             )
         );
 
-        let input = r#"
-        apiVersion: kafka.stackable.tech/v1alpha1
-        kind: KafkaCluster
-        metadata:
-          name: simple-kafka
-          namespace: default
-        spec:
-          image:
-            productVersion: 3.7.1
-          zookeeperConfigMapName: xyz
-          clusterConfig:
-            tls:
-              internalSecretClass: null
-              serverSecretClass: null
-            zookeeperConfigMapName: xyz
-        "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
             ResolvedAuthenticationClasses::new(vec![]),
             "".to_string(),
             None,
         );
-        let config = get_kafka_listener_config(&kafka, &kafka_security, object_name).unwrap();
+        let config = get_kafka_listener_config(&kafka_security, &pod_fqdn).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -403,7 +395,7 @@ mod tests {
                     kafka_security.client_port_name()
                 ),
                 internal_name = KafkaListenerName::Internal,
-                internal_host = pod_fqdn(&kafka, object_name).unwrap(),
+                internal_host = &pod_fqdn,
                 internal_port = kafka_security.internal_port(),
             )
         );

@@ -1,0 +1,55 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      kubectl apply -n $NAMESPACE -f - <<EOF
+      ---
+      apiVersion: zookeeper.stackable.tech/v1alpha1
+      kind: ZookeeperZnode
+      metadata:
+        name: test-kafka-znode
+      spec:
+        clusterRef:
+          name: test-zk
+      ---
+      apiVersion: authentication.stackable.tech/v1alpha1
+      kind: AuthenticationClass
+      metadata:
+        name: kerberos-auth-$NAMESPACE
+      spec:
+        provider:
+          kerberos:
+            kerberosSecretClass: kerberos-$NAMESPACE
+      ---
+      apiVersion: kafka.stackable.tech/v1alpha1
+      kind: KafkaCluster
+      metadata:
+        name: test-kafka
+      spec:
+        image:
+{% if test_scenario['values']['kafka'].find(",") > 0 %}
+          custom: "{{ test_scenario['values']['kafka'].split(',')[1] }}"
+          productVersion: "{{ test_scenario['values']['kafka'].split(',')[0] }}"
+{% else %}
+          productVersion: "{{ test_scenario['values']['kafka'] }}"
+{% endif %}
+          pullPolicy: IfNotPresent
+        clusterConfig:
+          zookeeperConfigMapName: test-kafka-znode
+          authentication:
+            - authenticationClass: kerberos-auth-$NAMESPACE
+          tls:
+            # Kerberos requires the use of server and internal TLS!
+            serverSecretClass: tls
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
+          vectorAggregatorConfigMapName: vector-aggregator-discovery
+{% endif %}
+        brokers:
+          config:
+            logging:
+              enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+          roleGroups:
+            default:
+              replicas: 3
+      EOF

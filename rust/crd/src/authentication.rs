@@ -9,7 +9,7 @@ use stackable_operator::{
     schemars::{self, JsonSchema},
 };
 
-const SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS: [&str; 1] = ["TLS"];
+pub const SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS: [&str; 2] = ["TLS", "Kerberos"];
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -18,9 +18,10 @@ pub enum Error {
         source: stackable_operator::client::Error,
         authentication_class: ObjectRef<AuthenticationClass>,
     },
-    // TODO: Adapt message if multiple authentication classes are supported
-    #[snafu(display("only one authentication class is currently supported. Possible Authentication class providers are {SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS:?}"))]
+
+    #[snafu(display("only one authentication class at a time is currently supported. Possible Authentication class providers are {SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS:?}"))]
     MultipleAuthenticationClassesProvided,
+
     #[snafu(display(
         "failed to use authentication provider [{provider}] for authentication class [{authentication_class}] - supported providers: {SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS:?}",
     ))]
@@ -42,6 +43,12 @@ pub struct KafkaAuthentication {
     /// - Which ca.crt to use when validating the provided client certs
     ///
     /// This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
+    ///
+    /// ## Kerberos provider
+    ///
+    /// This affects client connections and also requires TLS for encryption.
+    /// This setting is used to reference an `AuthenticationClass` and in turn, a `SecretClass` that is
+    /// used to create keytabs.
     pub authentication_class: String,
 }
 
@@ -90,6 +97,13 @@ impl ResolvedAuthenticationClasses {
             .find(|auth| matches!(auth.spec.provider, AuthenticationClassProvider::Tls(_)))
     }
 
+    /// Return the (first) Kerberos `AuthenticationClass` if available
+    pub fn get_kerberos_authentication_class(&self) -> Option<&AuthenticationClass> {
+        self.resolved_authentication_classes
+            .iter()
+            .find(|auth| matches!(auth.spec.provider, AuthenticationClassProvider::Kerberos(_)))
+    }
+
     /// Validates the resolved AuthenticationClasses.
     /// Currently errors out if:
     /// - More than one AuthenticationClass was provided
@@ -101,8 +115,11 @@ impl ResolvedAuthenticationClasses {
 
         for auth_class in &self.resolved_authentication_classes {
             match &auth_class.spec.provider {
-                AuthenticationClassProvider::Tls(_) => {}
-                _ => {
+                // explicitly list each branch so new elements do not get overlooked
+                AuthenticationClassProvider::Tls(_) | AuthenticationClassProvider::Kerberos(_) => {}
+                AuthenticationClassProvider::Static(_)
+                | AuthenticationClassProvider::Ldap(_)
+                | AuthenticationClassProvider::Oidc(_) => {
                     return Err(Error::AuthenticationProviderNotSupported {
                         authentication_class: ObjectRef::from_obj(auth_class),
                         provider: auth_class.spec.provider.to_string(),
