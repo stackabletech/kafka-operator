@@ -23,6 +23,7 @@ spec:
     zookeeperConfigMapName: test-zk
   brokers:
     config:
+      gracefulShutdownTimeout: 1m
       logging:
         enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
       resources:
