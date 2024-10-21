@@ -1,11 +1,12 @@
-use crate::{KafkaCluster, STACKABLE_LISTENER_BROKER_DIR};
-
-use crate::security::KafkaTlsSecurity;
-use snafu::{OptionExt, Snafu};
-use stackable_operator::kube::ResourceExt;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
+
+use snafu::{OptionExt, Snafu};
+use stackable_operator::{kube::ResourceExt, utils::cluster_domain::KUBERNETES_CLUSTER_DOMAIN};
 use strum::{EnumDiscriminants, EnumString};
+
+use crate::security::KafkaTlsSecurity;
+use crate::{KafkaCluster, STACKABLE_LISTENER_BROKER_DIR};
 
 const LISTENER_LOCAL_ADDRESS: &str = "0.0.0.0";
 
@@ -197,10 +198,14 @@ fn node_port_cmd(directory: &str, port_name: &str) -> String {
 }
 
 fn pod_fqdn(kafka: &KafkaCluster, object_name: &str) -> Result<String, KafkaListenerError> {
+    let cluster_domain = KUBERNETES_CLUSTER_DOMAIN
+        .get()
+        .expect("KUBERNETES_CLUSTER_DOMAIN must first be set by calling initialize_operator");
     Ok(format!(
-        "$POD_NAME.{}.{}.svc.cluster.local",
+        "$POD_NAME.{}.{}.svc.{}",
         object_name,
-        kafka.namespace().context(ObjectHasNoNamespaceSnafu)?
+        kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
+        cluster_domain
     ))
 }
 
