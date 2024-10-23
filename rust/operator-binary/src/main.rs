@@ -13,6 +13,7 @@ use stackable_operator::{
         core::v1::{ConfigMap, Service, ServiceAccount},
         rbac::v1::RoleBinding,
     },
+    kube::core::DeserializeGuard,
     kube::runtime::{watcher, Controller},
     logging::controller::report_controller_reconciled,
     namespace::WatchNamespace,
@@ -96,7 +97,7 @@ pub async fn create_controller(
     namespace: WatchNamespace,
 ) {
     let kafka_controller = Controller::new(
-        namespace.get_api::<KafkaCluster>(&client),
+        namespace.get_api::<DeserializeGuard<KafkaCluster>>(&client),
         watcher::Config::default(),
     )
     .owns(
