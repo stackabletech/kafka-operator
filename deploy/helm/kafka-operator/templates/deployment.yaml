@@ -47,6 +47,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.annotations['internal.stackable.tech/image']
+            {{- if .Values.kubernetesClusterDomain }}
+            - name: KUBERNETES_CLUSTER_DOMAIN
+              value: {{ .Values.kubernetesClusterDomain | quote }}
+            {{- end }}
             - name: KAFKA_BROKER_CLUSTERROLE
               value: {{ include "operator.fullname" . }}-kafka-broker-clusterrole
       volumes:

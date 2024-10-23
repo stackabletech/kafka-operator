@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 
 - Support version `3.8.0` ([#753]).
 - Add support for Kerberos authentication ([#762]).
+- The operator can now run on Kubernetes clusters using a non-default cluster domain.
+  Use the env var `KUBERNETES_CLUSTER_DOMAIN` or the operator Helm chart property `kubernetesClusterDomain` to set a non-default cluster domain ([#771]).
 
 ### Changed
 
@@ -24,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - Include the global Kafka bootstrap service (not the rolegroup-specific) DNS record as SAN entry in the generated
   certificates used by Kafka. This allows you to access Kafka brokers secured using TLS via the global bootstrap
   service ([#741]).
+- An invalid `KafkaCluster` doesn't cause the operator to stop functioning ([#773]).
 
 ### Removed
 
@@ -34,6 +37,8 @@ All notable changes to this project will be documented in this file.
 [#750]: https://github.com/stackabletech/kafka-operator/pull/750
 [#753]: https://github.com/stackabletech/kafka-operator/pull/753
 [#762]: https://github.com/stackabletech/kafka-operator/pull/762
+[#771]: https://github.com/stackabletech/kafka-operator/pull/771
+[#773]: https://github.com/stackabletech/kafka-operator/pull/773
 
 ## [24.7.0] - 2024-07-24
 

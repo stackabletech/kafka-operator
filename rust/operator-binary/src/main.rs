@@ -13,6 +13,7 @@ use stackable_operator::{
         core::v1::{ConfigMap, Service, ServiceAccount},
         rbac::v1::RoleBinding,
     },
+    kube::core::DeserializeGuard,
     kube::runtime::{watcher, Controller},
     logging::controller::report_controller_reconciled,
     namespace::WatchNamespace,
@@ -59,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
                     product_config,
                     watch_namespace,
                     tracing_target,
+                    cluster_info_opts,
                 },
             ..
         }) => {
@@ -79,7 +81,9 @@ async fn main() -> anyhow::Result<()> {
                 "deploy/config-spec/properties.yaml",
                 "/etc/stackable/kafka-operator/config-spec/properties.yaml",
             ])?;
-            let client = client::create_client(Some(OPERATOR_NAME.to_string())).await?;
+            let client =
+                client::initialize_operator(Some(OPERATOR_NAME.to_string()), &cluster_info_opts)
+                    .await?;
             create_controller(client, product_config, watch_namespace).await;
         }
     };
@@ -97,7 +101,7 @@ pub async fn create_controller(
     namespace: WatchNamespace,
 ) {
     let kafka_controller = Controller::new(
-        namespace.get_api::<KafkaCluster>(&client),
+        namespace.get_api::<DeserializeGuard<KafkaCluster>>(&client),
         watcher::Config::default(),
     )
     .owns(

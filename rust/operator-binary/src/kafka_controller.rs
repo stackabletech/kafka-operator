@@ -56,6 +56,7 @@ use stackable_operator::{
     },
     kube::{
         api::DynamicObject,
+        core::{error_boundary, DeserializeGuard},
         runtime::{controller::Action, reflector::ObjectRef},
         Resource, ResourceExt,
     },
@@ -77,6 +78,7 @@ use stackable_operator::{
         statefulset::StatefulSetConditionBuilder,
     },
     time::Duration,
+    utils::cluster_info::KubernetesClusterInfo,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
@@ -346,6 +348,11 @@ pub enum Error {
 
     #[snafu(display("failed to configure logging"))]
     ConfigureLogging { source: LoggingError },
+
+    #[snafu(display("KafkaCluster object is invalid"))]
+    InvalidKafkaCluster {
+        source: error_boundary::InvalidObject,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -410,12 +417,23 @@ impl ReconcilerError for Error {
             Error::ResolveNamespace { .. } => None,
             Error::AddKerberosConfig { .. } => None,
             Error::FailedToValidateAuthenticationMethod { .. } => None,
+            Error::InvalidKafkaCluster { .. } => None,
         }
     }
 }
 
-pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<Action> {
+pub async fn reconcile_kafka(
+    kafka: Arc<DeserializeGuard<KafkaCluster>>,
+    ctx: Arc<Ctx>,
+) -> Result<Action> {
     tracing::info!("Starting reconcile");
+
+    let kafka = kafka
+        .0
+        .as_ref()
+        .map_err(error_boundary::InvalidObject::clone)
+        .context(InvalidKafkaClusterSnafu)?;
+
     let client = &ctx.client;
     let kafka_role = KafkaRole::Broker;
 
@@ -436,7 +454,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let validated_config = validate_all_roles_and_groups_config(
         &resolved_product_image.product_version,
         &transform_all_roles_to_config(
-            kafka.as_ref(),
+            kafka,
             [(
                 KafkaRole::Broker.to_string(),
                 (
@@ -461,7 +479,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .map(Cow::Borrowed)
         .unwrap_or_default();
 
-    let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, &kafka)
+    let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, kafka)
         .await
         .context(FailedToInitializeSecurityContextSnafu)?;
 
@@ -482,12 +500,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
     let opa_connect = if let Some(opa_spec) = &kafka.spec.cluster_config.authorization.opa {
         Some(
             opa_spec
-                .full_document_url_from_config_map(
-                    client,
-                    &*kafka,
-                    Some("allow"),
-                    OpaApiVersion::V1,
-                )
+                .full_document_url_from_config_map(client, kafka, Some("allow"), OpaApiVersion::V1)
                 .await
                 .context(InvalidOpaConfigSnafu)?,
         )
@@ -495,14 +508,14 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         None
     };
 
-    let vector_aggregator_address = resolve_vector_aggregator_address(&kafka, client)
+    let vector_aggregator_address = resolve_vector_aggregator_address(kafka, client)
         .await
         .context(ResolveVectorAggregatorAddressSnafu)?;
 
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
 
     let (rbac_sa, rbac_rolebinding) = build_rbac_resources(
-        kafka.as_ref(),
+        kafka,
         APP_NAME,
         cluster_resources
             .get_required_labels()
@@ -529,9 +542,9 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             .context(FailedToResolveConfigSnafu)?;
 
         let rg_service =
-            build_broker_rolegroup_service(&kafka, &resolved_product_image, &rolegroup_ref)?;
+            build_broker_rolegroup_service(kafka, &resolved_product_image, &rolegroup_ref)?;
         let rg_configmap = build_broker_rolegroup_config_map(
-            &kafka,
+            kafka,
             &resolved_product_image,
             &kafka_security,
             &rolegroup_ref,
@@ -540,7 +553,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             vector_aggregator_address.as_deref(),
         )?;
         let rg_statefulset = build_broker_rolegroup_statefulset(
-            &kafka,
+            kafka,
             &kafka_role,
             &resolved_product_image,
             &rolegroup_ref,
@@ -549,9 +562,10 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
             &kafka_security,
             &merged_config,
             &rbac_sa.name_any(),
+            &client.kubernetes_cluster_info,
         )?;
         let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
-            &kafka,
+            kafka,
             &resolved_product_image,
             &kafka_security,
             &rolegroup_ref,
@@ -592,14 +606,14 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         pod_disruption_budget: pdb,
     }) = role_config
     {
-        add_pdbs(pdb, &kafka, &kafka_role, client, &mut cluster_resources)
+        add_pdbs(pdb, kafka, &kafka_role, client, &mut cluster_resources)
             .await
             .context(FailedToCreatePdbSnafu)?;
     }
 
     for discovery_cm in build_discovery_configmaps(
-        &kafka,
-        &*kafka,
+        kafka,
+        kafka,
         &resolved_product_image,
         &kafka_security,
         &bootstrap_listeners,
@@ -617,10 +631,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         ClusterOperationsConditionBuilder::new(&kafka.spec.cluster_operation);
 
     let status = KafkaClusterStatus {
-        conditions: compute_conditions(
-            kafka.as_ref(),
-            &[&ss_cond_builder, &cluster_operation_cond_builder],
-        ),
+        conditions: compute_conditions(kafka, &[&ss_cond_builder, &cluster_operation_cond_builder]),
     };
 
     cluster_resources
@@ -629,7 +640,7 @@ pub async fn reconcile_kafka(kafka: Arc<KafkaCluster>, ctx: Arc<Ctx>) -> Result<
         .context(DeleteOrphansSnafu)?;
 
     client
-        .apply_patch_status(OPERATOR_NAME, &*kafka, &status)
+        .apply_patch_status(OPERATOR_NAME, kafka, &status)
         .await
         .context(ApplyStatusSnafu)?;
 
@@ -814,6 +825,7 @@ fn build_broker_rolegroup_statefulset(
     kafka_security: &KafkaTlsSecurity,
     merged_config: &KafkaConfig,
     sa_name: &str,
+    cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet> {
     let role = kafka.role(kafka_role).context(InternalOperatorSnafu)?;
     let rolegroup = kafka
@@ -939,9 +951,14 @@ fn build_broker_rolegroup_statefulset(
     let jvm_args = format!(
         "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE} -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml",
     );
-    let pod_fqdn = pod_fqdn(kafka, &rolegroup_ref.object_name()).context(ResolveNamespaceSnafu)?;
-    let kafka_listeners =
-        get_kafka_listener_config(kafka_security, &pod_fqdn).context(InvalidKafkaListenersSnafu)?;
+
+    let kafka_listeners = get_kafka_listener_config(
+        kafka,
+        kafka_security,
+        &rolegroup_ref.object_name(),
+        cluster_info,
+    )
+    .context(InvalidKafkaListenersSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -983,6 +1000,8 @@ fn build_broker_rolegroup_statefulset(
         .context(AddVolumeMountSnafu)?
         .resources(merged_config.resources.clone().into());
 
+    let pod_fqdn = pod_fqdn(kafka, &rolegroup_ref.object_name(), cluster_info)
+        .context(ResolveNamespaceSnafu)?;
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
     cb_kcat_prober
@@ -1156,8 +1175,15 @@ fn build_broker_rolegroup_statefulset(
     })
 }
 
-pub fn error_policy(_obj: Arc<KafkaCluster>, _error: &Error, _ctx: Arc<Ctx>) -> Action {
-    Action::requeue(*Duration::from_secs(5))
+pub fn error_policy(
+    _obj: Arc<DeserializeGuard<KafkaCluster>>,
+    error: &Error,
+    _ctx: Arc<Ctx>,
+) -> Action {
+    match error {
+        Error::InvalidKafkaCluster { .. } => Action::await_change(),
+        _ => Action::requeue(*Duration::from_secs(5)),
+    }
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
