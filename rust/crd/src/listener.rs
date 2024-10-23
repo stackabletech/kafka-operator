@@ -204,13 +204,11 @@ fn pod_fqdn(
     object_name: &str,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<String, KafkaListenerError> {
-    // We need to init the variable first in tests
-    let cluster_domain = &cluster_info.cluster_domain;
     Ok(format!(
         "$POD_NAME.{object_name}.{namespace}.svc.{cluster_domain}",
         object_name = object_name,
         namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
-        cluster_domain = cluster_domain
+        cluster_domain = cluster_info.cluster_domain
     ))
 }
 
