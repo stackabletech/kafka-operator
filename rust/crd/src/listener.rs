@@ -1,11 +1,13 @@
-use crate::{KafkaCluster, STACKABLE_LISTENER_BROKER_DIR};
-
-use crate::security::KafkaTlsSecurity;
-use snafu::{OptionExt, Snafu};
-use stackable_operator::kube::ResourceExt;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
+
+use snafu::{OptionExt, Snafu};
+use stackable_operator::kube::ResourceExt;
+use stackable_operator::utils::cluster_info::KubernetesClusterInfo;
 use strum::{EnumDiscriminants, EnumString};
+
+use crate::security::KafkaTlsSecurity;
+use crate::{KafkaCluster, STACKABLE_LISTENER_BROKER_DIR};
 
 const LISTENER_LOCAL_ADDRESS: &str = "0.0.0.0";
 
@@ -90,8 +92,9 @@ pub fn get_kafka_listener_config(
     kafka: &KafkaCluster,
     kafka_security: &KafkaTlsSecurity,
     object_name: &str,
+    cluster_info: &KubernetesClusterInfo,
 ) -> Result<KafkaListenerConfig, KafkaListenerError> {
-    let pod_fqdn = pod_fqdn(kafka, object_name)?;
+    let pod_fqdn = pod_fqdn(kafka, object_name, cluster_info)?;
     let mut listeners = vec![];
     let mut advertised_listeners = vec![];
     let mut listener_security_protocol_map = BTreeMap::new();
@@ -196,11 +199,16 @@ fn node_port_cmd(directory: &str, port_name: &str) -> String {
     format!("$(cat {directory}/default-address/ports/{port_name})")
 }
 
-fn pod_fqdn(kafka: &KafkaCluster, object_name: &str) -> Result<String, KafkaListenerError> {
+fn pod_fqdn(
+    kafka: &KafkaCluster,
+    object_name: &str,
+    cluster_info: &KubernetesClusterInfo,
+) -> Result<String, KafkaListenerError> {
     Ok(format!(
-        "$POD_NAME.{}.{}.svc.cluster.local",
-        object_name,
-        kafka.namespace().context(ObjectHasNoNamespaceSnafu)?
+        "$POD_NAME.{object_name}.{namespace}.svc.{cluster_domain}",
+        object_name = object_name,
+        namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
+        cluster_domain = cluster_info.cluster_domain
     ))
 }
 
@@ -211,15 +219,25 @@ mod tests {
 
     use stackable_operator::{
         builder::meta::ObjectMetaBuilder,
-        commons::authentication::{
-            tls::AuthenticationProvider, AuthenticationClass, AuthenticationClassProvider,
-            AuthenticationClassSpec,
+        commons::{
+            authentication::{
+                tls::AuthenticationProvider, AuthenticationClass, AuthenticationClassProvider,
+                AuthenticationClassSpec,
+            },
+            networking::DomainName,
         },
     };
+
+    fn default_cluster_info() -> KubernetesClusterInfo {
+        KubernetesClusterInfo {
+            cluster_domain: DomainName::try_from("cluster.local").unwrap(),
+        }
+    }
 
     #[test]
     fn test_get_kafka_listeners_config() {
         let object_name = "simple-kafka-broker-default";
+        let cluster_info = default_cluster_info();
 
         let kafka_cluster = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
@@ -251,7 +269,8 @@ mod tests {
             "internalTls".to_string(),
             Some("tls".to_string()),
         );
-        let config = get_kafka_listener_config(&kafka, &kafka_security, object_name).unwrap();
+        let config =
+            get_kafka_listener_config(&kafka, &kafka_security, object_name, &cluster_info).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -277,7 +296,7 @@ mod tests {
                     kafka_security.client_port_name()
                 ),
                 internal_name = KafkaListenerName::Internal,
-                internal_host = pod_fqdn(&kafka, object_name).unwrap(),
+                internal_host = pod_fqdn(&kafka, object_name, &cluster_info).unwrap(),
                 internal_port = kafka_security.internal_port(),
             )
         );
@@ -313,7 +332,8 @@ mod tests {
             "tls".to_string(),
             Some("tls".to_string()),
         );
-        let config = get_kafka_listener_config(&kafka, &kafka_security, object_name).unwrap();
+        let config =
+            get_kafka_listener_config(&kafka, &kafka_security, object_name, &cluster_info).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -339,7 +359,7 @@ mod tests {
                     kafka_security.client_port_name()
                 ),
                 internal_name = KafkaListenerName::Internal,
-                internal_host = pod_fqdn(&kafka, object_name).unwrap(),
+                internal_host = pod_fqdn(&kafka, object_name, &cluster_info).unwrap(),
                 internal_port = kafka_security.internal_port(),
             )
         );
@@ -377,7 +397,8 @@ mod tests {
             "".to_string(),
             None,
         );
-        let config = get_kafka_listener_config(&kafka, &kafka_security, object_name).unwrap();
+        let config =
+            get_kafka_listener_config(&kafka, &kafka_security, object_name, &cluster_info).unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -403,7 +424,7 @@ mod tests {
                     kafka_security.client_port_name()
                 ),
                 internal_name = KafkaListenerName::Internal,
-                internal_host = pod_fqdn(&kafka, object_name).unwrap(),
+                internal_host = pod_fqdn(&kafka, object_name, &cluster_info).unwrap(),
                 internal_port = kafka_security.internal_port(),
             )
         );

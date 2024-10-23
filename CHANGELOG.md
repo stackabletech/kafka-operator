@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Support version `3.8.0` ([#753]).
+- The operator can now run on Kubernetes clusters using a non-default cluster domain.
+  Use the env var `KUBERNETES_CLUSTER_DOMAIN` or the operator Helm chart property `kubernetesClusterDomain` to set a non-default cluster domain ([#771]).
 
 ### Changed
 
@@ -33,6 +35,7 @@ All notable changes to this project will be documented in this file.
 [#741]: https://github.com/stackabletech/kafka-operator/pull/741
 [#750]: https://github.com/stackabletech/kafka-operator/pull/750
 [#753]: https://github.com/stackabletech/kafka-operator/pull/753
+[#771]: https://github.com/stackabletech/kafka-operator/pull/771
 [#773]: https://github.com/stackabletech/kafka-operator/pull/773
 
 ## [24.7.0] - 2024-07-24
