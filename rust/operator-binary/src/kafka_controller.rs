@@ -77,6 +77,7 @@ use stackable_operator::{
         statefulset::StatefulSetConditionBuilder,
     },
     time::Duration,
+    utils::cluster_info::KubernetesClusterInfo,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
@@ -533,6 +534,7 @@ pub async fn reconcile_kafka(
             &kafka_security,
             &merged_config,
             &rbac_sa.name_any(),
+            &client.kubernetes_cluster_info,
         )?;
         let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
             kafka,
@@ -792,6 +794,7 @@ fn build_broker_rolegroup_statefulset(
     kafka_security: &KafkaTlsSecurity,
     merged_config: &KafkaConfig,
     sa_name: &str,
+    cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet> {
     let role = kafka.role(role).context(InternalOperatorSnafu)?;
     let rolegroup = kafka
@@ -906,9 +909,13 @@ fn build_broker_rolegroup_statefulset(
     let jvm_args = format!(
         "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE} -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml",
     );
-    let kafka_listeners =
-        get_kafka_listener_config(kafka, kafka_security, &rolegroup_ref.object_name())
-            .context(InvalidKafkaListenersSnafu)?;
+    let kafka_listeners = get_kafka_listener_config(
+        kafka,
+        kafka_security,
+        &rolegroup_ref.object_name(),
+        cluster_info,
+    )
+    .context(InvalidKafkaListenersSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
