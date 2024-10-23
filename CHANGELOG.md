@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - Include the global Kafka bootstrap service (not the rolegroup-specific) DNS record as SAN entry in the generated
   certificates used by Kafka. This allows you to access Kafka brokers secured using TLS via the global bootstrap
   service ([#741]).
+- An invalid `KafkaCluster` doesn't cause the operator to stop functioning ([#773]).
 
 ### Removed
 
@@ -32,6 +33,7 @@ All notable changes to this project will be documented in this file.
 [#741]: https://github.com/stackabletech/kafka-operator/pull/741
 [#750]: https://github.com/stackabletech/kafka-operator/pull/750
 [#753]: https://github.com/stackabletech/kafka-operator/pull/753
+[#773]: https://github.com/stackabletech/kafka-operator/pull/773
 
 ## [24.7.0] - 2024-07-24
 
