@@ -24,6 +24,7 @@ use crate::kafka_controller::KAFKA_CONTROLLER_NAME;
 
 mod discovery;
 mod kafka_controller;
+mod kerberos;
 mod operations;
 mod product_logging;
 mod utils;
