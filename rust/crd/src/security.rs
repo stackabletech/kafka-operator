@@ -27,7 +27,8 @@ use stackable_operator::{
 };
 
 use crate::{
-    authentication::SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS, STACKABLE_KERBEROS_KRB5_PATH,
+    authentication::SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS, listener::node_address_cmd,
+    STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BROKER_DIR,
 };
 use crate::{
     authentication::{self, ResolvedAuthenticationClasses},
@@ -340,8 +341,10 @@ impl KafkaTlsSecurity {
             },
             jaas_config = match kerberos_enabled {
                 true => {
+                    let service_name = KafkaRole::Broker.kerberos_service_name();
+                    let broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR);
                     // N.B. See https://docs.oracle.com/en/java/javase/22/docs/api/jdk.security.auth/com/sun/security/auth/module/Krb5LoginModule.html for reasoning behind the use of the asterisk/isInitiator settings below.
-                    " --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"*\\\";\"".to_string()},
+                    format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{broker_address}@$KERBEROS_REALM\\\";\"").to_string()},
                 false => "".to_string(),
             },
         }]
