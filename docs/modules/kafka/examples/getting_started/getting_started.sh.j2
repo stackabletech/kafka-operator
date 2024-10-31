@@ -86,7 +86,7 @@ kubectl rollout status --watch --timeout=5m statefulset/simple-zk-server-default
 
 echo "Install KafkaCluster from kafka.yaml"
 # tag::install-kafka[]
-kubectl apply -f kafka.yaml
+kubectl apply --server-side -f kafka.yaml
 # end::install-kafka[]
 
 sleep 15
@@ -99,7 +99,7 @@ kubectl rollout status --watch --timeout=5m statefulset/simple-kafka-broker-defa
 echo "Starting port-forwarding of port 9092"
 # shellcheck disable=2069 # we want all output to be blackholed
 # tag::port-forwarding[]
-kubectl port-forward svc/simple-kafka 9092 2>&1 >/dev/null &
+kubectl port-forward svc/simple-kafka-broker-default-bootstrap 9092 2>&1 >/dev/null &
 # end::port-forwarding[]
 PORT_FORWARD_PID=$!
 # shellcheck disable=2064 # we want the PID evaluated now, not at the time the trap is
@@ -114,12 +114,12 @@ echo "some test data" > data
 
 echo "Writing test data"
 # tag::kcat-write-data[]
-kafkacat -b localhost:9092 -t test-data-topic -P data
+kcat -b localhost:9092 -t test-data-topic -P data
 # end::kcat-write-data[]
 
 echo "Reading test data"
 # tag::kcat-read-data[]
-kafkacat -b localhost:9092 -t test-data-topic -C -e > read-data.out
+kcat -b localhost:9092 -t test-data-topic -C -e > read-data.out
 # end::kcat-read-data[]
 
 echo "Check contents"
