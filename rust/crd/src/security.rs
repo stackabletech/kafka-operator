@@ -28,7 +28,7 @@ use stackable_operator::{
 
 use crate::{
     authentication::SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS, listener::node_address_cmd,
-    STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BROKER_DIR,
+    STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
 };
 use crate::{
     authentication::{self, ResolvedAuthenticationClasses},
@@ -76,6 +76,9 @@ impl KafkaTlsSecurity {
     pub const CLIENT_PORT: u16 = 9092;
     pub const SECURE_CLIENT_PORT_NAME: &'static str = "kafka-tls";
     pub const SECURE_CLIENT_PORT: u16 = 9093;
+    pub const BOOTSTRAP_PORT_NAME: &'static str = "bootstrap";
+    pub const BOOTSTRAP_PORT: u16 = 9094;
+    pub const SECURE_BOOTSTRAP_PORT: u16 = 9095;
     pub const INTERNAL_PORT: u16 = 19092;
     pub const SECURE_INTERNAL_PORT: u16 = 19093;
     // - TLS global
@@ -89,6 +92,18 @@ impl KafkaTlsSecurity {
     const CLIENT_SSL_TRUSTSTORE_PASSWORD: &'static str =
         "listener.name.client.ssl.truststore.password";
     const CLIENT_SSL_TRUSTSTORE_TYPE: &'static str = "listener.name.client.ssl.truststore.type";
+    // - Bootstrapper
+    const BOOTSTRAP_SSL_KEYSTORE_LOCATION: &'static str =
+        "listener.name.bootstrap.ssl.keystore.location";
+    const BOOTSTRAP_SSL_KEYSTORE_PASSWORD: &'static str =
+        "listener.name.bootstrap.ssl.keystore.password";
+    const BOOTSTRAP_SSL_KEYSTORE_TYPE: &'static str = "listener.name.bootstrap.ssl.keystore.type";
+    const BOOTSTRAP_SSL_TRUSTSTORE_LOCATION: &'static str =
+        "listener.name.bootstrap.ssl.truststore.location";
+    const BOOTSTRAP_SSL_TRUSTSTORE_PASSWORD: &'static str =
+        "listener.name.bootstrap.ssl.truststore.password";
+    const BOOTSTRAP_SSL_TRUSTSTORE_TYPE: &'static str =
+        "listener.name.bootstrap.ssl.truststore.type";
     // - TLS client authentication
     const CLIENT_AUTH_SSL_KEYSTORE_LOCATION: &'static str =
         "listener.name.client_auth.ssl.keystore.location";
@@ -241,6 +256,18 @@ impl KafkaTlsSecurity {
         }
     }
 
+    pub fn bootstrap_port(&self) -> u16 {
+        if self.tls_enabled() {
+            Self::SECURE_BOOTSTRAP_PORT
+        } else {
+            Self::BOOTSTRAP_PORT
+        }
+    }
+
+    pub fn bootstrap_port_name(&self) -> &str {
+        Self::BOOTSTRAP_PORT_NAME
+    }
+
     /// Return the Kafka (secure) client port name depending on tls or authentication settings.
     pub fn client_port_name(&self) -> &str {
         if self.tls_enabled() {
@@ -343,8 +370,9 @@ impl KafkaTlsSecurity {
                 true => {
                     let service_name = KafkaRole::Broker.kerberos_service_name();
                     let broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR);
-                    // N.B. See https://docs.oracle.com/en/java/javase/22/docs/api/jdk.security.auth/com/sun/security/auth/module/Krb5LoginModule.html for reasoning behind the use of the asterisk/isInitiator settings below.
-                    format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{broker_address}@$KERBEROS_REALM\\\";\"").to_string()},
+                    let bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR);
+                    // TODO replace client and bootstrap below with constants
+                    format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{broker_address}@$KERBEROS_REALM\\\";\" --override \"listener.name.bootstrap.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{bootstrap_address}@$KERBEROS_REALM\\\";\"").to_string()},
                 false => "".to_string(),
             },
         }]
@@ -467,6 +495,31 @@ impl KafkaTlsSecurity {
             );
             config.insert(
                 Self::CLIENT_SSL_TRUSTSTORE_TYPE.to_string(),
+                "PKCS12".to_string(),
+            );
+            // Bootstrap
+            config.insert(
+                Self::BOOTSTRAP_SSL_KEYSTORE_LOCATION.to_string(),
+                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
+            );
+            config.insert(
+                Self::BOOTSTRAP_SSL_KEYSTORE_PASSWORD.to_string(),
+                Self::SSL_STORE_PASSWORD.to_string(),
+            );
+            config.insert(
+                Self::BOOTSTRAP_SSL_KEYSTORE_TYPE.to_string(),
+                "PKCS12".to_string(),
+            );
+            config.insert(
+                Self::BOOTSTRAP_SSL_TRUSTSTORE_LOCATION.to_string(),
+                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
+            );
+            config.insert(
+                Self::BOOTSTRAP_SSL_TRUSTSTORE_PASSWORD.to_string(),
+                Self::SSL_STORE_PASSWORD.to_string(),
+            );
+            config.insert(
+                Self::BOOTSTRAP_SSL_TRUSTSTORE_TYPE.to_string(),
                 "PKCS12".to_string(),
             );
         }

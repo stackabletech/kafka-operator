@@ -76,7 +76,7 @@ data:
     export KCAT_CONFIG=/stackable/kcat.conf
     TOPIC=test-topic
     CONSUMER_GROUP=test-consumer-group
-    BROKER=test-kafka-broker-default-0-listener-broker.$NAMESPACE.svc.cluster.local:9093,test-kafka-broker-default-1-listener-broker.$NAMESPACE.svc.cluster.local:9093,test-kafka-broker-default-2-listener-broker.$NAMESPACE.svc.cluster.local:9093
+    BROKER=test-kafka-broker-default-bootstrap.$NAMESPACE.svc.cluster.local:9095
 
     echo -e -n "\
     metadata.broker.list=$BROKER\n\

@@ -1199,6 +1199,11 @@ fn listener_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ListenerPort> {
             port: kafka_security.client_port().into(),
             protocol: Some("TCP".to_string()),
         },
+        ListenerPort {
+            name: kafka_security.bootstrap_port_name().to_string(),
+            port: kafka_security.bootstrap_port().into(),
+            protocol: Some("TCP".to_string()),
+        },
     ]
 }
 
@@ -1214,6 +1219,12 @@ fn container_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ContainerPort> {
         ContainerPort {
             name: Some(kafka_security.client_port_name().to_string()),
             container_port: kafka_security.client_port().into(),
+            protocol: Some("TCP".to_string()),
+            ..ContainerPort::default()
+        },
+        ContainerPort {
+            name: Some(kafka_security.bootstrap_port_name().to_string()),
+            container_port: kafka_security.bootstrap_port().into(),
             protocol: Some("TCP".to_string()),
             ..ContainerPort::default()
         },
