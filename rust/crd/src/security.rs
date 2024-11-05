@@ -27,14 +27,14 @@ use stackable_operator::{
 };
 
 use crate::{
-    authentication::SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS, listener::node_address_cmd,
-    STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
-};
-use crate::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, KafkaListenerConfig},
     tls, KafkaCluster, LISTENER_BOOTSTRAP_VOLUME_NAME, SERVER_PROPERTIES_FILE,
     STACKABLE_CONFIG_DIR,
+};
+use crate::{
+    listener::node_address_cmd, STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+    STACKABLE_LISTENER_BROKER_DIR,
 };
 use crate::{KafkaRole, LISTENER_BROKER_VOLUME_NAME, STACKABLE_LOG_DIR};
 
@@ -47,9 +47,6 @@ pub enum Error {
     SecretVolumeBuild {
         source: stackable_operator::builder::pod::volume::SecretOperatorVolumeSourceBuilderError,
     },
-
-    #[snafu(display("only one authentication class at a time is currently supported. Possible Authentication class providers are {SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS:?}"))]
-    MultipleAuthenticationMethodsProvided,
 
     #[snafu(display("failed to add needed volume"))]
     AddVolume { source: builder::pod::Error },
@@ -233,13 +230,11 @@ impl KafkaTlsSecurity {
     }
 
     pub fn validate_authentication_methods(&self) -> Result<(), Error> {
-        // Client TLS authentication and Kerberos authentication are mutually exclusive
-        if self.tls_client_authentication_class().is_some() && self.has_kerberos_enabled() {
-            return Err(Error::MultipleAuthenticationMethodsProvided);
-        }
-
-        // When users enable Kerberos we require them to also enable TLS for maximum security and
-        // to limit the number of combinations we need to support.
+        // Client TLS authentication and Kerberos authentication are mutually
+        // exclusive, but this has already been checked when checking the
+        // authentication classes. When users enable Kerberos we require them
+        // to also enable TLS for a) maximum security and b) to limit the
+        // number of combinations we need to support.
         if self.has_kerberos_enabled() {
             ensure!(self.server_secret_class.is_some(), KerberosRequiresTlsSnafu);
         }
