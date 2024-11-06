@@ -492,6 +492,11 @@ impl KafkaTlsSecurity {
                 Self::CLIENT_SSL_TRUSTSTORE_TYPE.to_string(),
                 "PKCS12".to_string(),
             );
+        }
+
+        if self.tls_client_authentication_class().is_some()
+            || self.tls_server_secret_class().is_some()
+        {
             // Bootstrap
             config.insert(
                 Self::BOOTSTRAP_SSL_KEYSTORE_LOCATION.to_string(),
