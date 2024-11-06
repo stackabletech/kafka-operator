@@ -13,17 +13,19 @@ spec:
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
           command:
             - ./test_client_auth_tls.sh
-          args:
-            - ${NAMESPACE}
 {% elif test_scenario['values']['use-client-tls'] == 'true' %}
           command:
             - ./test_client_tls.sh
-          args:
-            - ${NAMESPACE}
 {% else %}
           command:
             - "true"
 {% endif %}
+          env:
+            - name: KAFKA
+              valueFrom:
+                configMapKeyRef:
+                  name: test-kafka
+                  key: KAFKA
           volumeMounts:
             - name: test-scripts
               mountPath: /stackable/test

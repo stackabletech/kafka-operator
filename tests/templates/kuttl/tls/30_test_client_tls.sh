@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 # Usage: test_client_tls.sh namespace
 
-NAMESPACE=$1
-
 # to be safe
 unset TOPIC
 unset BAD_TOPIC
 
-SERVER="test-kafka-broker-default-0.test-kafka-broker-default.${NAMESPACE}.svc.cluster.local:9093"
+echo "Connecting to boostrap address $KAFKA"
 
 echo "Start client TLS testing..."
 ############################################################################
@@ -20,7 +18,7 @@ BAD_TOPIC=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo '')
 # write client config
 echo $'security.protocol=SSL\nssl.truststore.location=/stackable/tls_keystore_server/truststore.p12\nssl.truststore.password=' > /tmp/client.config
 
-if /stackable/kafka/bin/kafka-topics.sh --create --topic "$TOPIC" --bootstrap-server "$SERVER" --command-config /tmp/client.config
+if /stackable/kafka/bin/kafka-topics.sh --create --topic "$TOPIC" --bootstrap-server "$KAFKA" --command-config /tmp/client.config
 then
   echo "[SUCCESS] Secure client topic created!"
 else
@@ -28,7 +26,7 @@ else
   exit 1
 fi
 
-if /stackable/kafka/bin/kafka-topics.sh --list --topic "$TOPIC" --bootstrap-server "$SERVER" --command-config /tmp/client.config | grep "$TOPIC"
+if /stackable/kafka/bin/kafka-topics.sh --list --topic "$TOPIC" --bootstrap-server "$KAFKA" --command-config /tmp/client.config | grep "$TOPIC"
 then
   echo "[SUCCESS] Secure client topic read!"
 else
@@ -39,7 +37,7 @@ fi
 ############################################################################
 # Test the connection without certificates
 ############################################################################
-if /stackable/kafka/bin/kafka-topics.sh --create --topic "$BAD_TOPIC" --bootstrap-server "$SERVER" &> /dev/null
+if /stackable/kafka/bin/kafka-topics.sh --create --topic "$BAD_TOPIC" --bootstrap-server "$KAFKA" &> /dev/null
 then
   echo "[ERROR] Secure client topic created without certificates!"
   exit 1
