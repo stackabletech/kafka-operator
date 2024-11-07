@@ -1188,7 +1188,7 @@ pub fn error_policy(
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
 fn listener_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ListenerPort> {
-    vec![
+    let mut ports = vec![
         ListenerPort {
             name: METRICS_PORT_NAME.to_string(),
             port: METRICS_PORT.into(),
@@ -1199,17 +1199,20 @@ fn listener_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ListenerPort> {
             port: kafka_security.client_port().into(),
             protocol: Some("TCP".to_string()),
         },
-        ListenerPort {
+    ];
+    if kafka_security.has_kerberos_enabled() {
+        ports.push(ListenerPort {
             name: kafka_security.bootstrap_port_name().to_string(),
             port: kafka_security.bootstrap_port().into(),
             protocol: Some("TCP".to_string()),
-        },
-    ]
+        });
+    }
+    ports
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
 fn container_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ContainerPort> {
-    vec![
+    let mut ports = vec![
         ContainerPort {
             name: Some(METRICS_PORT_NAME.to_string()),
             container_port: METRICS_PORT.into(),
@@ -1222,11 +1225,14 @@ fn container_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ContainerPort> {
             protocol: Some("TCP".to_string()),
             ..ContainerPort::default()
         },
-        ContainerPort {
+    ];
+    if kafka_security.has_kerberos_enabled() {
+        ports.push(ContainerPort {
             name: Some(kafka_security.bootstrap_port_name().to_string()),
             container_port: kafka_security.bootstrap_port().into(),
             protocol: Some("TCP".to_string()),
             ..ContainerPort::default()
-        },
-    ]
+        });
+    }
+    ports
 }

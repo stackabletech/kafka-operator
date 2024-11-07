@@ -212,23 +212,7 @@ pub fn get_kafka_listener_config(
     }
 
     // BOOTSTRAP
-    if kafka_security.tls_client_authentication_class().is_some() {
-        listeners.push(KafkaListener {
-            name: KafkaListenerName::Bootstrap,
-            host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: kafka_security.bootstrap_port().to_string(),
-        });
-        advertised_listeners.push(KafkaListener {
-            name: KafkaListenerName::Bootstrap,
-            host: node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-            port: node_port_cmd(
-                STACKABLE_LISTENER_BROKER_DIR,
-                kafka_security.client_port_name(),
-            ),
-        });
-        listener_security_protocol_map
-            .insert(KafkaListenerName::Bootstrap, KafkaListenerProtocol::Ssl);
-    } else if kafka_security.has_kerberos_enabled() {
+    if kafka_security.has_kerberos_enabled() {
         listeners.push(KafkaListener {
             name: KafkaListenerName::Bootstrap,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -244,40 +228,6 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Bootstrap, KafkaListenerProtocol::SaslSsl);
-    } else if kafka_security.tls_server_secret_class().is_some() {
-        listeners.push(KafkaListener {
-            name: KafkaListenerName::Bootstrap,
-            host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: kafka_security.bootstrap_port().to_string(),
-        });
-        advertised_listeners.push(KafkaListener {
-            name: KafkaListenerName::Bootstrap,
-            host: node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-            port: node_port_cmd(
-                STACKABLE_LISTENER_BROKER_DIR,
-                kafka_security.client_port_name(),
-            ),
-        });
-        listener_security_protocol_map
-            .insert(KafkaListenerName::Bootstrap, KafkaListenerProtocol::Ssl);
-    } else {
-        listeners.push(KafkaListener {
-            name: KafkaListenerName::Bootstrap,
-            host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: KafkaTlsSecurity::BOOTSTRAP_PORT.to_string(),
-        });
-        advertised_listeners.push(KafkaListener {
-            name: KafkaListenerName::Bootstrap,
-            host: node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-            port: node_port_cmd(
-                STACKABLE_LISTENER_BROKER_DIR,
-                kafka_security.client_port_name(),
-            ),
-        });
-        listener_security_protocol_map.insert(
-            KafkaListenerName::Bootstrap,
-            KafkaListenerProtocol::Plaintext,
-        );
     }
 
     Ok(KafkaListenerConfig {
@@ -372,22 +322,20 @@ mod tests {
         assert_eq!(
             config.listeners(),
             format!(
-                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port},{bootstrap_name}://{internal_host}:{bootstrap_port}",
+                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::ClientAuth,
                 host = LISTENER_LOCAL_ADDRESS,
                 port = kafka_security.client_port(),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = LISTENER_LOCAL_ADDRESS,
                 internal_port = kafka_security.internal_port(),
-                bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_port = kafka_security.bootstrap_port(),
             )
         );
 
         assert_eq!(
             config.advertised_listeners(),
             format!(
-                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port},{bootstrap_name}://{bootstrap_host}:{bootstrap_port}",
+                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::ClientAuth,
                 host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
                 port = node_port_cmd(
@@ -397,25 +345,17 @@ mod tests {
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name, &cluster_info).unwrap(),
                 internal_port = kafka_security.internal_port(),
-                bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-                bootstrap_port = node_port_cmd(
-                    STACKABLE_LISTENER_BROKER_DIR,
-                    kafka_security.client_port_name()
-                ),
             )
         );
 
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol},{bootstrap_name}:{bootstrap_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol}",
                 name = KafkaListenerName::ClientAuth,
                 protocol = KafkaListenerProtocol::Ssl,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Ssl,
-                bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_protocol = KafkaListenerProtocol::Ssl
             )
         );
 
@@ -430,23 +370,20 @@ mod tests {
         assert_eq!(
             config.listeners(),
             format!(
-                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port},{bootstrap_name}://{bootstrap_host}:{bootstrap_port}",
+                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
                 host = LISTENER_LOCAL_ADDRESS,
                 port = kafka_security.client_port(),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = LISTENER_LOCAL_ADDRESS,
                 internal_port = kafka_security.internal_port(),
-                bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = LISTENER_LOCAL_ADDRESS,
-                bootstrap_port = kafka_security.bootstrap_port(),
             )
         );
 
         assert_eq!(
             config.advertised_listeners(),
             format!(
-                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port},{bootstrap_name}://{bootstrap_host}:{bootstrap_port}",
+                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
                 host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
                 port = node_port_cmd(
@@ -456,25 +393,17 @@ mod tests {
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name, &cluster_info).unwrap(),
                 internal_port = kafka_security.internal_port(),
-                bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-                bootstrap_port = node_port_cmd(
-                    STACKABLE_LISTENER_BROKER_DIR,
-                    kafka_security.client_port_name()
-                ),
             )
         );
 
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol},{bootstrap_name}:{bootstrap_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol}",
                 name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::Ssl,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Ssl,
-                bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_protocol = KafkaListenerProtocol::Ssl
             )
         );
 
@@ -490,23 +419,20 @@ mod tests {
         assert_eq!(
             config.listeners(),
             format!(
-                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port},{bootstrap_name}://{bootstrap_host}:{bootstrap_port}",
+                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
                 host = LISTENER_LOCAL_ADDRESS,
                 port = kafka_security.client_port(),
                 internal_name = KafkaListenerName::Internal,
                 internal_host = LISTENER_LOCAL_ADDRESS,
                 internal_port = kafka_security.internal_port(),
-                bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = LISTENER_LOCAL_ADDRESS,
-                bootstrap_port = kafka_security.bootstrap_port(),
             )
         );
 
         assert_eq!(
             config.advertised_listeners(),
             format!(
-                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port},{bootstrap_name}://{bootstrap_host}:{bootstrap_port}",
+                "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
                 name = KafkaListenerName::Client,
                 host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
                 port = node_port_cmd(
@@ -516,25 +442,17 @@ mod tests {
                 internal_name = KafkaListenerName::Internal,
                 internal_host = pod_fqdn(&kafka, object_name, &cluster_info).unwrap(),
                 internal_port = kafka_security.internal_port(),
-                bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-                bootstrap_port = node_port_cmd(
-                    STACKABLE_LISTENER_BROKER_DIR,
-                    kafka_security.client_port_name()
-                ),
             )
         );
 
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol},{bootstrap_name}:{bootstrap_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol}",
                 name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::Plaintext,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Plaintext,
-                bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_protocol = KafkaListenerProtocol::Plaintext
             )
         );
     }

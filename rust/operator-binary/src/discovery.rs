@@ -60,7 +60,11 @@ pub async fn build_discovery_configmaps(
     listeners: &[Listener],
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name_unchecked();
-    let port_name = kafka_security.client_port_name();
+    let port_name = if kafka_security.has_kerberos_enabled() {
+        kafka_security.bootstrap_port_name()
+    } else {
+        kafka_security.client_port_name()
+    };
     Ok(vec![
         build_discovery_configmap(
             kafka,

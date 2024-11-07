@@ -73,9 +73,14 @@ impl KafkaTlsSecurity {
     pub const CLIENT_PORT: u16 = 9092;
     pub const SECURE_CLIENT_PORT_NAME: &'static str = "kafka-tls";
     pub const SECURE_CLIENT_PORT: u16 = 9093;
+    // bootstrap: we will have a single named port with different values for
+    // secure (9095) and insecure (9094). The bootstrap listener is needed to
+    // be able to expose principals for both the broker and bootstrap in the
+    // JAAS configuration, so that clients can use both.
     pub const BOOTSTRAP_PORT_NAME: &'static str = "bootstrap";
     pub const BOOTSTRAP_PORT: u16 = 9094;
     pub const SECURE_BOOTSTRAP_PORT: u16 = 9095;
+    // internal
     pub const INTERNAL_PORT: u16 = 19092;
     pub const SECURE_INTERNAL_PORT: u16 = 19093;
     // - TLS global
@@ -494,9 +499,7 @@ impl KafkaTlsSecurity {
             );
         }
 
-        if self.tls_client_authentication_class().is_some()
-            || self.tls_server_secret_class().is_some()
-        {
+        if self.has_kerberos_enabled() {
             // Bootstrap
             config.insert(
                 Self::BOOTSTRAP_SSL_KEYSTORE_LOCATION.to_string(),
