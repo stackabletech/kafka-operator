@@ -18,6 +18,11 @@ spec:
               value: /stackable/kerberos/krb5.conf
             - name: KAFKA_OPTS
               value: -Djava.security.krb5.conf=/stackable/kerberos/krb5.conf
+            - name: KAFKA
+              valueFrom:
+                configMapKeyRef:
+                  name: test-kafka
+                  key: KAFKA
           volumeMounts:
             - name: script
               mountPath: /tmp/script
@@ -76,10 +81,9 @@ data:
     export KCAT_CONFIG=/stackable/kcat.conf
     TOPIC=test-topic
     CONSUMER_GROUP=test-consumer-group
-    BROKER=test-kafka-broker-default-bootstrap.$NAMESPACE.svc.cluster.local:9095
 
     echo -e -n "\
-    metadata.broker.list=$BROKER\n\
+    metadata.broker.list=$KAFKA\n\
     auto.offset.reset=beginning\n\
     security.protocol=SASL_SSL\n\
     ssl.ca.location=/stackable/tls-ca-cert-mount/ca.crt\n\
