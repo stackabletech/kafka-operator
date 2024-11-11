@@ -155,6 +155,14 @@ spec:
 
 NOTE: When Kerberos is enabled it is also required to enable TLS for maximum security.
 
+==== Clients
+
+In order to keep client configuration as uncluttered as possible, each kerberized Kafka broker has two principals: one for the broker itself and one for the bootstrap service.
+The client can connect to the bootstrap service, which returns the broker quorum for use in subsequent operations.
+This is transparent as each connection dynamically uses the relevant principal (broker or bootstrap).
+In order for this to work it is necessary for kerberized clusters to define an extra kafka listener for the bootstrap, with a corresponding service (and port).
+The bootstrap address is written to the discovery ConfigMap, using the Stackable bootstrap listener with the port being either 9094 (non-secure) or 9095 (secure) for kerberized clusters, and 9092 (non-secure) or 9093 (secure) for non-kerberized ones.
+
 == [[authorization]]Authorization
 
 If you wish to include integration with xref:opa:index.adoc[Open Policy Agent] and already have an OPA cluster, then you can include an `opa` field pointing to the OPA cluster discovery `ConfigMap` and the required package.
