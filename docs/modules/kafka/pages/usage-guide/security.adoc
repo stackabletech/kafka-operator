@@ -161,7 +161,9 @@ In order to keep client configuration as uncluttered as possible, each kerberize
 The client can connect to the bootstrap service, which returns the broker quorum for use in subsequent operations.
 This is transparent as each connection dynamically uses the relevant principal (broker or bootstrap).
 In order for this to work, it is necessary for kerberized clusters to define an extra Kafka listener for the bootstrap with a corresponding service (and port).
-The bootstrap address is written to the discovery ConfigMap, using the Stackable bootstrap listener with the port being either 9094 (non-secure) or 9095 (secure) for kerberized clusters, and 9092 (non-secure) or 9093 (secure) for non-kerberized ones.
+The bootstrap address is written to the discovery ConfigMap, using the Stackable bootstrap listener with the port being 9095 (secure) for kerberized clusters, and 9092 (non-secure) or 9093 (secure) for non-kerberized ones.
+
+NOTE: Port 9094 is reserved for non-secure kerberized connections which is not currently implemented.
 
 == [[authorization]]Authorization
 
