@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use indoc::formatdoc;
-use snafu::{ResultExt, Snafu};
+use snafu::{ensure, ResultExt, Snafu};
 use stackable_operator::{
     builder::{
         self,
@@ -32,7 +32,11 @@ use crate::{
     tls, KafkaCluster, LISTENER_BOOTSTRAP_VOLUME_NAME, SERVER_PROPERTIES_FILE,
     STACKABLE_CONFIG_DIR,
 };
-use crate::{LISTENER_BROKER_VOLUME_NAME, STACKABLE_LOG_DIR};
+use crate::{
+    listener::node_address_cmd, STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+    STACKABLE_LISTENER_BROKER_DIR,
+};
+use crate::{KafkaRole, LISTENER_BROKER_VOLUME_NAME, STACKABLE_LOG_DIR};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -51,6 +55,9 @@ pub enum Error {
     AddVolumeMount {
         source: builder::pod::container::Error,
     },
+
+    #[snafu(display("kerberos enablement requires TLS activation"))]
+    KerberosRequiresTls,
 }
 
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
@@ -66,6 +73,14 @@ impl KafkaTlsSecurity {
     pub const CLIENT_PORT: u16 = 9092;
     pub const SECURE_CLIENT_PORT_NAME: &'static str = "kafka-tls";
     pub const SECURE_CLIENT_PORT: u16 = 9093;
+    // bootstrap: we will have a single named port with different values for
+    // secure (9095) and insecure (9094). The bootstrap listener is needed to
+    // be able to expose principals for both the broker and bootstrap in the
+    // JAAS configuration, so that clients can use both.
+    pub const BOOTSTRAP_PORT_NAME: &'static str = "bootstrap";
+    pub const BOOTSTRAP_PORT: u16 = 9094;
+    pub const SECURE_BOOTSTRAP_PORT: u16 = 9095;
+    // internal
     pub const INTERNAL_PORT: u16 = 19092;
     pub const SECURE_INTERNAL_PORT: u16 = 19093;
     // - TLS global
@@ -79,6 +94,18 @@ impl KafkaTlsSecurity {
     const CLIENT_SSL_TRUSTSTORE_PASSWORD: &'static str =
         "listener.name.client.ssl.truststore.password";
     const CLIENT_SSL_TRUSTSTORE_TYPE: &'static str = "listener.name.client.ssl.truststore.type";
+    // - Bootstrapper
+    const BOOTSTRAP_SSL_KEYSTORE_LOCATION: &'static str =
+        "listener.name.bootstrap.ssl.keystore.location";
+    const BOOTSTRAP_SSL_KEYSTORE_PASSWORD: &'static str =
+        "listener.name.bootstrap.ssl.keystore.password";
+    const BOOTSTRAP_SSL_KEYSTORE_TYPE: &'static str = "listener.name.bootstrap.ssl.keystore.type";
+    const BOOTSTRAP_SSL_TRUSTSTORE_LOCATION: &'static str =
+        "listener.name.bootstrap.ssl.truststore.location";
+    const BOOTSTRAP_SSL_TRUSTSTORE_PASSWORD: &'static str =
+        "listener.name.bootstrap.ssl.truststore.password";
+    const BOOTSTRAP_SSL_TRUSTSTORE_TYPE: &'static str =
+        "listener.name.bootstrap.ssl.truststore.type";
     // - TLS client authentication
     const CLIENT_AUTH_SSL_KEYSTORE_LOCATION: &'static str =
         "listener.name.client_auth.ssl.keystore.location";
@@ -187,6 +214,39 @@ impl KafkaTlsSecurity {
         }
     }
 
+    pub fn has_kerberos_enabled(&self) -> bool {
+        self.kerberos_secret_class().is_some()
+    }
+
+    pub fn kerberos_secret_class(&self) -> Option<String> {
+        if let Some(kerberos) = self
+            .resolved_authentication_classes
+            .get_kerberos_authentication_class()
+        {
+            match &kerberos.spec.provider {
+                AuthenticationClassProvider::Kerberos(kerberos) => {
+                    Some(kerberos.kerberos_secret_class.clone())
+                }
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn validate_authentication_methods(&self) -> Result<(), Error> {
+        // Client TLS authentication and Kerberos authentication are mutually
+        // exclusive, but this has already been checked when checking the
+        // authentication classes. When users enable Kerberos we require them
+        // to also enable TLS for a) maximum security and b) to limit the
+        // number of combinations we need to support.
+        if self.has_kerberos_enabled() {
+            ensure!(self.server_secret_class.is_some(), KerberosRequiresTlsSnafu);
+        }
+
+        Ok(())
+    }
+
     /// Return the Kafka (secure) client port depending on tls or authentication settings.
     pub fn client_port(&self) -> u16 {
         if self.tls_enabled() {
@@ -194,6 +254,18 @@ impl KafkaTlsSecurity {
         } else {
             Self::CLIENT_PORT
         }
+    }
+
+    pub fn bootstrap_port(&self) -> u16 {
+        if self.tls_enabled() {
+            Self::SECURE_BOOTSTRAP_PORT
+        } else {
+            Self::BOOTSTRAP_PORT
+        }
+    }
+
+    pub fn bootstrap_port_name(&self) -> &str {
+        Self::BOOTSTRAP_PORT_NAME
     }
 
     /// Return the Kafka (secure) client port name depending on tls or authentication settings.
@@ -215,19 +287,46 @@ impl KafkaTlsSecurity {
     }
 
     /// Returns the commands for the kcat readiness probe.
-    pub fn kcat_prober_container_commands(&self) -> Vec<String> {
-        let mut args = vec!["/stackable/kcat".to_string()];
+    pub fn kcat_prober_container_commands(&self, pod_fqdn: &String) -> Vec<String> {
+        let mut args = vec![];
         let port = self.client_port();
 
         if self.tls_client_authentication_class().is_some() {
+            args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
             args.extend(Self::kcat_client_auth_ssl(Self::STACKABLE_TLS_KCAT_DIR));
+        } else if self.has_kerberos_enabled() {
+            let service_name = KafkaRole::Broker.kerberos_service_name();
+            // here we need to specify a shell so that variable substitution will work
+            // see e.g. https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/V1ExecAction.md
+            args.push("/bin/bash".to_string());
+            args.push("-x".to_string());
+            args.push("-euo".to_string());
+            args.push("pipefail".to_string());
+            args.push("-c".to_string());
+            args.push(
+                format!(
+                    "export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {});",
+                    STACKABLE_KERBEROS_KRB5_PATH
+                )
+                .to_string(),
+            );
+            args.push("/stackable/kcat".to_string());
+            args.push("-b".to_string());
+            args.push(format!("{pod_fqdn}:{port}"));
+            args.extend(Self::kcat_client_sasl_ssl(
+                Self::STACKABLE_TLS_KCAT_DIR,
+                service_name,
+                pod_fqdn,
+            ));
         } else if self.tls_server_secret_class().is_some() {
+            args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
             args.extend(Self::kcat_client_ssl(Self::STACKABLE_TLS_KCAT_DIR));
         } else {
+            args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
         }
@@ -241,12 +340,14 @@ impl KafkaTlsSecurity {
         &self,
         kafka_listeners: &KafkaListenerConfig,
         opa_connect_string: Option<&str>,
+        kerberos_enabled: bool,
     ) -> Vec<String> {
         vec![formatdoc! {"
             {COMMON_BASH_TRAP_FUNCTIONS}
             {remove_vector_shutdown_file_command}
             prepare_signal_handlers
-            bin/kafka-server-start.sh {STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE} --override \"zookeeper.connect=$ZOOKEEPER\" --override \"listeners={listeners}\" --override \"advertised.listeners={advertised_listeners}\" --override \"listener.security.protocol.map={listener_security_protocol_map}\"{opa_config} &
+            {set_realm_env}
+            bin/kafka-server-start.sh {STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE} --override \"zookeeper.connect=$ZOOKEEPER\" --override \"listeners={listeners}\" --override \"advertised.listeners={advertised_listeners}\" --override \"listener.security.protocol.map={listener_security_protocol_map}\"{opa_config}{jaas_config} &
             wait_for_termination $!
             {create_vector_shutdown_file_command}
             ",
@@ -254,13 +355,26 @@ impl KafkaTlsSecurity {
             remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         create_vector_shutdown_file_command =
             create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+            set_realm_env = match kerberos_enabled {
+                true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {})", STACKABLE_KERBEROS_KRB5_PATH),
+                false => "".to_string(),
+            },
             listeners = kafka_listeners.listeners(),
             advertised_listeners = kafka_listeners.advertised_listeners(),
             listener_security_protocol_map = kafka_listeners.listener_security_protocol_map(),
             opa_config = match opa_connect_string {
                 None => "".to_string(),
                 Some(opa_connect_string) => format!(" --override \"opa.authorizer.url={opa_connect_string}\""),
-            }
+            },
+            jaas_config = match kerberos_enabled {
+                true => {
+                    let service_name = KafkaRole::Broker.kerberos_service_name();
+                    let broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR);
+                    let bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR);
+                    // TODO replace client and bootstrap below with constants
+                    format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{broker_address}@$KERBEROS_REALM\\\";\" --override \"listener.name.bootstrap.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{bootstrap_address}@$KERBEROS_REALM\\\";\"").to_string()},
+                false => "".to_string(),
+            },
         }]
     }
 
@@ -385,6 +499,34 @@ impl KafkaTlsSecurity {
             );
         }
 
+        if self.has_kerberos_enabled() {
+            // Bootstrap
+            config.insert(
+                Self::BOOTSTRAP_SSL_KEYSTORE_LOCATION.to_string(),
+                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
+            );
+            config.insert(
+                Self::BOOTSTRAP_SSL_KEYSTORE_PASSWORD.to_string(),
+                Self::SSL_STORE_PASSWORD.to_string(),
+            );
+            config.insert(
+                Self::BOOTSTRAP_SSL_KEYSTORE_TYPE.to_string(),
+                "PKCS12".to_string(),
+            );
+            config.insert(
+                Self::BOOTSTRAP_SSL_TRUSTSTORE_LOCATION.to_string(),
+                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
+            );
+            config.insert(
+                Self::BOOTSTRAP_SSL_TRUSTSTORE_PASSWORD.to_string(),
+                Self::SSL_STORE_PASSWORD.to_string(),
+            );
+            config.insert(
+                Self::BOOTSTRAP_SSL_TRUSTSTORE_TYPE.to_string(),
+                "PKCS12".to_string(),
+            );
+        }
+
         // Internal TLS
         if self.tls_internal_secret_class().is_some() {
             config.insert(
@@ -415,6 +557,20 @@ impl KafkaTlsSecurity {
                 Self::INTER_SSL_CLIENT_AUTH.to_string(),
                 "required".to_string(),
             );
+        }
+
+        // Kerberos
+        if self.has_kerberos_enabled() {
+            config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
+            config.insert(
+                "sasl.kerberos.service.name".to_string(),
+                KafkaRole::Broker.kerberos_service_name().to_string(),
+            );
+            config.insert(
+                "sasl.mechanism.inter.broker.protocol".to_string(),
+                "GSSAPI".to_string(),
+            );
+            tracing::debug!("Kerberos configs added: [{:#?}]", config);
         }
 
         // common
@@ -487,6 +643,27 @@ impl KafkaTlsSecurity {
             "security.protocol=SSL".to_string(),
             "-X".to_string(),
             format!("ssl.ca.location={cert_directory}/ca.crt"),
+        ]
+    }
+
+    fn kcat_client_sasl_ssl(
+        cert_directory: &str,
+        service_name: &str,
+        pod_fqdn: &String,
+    ) -> Vec<String> {
+        vec![
+            "-X".to_string(),
+            "security.protocol=SASL_SSL".to_string(),
+            "-X".to_string(),
+            format!("ssl.ca.location={cert_directory}/ca.crt"),
+            "-X".to_string(),
+            "sasl.kerberos.keytab=/stackable/kerberos/keytab".to_string(),
+            "-X".to_string(),
+            "sasl.mechanism=GSSAPI".to_string(),
+            "-X".to_string(),
+            format!("sasl.kerberos.service.name={service_name}"),
+            "-X".to_string(),
+            format!("sasl.kerberos.principal={service_name}/{pod_fqdn}@$KERBEROS_REALM"),
         ]
     }
 }

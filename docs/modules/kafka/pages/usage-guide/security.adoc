@@ -53,6 +53,10 @@ You can create your own secrets and reference them e.g. in the `spec.clusterConf
 == Authentication
 
 The internal or broker-to-broker communication is authenticated via TLS.
+For client-to-server communication, authentication can be achieved with either TLS or Kerberos.
+
+=== TLS
+
 In order to enforce TLS authentication for client-to-server communication, you can set an `AuthenticationClass` reference in the custom resource provided by the xref:commons-operator:index.adoc[Commons Operator].
 
 [source,yaml]
@@ -101,6 +105,65 @@ spec:
 <3> The reference to a `SecretClass`.
 <4> The `SecretClass` that is referenced by the `AuthenticationClass` in order to provide certificates.
 
+=== Kerberos
+
+Similarly, you can set an `AuthenticationClass` reference for a Kerberos authentication provider:
+
+[source,yaml]
+----
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: kafka-client-kerberos # <2>
+spec:
+  provider:
+    kerberos:
+      kerberosSecretClass: kafka-client-auth-secret # <3>
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-client-auth-secret # <4>
+spec:
+  backend:
+    kerberosKeytab:
+      ...
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  image:
+    productVersion: 3.7.1
+  clusterConfig:
+    authentication:
+      - authenticationClass: kafka-client-kerberos # <1>
+    tls:
+      serverSecretClass: tls # <5>
+    zookeeperConfigMapName: simple-kafka-znode
+  brokers:
+    roleGroups:
+      default:
+        replicas: 3
+----
+<1> The `clusterConfig.authentication.authenticationClass` can be set to use Kerberos for authentication. This is optional.
+<2> The referenced `AuthenticationClass` that references a `SecretClass` to provide Kerberos keytabs.
+<3> The reference to a `SecretClass`.
+<4> The `SecretClass` that is referenced by the `AuthenticationClass` in order to provide keytabs.
+<5> The SecretClass that will be used for encryption.
+
+NOTE: When Kerberos is enabled it is also required to enable TLS for maximum security.
+
+==== Clients
+
+In order to keep client configuration as uncluttered as possible, each kerberized Kafka broker has two principals: one for the broker itself and one for the bootstrap service.
+The client can connect to the bootstrap service, which returns the broker quorum for use in subsequent operations.
+This is transparent as each connection dynamically uses the relevant principal (broker or bootstrap).
+In order for this to work, it is necessary for kerberized clusters to define an extra Kafka listener for the bootstrap with a corresponding service (and port).
+The bootstrap address is written to the discovery ConfigMap, using the Stackable bootstrap listener with the port being 9095 (secure) for kerberized clusters, and 9092 (non-secure) or 9093 (secure) for non-kerberized ones.
+
+NOTE: Port 9094 is reserved for non-secure kerberized connections which is not currently implemented.
 
 == [[authorization]]Authorization
 

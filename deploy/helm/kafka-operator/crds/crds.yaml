@@ -565,6 +565,10 @@ spec:
                               Only affects client connections. This setting controls: - If clients need to authenticate themselves against the broker via TLS - Which ca.crt to use when validating the provided client certs
 
                               This will override the server TLS settings (if set) in `spec.clusterConfig.tls.serverSecretClass`.
+
+                              ## Kerberos provider
+
+                              This affects client connections and also requires TLS for encryption. This setting is used to reference an `AuthenticationClass` and in turn, a `SecretClass` that is used to create keytabs.
                             type: string
                         required:
                           - authenticationClass
