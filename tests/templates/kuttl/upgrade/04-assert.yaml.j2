@@ -8,7 +8,7 @@ kind: StatefulSet
 metadata:
   name: test-kafka-broker-default
   labels:
-    app.kubernetes.io/version: "{{ test_scenario['values']['upgrade_new'] }}-stackable0.0.0-dev"
+    app.kubernetes.io/version: "{{ test_scenario['values']['upgrade_new'] }}-stackable24.11.0"
 status:
   readyReplicas: 1
   replicas: 1

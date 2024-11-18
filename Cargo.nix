@@ -6659,7 +6659,7 @@ rec {
       };
       "stackable-kafka-crd" = rec {
         crateName = "stackable-kafka-crd";
-        version = "0.0.0-dev";
+        version = "24.11.0";
         edition = "2021";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./rust/crd; };
         libName = "stackable_kafka_crd";
@@ -6716,7 +6716,7 @@ rec {
       };
       "stackable-kafka-operator" = rec {
         crateName = "stackable-kafka-operator";
-        version = "0.0.0-dev";
+        version = "24.11.0";
         edition = "2021";
         crateBin = [
           {
