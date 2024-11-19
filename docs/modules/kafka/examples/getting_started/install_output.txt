@@ -1,5 +1,5 @@
-Installed commons=0.0.0-dev operator
-Installed secret=0.0.0-dev operator
-Installed listener=0.0.0-dev operator
-Installed zookeeper=0.0.0-dev operator
-Installed kafka=0.0.0-dev operator
+Installed commons=24.11.0 operator
+Installed secret=24.11.0 operator
+Installed listener=24.11.0 operator
+Installed zookeeper=24.11.0 operator
+Installed kafka=24.11.0 operator
