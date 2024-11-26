@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- BREAKING: Use distinct ServiceAccounts for the Stacklets, so that multiple Stacklets can be
+  deployed in one namespace. Existing Stacklets will use the newly created ServiceAccounts after
+  restart ([#793]).
+
+[#793]: https://github.com/stackabletech/kafka-operator/pull/793
+
 ## [24.11.0] - 2024-11-18
 
 ### Added
@@ -29,9 +37,6 @@ All notable changes to this project will be documented in this file.
   certificates used by Kafka. This allows you to access Kafka brokers secured using TLS via the global bootstrap
   service ([#741]).
 - An invalid `KafkaCluster` doesn't cause the operator to stop functioning ([#773]).
-- BREAKING: Use distinct ServiceAccounts for the Stacklets, so that multiple Stacklets can be
-  deployed in one namespace. Existing Stacklets will use the newly created ServiceAccounts after
-  restart ([#793]).
 
 ### Removed
 
@@ -44,7 +49,6 @@ All notable changes to this project will be documented in this file.
 [#762]: https://github.com/stackabletech/kafka-operator/pull/762
 [#771]: https://github.com/stackabletech/kafka-operator/pull/771
 [#773]: https://github.com/stackabletech/kafka-operator/pull/773
-[#793]: https://github.com/stackabletech/kafka-operator/pull/793
 
 ## [24.7.0] - 2024-07-24
 
