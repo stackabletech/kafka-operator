@@ -48,7 +48,7 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar,
                 EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe, Service,
-                ServiceSpec, Volume,
+                ServiceAccount, ServiceSpec, Volume,
             },
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
@@ -524,7 +524,7 @@ pub async fn reconcile_kafka(
     .context(BuildRbacResourcesSnafu)?;
 
     let rbac_sa = cluster_resources
-        .add(client, rbac_sa)
+        .add(client, rbac_sa.clone())
         .await
         .context(ApplyServiceAccountSnafu)?;
     cluster_resources
@@ -561,7 +561,7 @@ pub async fn reconcile_kafka(
             opa_connect.as_deref(),
             &kafka_security,
             &merged_config,
-            &rbac_sa.name_any(),
+            &rbac_sa,
             &client.kubernetes_cluster_info,
         )?;
         let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
@@ -824,7 +824,7 @@ fn build_broker_rolegroup_statefulset(
     opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
     merged_config: &KafkaConfig,
-    sa_name: &str,
+    service_account: &ServiceAccount,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet> {
     let role = kafka.role(kafka_role).context(InternalOperatorSnafu)?;
@@ -1096,7 +1096,7 @@ fn build_broker_rolegroup_statefulset(
             )),
         )
         .context(AddVolumeSnafu)?
-        .service_account_name(sa_name)
+        .service_account_name(service_account.name_any())
         .security_context(
             PodSecurityContextBuilder::new()
                 .run_as_user(KAFKA_UID)
