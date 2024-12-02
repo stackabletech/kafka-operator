@@ -6,8 +6,20 @@
 //! This is required due to overlaps between TLS encryption and e.g. mTLS authentication or Kerberos
 use std::collections::BTreeMap;
 
+use crate::{
+    authentication::{self, ResolvedAuthenticationClasses},
+    listener::{self, KafkaListenerConfig},
+    tls, KafkaCluster, LISTENER_BOOTSTRAP_VOLUME_NAME, SERVER_PROPERTIES_FILE,
+    STACKABLE_CONFIG_DIR,
+};
+use crate::{
+    listener::node_address_cmd, STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+    STACKABLE_LISTENER_BROKER_DIR,
+};
+use crate::{KafkaRole, LISTENER_BROKER_VOLUME_NAME, STACKABLE_LOG_DIR};
 use indoc::formatdoc;
 use snafu::{ensure, ResultExt, Snafu};
+use stackable_operator::time::Duration;
 use stackable_operator::{
     builder::{
         self,
@@ -25,18 +37,6 @@ use stackable_operator::{
     },
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
-
-use crate::{
-    authentication::{self, ResolvedAuthenticationClasses},
-    listener::{self, KafkaListenerConfig},
-    tls, KafkaCluster, LISTENER_BOOTSTRAP_VOLUME_NAME, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR,
-};
-use crate::{
-    listener::node_address_cmd, STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-    STACKABLE_LISTENER_BROKER_DIR,
-};
-use crate::{KafkaRole, LISTENER_BROKER_VOLUME_NAME, STACKABLE_LOG_DIR};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -385,6 +385,7 @@ impl KafkaTlsSecurity {
         pod_builder: &mut PodBuilder,
         cb_kcat_prober: &mut ContainerBuilder,
         cb_kafka: &mut ContainerBuilder,
+        requested_secret_lifetime: &Duration,
     ) -> Result<(), Error> {
         // add tls (server or client authentication volumes) if required
         if let Some(tls_server_secret_class) = self.get_tls_secret_class() {
@@ -393,6 +394,7 @@ impl KafkaTlsSecurity {
                 .add_volume(Self::create_kcat_tls_volume(
                     Self::STACKABLE_TLS_KCAT_VOLUME_NAME,
                     tls_server_secret_class,
+                    requested_secret_lifetime,
                 )?)
                 .context(AddVolumeSnafu)?;
             cb_kcat_prober
@@ -406,6 +408,7 @@ impl KafkaTlsSecurity {
                 .add_volume(Self::create_tls_keystore_volume(
                     Self::STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
                     tls_server_secret_class,
+                    requested_secret_lifetime,
                 )?)
                 .context(AddVolumeSnafu)?;
             cb_kafka
@@ -421,6 +424,7 @@ impl KafkaTlsSecurity {
                 .add_volume(Self::create_tls_keystore_volume(
                     Self::STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                     tls_internal_secret_class,
+                    requested_secret_lifetime,
                 )?)
                 .context(AddVolumeSnafu)?;
             cb_kafka
@@ -594,12 +598,17 @@ impl KafkaTlsSecurity {
     }
 
     /// Creates ephemeral volumes to mount the `SecretClass` into the Pods for kcat client
-    fn create_kcat_tls_volume(volume_name: &str, secret_class_name: &str) -> Result<Volume, Error> {
+    fn create_kcat_tls_volume(
+        volume_name: &str,
+        secret_class_name: &str,
+        requested_secret_lifetime: &Duration,
+    ) -> Result<Volume, Error> {
         Ok(VolumeBuilder::new(volume_name)
             .ephemeral(
                 SecretOperatorVolumeSourceBuilder::new(secret_class_name)
                     .with_pod_scope()
                     .with_format(SecretFormat::TlsPem)
+                    .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
                     .build()
                     .context(SecretVolumeBuildSnafu)?,
             )
@@ -610,6 +619,7 @@ impl KafkaTlsSecurity {
     fn create_tls_keystore_volume(
         volume_name: &str,
         secret_class_name: &str,
+        requested_secret_lifetime: &Duration,
     ) -> Result<Volume, Error> {
         Ok(VolumeBuilder::new(volume_name)
             .ephemeral(
@@ -618,6 +628,7 @@ impl KafkaTlsSecurity {
                     .with_listener_volume_scope(LISTENER_BROKER_VOLUME_NAME)
                     .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
                     .with_format(SecretFormat::TlsPkcs12)
+                    .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
                     .build()
                     .context(SecretVolumeBuildSnafu)?,
             )
