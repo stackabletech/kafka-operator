@@ -430,9 +430,17 @@ pub struct KafkaConfig {
 
     /// The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
     pub broker_listener_class: String,
+
+    /// Request secret (currently only autoTls certificates) lifetime from the secret operator, e.g. `7d`, or `30d`.
+    /// Please note that this can be shortened by the `maxCertificateLifetime` setting on the SecretClass issuing the TLS certificate.
+    #[fragment_attrs(serde(default))]
+    pub requested_secret_lifetime: Option<Duration>,
 }
 
 impl KafkaConfig {
+    // Auto TLS certificate lifetime
+    const DEFAULT_BROKER_SECRET_LIFETIME: Duration = Duration::from_days_unchecked(7);
+
     pub fn default_config(cluster_name: &str, role: &KafkaRole) -> KafkaConfigFragment {
         KafkaConfigFragment {
             logging: product_logging::spec::default_logging(),
@@ -457,6 +465,7 @@ impl KafkaConfig {
             graceful_shutdown_timeout: Some(DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT),
             bootstrap_listener_class: Some("cluster-internal".to_string()),
             broker_listener_class: Some("cluster-internal".to_string()),
+            requested_secret_lifetime: Some(Self::DEFAULT_BROKER_SECRET_LIFETIME),
         }
     }
 }

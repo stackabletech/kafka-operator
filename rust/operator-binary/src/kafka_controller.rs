@@ -110,6 +110,9 @@ pub struct Ctx {
 #[strum_discriminants(derive(IntoStaticStr))]
 #[allow(clippy::enum_variant_names)]
 pub enum Error {
+    #[snafu(display("missing secret lifetime"))]
+    MissingSecretLifetime,
+
     #[snafu(display("object has no name"))]
     ObjectHasNoName,
 
@@ -363,6 +366,7 @@ impl ReconcilerError for Error {
 
     fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
         match self {
+            Error::MissingSecretLifetime => None,
             Error::ObjectHasNoName => None,
             Error::ObjectHasNoNamespace => None,
             Error::NoBrokerRole => None,
@@ -866,8 +870,16 @@ fn build_broker_rolegroup_statefulset(
     let mut pod_builder = PodBuilder::new();
 
     // Add TLS related volumes and volume mounts
+    let requested_secret_lifetime = merged_config
+        .requested_secret_lifetime
+        .context(MissingSecretLifetimeSnafu)?;
     kafka_security
-        .add_volume_and_volume_mounts(&mut pod_builder, &mut cb_kcat_prober, &mut cb_kafka)
+        .add_volume_and_volume_mounts(
+            &mut pod_builder,
+            &mut cb_kcat_prober,
+            &mut cb_kafka,
+            &requested_secret_lifetime,
+        )
         .context(AddVolumesAndVolumeMountsSnafu)?;
 
     let mut pvcs = merged_config.resources.storage.build_pvcs();
