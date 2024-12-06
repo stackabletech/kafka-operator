@@ -32,22 +32,22 @@ echo "Updating Helm repositories"
 helm repo update
 echo "Installing Operators with Helm"
 # tag::helm-install-operators[]
-helm install --wait commons-operator stackable-stable/commons-operator --version 24.11.0
-helm install --wait secret-operator stackable-stable/secret-operator --version 24.11.0
-helm install --wait listener-operator stackable-stable/listener-operator --version 24.11.0
-helm install --wait zookeeper-operator stackable-stable/zookeeper-operator --version 24.11.0
-helm install --wait kafka-operator stackable-stable/kafka-operator --version 24.11.0
+helm install --wait commons-operator stackable-stable/commons-operator --version 24.11.1-rc1
+helm install --wait secret-operator stackable-stable/secret-operator --version 24.11.1-rc1
+helm install --wait listener-operator stackable-stable/listener-operator --version 24.11.1-rc1
+helm install --wait zookeeper-operator stackable-stable/zookeeper-operator --version 24.11.1-rc1
+helm install --wait kafka-operator stackable-stable/kafka-operator --version 24.11.1-rc1
 # end::helm-install-operators[]
 ;;
 "stackablectl")
 echo "installing Operators with stackablectl"
 # tag::stackablectl-install-operators[]
 stackablectl operator install \
-  commons=24.11.0 \
-  secret=24.11.0 \
-  listener=24.11.0 \
-  zookeeper=24.11.0 \
-  kafka=24.11.0
+  commons=24.11.1-rc1 \
+  secret=24.11.1-rc1 \
+  listener=24.11.1-rc1 \
+  zookeeper=24.11.1-rc1 \
+  kafka=24.11.1-rc1
 # end::stackablectl-install-operators[]
 ;;
 *)
