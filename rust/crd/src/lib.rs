@@ -439,7 +439,7 @@ pub struct KafkaConfig {
 
 impl KafkaConfig {
     // Auto TLS certificate lifetime
-    const DEFAULT_BROKER_SECRET_LIFETIME: Duration = Duration::from_days_unchecked(7);
+    const DEFAULT_BROKER_SECRET_LIFETIME: Duration = Duration::from_days_unchecked(1);
 
     pub fn default_config(cluster_name: &str, role: &KafkaRole) -> KafkaConfigFragment {
         KafkaConfigFragment {
