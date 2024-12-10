@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - The lifetime of auto generated TLS certificates is now configurable with the role and roleGroup
   config property `requestedSecretLifetime`. This helps reduce frequent Pod restarts ([#796]).
+- Run a `containerdebug` process in the background of each Kafka container to collect debugging information ([#803]).
 
 ### Fixed
 
@@ -17,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 [#793]: https://github.com/stackabletech/kafka-operator/pull/793
 [#796]: https://github.com/stackabletech/kafka-operator/pull/796
+[#803]: https://github.com/stackabletech/kafka-operator/pull/803
 
 ## [24.11.0] - 2024-11-18
 
