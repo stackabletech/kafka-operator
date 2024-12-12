@@ -5,11 +5,11 @@ pub mod listener;
 pub mod security;
 pub mod tls;
 
-use crate::authentication::KafkaAuthentication;
 use crate::authorization::KafkaAuthorization;
 use crate::tls::KafkaTls;
 
 use affinity::get_affinity;
+use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
@@ -63,6 +63,9 @@ pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
 pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
+// kerberos
+pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
+pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
 const DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_minutes_unchecked(30);
 
@@ -335,6 +338,13 @@ impl KafkaRole {
         }
         roles
     }
+
+    /// A Kerberos principal has three parts, with the form username/fully.qualified.domain.name@YOUR-REALM.COM.
+    /// We only have one role and will use "kafka" everywhere (which e.g. differs from the current hdfs implementation,
+    /// but is similar to HBase).
+    pub fn kerberos_service_name(&self) -> &'static str {
+        "kafka"
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Fragment, JsonSchema)]
@@ -420,9 +430,17 @@ pub struct KafkaConfig {
 
     /// The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
     pub broker_listener_class: String,
+
+    /// Request secret (currently only autoTls certificates) lifetime from the secret operator, e.g. `7d`, or `30d`.
+    /// Please note that this can be shortened by the `maxCertificateLifetime` setting on the SecretClass issuing the TLS certificate.
+    #[fragment_attrs(serde(default))]
+    pub requested_secret_lifetime: Option<Duration>,
 }
 
 impl KafkaConfig {
+    // Auto TLS certificate lifetime
+    const DEFAULT_BROKER_SECRET_LIFETIME: Duration = Duration::from_days_unchecked(1);
+
     pub fn default_config(cluster_name: &str, role: &KafkaRole) -> KafkaConfigFragment {
         KafkaConfigFragment {
             logging: product_logging::spec::default_logging(),
@@ -447,6 +465,7 @@ impl KafkaConfig {
             graceful_shutdown_timeout: Some(DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT),
             bootstrap_listener_class: Some("cluster-internal".to_string()),
             broker_listener_class: Some("cluster-internal".to_string()),
+            requested_secret_lifetime: Some(Self::DEFAULT_BROKER_SECRET_LIFETIME),
         }
     }
 }

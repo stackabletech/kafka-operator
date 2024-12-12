@@ -1,12 +1,4 @@
 ---
-apiVersion: listeners.stackable.tech/v1alpha1
-kind: ListenerClass
-metadata:
-  name: external-unstable-ip
-spec:
-  serviceType: NodePort
-  preferredAddressType: IP
----
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
@@ -20,8 +12,8 @@ spec:
     zookeeperConfigMapName: simple-kafka-znode
   brokers:
     config:
-      bootstrapListenerClass: external-unstable-ip # This exposes your Stacklet outside of Kubernetes. Remove this property if this is not desired
-      brokerListenerClass: external-unstable-ip # This exposes your Stacklet outside of Kubernetes. Remove this property if this is not desired
+      bootstrapListenerClass: external-unstable # This exposes your Stacklet outside of Kubernetes. Remove this property if this is not desired
+      brokerListenerClass: external-unstable # This exposes your Stacklet outside of Kubernetes. Remove this property if this is not desired
     roleGroups:
       default:
         replicas: 3

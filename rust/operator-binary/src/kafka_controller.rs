@@ -12,13 +12,14 @@ use product_config::{
 };
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{
-    listener::get_kafka_listener_config, security::KafkaTlsSecurity, Container, KafkaCluster,
-    KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME, DOCKER_IMAGE_BASE_NAME,
-    JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
-    LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
-    OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
-    STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
-    STACKABLE_LOG_DIR,
+    listener::{get_kafka_listener_config, pod_fqdn, KafkaListenerError},
+    security::KafkaTlsSecurity,
+    Container, KafkaCluster, KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME,
+    DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
+    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
+    METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
+    STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
+    STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
 };
 use stackable_operator::{
     builder::{
@@ -47,7 +48,7 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar,
                 EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe, Service,
-                ServiceSpec, Volume,
+                ServiceAccount, ServiceSpec, Volume,
             },
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
@@ -83,6 +84,7 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     discovery::{self, build_discovery_configmaps},
+    kerberos::{self, add_kerberos_pod_config},
     operations::{
         graceful_shutdown::{add_graceful_shutdown_config, graceful_shutdown_config_properties},
         pdb::add_pdbs,
@@ -108,6 +110,9 @@ pub struct Ctx {
 #[strum_discriminants(derive(IntoStaticStr))]
 #[allow(clippy::enum_variant_names)]
 pub enum Error {
+    #[snafu(display("missing secret lifetime"))]
+    MissingSecretLifetime,
+
     #[snafu(display("object has no name"))]
     ObjectHasNoName,
 
@@ -325,8 +330,16 @@ pub enum Error {
         source: stackable_kafka_crd::security::Error,
     },
 
-    #[snafu(display("failed to configure logging"))]
-    ConfigureLogging { source: LoggingError },
+    #[snafu(display("failed to resolve the fully-qualified pod name"))]
+    ResolveNamespace { source: KafkaListenerError },
+
+    #[snafu(display("failed to add kerberos config"))]
+    AddKerberosConfig { source: kerberos::Error },
+
+    #[snafu(display("failed to validate authentication method"))]
+    FailedToValidateAuthenticationMethod {
+        source: stackable_kafka_crd::security::Error,
+    },
 
     #[snafu(display("failed to add needed volume"))]
     AddVolume { source: builder::pod::Error },
@@ -335,6 +348,9 @@ pub enum Error {
     AddVolumeMount {
         source: builder::pod::container::Error,
     },
+
+    #[snafu(display("failed to configure logging"))]
+    ConfigureLogging { source: LoggingError },
 
     #[snafu(display("KafkaCluster object is invalid"))]
     InvalidKafkaCluster {
@@ -350,6 +366,7 @@ impl ReconcilerError for Error {
 
     fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
         match self {
+            Error::MissingSecretLifetime => None,
             Error::ObjectHasNoName => None,
             Error::ObjectHasNoNamespace => None,
             Error::NoBrokerRole => None,
@@ -401,6 +418,9 @@ impl ReconcilerError for Error {
             Error::ConfigureLogging { .. } => None,
             Error::AddVolume { .. } => None,
             Error::AddVolumeMount { .. } => None,
+            Error::ResolveNamespace { .. } => None,
+            Error::AddKerberosConfig { .. } => None,
+            Error::FailedToValidateAuthenticationMethod { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
         }
     }
@@ -467,6 +487,18 @@ pub async fn reconcile_kafka(
         .await
         .context(FailedToInitializeSecurityContextSnafu)?;
 
+    tracing::debug!(
+        kerberos_enabled = kafka_security.has_kerberos_enabled(),
+        kerberos_secret_class = ?kafka_security.kerberos_secret_class(),
+        tls_enabled = kafka_security.tls_enabled(),
+        tls_client_authentication_class = ?kafka_security.tls_client_authentication_class(),
+        "The following security settings are used"
+    );
+
+    kafka_security
+        .validate_authentication_methods()
+        .context(FailedToValidateAuthenticationMethodSnafu)?;
+
     // Assemble the OPA connection string from the discovery and the given path if provided
     // Will be passed as --override parameter in the cli in the state ful set
     let opa_connect = if let Some(opa_spec) = &kafka.spec.cluster_config.authorization.opa {
@@ -496,7 +528,7 @@ pub async fn reconcile_kafka(
     .context(BuildRbacResourcesSnafu)?;
 
     let rbac_sa = cluster_resources
-        .add(client, rbac_sa)
+        .add(client, rbac_sa.clone())
         .await
         .context(ApplyServiceAccountSnafu)?;
     cluster_resources
@@ -533,7 +565,7 @@ pub async fn reconcile_kafka(
             opa_connect.as_deref(),
             &kafka_security,
             &merged_config,
-            &rbac_sa.name_any(),
+            &rbac_sa,
             &client.kubernetes_cluster_info,
         )?;
         let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
@@ -720,6 +752,9 @@ fn build_broker_rolegroup_config_map(
             })?,
         );
 
+    tracing::debug!(?server_cfg, "Applied server config");
+    tracing::debug!(?jvm_sec_props, "Applied JVM config");
+
     extend_role_group_config_map(
         rolegroup,
         vector_aggregator_address,
@@ -786,17 +821,17 @@ fn build_broker_rolegroup_service(
 #[allow(clippy::too_many_arguments)]
 fn build_broker_rolegroup_statefulset(
     kafka: &KafkaCluster,
-    role: &KafkaRole,
+    kafka_role: &KafkaRole,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
     merged_config: &KafkaConfig,
-    sa_name: &str,
+    service_account: &ServiceAccount,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet> {
-    let role = kafka.role(role).context(InternalOperatorSnafu)?;
+    let role = kafka.role(kafka_role).context(InternalOperatorSnafu)?;
     let rolegroup = kafka
         .rolegroup(rolegroup_ref)
         .context(InternalOperatorSnafu)?;
@@ -835,8 +870,16 @@ fn build_broker_rolegroup_statefulset(
     let mut pod_builder = PodBuilder::new();
 
     // Add TLS related volumes and volume mounts
+    let requested_secret_lifetime = merged_config
+        .requested_secret_lifetime
+        .context(MissingSecretLifetimeSnafu)?;
     kafka_security
-        .add_volume_and_volume_mounts(&mut pod_builder, &mut cb_kcat_prober, &mut cb_kafka)
+        .add_volume_and_volume_mounts(
+            &mut pod_builder,
+            &mut cb_kcat_prober,
+            &mut cb_kafka,
+            &requested_secret_lifetime,
+        )
         .context(AddVolumesAndVolumeMountsSnafu)?;
 
     let mut pvcs = merged_config.resources.storage.build_pvcs();
@@ -851,6 +894,17 @@ fn build_broker_rolegroup_statefulset(
         .and_then(|builder| builder.build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME))
         .unwrap(),
     );
+
+    if kafka_security.has_kerberos_enabled() {
+        add_kerberos_pod_config(
+            kafka_security,
+            kafka_role,
+            &mut cb_kcat_prober,
+            &mut cb_kafka,
+            &mut pod_builder,
+        )
+        .context(AddKerberosConfigSnafu)?;
+    }
 
     let mut env = broker_config
         .get(&PropertyNameKind::Env)
@@ -909,6 +963,7 @@ fn build_broker_rolegroup_statefulset(
     let jvm_args = format!(
         "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE} -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml",
     );
+
     let kafka_listeners = get_kafka_listener_config(
         kafka,
         kafka_security,
@@ -927,7 +982,11 @@ fn build_broker_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![kafka_security
-            .kafka_container_commands(&kafka_listeners, opa_connect_string)
+            .kafka_container_commands(
+                &kafka_listeners,
+                opa_connect_string,
+                kafka_security.has_kerberos_enabled(),
+            )
             .join("\n")])
         .add_env_var("EXTRA_ARGS", jvm_args)
         .add_env_var(
@@ -953,11 +1012,24 @@ fn build_broker_rolegroup_statefulset(
         .context(AddVolumeMountSnafu)?
         .resources(merged_config.resources.clone().into());
 
+    let pod_fqdn = pod_fqdn(kafka, &rolegroup_ref.object_name(), cluster_info)
+        .context(ResolveNamespaceSnafu)?;
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
     cb_kcat_prober
         .image_from_product_image(resolved_product_image)
         .command(vec!["sleep".to_string(), "infinity".to_string()])
+        .add_env_vars(vec![EnvVar {
+            name: "POD_NAME".to_string(),
+            value_from: Some(EnvVarSource {
+                field_ref: Some(ObjectFieldSelector {
+                    api_version: Some("v1".to_string()),
+                    field_path: "metadata.name".to_string(),
+                }),
+                ..EnvVarSource::default()
+            }),
+            ..EnvVar::default()
+        }])
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -971,7 +1043,7 @@ fn build_broker_rolegroup_statefulset(
         .readiness_probe(Probe {
             exec: Some(ExecAction {
                 // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(kafka_security.kcat_prober_container_commands()),
+                command: Some(kafka_security.kcat_prober_container_commands(&pod_fqdn)),
             }),
             timeout_seconds: Some(5),
             period_seconds: Some(2),
@@ -1036,7 +1108,7 @@ fn build_broker_rolegroup_statefulset(
             )),
         )
         .context(AddVolumeSnafu)?
-        .service_account_name(sa_name)
+        .service_account_name(service_account.name_any())
         .security_context(
             PodSecurityContextBuilder::new()
                 .run_as_user(KAFKA_UID)
@@ -1128,7 +1200,7 @@ pub fn error_policy(
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
 fn listener_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ListenerPort> {
-    vec![
+    let mut ports = vec![
         ListenerPort {
             name: METRICS_PORT_NAME.to_string(),
             port: METRICS_PORT.into(),
@@ -1139,12 +1211,20 @@ fn listener_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ListenerPort> {
             port: kafka_security.client_port().into(),
             protocol: Some("TCP".to_string()),
         },
-    ]
+    ];
+    if kafka_security.has_kerberos_enabled() {
+        ports.push(ListenerPort {
+            name: kafka_security.bootstrap_port_name().to_string(),
+            port: kafka_security.bootstrap_port().into(),
+            protocol: Some("TCP".to_string()),
+        });
+    }
+    ports
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
 fn container_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ContainerPort> {
-    vec![
+    let mut ports = vec![
         ContainerPort {
             name: Some(METRICS_PORT_NAME.to_string()),
             container_port: METRICS_PORT.into(),
@@ -1157,5 +1237,14 @@ fn container_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ContainerPort> {
             protocol: Some("TCP".to_string()),
             ..ContainerPort::default()
         },
-    ]
+    ];
+    if kafka_security.has_kerberos_enabled() {
+        ports.push(ContainerPort {
+            name: Some(kafka_security.bootstrap_port_name().to_string()),
+            container_port: kafka_security.bootstrap_port().into(),
+            protocol: Some("TCP".to_string()),
+            ..ContainerPort::default()
+        });
+    }
+    ports
 }
