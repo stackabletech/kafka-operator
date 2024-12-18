@@ -960,6 +960,13 @@ fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
+    // Needed for the `containerdebug` process to log it's tracing information to.
+    env.push(EnvVar {
+        name: "CONTAINERDEBUG_LOG_DIRECTORY".to_string(),
+        value: Some(format!("{STACKABLE_LOG_DIR}/containerdebug")),
+        value_from: None,
+    });
+
     let jvm_args = format!(
         "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE} -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml",
     );

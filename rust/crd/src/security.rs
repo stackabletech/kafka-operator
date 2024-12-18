@@ -346,6 +346,7 @@ impl KafkaTlsSecurity {
             {COMMON_BASH_TRAP_FUNCTIONS}
             {remove_vector_shutdown_file_command}
             prepare_signal_handlers
+            containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
             {set_realm_env}
             bin/kafka-server-start.sh {STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE} --override \"zookeeper.connect=$ZOOKEEPER\" --override \"listeners={listeners}\" --override \"advertised.listeners={advertised_listeners}\" --override \"listener.security.protocol.map={listener_security_protocol_map}\"{opa_config}{jaas_config} &
             wait_for_termination $!
