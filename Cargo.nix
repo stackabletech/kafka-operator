@@ -2728,9 +2728,9 @@ rec {
       };
       "hyper-rustls" = rec {
         crateName = "hyper-rustls";
-        version = "0.27.3";
+        version = "0.27.4";
         edition = "2021";
-        sha256 = "0cxkph8hsmbz693a8ih2ciy7h0xbac844rpm981y6c0iqfsxpbq8";
+        sha256 = "0ry73hvh1wdlghq5wywdl5arxgnfcfqmcx2ca97w8vl2qr44m27n";
         libName = "hyper_rustls";
         dependencies = [
           {
@@ -4409,9 +4409,9 @@ rec {
       };
       "libc" = rec {
         crateName = "libc";
-        version = "0.2.168";
+        version = "0.2.169";
         edition = "2021";
-        sha256 = "0vab4inpw0dz78nii02hsxp1skqn06xzh64psw8wl1h63scb5bjs";
+        sha256 = "02m253hs8gw0m1n8iyrsc4n15yzbqwhddi7w1l0ds7i92kdsiaxm";
         authors = [
           "The Rust Project Developers"
         ];
@@ -4626,9 +4626,9 @@ rec {
       };
       "miniz_oxide" = rec {
         crateName = "miniz_oxide";
-        version = "0.8.1";
+        version = "0.8.2";
         edition = "2021";
-        sha256 = "0qca2qdgkxmcwm59r1kik5s3hx15iq6fgkkm2na8r5dnzy9jbvx2";
+        sha256 = "1543asrvhla92sby4z6m9ilkg2cmmq8ja6bj84k1vp6f48qfiysg";
         authors = [
           "Frommi <daniil.liferenko@gmail.com>"
           "oyvindln <oyvindln@users.noreply.github.com>"
@@ -5307,7 +5307,7 @@ rec {
           }
           {
             name = "thiserror";
-            packageId = "thiserror 2.0.7";
+            packageId = "thiserror 2.0.8";
             optional = true;
           }
           {
@@ -6270,7 +6270,7 @@ rec {
           }
           {
             name = "security-framework";
-            packageId = "security-framework 3.0.1";
+            packageId = "security-framework 3.1.0";
             target = { target, features }: ("macos" == target."os" or null);
           }
         ];
@@ -6566,11 +6566,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "OSX_10_10" "OSX_10_11" "OSX_10_12" "OSX_10_9" "default" ];
       };
-      "security-framework 3.0.1" = rec {
+      "security-framework 3.1.0" = rec {
         crateName = "security-framework";
-        version = "3.0.1";
+        version = "3.1.0";
         edition = "2021";
-        sha256 = "1j1rpyiwq698dyyq2lnnws8hzknw8r32dy9cx9jc7gljgrh5lhg1";
+        sha256 = "1g1wq04rb6gsyfawphv5vhmmicbm5l25gsvr05mvng6cpz4zilw1";
         libName = "security_framework";
         authors = [
           "Steven Fackler <sfackler@gmail.com>"
@@ -6611,9 +6611,9 @@ rec {
       };
       "security-framework-sys" = rec {
         crateName = "security-framework-sys";
-        version = "2.12.1";
+        version = "2.13.0";
         edition = "2021";
-        sha256 = "18pafp0bn41bcbm66qrhb3pg4c8dddvc28jdr51mb2y57lqcffgs";
+        sha256 = "1mbhagj98y2byhjkr353y1nings01pfa9yk0gxmcb0ydd0vzsqqq";
         libName = "security_framework_sys";
         authors = [
           "Steven Fackler <sfackler@gmail.com>"
@@ -7802,18 +7802,18 @@ rec {
         ];
 
       };
-      "thiserror 2.0.7" = rec {
+      "thiserror 2.0.8" = rec {
         crateName = "thiserror";
-        version = "2.0.7";
+        version = "2.0.8";
         edition = "2021";
-        sha256 = "0rrp8k3y2m87df7zrmd3ks2y2zpvk9c9sjdb2raihs6nrcw58q4k";
+        sha256 = "06hlnvfcvgbw0q9r9pfyx5mr69idnncyxd9sz4mp0w807qzkix88";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
         dependencies = [
           {
             name = "thiserror-impl";
-            packageId = "thiserror-impl 2.0.7";
+            packageId = "thiserror-impl 2.0.8";
           }
         ];
         features = {
@@ -7847,11 +7847,11 @@ rec {
         ];
 
       };
-      "thiserror-impl 2.0.7" = rec {
+      "thiserror-impl 2.0.8" = rec {
         crateName = "thiserror-impl";
-        version = "2.0.7";
+        version = "2.0.8";
         edition = "2021";
-        sha256 = "0diy4yillp5czqgycdhyp3i3z2iln49cspvscwbj3bri8ndp9n71";
+        sha256 = "0hy9l1pxwsiabp4ql18anhrx0xp63dlrk813cvpwmcwhxky5gwzj";
         procMacro = true;
         libName = "thiserror_impl";
         authors = [
