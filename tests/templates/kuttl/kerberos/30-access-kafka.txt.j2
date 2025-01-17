@@ -9,7 +9,7 @@ spec:
       serviceAccountName: test-sa
       containers:
         - name: access-kafka
-          image: docker.stackable.tech/stackable/kafka:{{ test_scenario['values']['kafka'] }}-stackable0.0.0-dev
+          image: oci.stackable.tech/sdp/kafka:{{ test_scenario['values']['kafka'] }}-stackable0.0.0-dev
           command:
             - /bin/bash
             - /tmp/script/script.sh

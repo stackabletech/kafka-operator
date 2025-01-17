@@ -1,7 +1,7 @@
 # Default values for kafka-operator.
 ---
 image:
-  repository: docker.stackable.tech/stackable/kafka-operator
+  repository: oci.stackable.tech/sdp/kafka-operator
   pullPolicy: IfNotPresent
   pullSecrets: []
 
