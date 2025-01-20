@@ -1,5 +1,4 @@
-use crate::utils::build_recommended_labels;
-use crate::KAFKA_CONTROLLER_NAME;
+use std::num::TryFromIntError;
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole};
@@ -9,7 +8,8 @@ use stackable_operator::{
     k8s_openapi::api::core::v1::{ConfigMap, Service},
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
-use std::num::TryFromIntError;
+
+use crate::{kafka_controller::KAFKA_CONTROLLER_NAME, utils::build_recommended_labels};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
