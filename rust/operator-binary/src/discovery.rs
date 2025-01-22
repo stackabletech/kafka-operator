@@ -7,7 +7,6 @@ use stackable_operator::{
     commons::{listener::Listener, product_image_selection::ResolvedProductImage},
     k8s_openapi::api::core::v1::{ConfigMap, Service},
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
-    kvp::Label,
 };
 
 use crate::{kafka_controller::KAFKA_CONTROLLER_NAME, utils::build_recommended_labels};
