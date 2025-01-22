@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Deprecated
+
+- The `-nodeport` discovery ConfigMaps have been deprecated for removal ([#813]).
+  - Any existing uses should be migrated to the primary discovery ConfigMap instead.
+
 ### Added
 
 - The lifetime of auto generated TLS certificates is now configurable with the role and roleGroup
@@ -25,6 +30,7 @@ All notable changes to this project will be documented in this file.
 [#796]: https://github.com/stackabletech/kafka-operator/pull/796
 [#803]: https://github.com/stackabletech/kafka-operator/pull/803
 [#809]: https://github.com/stackabletech/kafka-operator/pull/809
+[#813]: https://github.com/stackabletech/kafka-operator/pull/813
 
 ## [24.11.0] - 2024-11-18
 
