@@ -16,10 +16,6 @@ All notable changes to this project will be documented in this file.
 - Run a `containerdebug` process in the background of each Kafka container to collect debugging information ([#803]).
 - Aggregate emitted Kubernetes events on the CustomResources ([#809]).
 
-### Changed
-
-- Append a dot (`.`) to the default cluster domain to reduce DNS requests ([#809]).
-
 ### Fixed
 
 - BREAKING: Use distinct ServiceAccounts for the Stacklets, so that multiple Stacklets can be
@@ -29,7 +25,6 @@ All notable changes to this project will be documented in this file.
 [#793]: https://github.com/stackabletech/kafka-operator/pull/793
 [#796]: https://github.com/stackabletech/kafka-operator/pull/796
 [#803]: https://github.com/stackabletech/kafka-operator/pull/803
-[#809]: https://github.com/stackabletech/kafka-operator/pull/809
 [#813]: https://github.com/stackabletech/kafka-operator/pull/813
 
 ## [24.11.0] - 2024-11-18
