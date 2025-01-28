@@ -1,5 +1,4 @@
-use crate::utils::build_recommended_labels;
-use crate::KAFKA_CONTROLLER_NAME;
+use std::num::TryFromIntError;
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_kafka_crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole};
@@ -9,7 +8,8 @@ use stackable_operator::{
     k8s_openapi::api::core::v1::{ConfigMap, Service},
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
-use std::num::TryFromIntError;
+
+use crate::{kafka_controller::KAFKA_CONTROLLER_NAME, utils::build_recommended_labels};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -73,16 +73,28 @@ pub async fn build_discovery_configmaps(
             &name,
             listener_hosts(listeners, port_name)?,
         )?,
-        // backwards compat: nodeport service is now the same as the main service, access type
-        // is determined by the listenerclass.
-        // do we want to deprecate/remove this?
-        build_discovery_configmap(
-            kafka,
-            owner,
-            resolved_product_image,
-            &format!("{name}-nodeport"),
-            listener_hosts(listeners, port_name)?,
-        )?,
+        {
+            let mut nodeport = build_discovery_configmap(
+                kafka,
+                owner,
+                resolved_product_image,
+                &format!("{name}-nodeport"),
+                listener_hosts(listeners, port_name)?,
+            )?;
+            nodeport
+                .metadata
+                .annotations
+                .get_or_insert_with(Default::default)
+                .insert(
+                    "stackable.tech/deprecated".to_string(),
+                    format!(
+                        "Deprecated in 25.3, and scheduled for removal in the next version. \
+                             Use {name:?} instead. \
+                             See https://github.com/stackabletech/kafka-operator/issues/765 for more."
+                    ),
+                );
+            nodeport
+        },
     ])
 }
 

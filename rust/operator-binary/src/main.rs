@@ -13,14 +13,19 @@ use stackable_operator::{
         core::v1::{ConfigMap, Service, ServiceAccount},
         rbac::v1::RoleBinding,
     },
-    kube::core::DeserializeGuard,
-    kube::runtime::{watcher, Controller},
+    kube::{
+        core::DeserializeGuard,
+        runtime::{
+            events::{Recorder, Reporter},
+            watcher, Controller,
+        },
+    },
     logging::controller::report_controller_reconciled,
     namespace::WatchNamespace,
     CustomResourceExt,
 };
 
-use crate::kafka_controller::KAFKA_CONTROLLER_NAME;
+use crate::kafka_controller::KAFKA_FULL_CONTROLLER_NAME;
 
 mod discovery;
 mod kafka_controller;
@@ -100,7 +105,15 @@ pub async fn create_controller(
     product_config: ProductConfigManager,
     namespace: WatchNamespace,
 ) {
-    let kafka_controller = Controller::new(
+    let event_recorder = Arc::new(Recorder::new(
+        client.as_kube_client(),
+        Reporter {
+            controller: KAFKA_FULL_CONTROLLER_NAME.to_string(),
+            instance: None,
+        },
+    ));
+
+    Controller::new(
         namespace.get_api::<DeserializeGuard<KafkaCluster>>(&client),
         watcher::Config::default(),
     )
@@ -137,13 +150,18 @@ pub async fn create_controller(
             product_config,
         }),
     )
-    .map(|res| {
-        report_controller_reconciled(
-            &client,
-            &format!("{KAFKA_CONTROLLER_NAME}.{OPERATOR_NAME}"),
-            &res,
-        );
-    });
-
-    kafka_controller.collect::<()>().await;
+    // We can let the reporting happen in the background
+    .for_each_concurrent(
+        16, // concurrency limit
+        move |result| {
+            // The event_recorder needs to be shared across all invocations, so that
+            // events are correctly aggregated
+            let event_recorder = event_recorder.clone();
+            async move {
+                report_controller_reconciled(&event_recorder, KAFKA_FULL_CONTROLLER_NAME, &result)
+                    .await;
+            }
+        },
+    )
+    .await;
 }

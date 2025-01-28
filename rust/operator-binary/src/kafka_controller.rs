@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use const_format::concatcp;
 use product_config::{
     types::PropertyNameKind,
     writer::{to_java_properties_string, PropertiesWriterError},
@@ -97,6 +98,8 @@ use crate::{
 };
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
+pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.', OPERATOR_NAME);
+
 /// Used as runAsUser in the pod security context. This is specified in the kafka image file
 pub const KAFKA_UID: i64 = 1000;
 const JAVA_HEAP_RATIO: f32 = 0.8;
