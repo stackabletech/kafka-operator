@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
   - Any existing uses should be migrated to the primary discovery ConfigMap instead.
 
 ### Added
-￼
+
 - The lifetime of auto generated TLS certificates is now configurable with the role and roleGroup
   config property `requestedSecretLifetime`. This helps reduce frequent Pod restarts ([#796]).
 - Run a `containerdebug` process in the background of each Kafka container to collect debugging information ([#803]).
