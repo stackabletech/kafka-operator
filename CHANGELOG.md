@@ -4,17 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Deprecated
+## [24.11.1] - 2025-01-10
 
-- The `-nodeport` discovery ConfigMaps have been deprecated for removal ([#813]).
-  - Any existing uses should be migrated to the primary discovery ConfigMap instead.
+## [24.11.1-rc2] - 2024-12-12
 
-### Added
-
-- The lifetime of auto generated TLS certificates is now configurable with the role and roleGroup
-  config property `requestedSecretLifetime`. This helps reduce frequent Pod restarts ([#796]).
-- Run a `containerdebug` process in the background of each Kafka container to collect debugging information ([#803]).
-- Aggregate emitted Kubernetes events on the CustomResources ([#809]).
+## [24.11.1-rc1] - 2024-12-06
 
 ### Fixed
 
@@ -23,9 +17,6 @@ All notable changes to this project will be documented in this file.
   restart ([#793]).
 
 [#793]: https://github.com/stackabletech/kafka-operator/pull/793
-[#796]: https://github.com/stackabletech/kafka-operator/pull/796
-[#803]: https://github.com/stackabletech/kafka-operator/pull/803
-[#813]: https://github.com/stackabletech/kafka-operator/pull/813
 
 ## [24.11.0] - 2024-11-18
 
