@@ -77,6 +77,7 @@ pub fn construct_non_heap_jvm_args(
 }
 
 /// Arguments that go into `KAFKA_HEAP_OPTS`.
+/// You can get the normal JVM arguments using [`construct_non_heap_jvm_args`].
 pub fn construct_heap_jvm_args(
     merged_config: &KafkaConfig,
     role: &Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
