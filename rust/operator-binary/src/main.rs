@@ -27,6 +27,7 @@ use stackable_operator::{
 
 use crate::kafka_controller::KAFKA_FULL_CONTROLLER_NAME;
 
+mod config;
 mod discovery;
 mod kafka_controller;
 mod kerberos;

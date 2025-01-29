@@ -32,9 +32,7 @@ use stackable_operator::{
     kube::{runtime::reflector::ObjectRef, CustomResource, ResourceExt},
     product_config_utils::Configuration,
     product_logging::{self, spec::Logging},
-    role_utils::{
-        GenericProductSpecificCommonConfig, GenericRoleConfig, Role, RoleGroup, RoleGroupRef,
-    },
+    role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
     time::Duration,
@@ -129,7 +127,7 @@ pub struct KafkaClusterSpec {
     pub image: ProductImage,
 
     // no doc - docs in Role struct.
-    pub brokers: Option<Role<KafkaConfigFragment>>,
+    pub brokers: Option<Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
 
     /// Kafka settings that affect all roles and role groups.
     /// The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
@@ -191,7 +189,10 @@ impl KafkaCluster {
         }
     }
 
-    pub fn role(&self, role_variant: &KafkaRole) -> Result<&Role<KafkaConfigFragment>, Error> {
+    pub fn role(
+        &self,
+        role_variant: &KafkaRole,
+    ) -> Result<&Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
         match role_variant {
             KafkaRole::Broker => self.spec.brokers.as_ref(),
         }
@@ -203,7 +204,7 @@ impl KafkaCluster {
     pub fn rolegroup(
         &self,
         rolegroup_ref: &RoleGroupRef<KafkaCluster>,
-    ) -> Result<&RoleGroup<KafkaConfigFragment, GenericProductSpecificCommonConfig>, Error> {
+    ) -> Result<&RoleGroup<KafkaConfigFragment, JavaCommonConfig>, Error> {
         let role_variant =
             KafkaRole::from_str(&rolegroup_ref.role).with_context(|_| UnknownKafkaRoleSnafu {
                 role: rolegroup_ref.role.to_owned(),
