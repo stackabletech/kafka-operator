@@ -16,9 +16,14 @@ All notable changes to this project will be documented in this file.
 - Run a `containerdebug` process in the background of each Kafka container to collect debugging information ([#803]).
 - Aggregate emitted Kubernetes events on the CustomResources ([#809]).
 
+### Changed
+
+- Default to OCI for image metadata and product image selection ([#810]).
+
 [#796]: https://github.com/stackabletech/kafka-operator/pull/796
 [#803]: https://github.com/stackabletech/kafka-operator/pull/803
 [#809]: https://github.com/stackabletech/kafka-operator/pull/809
+[#810]: https://github.com/stackabletech/kafka-operator/pull/810
 [#813]: https://github.com/stackabletech/kafka-operator/pull/813
 
 ## [24.11.1] - 2025-01-10
