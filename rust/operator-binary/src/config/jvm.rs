@@ -89,7 +89,9 @@ pub fn construct_heap_jvm_args(
 }
 
 fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
-    jvm_argument.to_lowercase().starts_with("-xm")
+    let lowercase = jvm_argument.to_lowercase();
+
+    lowercase.starts_with("-xms") || lowercase.starts_with("-xmx")
 }
 
 #[cfg(test)]
