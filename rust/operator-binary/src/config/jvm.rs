@@ -77,7 +77,7 @@ pub fn construct_non_heap_jvm_args(
 }
 
 /// Arguments that go into `KAFKA_HEAP_OPTS`.
-pub fn construct_jvm_heap_args(
+pub fn construct_heap_jvm_args(
     merged_config: &KafkaConfig,
     role: &Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
@@ -90,4 +90,108 @@ pub fn construct_jvm_heap_args(
 
 fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
     jvm_argument.to_lowercase().starts_with("-xm")
+}
+
+#[cfg(test)]
+mod tests {
+    use stackable_kafka_crd::{KafkaCluster, KafkaRole};
+
+    use super::*;
+
+    #[test]
+    fn test_construct_jvm_arguments_defaults() {
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          image:
+            productVersion: 3.7.1
+          clusterConfig:
+            zookeeperConfigMapName: xyz
+          brokers:
+            roleGroups:
+              default:
+                replicas: 1
+        "#;
+        let (kafka_role, role, merged_config) = construct_boilerplate(input);
+        let non_heap_jvm_args =
+            construct_non_heap_jvm_args(&kafka_role, &role, &merged_config).unwrap();
+        let heap_jvm_args = construct_heap_jvm_args(&kafka_role, &role, &merged_config).unwrap();
+
+        assert_eq!(
+            non_heap_jvm_args,
+            "-Djava.security.properties=/stackable/config/security.properties \
+            -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9606:/stackable/jmx/broker.yaml"
+        );
+        assert_eq!(heap_jvm_args, "-Xmx819m -Xms819m");
+    }
+
+    #[test]
+    fn test_construct_jvm_argument_overrides() {
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+        spec:
+          image:
+            productVersion: 3.7.1
+          clusterConfig:
+            zookeeperConfigMapName: xyz
+          brokers:
+            config:
+              resources:
+                memory:
+                  limit: 42Gi
+            jvmArgumentOverrides:
+              add:
+                - -Dhttps.proxyHost=proxy.my.corp
+                - -Dhttps.proxyPort=8080
+                - -Djava.net.preferIPv4Stack=true
+            roleGroups:
+              default:
+                replicas: 1
+                jvmArgumentOverrides:
+                  # We need more memory!
+                  removeRegex:
+                    - -Xmx.*
+                    - -Dhttps.proxyPort=.*
+                  add:
+                    - -Xmx40000m
+                    - -Dhttps.proxyPort=1234
+        "#;
+        let (kafka_role, role, merged_config) = construct_boilerplate(input);
+        let non_heap_jvm_args =
+            construct_non_heap_jvm_args(&kafka_role, &role, &merged_config).unwrap();
+        let heap_jvm_args = construct_heap_jvm_args(&kafka_role, &role, &merged_config).unwrap();
+
+        assert_eq!(
+            non_heap_jvm_args,
+            "-Djava.security.properties=/stackable/config/security.properties \
+            -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9606:/stackable/jmx/broker.yaml \
+            -Dhttps.proxyHost=proxy.my.corp \
+            -Djava.net.preferIPv4Stack=true \
+            -Dhttps.proxyPort=1234"
+        );
+        assert_eq!(heap_jvm_args, "-Xms34406m -Xmx40000m");
+    }
+
+    fn construct_boilerplate(
+        kafka_cluster: &str,
+    ) -> (
+        KafkaConfig,
+        Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+        String,
+    ) {
+        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
+
+        let kafka_role = KafkaRole::Broker;
+        let rolegroup_ref = kafka.broker_rolegroup_ref("default");
+        let merged_config = kafka.merged_config(&kafka_role, &rolegroup_ref).unwrap();
+        let role = kafka.spec.brokers.unwrap();
+
+        (merged_config, role, "default".to_owned())
+    }
 }

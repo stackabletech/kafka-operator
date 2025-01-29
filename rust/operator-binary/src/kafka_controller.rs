@@ -83,7 +83,7 @@ use stackable_operator::{
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
-    config::jvm::{construct_jvm_heap_args, construct_non_heap_jvm_args},
+    config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     discovery::{self, build_discovery_configmaps},
     kerberos::{self, add_kerberos_pod_config},
     operations::{
@@ -973,7 +973,7 @@ fn build_broker_rolegroup_statefulset(
         )
         .add_env_var(
             KAFKA_HEAP_OPTS,
-            construct_jvm_heap_args(merged_config, role, &rolegroup_ref.role_group)
+            construct_heap_jvm_args(merged_config, role, &rolegroup_ref.role_group)
                 .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
