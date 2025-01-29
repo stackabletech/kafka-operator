@@ -64,7 +64,7 @@ fn construct_jvm_args(
 }
 
 /// Arguments that go into `EXTRA_ARGS`, so *not* the heap settings (which you cen get using
-/// [`construct_jvm_heap_args`]).
+/// [`construct_heap_jvm_args`]).
 pub fn construct_non_heap_jvm_args(
     merged_config: &KafkaConfig,
     role: &Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
