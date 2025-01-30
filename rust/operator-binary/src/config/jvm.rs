@@ -165,10 +165,10 @@ mod tests {
                     - -Xmx40000m
                     - -Dhttps.proxyPort=1234
         "#;
-        let (kafka_role, role, merged_config) = construct_boilerplate(input);
+        let (merged_config, role, role_group) = construct_boilerplate(input);
         let non_heap_jvm_args =
-            construct_non_heap_jvm_args(&kafka_role, &role, &merged_config).unwrap();
-        let heap_jvm_args = construct_heap_jvm_args(&kafka_role, &role, &merged_config).unwrap();
+            construct_non_heap_jvm_args(&merged_config, &role, &role_group).unwrap();
+        let heap_jvm_args = construct_heap_jvm_args(&merged_config, &role, &role_group).unwrap();
 
         assert_eq!(
             non_heap_jvm_args,
