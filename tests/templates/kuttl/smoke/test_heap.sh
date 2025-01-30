@@ -2,7 +2,7 @@
 # Usage: test_heap.sh
 
 # 1Gi * 0.8 -> 819
-EXPECTED_HEAP=-"Xmx819m"
+EXPECTED_HEAP="-Xmx819m -Xms819m"
 
 # Check if ZK_SERVER_HEAP is set to the correct calculated value
 if [[ $KAFKA_HEAP_OPTS == "$EXPECTED_HEAP" ]]

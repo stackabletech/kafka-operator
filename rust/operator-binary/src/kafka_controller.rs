@@ -63,7 +63,6 @@ use stackable_operator::{
     },
     kvp::{Label, Labels},
     logging::controller::ReconcilerError,
-    memory::{BinaryMultiple, MemoryQuantity},
     product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
     product_logging::{
         self,
@@ -84,6 +83,7 @@ use stackable_operator::{
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
+    config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     discovery::{self, build_discovery_configmaps},
     kerberos::{self, add_kerberos_pod_config},
     operations::{
@@ -102,7 +102,6 @@ pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.
 
 /// Used as runAsUser in the pod security context. This is specified in the kafka image file
 pub const KAFKA_UID: i64 = 1000;
-const JAVA_HEAP_RATIO: f32 = 0.8;
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -246,11 +245,6 @@ pub enum Error {
         source: stackable_kafka_crd::security::Error,
     },
 
-    #[snafu(display("invalid memory resource configuration"))]
-    InvalidHeapConfig {
-        source: stackable_operator::memory::Error,
-    },
-
     #[snafu(display("failed to create cluster resources"))]
     CreateClusterResources {
         source: stackable_operator::cluster_resources::Error,
@@ -359,6 +353,9 @@ pub enum Error {
     InvalidKafkaCluster {
         source: error_boundary::InvalidObject,
     },
+
+    #[snafu(display("failed to construct JVM arguments"))]
+    ConstructJvmArguments { source: crate::config::jvm::Error },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -401,7 +398,6 @@ impl ReconcilerError for Error {
             Error::InvalidContainerName { .. } => None,
             Error::DeleteOrphans { .. } => None,
             Error::FailedToInitializeSecurityContext { .. } => None,
-            Error::InvalidHeapConfig { .. } => None,
             Error::CreateClusterResources { .. } => None,
             Error::FailedToResolveConfig { .. } => None,
             Error::ResolveVectorAggregatorAddress { .. } => None,
@@ -425,6 +421,7 @@ impl ReconcilerError for Error {
             Error::AddKerberosConfig { .. } => None,
             Error::FailedToValidateAuthenticationMethod { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
+            Error::ConstructJvmArguments { .. } => None,
         }
     }
 }
@@ -920,24 +917,6 @@ fn build_broker_rolegroup_statefulset(
         })
         .collect::<Vec<_>>();
 
-    if let Some(memory_limit) = merged_config.resources.memory.limit.as_ref() {
-        let heap_size = MemoryQuantity::try_from(memory_limit)
-            .context(InvalidHeapConfigSnafu)?
-            .scale_to(BinaryMultiple::Mebi)
-            * JAVA_HEAP_RATIO;
-
-        env.push(EnvVar {
-            name: KAFKA_HEAP_OPTS.to_string(),
-            value: Some(format!(
-                "-Xmx{heap}",
-                heap = heap_size
-                    .format_for_java()
-                    .context(InvalidHeapConfigSnafu)?
-            )),
-            ..EnvVar::default()
-        });
-    }
-
     env.push(EnvVar {
         name: "ZOOKEEPER".to_string(),
         value_from: Some(EnvVarSource {
@@ -963,17 +942,6 @@ fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    // Needed for the `containerdebug` process to log it's tracing information to.
-    env.push(EnvVar {
-        name: "CONTAINERDEBUG_LOG_DIRECTORY".to_string(),
-        value: Some(format!("{STACKABLE_LOG_DIR}/containerdebug")),
-        value_from: None,
-    });
-
-    let jvm_args = format!(
-        "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE} -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml",
-    );
-
     let kafka_listeners = get_kafka_listener_config(
         kafka,
         kafka_security,
@@ -998,10 +966,24 @@ fn build_broker_rolegroup_statefulset(
                 kafka_security.has_kerberos_enabled(),
             )
             .join("\n")])
-        .add_env_var("EXTRA_ARGS", jvm_args)
+        .add_env_var(
+            "EXTRA_ARGS",
+            construct_non_heap_jvm_args(merged_config, role, &rolegroup_ref.role_group)
+                .context(ConstructJvmArgumentsSnafu)?,
+        )
+        .add_env_var(
+            KAFKA_HEAP_OPTS,
+            construct_heap_jvm_args(merged_config, role, &rolegroup_ref.role_group)
+                .context(ConstructJvmArgumentsSnafu)?,
+        )
         .add_env_var(
             "KAFKA_LOG4J_OPTS",
             format!("-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J_CONFIG_FILE}"),
+        )
+        // Needed for the `containerdebug` process to log it's tracing information to.
+        .add_env_var(
+            "CONTAINERDEBUG_LOG_DIRECTORY",
+            format!("{STACKABLE_LOG_DIR}/containerdebug"),
         )
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))

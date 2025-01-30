@@ -7,7 +7,7 @@
 ** xref:kafka:usage-guide/security.adoc[]
 ** xref:kafka:usage-guide/monitoring.adoc[]
 ** xref:kafka:usage-guide/logging.adoc[]
-** xref:kafka:usage-guide/configuration-environment-overrides.adoc[]
+** xref:kafka:usage-guide/overrides.adoc[]
 ** xref:kafka:usage-guide/operations/index.adoc[]
 *** xref:kafka:usage-guide/operations/cluster-operations.adoc[]
 *** xref:kafka:usage-guide/operations/pod-placement.adoc[]
