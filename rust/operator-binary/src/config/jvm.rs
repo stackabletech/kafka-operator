@@ -63,7 +63,7 @@ fn construct_jvm_args(
         .clone())
 }
 
-/// Arguments that go into `EXTRA_ARGS`, so *not* the heap settings (which you cen get using
+/// Arguments that go into `EXTRA_ARGS`, so *not* the heap settings (which you can get using
 /// [`construct_heap_jvm_args`]).
 pub fn construct_non_heap_jvm_args(
     merged_config: &KafkaConfig,
