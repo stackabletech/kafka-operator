@@ -101,4 +101,4 @@ Read the xref:concepts:overrides.adoc#pod-overrides[Pod overrides documentation]
 Stackable operators automatically determine the set of needed JVM arguments, such as memory settings or trust- and keystores.
 Using JVM argument overrides you can configure the JVM arguments xref:concepts:overrides.adoc#jvm-argument-overrides[according to the concepts page].
 
-One thing that is different for Kafka, is that all head-related arguments will be passed in via the env variable `KAFKA_HEAP_OPTS`, all the other ones via `EXTRA_ARGS`.
+One thing that is different for Kafka, is that all heap-related arguments will be passed in via the env variable `KAFKA_HEAP_OPTS`, all the other ones via `EXTRA_ARGS`.
