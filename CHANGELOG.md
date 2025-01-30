@@ -17,9 +17,14 @@ All notable changes to this project will be documented in this file.
 - Aggregate emitted Kubernetes events on the CustomResources ([#809]).
 - Support configuring JVM arguments ([#819]).
 
+### Changed
+
+- Default to OCI for image metadata and product image selection ([#810]).
+
 [#796]: https://github.com/stackabletech/kafka-operator/pull/796
 [#803]: https://github.com/stackabletech/kafka-operator/pull/803
 [#809]: https://github.com/stackabletech/kafka-operator/pull/809
+[#810]: https://github.com/stackabletech/kafka-operator/pull/810
 [#813]: https://github.com/stackabletech/kafka-operator/pull/813
 [#819]: https://github.com/stackabletech/kafka-operator/pull/819
 
