@@ -16,10 +16,12 @@ All notable changes to this project will be documented in this file.
 - Run a `containerdebug` process in the background of each Kafka container to collect debugging information ([#803]).
 - Aggregate emitted Kubernetes events on the CustomResources ([#809]).
 - Support configuring JVM arguments ([#819]).
+- Add Kafka 3.9.0 to tests ([#822]).
 
 ### Changed
 
 - Default to OCI for image metadata and product image selection ([#810]).
+- Bump Kafka 3.7.1 to 3.7.2 in tests and getting_started, and bump upgrade testing from 3.7.1->3.8.0 to 3.8.0->3.9.0 ([#822]).
 
 [#796]: https://github.com/stackabletech/kafka-operator/pull/796
 [#803]: https://github.com/stackabletech/kafka-operator/pull/803
@@ -27,6 +29,7 @@ All notable changes to this project will be documented in this file.
 [#810]: https://github.com/stackabletech/kafka-operator/pull/810
 [#813]: https://github.com/stackabletech/kafka-operator/pull/813
 [#819]: https://github.com/stackabletech/kafka-operator/pull/819
+[#822]: https://github.com/stackabletech/kafka-operator/pull/822
 
 ## [24.11.1] - 2025-01-10
 

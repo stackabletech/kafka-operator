@@ -294,7 +294,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.7.1
+            productVersion: 3.7.2
           clusterConfig:
             authentication:
               - authenticationClass: kafka-client-tls
@@ -471,7 +471,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.7.1
+            productVersion: 3.7.2
           clusterConfig:
             authentication:
               - authenticationClass: kafka-kerberos
