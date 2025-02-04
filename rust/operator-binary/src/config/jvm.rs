@@ -110,7 +110,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.1
+            productVersion: 3.7.2
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:
@@ -140,7 +140,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.1
+            productVersion: 3.7.2
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:
