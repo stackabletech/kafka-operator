@@ -21,12 +21,9 @@ pub fn get_affinity(cluster_name: &str, role: &KafkaRole) -> StackableAffinityFr
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use rstest::rstest;
     use std::collections::BTreeMap;
 
-    use crate::KafkaCluster;
+    use rstest::rstest;
     use stackable_operator::{
         commons::affinity::StackableAffinity,
         k8s_openapi::{
@@ -34,6 +31,9 @@ mod tests {
             apimachinery::pkg::apis::meta::v1::LabelSelector,
         },
     };
+
+    use super::*;
+    use crate::KafkaCluster;
 
     #[rstest]
     #[case(KafkaRole::Broker)]

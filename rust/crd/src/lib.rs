@@ -5,8 +5,7 @@ pub mod listener;
 pub mod security;
 pub mod tls;
 
-use crate::authorization::KafkaAuthorization;
-use crate::tls::KafkaTls;
+use std::{collections::BTreeMap, str::FromStr};
 
 use affinity::get_affinity;
 use authentication::KafkaAuthentication;
@@ -38,8 +37,9 @@ use stackable_operator::{
     time::Duration,
     utils::cluster_info::KubernetesClusterInfo,
 };
-use std::{collections::BTreeMap, str::FromStr};
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
+
+use crate::{authorization::KafkaAuthorization, tls::KafkaTls};
 
 pub const DOCKER_IMAGE_BASE_NAME: &str = "kafka";
 pub const APP_NAME: &str = "kafka";

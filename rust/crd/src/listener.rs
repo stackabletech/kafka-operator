@@ -1,13 +1,13 @@
-use std::collections::BTreeMap;
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::BTreeMap,
+    fmt::{Display, Formatter},
+};
 
 use snafu::{OptionExt, Snafu};
-use stackable_operator::kube::ResourceExt;
-use stackable_operator::utils::cluster_info::KubernetesClusterInfo;
+use stackable_operator::{kube::ResourceExt, utils::cluster_info::KubernetesClusterInfo};
 use strum::{EnumDiscriminants, EnumString};
 
-use crate::security::KafkaTlsSecurity;
-use crate::{KafkaCluster, STACKABLE_LISTENER_BROKER_DIR};
+use crate::{security::KafkaTlsSecurity, KafkaCluster, STACKABLE_LISTENER_BROKER_DIR};
 
 const LISTENER_LOCAL_ADDRESS: &str = "0.0.0.0";
 
@@ -260,9 +260,6 @@ pub fn pod_fqdn(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::authentication::ResolvedAuthenticationClasses;
-
     use stackable_operator::{
         builder::meta::ObjectMetaBuilder,
         commons::{
@@ -274,6 +271,9 @@ mod tests {
             networking::DomainName,
         },
     };
+
+    use super::*;
+    use crate::authentication::ResolvedAuthenticationClasses;
 
     fn default_cluster_info() -> KubernetesClusterInfo {
         KubernetesClusterInfo {

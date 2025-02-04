@@ -1,13 +1,12 @@
-use crate::ObjectRef;
-
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
-use stackable_operator::commons::authentication::AuthenticationClassProvider;
 use stackable_operator::{
     client::Client,
-    commons::authentication::AuthenticationClass,
+    commons::authentication::{AuthenticationClass, AuthenticationClassProvider},
     schemars::{self, JsonSchema},
 };
+
+use crate::ObjectRef;
 
 pub const SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS: [&str; 2] = ["TLS", "Kerberos"];
 
