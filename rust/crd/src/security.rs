@@ -6,20 +6,8 @@
 //! This is required due to overlaps between TLS encryption and e.g. mTLS authentication or Kerberos
 use std::collections::BTreeMap;
 
-use crate::{
-    authentication::{self, ResolvedAuthenticationClasses},
-    listener::{self, KafkaListenerConfig},
-    tls, KafkaCluster, LISTENER_BOOTSTRAP_VOLUME_NAME, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR,
-};
-use crate::{
-    listener::node_address_cmd, STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-    STACKABLE_LISTENER_BROKER_DIR,
-};
-use crate::{KafkaRole, LISTENER_BROKER_VOLUME_NAME, STACKABLE_LOG_DIR};
 use indoc::formatdoc;
 use snafu::{ensure, ResultExt, Snafu};
-use stackable_operator::time::Duration;
 use stackable_operator::{
     builder::{
         self,
@@ -35,7 +23,16 @@ use stackable_operator::{
     product_logging::framework::{
         create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
     },
+    time::Duration,
     utils::COMMON_BASH_TRAP_FUNCTIONS,
+};
+
+use crate::{
+    authentication::{self, ResolvedAuthenticationClasses},
+    listener::{self, node_address_cmd, KafkaListenerConfig},
+    tls, KafkaCluster, KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
+    SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
+    STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_DIR,
 };
 
 #[derive(Snafu, Debug)]
