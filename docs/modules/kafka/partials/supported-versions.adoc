@@ -2,5 +2,6 @@
 // This is a separate file, since it is used by both the direct Kafka documentation, and the overarching
 // Stackable Platform documentation.
 
+* 3.9.0
 * 3.8.0
 * 3.7.1 (LTS)
