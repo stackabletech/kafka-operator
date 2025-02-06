@@ -27,7 +27,7 @@ dimensions:
       - 3.9.2
   - name: upgrade_old
     values:
-      - 3.8.0
+      - 3.7.1
   - name: upgrade_new
     values:
       - 3.9.0
