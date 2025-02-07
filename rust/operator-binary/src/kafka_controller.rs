@@ -12,16 +12,6 @@ use product_config::{
     ProductConfigManager,
 };
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{
-    listener::{get_kafka_listener_config, pod_fqdn, KafkaListenerError},
-    security::KafkaTlsSecurity,
-    Container, KafkaCluster, KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME,
-    DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
-    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
-    METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
-    STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
-    STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
-};
 use stackable_operator::{
     builder::{
         self,
@@ -84,6 +74,16 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
+    crd::{
+        listener::{get_kafka_listener_config, pod_fqdn, KafkaListenerError},
+        security::KafkaTlsSecurity,
+        Container, KafkaCluster, KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME,
+        DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
+        LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
+        METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
+        STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+        STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
+    },
     discovery::{self, build_discovery_configmaps},
     kerberos::{self, add_kerberos_pod_config},
     operations::{
@@ -221,7 +221,7 @@ pub enum Error {
 
     #[snafu(display("invalid kafka listeners"))]
     InvalidKafkaListeners {
-        source: stackable_kafka_crd::listener::KafkaListenerError,
+        source: crate::crd::listener::KafkaListenerError,
     },
 
     #[snafu(display("failed to add listener volume"))]
@@ -241,9 +241,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to initialize security context"))]
-    FailedToInitializeSecurityContext {
-        source: stackable_kafka_crd::security::Error,
-    },
+    FailedToInitializeSecurityContext { source: crate::crd::security::Error },
 
     #[snafu(display("failed to create cluster resources"))]
     CreateClusterResources {
@@ -251,7 +249,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to resolve and merge config for role and role group"))]
-    FailedToResolveConfig { source: stackable_kafka_crd::Error },
+    FailedToResolveConfig { source: crate::crd::Error },
 
     #[snafu(display("failed to resolve the Vector aggregator address"))]
     ResolveVectorAggregatorAddress {
@@ -285,7 +283,7 @@ pub enum Error {
     },
 
     #[snafu(display("internal operator failure"))]
-    InternalOperatorError { source: stackable_kafka_crd::Error },
+    InternalOperatorError { source: crate::crd::Error },
 
     #[snafu(display(
         "failed to serialize [{JVM_SECURITY_PROPERTIES_FILE}] for {}",
@@ -323,9 +321,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to add Secret Volumes and VolumeMounts"))]
-    AddVolumesAndVolumeMounts {
-        source: stackable_kafka_crd::security::Error,
-    },
+    AddVolumesAndVolumeMounts { source: crate::crd::security::Error },
 
     #[snafu(display("failed to resolve the fully-qualified pod name"))]
     ResolveNamespace { source: KafkaListenerError },
@@ -334,9 +330,7 @@ pub enum Error {
     AddKerberosConfig { source: kerberos::Error },
 
     #[snafu(display("failed to validate authentication method"))]
-    FailedToValidateAuthenticationMethod {
-        source: stackable_kafka_crd::security::Error,
-    },
+    FailedToValidateAuthenticationMethod { source: crate::crd::security::Error },
 
     #[snafu(display("failed to add needed volume"))]
     AddVolume { source: builder::pod::Error },

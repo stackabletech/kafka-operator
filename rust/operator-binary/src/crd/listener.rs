@@ -7,7 +7,7 @@ use snafu::{OptionExt, Snafu};
 use stackable_operator::{kube::ResourceExt, utils::cluster_info::KubernetesClusterInfo};
 use strum::{EnumDiscriminants, EnumString};
 
-use crate::{security::KafkaTlsSecurity, KafkaCluster, STACKABLE_LISTENER_BROKER_DIR};
+use crate::crd::{security::KafkaTlsSecurity, KafkaCluster, STACKABLE_LISTENER_BROKER_DIR};
 
 const LISTENER_LOCAL_ADDRESS: &str = "0.0.0.0";
 
@@ -273,7 +273,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::authentication::ResolvedAuthenticationClasses;
+    use crate::crd::authentication::ResolvedAuthenticationClasses;
 
     fn default_cluster_info() -> KubernetesClusterInfo {
         KubernetesClusterInfo {

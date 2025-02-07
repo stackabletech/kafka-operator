@@ -3,7 +3,6 @@ use std::sync::Arc;
 use clap::{crate_description, crate_version, Parser};
 use futures::StreamExt;
 use product_config::ProductConfigManager;
-use stackable_kafka_crd::{KafkaCluster, APP_NAME, OPERATOR_NAME};
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
     client::{self, Client},
@@ -25,9 +24,13 @@ use stackable_operator::{
     CustomResourceExt,
 };
 
-use crate::kafka_controller::KAFKA_FULL_CONTROLLER_NAME;
+use crate::{
+    crd::{KafkaCluster, APP_NAME, OPERATOR_NAME},
+    kafka_controller::KAFKA_FULL_CONTROLLER_NAME,
+};
 
 mod config;
+mod crd;
 mod discovery;
 mod kafka_controller;
 mod kerberos;

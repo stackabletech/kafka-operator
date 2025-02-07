@@ -1,7 +1,6 @@
 use std::num::TryFromIntError;
 
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
     commons::{listener::Listener, product_image_selection::ResolvedProductImage},
@@ -9,7 +8,11 @@ use stackable_operator::{
     kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
 };
 
-use crate::{kafka_controller::KAFKA_CONTROLLER_NAME, utils::build_recommended_labels};
+use crate::{
+    crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole},
+    kafka_controller::KAFKA_CONTROLLER_NAME,
+    utils::build_recommended_labels,
+};
 
 #[derive(Snafu, Debug)]
 pub enum Error {

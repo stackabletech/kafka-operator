@@ -39,7 +39,7 @@ use stackable_operator::{
 };
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
-use crate::{authorization::KafkaAuthorization, tls::KafkaTls};
+use crate::crd::{authorization::KafkaAuthorization, tls::KafkaTls};
 
 pub const DOCKER_IMAGE_BASE_NAME: &str = "kafka";
 pub const APP_NAME: &str = "kafka";

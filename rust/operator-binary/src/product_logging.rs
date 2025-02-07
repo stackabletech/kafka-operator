@@ -1,5 +1,4 @@
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{Container, KafkaCluster, STACKABLE_LOG_DIR};
 use stackable_operator::{
     builder::configmap::ConfigMapBuilder,
     client::Client,
@@ -13,22 +12,28 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
+use crate::crd::{Container, KafkaCluster, STACKABLE_LOG_DIR};
+
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("object has no namespace"))]
     ObjectHasNoNamespace,
+
     #[snafu(display("failed to retrieve the ConfigMap {cm_name}"))]
     ConfigMapNotFound {
         source: stackable_operator::client::Error,
         cm_name: String,
     },
+
     #[snafu(display("failed to retrieve the entry {entry} for ConfigMap {cm_name}"))]
     MissingConfigMapEntry {
         entry: &'static str,
         cm_name: String,
     },
+
     #[snafu(display("crd validation failure"))]
-    CrdValidationFailure { source: stackable_kafka_crd::Error },
+    CrdValidationFailure { source: crate::crd::Error },
+
     #[snafu(display("vectorAggregatorConfigMapName must be set"))]
     MissingVectorAggregatorAddress,
 }

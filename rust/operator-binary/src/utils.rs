@@ -1,5 +1,6 @@
-use stackable_kafka_crd::{KafkaCluster, APP_NAME, OPERATOR_NAME};
 use stackable_operator::kvp::ObjectLabels;
+
+use crate::crd::{KafkaCluster, APP_NAME, OPERATOR_NAME};
 
 /// Build recommended values for labels
 pub fn build_recommended_labels<'a>(

@@ -1,11 +1,12 @@
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{
-    KafkaConfig, KafkaConfigFragment, JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT,
-    STACKABLE_CONFIG_DIR,
-};
 use stackable_operator::{
     memory::{BinaryMultiple, MemoryQuantity},
     role_utils::{self, GenericRoleConfig, JavaCommonConfig, JvmArgumentOverrides, Role},
+};
+
+use crate::crd::{
+    KafkaConfig, KafkaConfigFragment, JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT,
+    STACKABLE_CONFIG_DIR,
 };
 
 const JAVA_HEAP_FACTOR: f32 = 0.8;
@@ -97,9 +98,8 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use stackable_kafka_crd::{KafkaCluster, KafkaRole};
-
     use super::*;
+    use crate::crd::{KafkaCluster, KafkaRole};
 
     #[test]
     fn test_construct_jvm_arguments_defaults() {

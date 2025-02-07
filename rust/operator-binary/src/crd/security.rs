@@ -27,7 +27,7 @@ use stackable_operator::{
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
-use crate::{
+use crate::crd::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, node_address_cmd, KafkaListenerConfig},
     tls, KafkaCluster, KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
