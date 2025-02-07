@@ -141,36 +141,13 @@ pub mod versioned {
     }
 }
 
-#[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct KafkaClusterConfig {
-    /// Authentication class settings for Kafka like mTLS authentication.
-    #[serde(default)]
-    pub authentication: Vec<KafkaAuthentication>,
-
-    /// Authorization settings for Kafka like OPA.
-    #[serde(default)]
-    pub authorization: KafkaAuthorization,
-
-    /// TLS encryption settings for Kafka (server, internal).
-    #[serde(
-        default = "tls::default_kafka_tls",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub tls: Option<KafkaTls>,
-
-    /// Name of the Vector aggregator [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery).
-    /// It must contain the key `ADDRESS` with the address of the Vector aggregator.
-    /// Follow the [logging tutorial](DOCS_BASE_URL_PLACEHOLDER/tutorials/logging-vector-aggregator)
-    /// to learn how to configure log aggregation with Vector.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vector_aggregator_config_map_name: Option<String>,
-
-    /// Kafka requires a ZooKeeper cluster connection to run.
-    /// Provide the name of the ZooKeeper [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery)
-    /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
-    /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
-    pub zookeeper_config_map_name: String,
+impl HasStatusCondition for v1alpha1::KafkaCluster {
+    fn conditions(&self) -> Vec<ClusterCondition> {
+        match &self.status {
+            Some(status) => status.conditions.clone(),
+            None => vec![],
+        }
+    }
 }
 
 impl v1alpha1::KafkaCluster {
@@ -278,6 +255,38 @@ impl v1alpha1::KafkaCluster {
         tracing::debug!("Merged config: {:?}", conf_role_group);
         fragment::validate(conf_role_group).context(FragmentValidationFailureSnafu)
     }
+}
+
+#[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KafkaClusterConfig {
+    /// Authentication class settings for Kafka like mTLS authentication.
+    #[serde(default)]
+    pub authentication: Vec<KafkaAuthentication>,
+
+    /// Authorization settings for Kafka like OPA.
+    #[serde(default)]
+    pub authorization: KafkaAuthorization,
+
+    /// TLS encryption settings for Kafka (server, internal).
+    #[serde(
+        default = "tls::default_kafka_tls",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub tls: Option<KafkaTls>,
+
+    /// Name of the Vector aggregator [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery).
+    /// It must contain the key `ADDRESS` with the address of the Vector aggregator.
+    /// Follow the [logging tutorial](DOCS_BASE_URL_PLACEHOLDER/tutorials/logging-vector-aggregator)
+    /// to learn how to configure log aggregation with Vector.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_aggregator_config_map_name: Option<String>,
+
+    /// Kafka requires a ZooKeeper cluster connection to run.
+    /// Provide the name of the ZooKeeper [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery)
+    /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
+    /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
+    pub zookeeper_config_map_name: String,
 }
 
 /// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
@@ -526,15 +535,6 @@ impl Configuration for KafkaConfigFragment {
 pub struct KafkaClusterStatus {
     #[serde(default)]
     pub conditions: Vec<ClusterCondition>,
-}
-
-impl HasStatusCondition for v1alpha1::KafkaCluster {
-    fn conditions(&self) -> Vec<ClusterCondition> {
-        match &self.status {
-            Some(status) => status.conditions.clone(),
-            None => vec![],
-        }
-    }
 }
 
 #[cfg(test)]
