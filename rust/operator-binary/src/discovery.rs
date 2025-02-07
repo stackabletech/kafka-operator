@@ -9,7 +9,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    crd::{security::KafkaTlsSecurity, KafkaCluster, KafkaRole},
+    crd::{security::KafkaTlsSecurity, v1alpha1, KafkaRole},
     kafka_controller::KAFKA_CONTROLLER_NAME,
     utils::build_recommended_labels,
 };
@@ -19,7 +19,7 @@ pub enum Error {
     #[snafu(display("object {} is missing metadata to build owner reference", kafka))]
     ObjectMissingMetadataForOwnerRef {
         source: stackable_operator::builder::meta::Error,
-        kafka: ObjectRef<KafkaCluster>,
+        kafka: ObjectRef<v1alpha1::KafkaCluster>,
     },
 
     #[snafu(display("object has no name associated"))]
@@ -54,9 +54,10 @@ pub enum Error {
     },
 }
 
-/// Builds discovery [`ConfigMap`]s for connecting to a [`KafkaCluster`] for all expected scenarios
+/// Builds discovery [`ConfigMap`]s for connecting to a [`v1alpha1::KafkaCluster`] for all expected
+/// scenarios.
 pub async fn build_discovery_configmaps(
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
@@ -101,11 +102,12 @@ pub async fn build_discovery_configmaps(
     ])
 }
 
-/// Build a discovery [`ConfigMap`] containing information about how to connect to a certain [`KafkaCluster`]
+/// Build a discovery [`ConfigMap`] containing information about how to connect to a certain
+/// [`v1alpha1::KafkaCluster`].
 ///
 /// `hosts` will usually come from [`listener_hosts`].
 fn build_discovery_configmap(
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
     resolved_product_image: &ResolvedProductImage,
     name: &str,

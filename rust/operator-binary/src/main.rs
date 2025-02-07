@@ -21,11 +21,12 @@ use stackable_operator::{
     },
     logging::controller::report_controller_reconciled,
     namespace::WatchNamespace,
-    CustomResourceExt,
+    shared::yaml::SerializeOptions,
+    YamlSchema,
 };
 
 use crate::{
-    crd::{KafkaCluster, APP_NAME, OPERATOR_NAME},
+    crd::{v1alpha1, KafkaCluster, APP_NAME, OPERATOR_NAME},
     kafka_controller::KAFKA_FULL_CONTROLLER_NAME,
 };
 
@@ -62,7 +63,8 @@ struct KafkaRun {
 async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => KafkaCluster::print_yaml_schema(built_info::PKG_VERSION)?,
+        Command::Crd => KafkaCluster::merged_crd(KafkaCluster::V1Alpha1)?
+            .print_yaml_schema(built_info::PKG_VERSION, SerializeOptions::default())?,
         Command::Run(KafkaRun {
             common:
                 ProductOperatorRun {
@@ -118,7 +120,7 @@ pub async fn create_controller(
     ));
 
     Controller::new(
-        namespace.get_api::<DeserializeGuard<KafkaCluster>>(&client),
+        namespace.get_api::<DeserializeGuard<v1alpha1::KafkaCluster>>(&client),
         watcher::Config::default(),
     )
     .owns(

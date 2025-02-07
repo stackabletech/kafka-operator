@@ -5,7 +5,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    crd::{KafkaCluster, KafkaRole, APP_NAME, OPERATOR_NAME},
+    crd::{v1alpha1, KafkaRole, APP_NAME, OPERATOR_NAME},
     kafka_controller::KAFKA_CONTROLLER_NAME,
 };
 
@@ -25,7 +25,7 @@ pub enum Error {
 
 pub async fn add_pdbs(
     pdb: &PdbConfig,
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     role: &KafkaRole,
     client: &Client,
     cluster_resources: &mut ClusterResources,

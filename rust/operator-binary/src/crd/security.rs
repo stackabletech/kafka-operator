@@ -30,7 +30,7 @@ use stackable_operator::{
 use crate::crd::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, node_address_cmd, KafkaListenerConfig},
-    tls, KafkaCluster, KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
+    tls, v1alpha1, KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
     SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
     STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_DIR,
 };
@@ -155,7 +155,7 @@ impl KafkaTlsSecurity {
     /// all provided `AuthenticationClass` references.
     pub async fn new_from_kafka_cluster(
         client: &Client,
-        kafka: &KafkaCluster,
+        kafka: &v1alpha1::KafkaCluster,
     ) -> Result<Self, Error> {
         Ok(KafkaTlsSecurity {
             resolved_authentication_classes: ResolvedAuthenticationClasses::from_references(

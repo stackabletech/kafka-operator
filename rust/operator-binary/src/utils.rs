@@ -1,15 +1,15 @@
 use stackable_operator::kvp::ObjectLabels;
 
-use crate::crd::{KafkaCluster, APP_NAME, OPERATOR_NAME};
+use crate::crd::{v1alpha1, APP_NAME, OPERATOR_NAME};
 
 /// Build recommended values for labels
 pub fn build_recommended_labels<'a>(
-    owner: &'a KafkaCluster,
+    owner: &'a v1alpha1::KafkaCluster,
     controller_name: &'a str,
     app_version: &'a str,
     role: &'a str,
     role_group: &'a str,
-) -> ObjectLabels<'a, KafkaCluster> {
+) -> ObjectLabels<'a, v1alpha1::KafkaCluster> {
     ObjectLabels {
         owner,
         app_name: APP_NAME,

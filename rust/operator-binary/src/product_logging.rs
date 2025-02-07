@@ -12,7 +12,7 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
-use crate::crd::{Container, KafkaCluster, STACKABLE_LOG_DIR};
+use crate::crd::{v1alpha1, Container, STACKABLE_LOG_DIR};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -54,7 +54,7 @@ const CONSOLE_CONVERSION_PATTERN: &str = "[%d] %p %m (%c)%n";
 /// Return the address of the Vector aggregator if the corresponding ConfigMap name is given in the
 /// cluster spec
 pub async fn resolve_vector_aggregator_address(
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     client: &Client,
 ) -> Result<Option<String>> {
     let vector_aggregator_address = if let Some(vector_aggregator_config_map_name) = &kafka
@@ -91,7 +91,7 @@ pub async fn resolve_vector_aggregator_address(
 
 /// Extend the role group ConfigMap with logging and Vector configurations
 pub fn extend_role_group_config_map(
-    rolegroup: &RoleGroupRef<KafkaCluster>,
+    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     vector_aggregator_address: Option<&str>,
     logging: &Logging<Container>,
     cm_builder: &mut ConfigMapBuilder,

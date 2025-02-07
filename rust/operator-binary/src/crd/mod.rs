@@ -37,6 +37,7 @@ use stackable_operator::{
     time::Duration,
     utils::cluster_info::KubernetesClusterInfo,
 };
+use stackable_versioned::versioned;
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
 use crate::crd::{authorization::KafkaAuthorization, tls::KafkaTls};
@@ -76,7 +77,7 @@ pub enum Error {
 
     #[snafu(display("failed to validate config of rolegroup {rolegroup}"))]
     RoleGroupValidation {
-        rolegroup: RoleGroupRef<KafkaCluster>,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
         source: ValidationError,
     },
 
@@ -103,39 +104,41 @@ pub enum Error {
     FragmentValidationFailure { source: ValidationError },
 }
 
-/// A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.
-/// Find more information on how to use it and the resources that the operator generates in the
-/// [operator documentation](DOCS_BASE_URL_PLACEHOLDER/kafka/).
-#[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
-#[kube(
-    group = "kafka.stackable.tech",
-    version = "v1alpha1",
-    kind = "KafkaCluster",
-    plural = "kafkaclusters",
-    status = "KafkaClusterStatus",
-    shortname = "kafka",
-    namespaced,
-    crates(
-        kube_core = "stackable_operator::kube::core",
-        k8s_openapi = "stackable_operator::k8s_openapi",
-        schemars = "stackable_operator::schemars"
-    )
-)]
-#[serde(rename_all = "camelCase")]
-pub struct KafkaClusterSpec {
-    // no doc - docs in ProductImage struct.
-    pub image: ProductImage,
+#[versioned(version(name = "v1alpha1"))]
+pub mod versioned {
+    /// A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.
+    /// Find more information on how to use it and the resources that the operator generates in the
+    /// [operator documentation](DOCS_BASE_URL_PLACEHOLDER/kafka/).
+    #[versioned(k8s(
+        group = "kafka.stackable.tech",
+        kind = "KafkaCluster",
+        plural = "kafkaclusters",
+        status = "KafkaClusterStatus",
+        shortname = "kafka",
+        namespaced,
+        crates(
+            kube_core = "stackable_operator::kube::core",
+            k8s_openapi = "stackable_operator::k8s_openapi",
+            schemars = "stackable_operator::schemars"
+        )
+    ))]
+    #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaClusterSpec {
+        // no doc - docs in ProductImage struct.
+        pub image: ProductImage,
 
-    // no doc - docs in Role struct.
-    pub brokers: Option<Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
+        // no doc - docs in Role struct.
+        pub brokers: Option<Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
 
-    /// Kafka settings that affect all roles and role groups.
-    /// The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
-    pub cluster_config: KafkaClusterConfig,
+        /// Kafka settings that affect all roles and role groups.
+        /// The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
+        pub cluster_config: KafkaClusterConfig,
 
-    // no doc - docs in ClusterOperation struct.
-    #[serde(default)]
-    pub cluster_operation: ClusterOperation,
+        // no doc - docs in ClusterOperation struct.
+        #[serde(default)]
+        pub cluster_operation: ClusterOperation,
+    }
 }
 
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
@@ -170,7 +173,7 @@ pub struct KafkaClusterConfig {
     pub zookeeper_config_map_name: String,
 }
 
-impl KafkaCluster {
+impl v1alpha1::KafkaCluster {
     /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
     /// to get a list of broker addresses and will use those to transmit data to the correct broker.
     pub fn bootstrap_service_name(&self, rolegroup: &RoleGroupRef<Self>) -> String {
@@ -178,10 +181,7 @@ impl KafkaCluster {
     }
 
     /// Metadata about a broker rolegroup
-    pub fn broker_rolegroup_ref(
-        &self,
-        group_name: impl Into<String>,
-    ) -> RoleGroupRef<KafkaCluster> {
+    pub fn broker_rolegroup_ref(&self, group_name: impl Into<String>) -> RoleGroupRef<Self> {
         RoleGroupRef {
             cluster: ObjectRef::from_obj(self),
             role: KafkaRole::Broker.to_string(),
@@ -203,7 +203,7 @@ impl KafkaCluster {
 
     pub fn rolegroup(
         &self,
-        rolegroup_ref: &RoleGroupRef<KafkaCluster>,
+        rolegroup_ref: &RoleGroupRef<Self>,
     ) -> Result<&RoleGroup<KafkaConfigFragment, JavaCommonConfig>, Error> {
         let role_variant =
             KafkaRole::from_str(&rolegroup_ref.role).with_context(|_| UnknownKafkaRoleSnafu {
@@ -324,9 +324,9 @@ impl KafkaRole {
     /// Metadata about a rolegroup
     pub fn rolegroup_ref(
         &self,
-        kafka: &KafkaCluster,
+        kafka: &v1alpha1::KafkaCluster,
         group_name: impl Into<String>,
-    ) -> RoleGroupRef<KafkaCluster> {
+    ) -> RoleGroupRef<v1alpha1::KafkaCluster> {
         RoleGroupRef {
             cluster: ObjectRef::from_obj(kafka),
             role: self.to_string(),
@@ -474,7 +474,7 @@ impl KafkaConfig {
 }
 
 impl Configuration for KafkaConfigFragment {
-    type Configurable = KafkaCluster;
+    type Configurable = v1alpha1::KafkaCluster;
 
     fn compute_env(
         &self,
@@ -528,7 +528,7 @@ pub struct KafkaClusterStatus {
     pub conditions: Vec<ClusterCondition>,
 }
 
-impl HasStatusCondition for KafkaCluster {
+impl HasStatusCondition for v1alpha1::KafkaCluster {
     fn conditions(&self) -> Vec<ClusterCondition> {
         match &self.status {
             Some(status) => status.conditions.clone(),
@@ -541,7 +541,7 @@ impl HasStatusCondition for KafkaCluster {
 mod tests {
     use super::*;
 
-    fn get_server_secret_class(kafka: &KafkaCluster) -> Option<String> {
+    fn get_server_secret_class(kafka: &v1alpha1::KafkaCluster) -> Option<String> {
         kafka
             .spec
             .cluster_config
@@ -550,7 +550,7 @@ mod tests {
             .and_then(|tls| tls.server_secret_class.clone())
     }
 
-    fn get_internal_secret_class(kafka: &KafkaCluster) -> String {
+    fn get_internal_secret_class(kafka: &v1alpha1::KafkaCluster) -> String {
         kafka
             .spec
             .cluster_config
@@ -574,7 +574,8 @@ mod tests {
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -595,7 +596,8 @@ mod tests {
             zookeeperConfigMapName: xyz
 
         "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(
             get_server_secret_class(&kafka).unwrap(),
             "simple-kafka-server-tls".to_string()
@@ -618,7 +620,8 @@ mod tests {
               serverSecretClass: null
             zookeeperConfigMapName: xyz
         "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), None);
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -639,7 +642,8 @@ mod tests {
               internalSecretClass: simple-kafka-internal-tls
             zookeeperConfigMapName: xyz
         "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -660,7 +664,8 @@ mod tests {
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -680,7 +685,8 @@ mod tests {
               internalSecretClass: simple-kafka-internal-tls
             zookeeperConfigMapName: xyz
         "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -700,7 +706,8 @@ mod tests {
               serverSecretClass: simple-kafka-server-tls
             zookeeperConfigMapName: xyz
         "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(
             get_server_secret_class(&kafka),
             Some("simple-kafka-server-tls".to_string())

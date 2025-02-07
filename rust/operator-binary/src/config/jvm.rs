@@ -99,7 +99,7 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{KafkaCluster, KafkaRole};
+    use crate::crd::{v1alpha1, KafkaRole};
 
     #[test]
     fn test_construct_jvm_arguments_defaults() {
@@ -188,7 +188,8 @@ mod tests {
         Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
         String,
     ) {
-        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(kafka_cluster).expect("illegal test input");
 
         let kafka_role = KafkaRole::Broker;
         let rolegroup_ref = kafka.broker_rolegroup_ref("default");
