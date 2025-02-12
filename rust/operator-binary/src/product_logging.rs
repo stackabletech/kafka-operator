@@ -1,5 +1,4 @@
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{Container, KafkaCluster, STACKABLE_LOG_DIR};
 use stackable_operator::{
     builder::configmap::ConfigMapBuilder,
     client::Client,
@@ -13,22 +12,28 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
+use crate::crd::{v1alpha1, Container, STACKABLE_LOG_DIR};
+
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("object has no namespace"))]
     ObjectHasNoNamespace,
+
     #[snafu(display("failed to retrieve the ConfigMap {cm_name}"))]
     ConfigMapNotFound {
         source: stackable_operator::client::Error,
         cm_name: String,
     },
+
     #[snafu(display("failed to retrieve the entry {entry} for ConfigMap {cm_name}"))]
     MissingConfigMapEntry {
         entry: &'static str,
         cm_name: String,
     },
+
     #[snafu(display("crd validation failure"))]
-    CrdValidationFailure { source: stackable_kafka_crd::Error },
+    CrdValidationFailure { source: crate::crd::Error },
+
     #[snafu(display("vectorAggregatorConfigMapName must be set"))]
     MissingVectorAggregatorAddress,
 }
@@ -49,7 +54,7 @@ const CONSOLE_CONVERSION_PATTERN: &str = "[%d] %p %m (%c)%n";
 /// Return the address of the Vector aggregator if the corresponding ConfigMap name is given in the
 /// cluster spec
 pub async fn resolve_vector_aggregator_address(
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     client: &Client,
 ) -> Result<Option<String>> {
     let vector_aggregator_address = if let Some(vector_aggregator_config_map_name) = &kafka
@@ -86,7 +91,7 @@ pub async fn resolve_vector_aggregator_address(
 
 /// Extend the role group ConfigMap with logging and Vector configurations
 pub fn extend_role_group_config_map(
-    rolegroup: &RoleGroupRef<KafkaCluster>,
+    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     vector_aggregator_address: Option<&str>,
     logging: &Logging<Container>,
     cm_builder: &mut ConfigMapBuilder,

@@ -1,11 +1,13 @@
 use snafu::{ResultExt, Snafu};
-use stackable_kafka_crd::{KafkaCluster, KafkaRole, APP_NAME, OPERATOR_NAME};
 use stackable_operator::{
     builder::pdb::PodDisruptionBudgetBuilder, client::Client, cluster_resources::ClusterResources,
     commons::pdb::PdbConfig, kube::ResourceExt,
 };
 
-use crate::kafka_controller::KAFKA_CONTROLLER_NAME;
+use crate::{
+    crd::{v1alpha1, KafkaRole, APP_NAME, OPERATOR_NAME},
+    kafka_controller::KAFKA_CONTROLLER_NAME,
+};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -23,7 +25,7 @@ pub enum Error {
 
 pub async fn add_pdbs(
     pdb: &PdbConfig,
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     role: &KafkaRole,
     client: &Client,
     cluster_resources: &mut ClusterResources,

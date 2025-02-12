@@ -1,4 +1,5 @@
-//! Ensures that `Pod`s are configured and running for each [`KafkaCluster`]
+//! Ensures that `Pod`s are configured and running for each [`v1alpha1::KafkaCluster`].
+
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
@@ -12,16 +13,6 @@ use product_config::{
     ProductConfigManager,
 };
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_kafka_crd::{
-    listener::{get_kafka_listener_config, pod_fqdn, KafkaListenerError},
-    security::KafkaTlsSecurity,
-    Container, KafkaCluster, KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME,
-    DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
-    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
-    METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR,
-    STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
-    STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
-};
 use stackable_operator::{
     builder::{
         self,
@@ -84,6 +75,16 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
+    crd::{
+        listener::{get_kafka_listener_config, pod_fqdn, KafkaListenerError},
+        security::KafkaTlsSecurity,
+        v1alpha1, Container, KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME,
+        DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
+        LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
+        METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
+        STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+        STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
+    },
     discovery::{self, build_discovery_configmaps},
     kerberos::{self, add_kerberos_pod_config},
     operations::{
@@ -142,25 +143,25 @@ pub enum Error {
     #[snafu(display("failed to apply Service for {}", rolegroup))]
     ApplyRoleGroupService {
         source: stackable_operator::cluster_resources::Error,
-        rolegroup: RoleGroupRef<KafkaCluster>,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
     #[snafu(display("failed to build ConfigMap for {}", rolegroup))]
     BuildRoleGroupConfig {
         source: stackable_operator::builder::configmap::Error,
-        rolegroup: RoleGroupRef<KafkaCluster>,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
     #[snafu(display("failed to apply ConfigMap for {}", rolegroup))]
     ApplyRoleGroupConfig {
         source: stackable_operator::cluster_resources::Error,
-        rolegroup: RoleGroupRef<KafkaCluster>,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
     #[snafu(display("failed to apply StatefulSet for {}", rolegroup))]
     ApplyRoleGroupStatefulSet {
         source: stackable_operator::cluster_resources::Error,
-        rolegroup: RoleGroupRef<KafkaCluster>,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
     #[snafu(display("failed to generate product config"))]
@@ -176,7 +177,7 @@ pub enum Error {
     #[snafu(display("failed to serialize zoo.cfg for {}", rolegroup))]
     SerializeZooCfg {
         source: PropertiesWriterError,
-        rolegroup: RoleGroupRef<KafkaCluster>,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
     #[snafu(display("object is missing metadata to build owner reference"))]
@@ -194,7 +195,7 @@ pub enum Error {
 
     #[snafu(display("failed to find rolegroup {}", rolegroup))]
     RoleGroupNotFound {
-        rolegroup: RoleGroupRef<KafkaCluster>,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
     #[snafu(display("invalid OpaConfig"))]
@@ -221,7 +222,7 @@ pub enum Error {
 
     #[snafu(display("invalid kafka listeners"))]
     InvalidKafkaListeners {
-        source: stackable_kafka_crd::listener::KafkaListenerError,
+        source: crate::crd::listener::KafkaListenerError,
     },
 
     #[snafu(display("failed to add listener volume"))]
@@ -241,9 +242,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to initialize security context"))]
-    FailedToInitializeSecurityContext {
-        source: stackable_kafka_crd::security::Error,
-    },
+    FailedToInitializeSecurityContext { source: crate::crd::security::Error },
 
     #[snafu(display("failed to create cluster resources"))]
     CreateClusterResources {
@@ -251,7 +250,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to resolve and merge config for role and role group"))]
-    FailedToResolveConfig { source: stackable_kafka_crd::Error },
+    FailedToResolveConfig { source: crate::crd::Error },
 
     #[snafu(display("failed to resolve the Vector aggregator address"))]
     ResolveVectorAggregatorAddress {
@@ -285,7 +284,7 @@ pub enum Error {
     },
 
     #[snafu(display("internal operator failure"))]
-    InternalOperatorError { source: stackable_kafka_crd::Error },
+    InternalOperatorError { source: crate::crd::Error },
 
     #[snafu(display(
         "failed to serialize [{JVM_SECURITY_PROPERTIES_FILE}] for {}",
@@ -323,9 +322,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to add Secret Volumes and VolumeMounts"))]
-    AddVolumesAndVolumeMounts {
-        source: stackable_kafka_crd::security::Error,
-    },
+    AddVolumesAndVolumeMounts { source: crate::crd::security::Error },
 
     #[snafu(display("failed to resolve the fully-qualified pod name"))]
     ResolveNamespace { source: KafkaListenerError },
@@ -334,9 +331,7 @@ pub enum Error {
     AddKerberosConfig { source: kerberos::Error },
 
     #[snafu(display("failed to validate authentication method"))]
-    FailedToValidateAuthenticationMethod {
-        source: stackable_kafka_crd::security::Error,
-    },
+    FailedToValidateAuthenticationMethod { source: crate::crd::security::Error },
 
     #[snafu(display("failed to add needed volume"))]
     AddVolume { source: builder::pod::Error },
@@ -427,7 +422,7 @@ impl ReconcilerError for Error {
 }
 
 pub async fn reconcile_kafka(
-    kafka: Arc<DeserializeGuard<KafkaCluster>>,
+    kafka: Arc<DeserializeGuard<v1alpha1::KafkaCluster>>,
     ctx: Arc<Ctx>,
 ) -> Result<Action> {
     tracing::info!("Starting reconcile");
@@ -654,10 +649,10 @@ pub async fn reconcile_kafka(
 /// Kafka clients will use the load-balanced bootstrap listener to get a list of broker addresses and will use those to
 /// transmit data to the correct broker.
 pub fn build_broker_rolegroup_bootstrap_listener(
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
-    rolegroup: &RoleGroupRef<KafkaCluster>,
+    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     merged_config: &KafkaConfig,
 ) -> Result<Listener> {
     Ok(Listener {
@@ -686,10 +681,10 @@ pub fn build_broker_rolegroup_bootstrap_listener(
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
 fn build_broker_rolegroup_config_map(
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
-    rolegroup: &RoleGroupRef<KafkaCluster>,
+    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     merged_config: &KafkaConfig,
     vector_aggregator_address: Option<&str>,
@@ -776,9 +771,9 @@ fn build_broker_rolegroup_config_map(
 ///
 /// This is mostly useful for internal communication between peers, or for clients that perform client-side load balancing.
 fn build_broker_rolegroup_service(
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
-    rolegroup: &RoleGroupRef<KafkaCluster>,
+    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
 ) -> Result<Service> {
     Ok(Service {
         metadata: ObjectMetaBuilder::new()
@@ -820,10 +815,10 @@ fn build_broker_rolegroup_service(
 /// The [`Pod`](`stackable_operator::k8s_openapi::api::core::v1::Pod`)s are accessible through the corresponding [`Service`] (from [`build_broker_rolegroup_service`]).
 #[allow(clippy::too_many_arguments)]
 fn build_broker_rolegroup_statefulset(
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
     resolved_product_image: &ResolvedProductImage,
-    rolegroup_ref: &RoleGroupRef<KafkaCluster>,
+    rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
@@ -1180,7 +1175,7 @@ fn build_broker_rolegroup_statefulset(
 }
 
 pub fn error_policy(
-    _obj: Arc<DeserializeGuard<KafkaCluster>>,
+    _obj: Arc<DeserializeGuard<v1alpha1::KafkaCluster>>,
     error: &Error,
     _ctx: Arc<Ctx>,
 ) -> Action {

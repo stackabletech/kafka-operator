@@ -6,7 +6,7 @@ use stackable_operator::{
     schemars::{self, JsonSchema},
 };
 
-use crate::ObjectRef;
+use crate::crd::ObjectRef;
 
 pub const SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS: [&str; 2] = ["TLS", "Kerberos"];
 

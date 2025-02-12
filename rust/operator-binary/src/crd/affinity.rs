@@ -3,7 +3,7 @@ use stackable_operator::{
     k8s_openapi::api::core::v1::PodAntiAffinity,
 };
 
-use crate::{KafkaRole, APP_NAME};
+use crate::crd::{KafkaRole, APP_NAME};
 
 pub fn get_affinity(cluster_name: &str, role: &KafkaRole) -> StackableAffinityFragment {
     StackableAffinityFragment {
@@ -33,7 +33,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::KafkaCluster;
+    use crate::crd::v1alpha1;
 
     #[rstest]
     #[case(KafkaRole::Broker)]
@@ -54,7 +54,8 @@ mod tests {
                 replicas: 1
         "#;
 
-        let kafka: KafkaCluster = serde_yaml::from_str(input).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(input).expect("illegal test input");
         let merged_config = kafka
             .merged_config(&role, &role.rolegroup_ref(&kafka, "default"))
             .unwrap();

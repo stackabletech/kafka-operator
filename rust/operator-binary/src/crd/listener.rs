@@ -7,7 +7,7 @@ use snafu::{OptionExt, Snafu};
 use stackable_operator::{kube::ResourceExt, utils::cluster_info::KubernetesClusterInfo};
 use strum::{EnumDiscriminants, EnumString};
 
-use crate::{security::KafkaTlsSecurity, KafkaCluster, STACKABLE_LISTENER_BROKER_DIR};
+use crate::crd::{security::KafkaTlsSecurity, v1alpha1, STACKABLE_LISTENER_BROKER_DIR};
 
 const LISTENER_LOCAL_ADDRESS: &str = "0.0.0.0";
 
@@ -96,7 +96,7 @@ impl Display for KafkaListener {
 }
 
 pub fn get_kafka_listener_config(
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     kafka_security: &KafkaTlsSecurity,
     object_name: &str,
     cluster_info: &KubernetesClusterInfo,
@@ -246,7 +246,7 @@ fn node_port_cmd(directory: &str, port_name: &str) -> String {
 }
 
 pub fn pod_fqdn(
-    kafka: &KafkaCluster,
+    kafka: &v1alpha1::KafkaCluster,
     object_name: &str,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<String, KafkaListenerError> {
@@ -273,7 +273,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::authentication::ResolvedAuthenticationClasses;
+    use crate::crd::authentication::ResolvedAuthenticationClasses;
 
     fn default_cluster_info() -> KubernetesClusterInfo {
         KubernetesClusterInfo {
@@ -303,7 +303,8 @@ mod tests {
               serverSecretClass: tls
             zookeeperConfigMapName: xyz
         "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(kafka_cluster).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
             ResolvedAuthenticationClasses::new(vec![AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),
@@ -479,7 +480,8 @@ mod tests {
               serverSecretClass: tls
             zookeeperConfigMapName: xyz
         "#;
-        let kafka: KafkaCluster = serde_yaml::from_str(kafka_cluster).expect("illegal test input");
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(kafka_cluster).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
             ResolvedAuthenticationClasses::new(vec![AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),

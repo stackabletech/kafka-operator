@@ -3,7 +3,6 @@ use std::sync::Arc;
 use clap::{crate_description, crate_version, Parser};
 use futures::StreamExt;
 use product_config::ProductConfigManager;
-use stackable_kafka_crd::{KafkaCluster, APP_NAME, OPERATOR_NAME};
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
     client::{self, Client},
@@ -22,12 +21,17 @@ use stackable_operator::{
     },
     logging::controller::report_controller_reconciled,
     namespace::WatchNamespace,
-    CustomResourceExt,
+    shared::yaml::SerializeOptions,
+    YamlSchema,
 };
 
-use crate::kafka_controller::KAFKA_FULL_CONTROLLER_NAME;
+use crate::{
+    crd::{v1alpha1, KafkaCluster, APP_NAME, OPERATOR_NAME},
+    kafka_controller::KAFKA_FULL_CONTROLLER_NAME,
+};
 
 mod config;
+mod crd;
 mod discovery;
 mod kafka_controller;
 mod kerberos;
@@ -59,7 +63,8 @@ struct KafkaRun {
 async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => KafkaCluster::print_yaml_schema(built_info::PKG_VERSION)?,
+        Command::Crd => KafkaCluster::merged_crd(KafkaCluster::V1Alpha1)?
+            .print_yaml_schema(built_info::PKG_VERSION, SerializeOptions::default())?,
         Command::Run(KafkaRun {
             common:
                 ProductOperatorRun {
@@ -115,7 +120,7 @@ pub async fn create_controller(
     ));
 
     Controller::new(
-        namespace.get_api::<DeserializeGuard<KafkaCluster>>(&client),
+        namespace.get_api::<DeserializeGuard<v1alpha1::KafkaCluster>>(&client),
         watcher::Config::default(),
     )
     .owns(
