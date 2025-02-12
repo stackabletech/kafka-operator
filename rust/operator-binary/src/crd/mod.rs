@@ -132,6 +132,7 @@ pub mod versioned {
         pub brokers: Option<Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
 
         /// Kafka settings that affect all roles and role groups.
+        ///
         /// The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
         pub cluster_config: v1alpha1::KafkaClusterConfig,
 
