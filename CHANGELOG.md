@@ -23,6 +23,10 @@ All notable changes to this project will be documented in this file.
 - Default to OCI for image metadata and product image selection ([#810]).
 - Bump Kafka 3.7.1 to 3.7.2 in tests and getting_started, and bump upgrade testing from 3.7.1->3.8.0 to 3.8.0->3.9.0 ([#822]).
 
+### Fixed
+
+- Readiness probe fixed if Kerberos is enabled
+
 [#796]: https://github.com/stackabletech/kafka-operator/pull/796
 [#803]: https://github.com/stackabletech/kafka-operator/pull/803
 [#809]: https://github.com/stackabletech/kafka-operator/pull/809
