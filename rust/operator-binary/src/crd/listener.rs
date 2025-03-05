@@ -263,6 +263,7 @@ pub fn pod_kcat(
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<String, KafkaListenerError> {
     Ok(format!(
+        // TODO where does this prefix come from? Is it safe to hard-code it?
         "$POD_NAME-listener-broker.{namespace}.svc.{cluster_domain}",
         namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
         cluster_domain = cluster_info.cluster_domain
