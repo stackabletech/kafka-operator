@@ -258,6 +258,17 @@ pub fn pod_fqdn(
     ))
 }
 
+pub fn pod_kcat(
+    kafka: &v1alpha1::KafkaCluster,
+    cluster_info: &KubernetesClusterInfo,
+) -> Result<String, KafkaListenerError> {
+    Ok(format!(
+        "$POD_NAME-listener-broker.{namespace}.svc.{cluster_domain}",
+        namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
+        cluster_domain = cluster_info.cluster_domain
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use stackable_operator::{

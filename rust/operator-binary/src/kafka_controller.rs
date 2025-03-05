@@ -76,7 +76,7 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::{
-        listener::{get_kafka_listener_config, pod_fqdn, KafkaListenerError},
+        listener::{get_kafka_listener_config, pod_kcat, KafkaListenerError},
         security::KafkaTlsSecurity,
         v1alpha1, Container, KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME,
         DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
@@ -999,8 +999,7 @@ fn build_broker_rolegroup_statefulset(
         .context(AddVolumeMountSnafu)?
         .resources(merged_config.resources.clone().into());
 
-    let pod_fqdn = pod_fqdn(kafka, &rolegroup_ref.object_name(), cluster_info)
-        .context(ResolveNamespaceSnafu)?;
+    let pod_kcat = pod_kcat(kafka, cluster_info).context(ResolveNamespaceSnafu)?;
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
     cb_kcat_prober
@@ -1030,7 +1029,7 @@ fn build_broker_rolegroup_statefulset(
         .readiness_probe(Probe {
             exec: Some(ExecAction {
                 // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(kafka_security.kcat_prober_container_commands(&pod_fqdn)),
+                command: Some(kafka_security.kcat_prober_container_commands(&pod_kcat)),
             }),
             timeout_seconds: Some(5),
             period_seconds: Some(2),

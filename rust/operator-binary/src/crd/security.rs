@@ -284,7 +284,7 @@ impl KafkaTlsSecurity {
     }
 
     /// Returns the commands for the kcat readiness probe.
-    pub fn kcat_prober_container_commands(&self, pod_fqdn: &String) -> Vec<String> {
+    pub fn kcat_prober_container_commands(&self, pod_kcat: &String) -> Vec<String> {
         let mut args = vec![];
         let port = self.client_port();
 
@@ -314,11 +314,11 @@ impl KafkaTlsSecurity {
             );
             bash_args.push("/stackable/kcat".to_string());
             bash_args.push("-b".to_string());
-            bash_args.push(format!("{pod_fqdn}:{port}"));
+            bash_args.push(format!("{pod_kcat}:{port}"));
             bash_args.extend(Self::kcat_client_sasl_ssl(
                 Self::STACKABLE_TLS_KCAT_DIR,
                 service_name,
-                pod_fqdn,
+                pod_kcat,
             ));
             bash_args.push("-L".to_string());
 
@@ -665,7 +665,7 @@ impl KafkaTlsSecurity {
     fn kcat_client_sasl_ssl(
         cert_directory: &str,
         service_name: &str,
-        pod_fqdn: &String,
+        pod_kcat: &String,
     ) -> Vec<String> {
         vec![
             "-X".to_string(),
@@ -679,7 +679,7 @@ impl KafkaTlsSecurity {
             "-X".to_string(),
             format!("sasl.kerberos.service.name={service_name}"),
             "-X".to_string(),
-            format!("sasl.kerberos.principal={service_name}/{pod_fqdn}@$KERBEROS_REALM"),
+            format!("sasl.kerberos.principal={service_name}/{pod_kcat}@$KERBEROS_REALM"),
         ]
     }
 }
