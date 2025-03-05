@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Bump `stackable-operator` to 0.87.0 and `stackable-versioned` to 0.6.0 ([#830]).
 - Default to OCI for image metadata and product image selection ([#810]).
 - Bump Kafka 3.7.1 to 3.7.2 in tests and getting_started, and bump upgrade testing from 3.7.1->3.8.0 to 3.8.0->3.9.0 ([#822]).
 
@@ -30,6 +31,7 @@ All notable changes to this project will be documented in this file.
 [#813]: https://github.com/stackabletech/kafka-operator/pull/813
 [#819]: https://github.com/stackabletech/kafka-operator/pull/819
 [#822]: https://github.com/stackabletech/kafka-operator/pull/822
+[#830]: https://github.com/stackabletech/kafka-operator/pull/830
 
 ## [24.11.1] - 2025-01-10
 
