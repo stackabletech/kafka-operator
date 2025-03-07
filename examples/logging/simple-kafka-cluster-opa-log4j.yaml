@@ -40,7 +40,7 @@ data:
   kafka.rego: |
     package kafka.authz
 
-    allow {
+    allow if {
         true
     }
 ---
