@@ -38,6 +38,31 @@ spec:
               memory: 128Mi
 {% endif %}
       terminationGracePeriodSeconds: 1800
+      volumes:
+{% if test_scenario['values']['use-client-tls'] == 'true' %}
+        - name: tls-kcat
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/backend.autotls.cert.lifetime: 7d
+        - name: tls-kafka-server
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/backend.autotls.cert.lifetime: 7d
+{% endif %}
+        - name: tls-kafka-internal
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/backend.autotls.cert.lifetime: 7d
+        - name: log-config
+        - name: config
+        - name: listener-broker
+        - name: log
 status:
   readyReplicas: 1
   replicas: 1
