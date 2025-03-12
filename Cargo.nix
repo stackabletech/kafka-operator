@@ -6030,10 +6030,10 @@ rec {
       };
       "ring" = rec {
         crateName = "ring";
-        version = "0.17.11";
+        version = "0.17.13";
         edition = "2021";
-        links = "ring_core_0_17_11_";
-        sha256 = "0wzyhdbf71ndd14kkpyj2a6nvczvli2mndzv2al7r26k4yp4jlys";
+        links = "ring_core_0_17_13_";
+        sha256 = "1vjhhlmpqqd9lc53ffjj1yk203188n2km27g3myvssm15a1mvb3h";
         dependencies = [
           {
             name = "cfg-if";

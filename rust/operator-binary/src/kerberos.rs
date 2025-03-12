@@ -45,8 +45,6 @@ pub fn add_kerberos_pod_config(
             SecretOperatorVolumeSourceBuilder::new(kerberos_secret_class)
                 .with_listener_volume_scope(LISTENER_BROKER_VOLUME_NAME)
                 .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
-                // The pod scope is required for the kcat-prober.
-                .with_pod_scope()
                 .with_kerberos_service_name(role.kerberos_service_name())
                 .build()
                 .context(KerberosSecretVolumeSnafu)?;
