@@ -38,6 +38,7 @@ dimensions:
   - name: use-client-auth-tls
     values:
       - "true"
+      - "false"
   - name: openshift
     values:
       - "false"
