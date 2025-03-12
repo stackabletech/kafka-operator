@@ -25,7 +25,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Readiness probe fixed if Kerberos is enabled
+- Readiness probe fixed if Kerberos is enabled ([#833]).
 
 [#796]: https://github.com/stackabletech/kafka-operator/pull/796
 [#803]: https://github.com/stackabletech/kafka-operator/pull/803
@@ -34,6 +34,7 @@ All notable changes to this project will be documented in this file.
 [#813]: https://github.com/stackabletech/kafka-operator/pull/813
 [#819]: https://github.com/stackabletech/kafka-operator/pull/819
 [#822]: https://github.com/stackabletech/kafka-operator/pull/822
+[#833]: https://github.com/stackabletech/kafka-operator/pull/833
 
 ## [24.11.1] - 2025-01-10
 

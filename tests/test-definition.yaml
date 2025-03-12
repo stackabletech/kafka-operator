@@ -6,6 +6,9 @@
 dimensions:
   - name: kafka
     values:
+      - 3.7.1
+      - 3.7.2
+      - 3.8.1
       - 3.9.0
       # Alternatively, if you want to use a custom image, append a comma and the full image name to the product version
       # as in the example below.
@@ -31,6 +34,7 @@ dimensions:
   - name: use-client-tls
     values:
       - "true"
+      - "false"
   - name: use-client-auth-tls
     values:
       - "true"
@@ -42,6 +46,7 @@ dimensions:
       - 1.21.1
   - name: kerberos-realm
     values:
+      - "CLUSTER.LOCAL"
       - "PROD.MYCORP"
   - name: kerberos-backend
     values:
