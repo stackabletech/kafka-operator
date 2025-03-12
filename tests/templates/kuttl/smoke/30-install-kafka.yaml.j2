@@ -38,6 +38,7 @@ spec:
     config:
       logging:
         enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+      requestedSecretLifetime: 7d
     roleGroups:
       default:
         replicas: 1
