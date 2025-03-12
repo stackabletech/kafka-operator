@@ -3,6 +3,6 @@
 // Stackable Platform documentation.
 
 * 3.9.0
-* 3.8.1 (deprecated)
+* 3.8.0 (deprecated)
 * 3.7.2 (LTS)
 * 3.7.1 (deprecated)
