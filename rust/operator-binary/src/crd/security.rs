@@ -304,7 +304,7 @@ impl KafkaTlsSecurity {
             args.push("pipefail".to_string());
             args.push("-c".to_string());
 
-            // the entire command needs to be subject to the -euo directive
+            // the entire command needs to be subject to the -c directive
             // to prevent short-circuiting
             let mut bash_args = vec![];
             bash_args.push(
