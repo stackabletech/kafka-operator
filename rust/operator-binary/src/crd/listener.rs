@@ -7,10 +7,7 @@ use snafu::{OptionExt, Snafu};
 use stackable_operator::{kube::ResourceExt, utils::cluster_info::KubernetesClusterInfo};
 use strum::{EnumDiscriminants, EnumString};
 
-use crate::crd::{
-    security::KafkaTlsSecurity, v1alpha1, LISTENER_BROKER_VOLUME_NAME,
-    STACKABLE_LISTENER_BROKER_DIR,
-};
+use crate::crd::{security::KafkaTlsSecurity, v1alpha1, STACKABLE_LISTENER_BROKER_DIR};
 
 const LISTENER_LOCAL_ADDRESS: &str = "0.0.0.0";
 
@@ -244,7 +241,7 @@ pub fn node_address_cmd(directory: &str) -> String {
     format!("$(cat {directory}/default-address/address)")
 }
 
-fn node_port_cmd(directory: &str, port_name: &str) -> String {
+pub fn node_port_cmd(directory: &str, port_name: &str) -> String {
     format!("$(cat {directory}/default-address/ports/{port_name})")
 }
 
@@ -256,17 +253,6 @@ pub fn pod_fqdn(
     Ok(format!(
         "$POD_NAME.{object_name}.{namespace}.svc.{cluster_domain}",
         object_name = object_name,
-        namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
-        cluster_domain = cluster_info.cluster_domain
-    ))
-}
-
-pub fn pod_kcat(
-    kafka: &v1alpha1::KafkaCluster,
-    cluster_info: &KubernetesClusterInfo,
-) -> Result<String, KafkaListenerError> {
-    Ok(format!(
-        "$POD_NAME-{LISTENER_BROKER_VOLUME_NAME}.{namespace}.svc.{cluster_domain}",
         namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
         cluster_domain = cluster_info.cluster_domain
     ))

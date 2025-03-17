@@ -27,6 +27,7 @@ use stackable_operator::{
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
+use super::listener::node_port_cmd;
 use crate::crd::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, node_address_cmd, KafkaListenerConfig},
@@ -284,7 +285,7 @@ impl KafkaTlsSecurity {
     }
 
     /// Returns the commands for the kcat readiness probe.
-    pub fn kcat_prober_container_commands(&self, pod_kcat: &String) -> Vec<String> {
+    pub fn kcat_prober_container_commands(&self, broker_listener_class: &String) -> Vec<String> {
         let mut args = vec![];
         let port = self.client_port();
 
@@ -296,6 +297,13 @@ impl KafkaTlsSecurity {
             args.push("-L".to_string());
         } else if self.has_kerberos_enabled() {
             let service_name = KafkaRole::Broker.kerberos_service_name();
+            let broker_port = match broker_listener_class.as_str() {
+                // for cluster-internal, kcat will connect using the broker name and the internal port
+                "cluster-internal" => port.to_string(),
+                // for other cases we will use the IP address and the externally-mapped TLS port
+                _ => node_port_cmd(STACKABLE_LISTENER_BROKER_DIR, self.client_port_name()),
+            };
+            tracing::info!("Port {broker_port}: listener {broker_listener_class}");
             // here we need to specify a shell so that variable substitution will work
             // see e.g. https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/V1ExecAction.md
             args.push("/bin/bash".to_string());
@@ -314,13 +322,19 @@ impl KafkaTlsSecurity {
                 )
                 .to_string(),
             );
+            bash_args.push(
+                format!(
+                    "export POD_BROKER_LISTENER_ADDRESS={};",
+                    node_address_cmd(STACKABLE_LISTENER_BROKER_DIR)
+                )
+                .to_string(),
+            );
             bash_args.push("/stackable/kcat".to_string());
             bash_args.push("-b".to_string());
-            bash_args.push(format!("{pod_kcat}:{port}"));
+            bash_args.push(format!("$POD_BROKER_LISTENER_ADDRESS:{broker_port}"));
             bash_args.extend(Self::kcat_client_sasl_ssl(
                 Self::STACKABLE_TLS_KCAT_DIR,
                 service_name,
-                pod_kcat,
             ));
             bash_args.push("-L".to_string());
 
@@ -664,11 +678,7 @@ impl KafkaTlsSecurity {
         ]
     }
 
-    fn kcat_client_sasl_ssl(
-        cert_directory: &str,
-        service_name: &str,
-        pod_kcat: &String,
-    ) -> Vec<String> {
+    fn kcat_client_sasl_ssl(cert_directory: &str, service_name: &str) -> Vec<String> {
         vec![
             "-X".to_string(),
             "security.protocol=SASL_SSL".to_string(),
@@ -681,7 +691,7 @@ impl KafkaTlsSecurity {
             "-X".to_string(),
             format!("sasl.kerberos.service.name={service_name}"),
             "-X".to_string(),
-            format!("sasl.kerberos.principal={service_name}/{pod_kcat}@$KERBEROS_REALM"),
+            format!("sasl.kerberos.principal={service_name}/$POD_BROKER_LISTENER_ADDRESS@$KERBEROS_REALM"),
         ]
     }
 }
