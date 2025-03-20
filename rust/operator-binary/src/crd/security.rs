@@ -297,13 +297,10 @@ impl KafkaTlsSecurity {
             args.push("-L".to_string());
         } else if self.has_kerberos_enabled() {
             let service_name = KafkaRole::Broker.kerberos_service_name();
-            let broker_port = match broker_listener_class.as_str() {
-                // for cluster-internal, kcat will connect using the broker name and the internal port
-                "cluster-internal" => port.to_string(),
-                // for other cases we will use the IP address and the externally-mapped TLS port
-                _ => node_port_cmd(STACKABLE_LISTENER_BROKER_DIR, self.client_port_name()),
-            };
-            tracing::info!("Port {broker_port}: listener {broker_listener_class}");
+            let broker_port = node_port_cmd(STACKABLE_LISTENER_BROKER_DIR, self.client_port_name());
+            tracing::debug!(
+                "Port for listener class {broker_listener_class} is specified by {broker_port}"
+            );
             // here we need to specify a shell so that variable substitution will work
             // see e.g. https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/V1ExecAction.md
             args.push("/bin/bash".to_string());
