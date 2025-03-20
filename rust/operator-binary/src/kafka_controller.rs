@@ -1035,10 +1035,7 @@ fn build_broker_rolegroup_statefulset(
         .readiness_probe(Probe {
             exec: Some(ExecAction {
                 // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(
-                    kafka_security
-                        .kcat_prober_container_commands(&merged_config.broker_listener_class),
-                ),
+                command: Some(kafka_security.kcat_prober_container_commands()),
             }),
             timeout_seconds: Some(5),
             period_seconds: Some(2),
