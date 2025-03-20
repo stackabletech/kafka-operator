@@ -241,7 +241,7 @@ pub fn node_address_cmd(directory: &str) -> String {
     format!("$(cat {directory}/default-address/address)")
 }
 
-fn node_port_cmd(directory: &str, port_name: &str) -> String {
+pub fn node_port_cmd(directory: &str, port_name: &str) -> String {
     format!("$(cat {directory}/default-address/ports/{port_name})")
 }
 

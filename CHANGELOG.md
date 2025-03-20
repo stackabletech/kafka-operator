@@ -25,6 +25,10 @@ All notable changes to this project will be documented in this file.
 - Bump Kafka 3.7.1 to 3.7.2 in tests and getting_started, and bump upgrade testing from 3.7.1->3.8.0 to 3.8.0->3.9.0 ([#822]).
 - docs: Update supported versions list ([#835]).
 
+### Fixed
+
+- Readiness probe fixed if Kerberos is enabled ([#833]).
+
 [#796]: https://github.com/stackabletech/kafka-operator/pull/796
 [#803]: https://github.com/stackabletech/kafka-operator/pull/803
 [#809]: https://github.com/stackabletech/kafka-operator/pull/809
@@ -33,6 +37,7 @@ All notable changes to this project will be documented in this file.
 [#819]: https://github.com/stackabletech/kafka-operator/pull/819
 [#822]: https://github.com/stackabletech/kafka-operator/pull/822
 [#830]: https://github.com/stackabletech/kafka-operator/pull/830
+[#833]: https://github.com/stackabletech/kafka-operator/pull/833
 [#835]: https://github.com/stackabletech/kafka-operator/pull/835
 
 ## [24.11.1] - 2025-01-10

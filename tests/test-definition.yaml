@@ -56,6 +56,14 @@ dimensions:
       # Requires manual setup, see create-kerberos-secretclass.yaml
       # This will *not* respect the kerberos-realm test attribute, but instead use a hard-coded realm
       # - activeDirectory
+  - name: broker-listener-class
+    values:
+      - "cluster-internal"
+  - name: bootstrap-listener-class
+    values:
+      - "cluster-internal"
+      - "external-stable"
+      - "external-unstable"
 tests:
   - name: smoke
     dimensions:
@@ -106,6 +114,8 @@ tests:
       - kerberos-realm
       - kerberos-backend
       - openshift
+      - broker-listener-class
+      - bootstrap-listener-class
 
 suites:
   - name: nightly

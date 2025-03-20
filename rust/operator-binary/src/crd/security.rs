@@ -27,6 +27,7 @@ use stackable_operator::{
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
+use super::listener::node_port_cmd;
 use crate::crd::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, node_address_cmd, KafkaListenerConfig},
@@ -284,7 +285,7 @@ impl KafkaTlsSecurity {
     }
 
     /// Returns the commands for the kcat readiness probe.
-    pub fn kcat_prober_container_commands(&self, pod_fqdn: &String) -> Vec<String> {
+    pub fn kcat_prober_container_commands(&self) -> Vec<String> {
         let mut args = vec![];
         let port = self.client_port();
 
@@ -293,8 +294,10 @@ impl KafkaTlsSecurity {
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
             args.extend(Self::kcat_client_auth_ssl(Self::STACKABLE_TLS_KCAT_DIR));
+            args.push("-L".to_string());
         } else if self.has_kerberos_enabled() {
             let service_name = KafkaRole::Broker.kerberos_service_name();
+            let broker_port = node_port_cmd(STACKABLE_LISTENER_BROKER_DIR, self.client_port_name());
             // here we need to specify a shell so that variable substitution will work
             // see e.g. https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/V1ExecAction.md
             args.push("/bin/bash".to_string());
@@ -302,33 +305,47 @@ impl KafkaTlsSecurity {
             args.push("-euo".to_string());
             args.push("pipefail".to_string());
             args.push("-c".to_string());
-            args.push(
+
+            // the entire command needs to be subject to the -c directive
+            // to prevent short-circuiting
+            let mut bash_args = vec![];
+            bash_args.push(
                 format!(
                     "export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {});",
                     STACKABLE_KERBEROS_KRB5_PATH
                 )
                 .to_string(),
             );
-            args.push("/stackable/kcat".to_string());
-            args.push("-b".to_string());
-            args.push(format!("{pod_fqdn}:{port}"));
-            args.extend(Self::kcat_client_sasl_ssl(
+            bash_args.push(
+                format!(
+                    "export POD_BROKER_LISTENER_ADDRESS={};",
+                    node_address_cmd(STACKABLE_LISTENER_BROKER_DIR)
+                )
+                .to_string(),
+            );
+            bash_args.push("/stackable/kcat".to_string());
+            bash_args.push("-b".to_string());
+            bash_args.push(format!("$POD_BROKER_LISTENER_ADDRESS:{broker_port}"));
+            bash_args.extend(Self::kcat_client_sasl_ssl(
                 Self::STACKABLE_TLS_KCAT_DIR,
                 service_name,
-                pod_fqdn,
             ));
+            bash_args.push("-L".to_string());
+
+            args.push(bash_args.join(" "));
         } else if self.tls_server_secret_class().is_some() {
             args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
             args.extend(Self::kcat_client_ssl(Self::STACKABLE_TLS_KCAT_DIR));
+            args.push("-L".to_string());
         } else {
             args.push("/stackable/kcat".to_string());
             args.push("-b".to_string());
             args.push(format!("localhost:{}", port));
+            args.push("-L".to_string());
         }
 
-        args.push("-L".to_string());
         args
     }
 
@@ -655,11 +672,7 @@ impl KafkaTlsSecurity {
         ]
     }
 
-    fn kcat_client_sasl_ssl(
-        cert_directory: &str,
-        service_name: &str,
-        pod_fqdn: &String,
-    ) -> Vec<String> {
+    fn kcat_client_sasl_ssl(cert_directory: &str, service_name: &str) -> Vec<String> {
         vec![
             "-X".to_string(),
             "security.protocol=SASL_SSL".to_string(),
@@ -672,7 +685,7 @@ impl KafkaTlsSecurity {
             "-X".to_string(),
             format!("sasl.kerberos.service.name={service_name}"),
             "-X".to_string(),
-            format!("sasl.kerberos.principal={service_name}/{pod_fqdn}@$KERBEROS_REALM"),
+            format!("sasl.kerberos.principal={service_name}/$POD_BROKER_LISTENER_ADDRESS@$KERBEROS_REALM"),
         ]
     }
 }
