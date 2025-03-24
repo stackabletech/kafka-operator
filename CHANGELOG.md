@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [25.3.0] - 2025-03-21
+
 ### Deprecated
 
 - The `-nodeport` discovery ConfigMaps have been deprecated for removal ([#813]).
