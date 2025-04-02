@@ -5,7 +5,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    crd::{v1alpha1, KafkaRole, APP_NAME, OPERATOR_NAME},
+    crd::{APP_NAME, KafkaRole, OPERATOR_NAME, v1alpha1},
     kafka_controller::KAFKA_CONTROLLER_NAME,
 };
 

@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use clap::{crate_description, crate_version, Parser};
+use clap::{Parser, crate_description, crate_version};
 use futures::StreamExt;
 use product_config::ProductConfigManager;
 use stackable_operator::{
+    YamlSchema,
     cli::{Command, ProductOperatorRun},
     client::{self, Client},
     commons::listener::Listener,
@@ -15,18 +16,18 @@ use stackable_operator::{
     kube::{
         core::DeserializeGuard,
         runtime::{
+            Controller,
             events::{Recorder, Reporter},
-            watcher, Controller,
+            watcher,
         },
     },
     logging::controller::report_controller_reconciled,
     namespace::WatchNamespace,
     shared::yaml::SerializeOptions,
-    YamlSchema,
 };
 
 use crate::{
-    crd::{v1alpha1, KafkaCluster, APP_NAME, OPERATOR_NAME},
+    crd::{APP_NAME, KafkaCluster, OPERATOR_NAME, v1alpha1},
     kafka_controller::KAFKA_FULL_CONTROLLER_NAME,
 };
 
@@ -111,13 +112,10 @@ pub async fn create_controller(
     product_config: ProductConfigManager,
     namespace: WatchNamespace,
 ) {
-    let event_recorder = Arc::new(Recorder::new(
-        client.as_kube_client(),
-        Reporter {
-            controller: KAFKA_FULL_CONTROLLER_NAME.to_string(),
-            instance: None,
-        },
-    ));
+    let event_recorder = Arc::new(Recorder::new(client.as_kube_client(), Reporter {
+        controller: KAFKA_FULL_CONTROLLER_NAME.to_string(),
+        instance: None,
+    }));
 
     Controller::new(
         namespace.get_api::<DeserializeGuard<v1alpha1::KafkaCluster>>(&client),

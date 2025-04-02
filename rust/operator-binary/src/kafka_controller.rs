@@ -8,9 +8,9 @@ use std::{
 
 use const_format::concatcp;
 use product_config::{
-    types::PropertyNameKind,
-    writer::{to_java_properties_string, PropertiesWriterError},
     ProductConfigManager,
+    types::PropertyNameKind,
+    writer::{PropertiesWriterError, to_java_properties_string},
 };
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
@@ -19,11 +19,11 @@ use stackable_operator::{
         configmap::ConfigMapBuilder,
         meta::ObjectMetaBuilder,
         pod::{
+            PodBuilder,
             container::ContainerBuilder,
             resources::ResourceRequirementsBuilder,
             security::PodSecurityContextBuilder,
             volume::{ListenerOperatorVolumeSourceBuilder, ListenerReference, VolumeBuilder},
-            PodBuilder,
         },
     },
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
@@ -35,6 +35,7 @@ use stackable_operator::{
         rbac::build_rbac_resources,
     },
     k8s_openapi::{
+        DeepMerge,
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec},
             core::v1::{
@@ -44,13 +45,12 @@ use stackable_operator::{
             },
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
-        DeepMerge,
     },
     kube::{
-        api::DynamicObject,
-        core::{error_boundary, DeserializeGuard},
-        runtime::{controller::Action, reflector::ObjectRef},
         Resource, ResourceExt,
+        api::DynamicObject,
+        core::{DeserializeGuard, error_boundary},
+        runtime::{controller::Action, reflector::ObjectRef},
     },
     kvp::{Label, Labels},
     logging::controller::ReconcilerError,
@@ -76,14 +76,15 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::{
-        listener::{get_kafka_listener_config, KafkaListenerError},
+        APP_NAME, Container, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
+        KafkaClusterStatus, KafkaConfig, KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME,
+        LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
+        OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
+        STACKABLE_LOG_DIR,
+        listener::{KafkaListenerError, get_kafka_listener_config},
         security::KafkaTlsSecurity,
-        v1alpha1, Container, KafkaClusterStatus, KafkaConfig, KafkaRole, APP_NAME,
-        DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
-        LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
-        METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
-        STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
+        v1alpha1,
     },
     discovery::{self, build_discovery_configmaps},
     kerberos::{self, add_kerberos_pod_config},
@@ -92,8 +93,8 @@ use crate::{
         pdb::add_pdbs,
     },
     product_logging::{
-        extend_role_group_config_map, resolve_vector_aggregator_address, LOG4J_CONFIG_FILE,
-        MAX_KAFKA_LOG_FILES_SIZE,
+        LOG4J_CONFIG_FILE, MAX_KAFKA_LOG_FILES_SIZE, extend_role_group_config_map,
+        resolve_vector_aggregator_address,
     },
     utils::build_recommended_labels,
 };
@@ -954,13 +955,15 @@ fn build_broker_rolegroup_statefulset(
             "pipefail".to_string(),
             "-c".to_string(),
         ])
-        .args(vec![kafka_security
-            .kafka_container_commands(
-                &kafka_listeners,
-                opa_connect_string,
-                kafka_security.has_kerberos_enabled(),
-            )
-            .join("\n")])
+        .args(vec![
+            kafka_security
+                .kafka_container_commands(
+                    &kafka_listeners,
+                    opa_connect_string,
+                    kafka_security.has_kerberos_enabled(),
+                )
+                .join("\n"),
+        ])
         .add_env_var(
             "EXTRA_ARGS",
             construct_non_heap_jvm_args(merged_config, role, &rolegroup_ref.role_group)

@@ -7,7 +7,7 @@ use snafu::{OptionExt, Snafu};
 use stackable_operator::{kube::ResourceExt, utils::cluster_info::KubernetesClusterInfo};
 use strum::{EnumDiscriminants, EnumString};
 
-use crate::crd::{security::KafkaTlsSecurity, v1alpha1, STACKABLE_LISTENER_BROKER_DIR};
+use crate::crd::{STACKABLE_LISTENER_BROKER_DIR, security::KafkaTlsSecurity, v1alpha1};
 
 const LISTENER_LOCAL_ADDRESS: &str = "0.0.0.0";
 
@@ -264,9 +264,9 @@ mod tests {
         builder::meta::ObjectMetaBuilder,
         commons::{
             authentication::{
+                AuthenticationClass, AuthenticationClassProvider, AuthenticationClassSpec,
                 kerberos,
                 tls::{self},
-                AuthenticationClass, AuthenticationClassProvider, AuthenticationClassSpec,
             },
             networking::DomainName,
         },
@@ -512,7 +512,7 @@ mod tests {
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,
                 bootstrap_host = LISTENER_LOCAL_ADDRESS,
-             bootstrap_port = kafka_security.bootstrap_port(),
+                bootstrap_port = kafka_security.bootstrap_port(),
             )
         );
 
@@ -548,7 +548,6 @@ mod tests {
                 internal_protocol = KafkaListenerProtocol::Ssl,
                 bootstrap_name = KafkaListenerName::Bootstrap,
                 bootstrap_protocol = KafkaListenerProtocol::SaslSsl,
-
             )
         );
     }
