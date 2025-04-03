@@ -5,7 +5,7 @@ use stackable_operator::{
 };
 
 use crate::crd::{
-    KafkaConfig, KafkaConfigFragment, JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT,
+    JVM_SECURITY_PROPERTIES_FILE, KafkaConfig, KafkaConfigFragment, METRICS_PORT,
     STACKABLE_CONFIG_DIR,
 };
 
@@ -51,7 +51,9 @@ fn construct_jvm_args(
         format!("-Xmx{java_heap}"),
         format!("-Xms{java_heap}"),
         format!("-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE}"),
-        format!("-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml")
+        format!(
+            "-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml"
+        ),
     ];
 
     let operator_generated = JvmArgumentOverrides::new_with_only_additions(jvm_args);
@@ -99,7 +101,7 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{v1alpha1, KafkaRole};
+    use crate::crd::{KafkaRole, v1alpha1};
 
     #[test]
     fn test_construct_jvm_arguments_defaults() {

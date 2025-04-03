@@ -18,7 +18,9 @@ pub enum Error {
         authentication_class: ObjectRef<AuthenticationClass>,
     },
 
-    #[snafu(display("only one authentication class at a time is currently supported. Possible Authentication class providers are {SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS:?}"))]
+    #[snafu(display(
+        "only one authentication class at a time is currently supported. Possible Authentication class providers are {SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS:?}"
+    ))]
     MultipleAuthenticationClassesProvided,
 
     #[snafu(display(
@@ -122,7 +124,7 @@ impl ResolvedAuthenticationClasses {
                     return Err(Error::AuthenticationProviderNotSupported {
                         authentication_class: ObjectRef::from_obj(auth_class),
                         provider: auth_class.spec.provider.to_string(),
-                    })
+                    });
                 }
             }
         }

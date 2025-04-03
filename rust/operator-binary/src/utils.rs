@@ -1,6 +1,6 @@
 use stackable_operator::kvp::ObjectLabels;
 
-use crate::crd::{v1alpha1, APP_NAME, OPERATOR_NAME};
+use crate::crd::{APP_NAME, OPERATOR_NAME, v1alpha1};
 
 /// Build recommended values for labels
 pub fn build_recommended_labels<'a>(
