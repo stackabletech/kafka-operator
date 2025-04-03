@@ -2,18 +2,18 @@ use snafu::{ResultExt, Snafu};
 use stackable_operator::builder::{
     self,
     pod::{
+        PodBuilder,
         container::ContainerBuilder,
         volume::{
             SecretOperatorVolumeSourceBuilder, SecretOperatorVolumeSourceBuilderError,
             VolumeBuilder,
         },
-        PodBuilder,
     },
 };
 
 use crate::crd::{
-    security::KafkaTlsSecurity, KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME,
-    LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_DIR, STACKABLE_KERBEROS_KRB5_PATH,
+    KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_DIR,
+    STACKABLE_KERBEROS_KRB5_PATH, security::KafkaTlsSecurity,
 };
 
 #[derive(Snafu, Debug)]

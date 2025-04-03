@@ -7,14 +7,14 @@
 use std::collections::BTreeMap;
 
 use indoc::formatdoc;
-use snafu::{ensure, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu, ensure};
 use stackable_operator::{
     builder::{
         self,
         pod::{
+            PodBuilder,
             container::ContainerBuilder,
             volume::{SecretFormat, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
-            PodBuilder,
         },
     },
     client::Client,
@@ -29,11 +29,12 @@ use stackable_operator::{
 
 use super::listener::node_port_cmd;
 use crate::crd::{
+    KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, SERVER_PROPERTIES_FILE,
+    STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+    STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_DIR,
     authentication::{self, ResolvedAuthenticationClasses},
-    listener::{self, node_address_cmd, KafkaListenerConfig},
-    tls, v1alpha1, KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
-    SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
-    STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_DIR,
+    listener::{self, KafkaListenerConfig, node_address_cmd},
+    tls, v1alpha1,
 };
 
 #[derive(Snafu, Debug)]
@@ -66,32 +67,12 @@ pub struct KafkaTlsSecurity {
 }
 
 impl KafkaTlsSecurity {
-    // ports
-    pub const CLIENT_PORT_NAME: &'static str = "kafka";
-    pub const CLIENT_PORT: u16 = 9092;
-    pub const SECURE_CLIENT_PORT_NAME: &'static str = "kafka-tls";
-    pub const SECURE_CLIENT_PORT: u16 = 9093;
+    pub const BOOTSTRAP_PORT: u16 = 9094;
     // bootstrap: we will have a single named port with different values for
     // secure (9095) and insecure (9094). The bootstrap listener is needed to
     // be able to expose principals for both the broker and bootstrap in the
     // JAAS configuration, so that clients can use both.
     pub const BOOTSTRAP_PORT_NAME: &'static str = "bootstrap";
-    pub const BOOTSTRAP_PORT: u16 = 9094;
-    pub const SECURE_BOOTSTRAP_PORT: u16 = 9095;
-    // internal
-    pub const INTERNAL_PORT: u16 = 19092;
-    pub const SECURE_INTERNAL_PORT: u16 = 19093;
-    // - TLS global
-    const SSL_STORE_PASSWORD: &'static str = "";
-    // - TLS client
-    const CLIENT_SSL_KEYSTORE_LOCATION: &'static str = "listener.name.client.ssl.keystore.location";
-    const CLIENT_SSL_KEYSTORE_PASSWORD: &'static str = "listener.name.client.ssl.keystore.password";
-    const CLIENT_SSL_KEYSTORE_TYPE: &'static str = "listener.name.client.ssl.keystore.type";
-    const CLIENT_SSL_TRUSTSTORE_LOCATION: &'static str =
-        "listener.name.client.ssl.truststore.location";
-    const CLIENT_SSL_TRUSTSTORE_PASSWORD: &'static str =
-        "listener.name.client.ssl.truststore.password";
-    const CLIENT_SSL_TRUSTSTORE_TYPE: &'static str = "listener.name.client.ssl.truststore.type";
     // - Bootstrapper
     const BOOTSTRAP_SSL_KEYSTORE_LOCATION: &'static str =
         "listener.name.bootstrap.ssl.keystore.location";
@@ -104,6 +85,7 @@ impl KafkaTlsSecurity {
         "listener.name.bootstrap.ssl.truststore.password";
     const BOOTSTRAP_SSL_TRUSTSTORE_TYPE: &'static str =
         "listener.name.bootstrap.ssl.truststore.type";
+    const CLIENT_AUTH_SSL_CLIENT_AUTH: &'static str = "listener.name.client_auth.ssl.client.auth";
     // - TLS client authentication
     const CLIENT_AUTH_SSL_KEYSTORE_LOCATION: &'static str =
         "listener.name.client_auth.ssl.keystore.location";
@@ -117,9 +99,23 @@ impl KafkaTlsSecurity {
         "listener.name.client_auth.ssl.truststore.password";
     const CLIENT_AUTH_SSL_TRUSTSTORE_TYPE: &'static str =
         "listener.name.client_auth.ssl.truststore.type";
-    const CLIENT_AUTH_SSL_CLIENT_AUTH: &'static str = "listener.name.client_auth.ssl.client.auth";
+    pub const CLIENT_PORT: u16 = 9092;
+    // ports
+    pub const CLIENT_PORT_NAME: &'static str = "kafka";
+    // - TLS client
+    const CLIENT_SSL_KEYSTORE_LOCATION: &'static str = "listener.name.client.ssl.keystore.location";
+    const CLIENT_SSL_KEYSTORE_PASSWORD: &'static str = "listener.name.client.ssl.keystore.password";
+    const CLIENT_SSL_KEYSTORE_TYPE: &'static str = "listener.name.client.ssl.keystore.type";
+    const CLIENT_SSL_TRUSTSTORE_LOCATION: &'static str =
+        "listener.name.client.ssl.truststore.location";
+    const CLIENT_SSL_TRUSTSTORE_PASSWORD: &'static str =
+        "listener.name.client.ssl.truststore.password";
+    const CLIENT_SSL_TRUSTSTORE_TYPE: &'static str = "listener.name.client.ssl.truststore.type";
+    // internal
+    pub const INTERNAL_PORT: u16 = 19092;
     // - TLS internal
     const INTER_BROKER_LISTENER_NAME: &'static str = "inter.broker.listener.name";
+    const INTER_SSL_CLIENT_AUTH: &'static str = "listener.name.internal.ssl.client.auth";
     const INTER_SSL_KEYSTORE_LOCATION: &'static str =
         "listener.name.internal.ssl.keystore.location";
     const INTER_SSL_KEYSTORE_PASSWORD: &'static str =
@@ -130,14 +126,19 @@ impl KafkaTlsSecurity {
     const INTER_SSL_TRUSTSTORE_PASSWORD: &'static str =
         "listener.name.internal.ssl.truststore.password";
     const INTER_SSL_TRUSTSTORE_TYPE: &'static str = "listener.name.internal.ssl.truststore.type";
-    const INTER_SSL_CLIENT_AUTH: &'static str = "listener.name.internal.ssl.client.auth";
+    pub const SECURE_BOOTSTRAP_PORT: u16 = 9095;
+    pub const SECURE_CLIENT_PORT: u16 = 9093;
+    pub const SECURE_CLIENT_PORT_NAME: &'static str = "kafka-tls";
+    pub const SECURE_INTERNAL_PORT: u16 = 19093;
+    // - TLS global
+    const SSL_STORE_PASSWORD: &'static str = "";
+    const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &'static str = "/stackable/tls-kafka-internal";
+    const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &'static str = "tls-kafka-internal";
+    const STACKABLE_TLS_KAFKA_SERVER_DIR: &'static str = "/stackable/tls-kafka-server";
+    const STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME: &'static str = "tls-kafka-server";
     // directories
     const STACKABLE_TLS_KCAT_DIR: &'static str = "/stackable/tls-kcat";
     const STACKABLE_TLS_KCAT_VOLUME_NAME: &'static str = "tls-kcat";
-    const STACKABLE_TLS_KAFKA_SERVER_DIR: &'static str = "/stackable/tls-kafka-server";
-    const STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME: &'static str = "tls-kafka-server";
-    const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &'static str = "/stackable/tls-kafka-internal";
-    const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &'static str = "tls-kafka-internal";
 
     #[cfg(test)]
     pub fn new(
@@ -685,7 +686,9 @@ impl KafkaTlsSecurity {
             "-X".to_string(),
             format!("sasl.kerberos.service.name={service_name}"),
             "-X".to_string(),
-            format!("sasl.kerberos.principal={service_name}/$POD_BROKER_LISTENER_ADDRESS@$KERBEROS_REALM"),
+            format!(
+                "sasl.kerberos.principal={service_name}/$POD_BROKER_LISTENER_ADDRESS@$KERBEROS_REALM"
+            ),
         ]
     }
 }

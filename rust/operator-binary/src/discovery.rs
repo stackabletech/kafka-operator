@@ -5,11 +5,11 @@ use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
     commons::{listener::Listener, product_image_selection::ResolvedProductImage},
     k8s_openapi::api::core::v1::{ConfigMap, Service},
-    kube::{runtime::reflector::ObjectRef, Resource, ResourceExt},
+    kube::{Resource, ResourceExt, runtime::reflector::ObjectRef},
 };
 
 use crate::{
-    crd::{security::KafkaTlsSecurity, v1alpha1, KafkaRole},
+    crd::{KafkaRole, security::KafkaTlsSecurity, v1alpha1},
     kafka_controller::KAFKA_CONTROLLER_NAME,
     utils::build_recommended_labels,
 };
