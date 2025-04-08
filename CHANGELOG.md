@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Replace stackable-operator `initialize_logging` with stackable-telemetry `Tracing` ([#840]).
+  - BREAKING: The file log directory was set by `KAFKA_OPERATOR_LOG_DIRECTORY`, and is now set by `ROLLING_LOGS_DIR`
+    (or via `--rolling-logs <DIRECTORY>`).
+  - Replace stackable-operator `print_startup_string` with `tracing::info!` with fields.
+
+[#840]: https://github.com/stackabletech/kafka-operator/pull/840
+
 ## [25.3.0] - 2025-03-21
 
 ### Deprecated
