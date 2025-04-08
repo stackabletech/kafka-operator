@@ -14,10 +14,12 @@ use stackable_operator::{
         rbac::v1::RoleBinding,
     },
     kube::{
+        ResourceExt,
         core::DeserializeGuard,
         runtime::{
             Controller,
             events::{Recorder, Reporter},
+            reflector::ObjectRef,
             watcher,
         },
     },
@@ -156,55 +158,87 @@ pub async fn create_controller(
         instance: None,
     }));
 
-    Controller::new(
+    let kafka_controller = Controller::new(
         namespace.get_api::<DeserializeGuard<v1alpha1::KafkaCluster>>(&client),
         watcher::Config::default(),
-    )
-    .owns(
-        namespace.get_api::<StatefulSet>(&client),
-        watcher::Config::default(),
-    )
-    .owns(
-        namespace.get_api::<Service>(&client),
-        watcher::Config::default(),
-    )
-    .owns(
-        namespace.get_api::<Listener>(&client),
-        watcher::Config::default(),
-    )
-    .owns(
-        namespace.get_api::<ConfigMap>(&client),
-        watcher::Config::default(),
-    )
-    .owns(
-        namespace.get_api::<ServiceAccount>(&client),
-        watcher::Config::default(),
-    )
-    .owns(
-        namespace.get_api::<RoleBinding>(&client),
-        watcher::Config::default(),
-    )
-    .shutdown_on_signal()
-    .run(
-        kafka_controller::reconcile_kafka,
-        kafka_controller::error_policy,
-        Arc::new(kafka_controller::Ctx {
-            client: client.clone(),
-            product_config,
-        }),
-    )
-    // We can let the reporting happen in the background
-    .for_each_concurrent(
-        16, // concurrency limit
-        move |result| {
-            // The event_recorder needs to be shared across all invocations, so that
-            // events are correctly aggregated
-            let event_recorder = event_recorder.clone();
-            async move {
-                report_controller_reconciled(&event_recorder, KAFKA_FULL_CONTROLLER_NAME, &result)
+    );
+    let kafka_store_1 = kafka_controller.store();
+    kafka_controller
+        .owns(
+            namespace.get_api::<StatefulSet>(&client),
+            watcher::Config::default(),
+        )
+        .owns(
+            namespace.get_api::<Service>(&client),
+            watcher::Config::default(),
+        )
+        .owns(
+            namespace.get_api::<Listener>(&client),
+            watcher::Config::default(),
+        )
+        .owns(
+            namespace.get_api::<ConfigMap>(&client),
+            watcher::Config::default(),
+        )
+        .owns(
+            namespace.get_api::<ServiceAccount>(&client),
+            watcher::Config::default(),
+        )
+        .owns(
+            namespace.get_api::<RoleBinding>(&client),
+            watcher::Config::default(),
+        )
+        .shutdown_on_signal()
+        .watches(
+            namespace.get_api::<DeserializeGuard<ConfigMap>>(&client),
+            watcher::Config::default(),
+            move |config_map| {
+                kafka_store_1
+                    .state()
+                    .into_iter()
+                    .filter(move |kafka| references_config_map(kafka, &config_map))
+                    .map(|kafka| ObjectRef::from_obj(&*kafka))
+            },
+        )
+        .run(
+            kafka_controller::reconcile_kafka,
+            kafka_controller::error_policy,
+            Arc::new(kafka_controller::Ctx {
+                client: client.clone(),
+                product_config,
+            }),
+        )
+        // We can let the reporting happen in the background
+        .for_each_concurrent(
+            16, // concurrency limit
+            move |result| {
+                // The event_recorder needs to be shared across all invocations, so that
+                // events are correctly aggregated
+                let event_recorder = event_recorder.clone();
+                async move {
+                    report_controller_reconciled(
+                        &event_recorder,
+                        KAFKA_FULL_CONTROLLER_NAME,
+                        &result,
+                    )
                     .await;
-            }
-        },
-    )
-    .await;
+                }
+            },
+        )
+        .await;
+}
+
+fn references_config_map(
+    kafka: &DeserializeGuard<v1alpha1::KafkaCluster>,
+    config_map: &DeserializeGuard<ConfigMap>,
+) -> bool {
+    let Ok(kafka) = &kafka.0 else {
+        return false;
+    };
+
+    kafka.spec.cluster_config.zookeeper_config_map_name == config_map.name_any()
+        || match kafka.spec.cluster_config.authorization.opa.to_owned() {
+            Some(opa_config) => opa_config.config_map_name == config_map.name_any(),
+            None => false,
+        }
 }

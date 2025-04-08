@@ -92,10 +92,7 @@ use crate::{
         graceful_shutdown::{add_graceful_shutdown_config, graceful_shutdown_config_properties},
         pdb::add_pdbs,
     },
-    product_logging::{
-        LOG4J_CONFIG_FILE, MAX_KAFKA_LOG_FILES_SIZE, extend_role_group_config_map,
-        resolve_vector_aggregator_address,
-    },
+    product_logging::{LOG4J_CONFIG_FILE, MAX_KAFKA_LOG_FILES_SIZE, extend_role_group_config_map},
     utils::build_recommended_labels,
 };
 
@@ -253,10 +250,8 @@ pub enum Error {
     #[snafu(display("failed to resolve and merge config for role and role group"))]
     FailedToResolveConfig { source: crate::crd::Error },
 
-    #[snafu(display("failed to resolve the Vector aggregator address"))]
-    ResolveVectorAggregatorAddress {
-        source: crate::product_logging::Error,
-    },
+    #[snafu(display("vector agent is enabled but vector aggregator ConfigMap is missing"))]
+    VectorAggregatorConfigMapMissing,
 
     #[snafu(display("failed to add the logging configuration to the ConfigMap [{cm_name}]"))]
     InvalidLoggingConfig {
@@ -396,7 +391,7 @@ impl ReconcilerError for Error {
             Error::FailedToInitializeSecurityContext { .. } => None,
             Error::CreateClusterResources { .. } => None,
             Error::FailedToResolveConfig { .. } => None,
-            Error::ResolveVectorAggregatorAddress { .. } => None,
+            Error::VectorAggregatorConfigMapMissing { .. } => None,
             Error::InvalidLoggingConfig { .. } => None,
             Error::ApplyServiceAccount { .. } => None,
             Error::ApplyRoleBinding { .. } => None,
@@ -508,10 +503,6 @@ pub async fn reconcile_kafka(
         None
     };
 
-    let vector_aggregator_address = resolve_vector_aggregator_address(kafka, client)
-        .await
-        .context(ResolveVectorAggregatorAddressSnafu)?;
-
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
 
     let (rbac_sa, rbac_rolebinding) = build_rbac_resources(
@@ -550,7 +541,6 @@ pub async fn reconcile_kafka(
             &rolegroup_ref,
             rolegroup_config,
             &merged_config,
-            vector_aggregator_address.as_deref(),
         )?;
         let rg_statefulset = build_broker_rolegroup_statefulset(
             kafka,
@@ -688,7 +678,6 @@ fn build_broker_rolegroup_config_map(
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     merged_config: &KafkaConfig,
-    vector_aggregator_address: Option<&str>,
 ) -> Result<ConfigMap> {
     let mut server_cfg = broker_config
         .get(&PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()))
@@ -751,15 +740,11 @@ fn build_broker_rolegroup_config_map(
     tracing::debug!(?server_cfg, "Applied server config");
     tracing::debug!(?jvm_sec_props, "Applied JVM config");
 
-    extend_role_group_config_map(
-        rolegroup,
-        vector_aggregator_address,
-        &merged_config.logging,
-        &mut cm_builder,
-    )
-    .context(InvalidLoggingConfigSnafu {
-        cm_name: rolegroup.object_name(),
-    })?;
+    extend_role_group_config_map(rolegroup, &merged_config.logging, &mut cm_builder).context(
+        InvalidLoggingConfigSnafu {
+            cm_name: rolegroup.object_name(),
+        },
+    )?;
 
     cm_builder
         .build()
@@ -1114,21 +1099,34 @@ fn build_broker_rolegroup_statefulset(
 
     // Add vector container after kafka container to keep the defaulting into kafka container
     if merged_config.logging.enable_vector_agent {
-        pod_builder.add_container(
-            product_logging::framework::vector_container(
-                resolved_product_image,
-                "config",
-                "log",
-                merged_config.logging.containers.get(&Container::Vector),
-                ResourceRequirementsBuilder::new()
-                    .with_cpu_request("250m")
-                    .with_cpu_limit("500m")
-                    .with_memory_request("128Mi")
-                    .with_memory_limit("128Mi")
-                    .build(),
-            )
-            .context(ConfigureLoggingSnafu)?,
-        );
+        match kafka
+            .spec
+            .cluster_config
+            .vector_aggregator_config_map_name
+            .to_owned()
+        {
+            Some(vector_aggregator_config_map_name) => {
+                pod_builder.add_container(
+                    product_logging::framework::vector_container(
+                        resolved_product_image,
+                        "config",
+                        "log",
+                        merged_config.logging.containers.get(&Container::Vector),
+                        ResourceRequirementsBuilder::new()
+                            .with_cpu_request("250m")
+                            .with_cpu_limit("500m")
+                            .with_memory_request("128Mi")
+                            .with_memory_limit("128Mi")
+                            .build(),
+                        &vector_aggregator_config_map_name,
+                    )
+                    .context(ConfigureLoggingSnafu)?,
+                );
+            }
+            None => {
+                VectorAggregatorConfigMapMissingSnafu.fail()?;
+            }
+        }
     }
 
     add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
