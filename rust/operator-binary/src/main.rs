@@ -162,7 +162,7 @@ pub async fn create_controller(
         namespace.get_api::<DeserializeGuard<v1alpha1::KafkaCluster>>(&client),
         watcher::Config::default(),
     );
-    let kafka_store_1 = kafka_controller.store();
+    let config_map_store = kafka_controller.store();
     kafka_controller
         .owns(
             namespace.get_api::<StatefulSet>(&client),
@@ -193,7 +193,7 @@ pub async fn create_controller(
             namespace.get_api::<DeserializeGuard<ConfigMap>>(&client),
             watcher::Config::default(),
             move |config_map| {
-                kafka_store_1
+                config_map_store
                     .state()
                     .into_iter()
                     .filter(move |kafka| references_config_map(kafka, &config_map))
