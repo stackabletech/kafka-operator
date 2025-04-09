@@ -17,8 +17,13 @@ All notable changes to this project will be documented in this file.
 
 - Fix a bug where changes to ConfigMaps that are referenced in the KafkaCluster spec didn't trigger a reconciliation ([#844]).
 
+### Fixed
+
+- Use `json` file extension for log files ([#846]).
+
 [#840]: https://github.com/stackabletech/kafka-operator/pull/840
 [#844]: https://github.com/stackabletech/kafka-operator/pull/844
+[#846]: https://github.com/stackabletech/kafka-operator/pull/846
 
 ## [25.3.0] - 2025-03-21
 
