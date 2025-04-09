@@ -237,7 +237,7 @@ fn references_config_map(
     };
 
     kafka.spec.cluster_config.zookeeper_config_map_name == config_map.name_any()
-        || match kafka.spec.cluster_config.authorization.opa.to_owned() {
+        || match &kafka.spec.cluster_config.authorization.opa {
             Some(opa_config) => opa_config.config_map_name == config_map.name_any(),
             None => false,
         }
