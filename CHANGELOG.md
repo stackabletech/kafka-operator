@@ -6,9 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Replace stackable-operator `initialize_logging` with stackable-telemetry `Tracing` ([#840]).
-  - BREAKING: The file log directory was set by `KAFKA_OPERATOR_LOG_DIRECTORY`, and is now set by `ROLLING_LOGS`
-    (or via `--rolling-logs <DIRECTORY>`).
+- BREAKING: Replace stackable-operator `initialize_logging` with stackable-telemetry `Tracing` ([#840], [#847]).
+  - The console log level was set by `KAFKA_OPERATOR_LOG`, and is now set by `CONSOLE_LOG`.
+  - The file log level was set by `KAFKA_OPERATOR_LOG`, and is now set by `FILE_LOG`.
+  - The file log directory was set by `KAFKA_OPERATOR_LOG_DIRECTORY`, and is now set
+    by `ROLLING_LOGS_DIR` (or via `--rolling-logs <DIRECTORY>`).
   - Replace stackable-operator `print_startup_string` with `tracing::info!` with fields.
 - BREAKING: Inject the vector aggregator address into the vector config using the env var `VECTOR_AGGREGATOR_ADDRESS` instead
     of having the operator write it to the vector config ([#844]).
@@ -21,6 +23,7 @@ All notable changes to this project will be documented in this file.
 [#840]: https://github.com/stackabletech/kafka-operator/pull/840
 [#844]: https://github.com/stackabletech/kafka-operator/pull/844
 [#846]: https://github.com/stackabletech/kafka-operator/pull/846
+[#847]: https://github.com/stackabletech/kafka-operator/pull/847
 
 ## [25.3.0] - 2025-03-21
 
