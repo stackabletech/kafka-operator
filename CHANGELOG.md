@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- BREAKING: Replace stackable-operator `initialize_logging` with stackable-telemetry `Tracing` ([#840], [#776]).
+- BREAKING: Replace stackable-operator `initialize_logging` with stackable-telemetry `Tracing` ([#840], [#847]).
   - The console log level was set by `KAFKA_OPERATOR_LOG`, and is now set by `CONSOLE_LOG`.
   - The file log level was set by `KAFKA_OPERATOR_LOG`, and is now set by `FILE_LOG`.
   - The file log directory was set by `KAFKA_OPERATOR_LOG_DIRECTORY`, and is now set
@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file.
 [#840]: https://github.com/stackabletech/kafka-operator/pull/840
 [#844]: https://github.com/stackabletech/kafka-operator/pull/844
 [#846]: https://github.com/stackabletech/kafka-operator/pull/846
-[#776]: https://github.com/stackabletech/kafka-operator/pull/776
+[#847]: https://github.com/stackabletech/kafka-operator/pull/847
 
 ## [25.3.0] - 2025-03-21
 
