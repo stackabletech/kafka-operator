@@ -48,9 +48,6 @@ mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
-// TODO (@NickLarsenNZ): Change the variable to `CONSOLE_LOG`
-pub const ENV_VAR_CONSOLE_LOG: &str = "KAFKA_OPERATOR_LOG";
-
 #[derive(clap::Parser)]
 #[clap(about, author)]
 struct Opts {
