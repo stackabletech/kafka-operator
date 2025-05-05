@@ -27,11 +27,16 @@ All notable changes to this project will be documented in this file.
 - Use `json` file extension for log files ([#846]).
 - Fix a bug where changes to ConfigMaps that are referenced in the KafkaCluster spec didn't trigger a reconciliation ([#844]).
 
+### Removed
+
+- test: ZooKeeper 3.9.2 removed ([#853]).
+
 [#840]: https://github.com/stackabletech/kafka-operator/pull/840
 [#844]: https://github.com/stackabletech/kafka-operator/pull/844
 [#846]: https://github.com/stackabletech/kafka-operator/pull/846
 [#847]: https://github.com/stackabletech/kafka-operator/pull/847
 [#851]: https://github.com/stackabletech/kafka-operator/pull/851
+[#853]: https://github.com/stackabletech/kafka-operator/pull/853
 
 ## [25.3.0] - 2025-03-21
 

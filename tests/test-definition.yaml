@@ -21,7 +21,6 @@ dimensions:
       # - 3.7.2,oci.stackable.tech/sdp/kafka:3.7.2-stackable0.0.0-dev
   - name: zookeeper
     values:
-      - 3.9.2
       - 3.9.3
   - name: zookeeper-latest
     values:
