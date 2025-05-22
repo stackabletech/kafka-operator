@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     client::Client,
-    commons::authentication::{AuthenticationClass, AuthenticationClassProvider},
+    crd::authentication::core,
     schemars::{self, JsonSchema},
 };
 
@@ -15,7 +15,7 @@ pub enum Error {
     #[snafu(display("failed to retrieve AuthenticationClass [{}]", authentication_class))]
     AuthenticationClassRetrieval {
         source: stackable_operator::client::Error,
-        authentication_class: ObjectRef<AuthenticationClass>,
+        authentication_class: ObjectRef<core::v1alpha1::AuthenticationClass>,
     },
 
     #[snafu(display(
@@ -27,7 +27,7 @@ pub enum Error {
         "failed to use authentication provider [{provider}] for authentication class [{authentication_class}] - supported providers: {SUPPORTED_AUTHENTICATION_CLASS_PROVIDERS:?}",
     ))]
     AuthenticationProviderNotSupported {
-        authentication_class: ObjectRef<AuthenticationClass>,
+        authentication_class: ObjectRef<core::v1alpha1::AuthenticationClass>,
         provider: String,
     },
 }
@@ -56,11 +56,11 @@ pub struct KafkaAuthentication {
 #[derive(Clone, Debug)]
 /// Helper struct that contains resolved AuthenticationClasses to reduce network API calls.
 pub struct ResolvedAuthenticationClasses {
-    resolved_authentication_classes: Vec<AuthenticationClass>,
+    resolved_authentication_classes: Vec<core::v1alpha1::AuthenticationClass>,
 }
 
 impl ResolvedAuthenticationClasses {
-    pub fn new(resolved_authentication_classes: Vec<AuthenticationClass>) -> Self {
+    pub fn new(resolved_authentication_classes: Vec<core::v1alpha1::AuthenticationClass>) -> Self {
         Self {
             resolved_authentication_classes,
         }
@@ -74,17 +74,20 @@ impl ResolvedAuthenticationClasses {
         client: &Client,
         auth_classes: &Vec<KafkaAuthentication>,
     ) -> Result<ResolvedAuthenticationClasses, Error> {
-        let mut resolved_authentication_classes: Vec<AuthenticationClass> = vec![];
+        let mut resolved_authentication_classes: Vec<core::v1alpha1::AuthenticationClass> = vec![];
 
         for auth_class in auth_classes {
             resolved_authentication_classes.push(
-                AuthenticationClass::resolve(client, &auth_class.authentication_class)
-                    .await
-                    .context(AuthenticationClassRetrievalSnafu {
-                        authentication_class: ObjectRef::<AuthenticationClass>::new(
-                            &auth_class.authentication_class,
-                        ),
-                    })?,
+                core::v1alpha1::AuthenticationClass::resolve(
+                    client,
+                    &auth_class.authentication_class,
+                )
+                .await
+                .context(AuthenticationClassRetrievalSnafu {
+                    authentication_class: ObjectRef::<core::v1alpha1::AuthenticationClass>::new(
+                        &auth_class.authentication_class,
+                    ),
+                })?,
             );
         }
 
@@ -92,17 +95,25 @@ impl ResolvedAuthenticationClasses {
     }
 
     /// Return the (first) TLS `AuthenticationClass` if available
-    pub fn get_tls_authentication_class(&self) -> Option<&AuthenticationClass> {
-        self.resolved_authentication_classes
-            .iter()
-            .find(|auth| matches!(auth.spec.provider, AuthenticationClassProvider::Tls(_)))
+    pub fn get_tls_authentication_class(&self) -> Option<&core::v1alpha1::AuthenticationClass> {
+        self.resolved_authentication_classes.iter().find(|auth| {
+            matches!(
+                auth.spec.provider,
+                core::v1alpha1::AuthenticationClassProvider::Tls(_)
+            )
+        })
     }
 
     /// Return the (first) Kerberos `AuthenticationClass` if available
-    pub fn get_kerberos_authentication_class(&self) -> Option<&AuthenticationClass> {
-        self.resolved_authentication_classes
-            .iter()
-            .find(|auth| matches!(auth.spec.provider, AuthenticationClassProvider::Kerberos(_)))
+    pub fn get_kerberos_authentication_class(
+        &self,
+    ) -> Option<&core::v1alpha1::AuthenticationClass> {
+        self.resolved_authentication_classes.iter().find(|auth| {
+            matches!(
+                auth.spec.provider,
+                core::v1alpha1::AuthenticationClassProvider::Kerberos(_)
+            )
+        })
     }
 
     /// Validates the resolved AuthenticationClasses.
@@ -117,10 +128,11 @@ impl ResolvedAuthenticationClasses {
         for auth_class in &self.resolved_authentication_classes {
             match &auth_class.spec.provider {
                 // explicitly list each branch so new elements do not get overlooked
-                AuthenticationClassProvider::Tls(_) | AuthenticationClassProvider::Kerberos(_) => {}
-                AuthenticationClassProvider::Static(_)
-                | AuthenticationClassProvider::Ldap(_)
-                | AuthenticationClassProvider::Oidc(_) => {
+                core::v1alpha1::AuthenticationClassProvider::Tls(_)
+                | core::v1alpha1::AuthenticationClassProvider::Kerberos(_) => {}
+                core::v1alpha1::AuthenticationClassProvider::Static(_)
+                | core::v1alpha1::AuthenticationClassProvider::Ldap(_)
+                | core::v1alpha1::AuthenticationClassProvider::Oidc(_) => {
                     return Err(Error::AuthenticationProviderNotSupported {
                         authentication_class: ObjectRef::from_obj(auth_class),
                         provider: auth_class.spec.provider.to_string(),

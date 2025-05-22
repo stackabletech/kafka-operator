@@ -28,12 +28,10 @@ use stackable_operator::{
     },
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::{
-        authentication::AuthenticationClass,
-        listener::{Listener, ListenerPort, ListenerSpec},
-        opa::OpaApiVersion,
-        product_image_selection::ResolvedProductImage,
+        opa::OpaApiVersion, product_image_selection::ResolvedProductImage,
         rbac::build_rbac_resources,
     },
+    crd::{authentication::core, listener},
     k8s_openapi::{
         DeepMerge,
         api::{
@@ -204,7 +202,7 @@ pub enum Error {
     #[snafu(display("failed to retrieve {}", authentication_class))]
     AuthenticationClassRetrieval {
         source: stackable_operator::commons::opa::Error,
-        authentication_class: ObjectRef<AuthenticationClass>,
+        authentication_class: ObjectRef<core::v1alpha1::AuthenticationClass>,
     },
 
     #[snafu(display(
@@ -213,7 +211,7 @@ pub enum Error {
         supported
     ))]
     AuthenticationProviderNotSupported {
-        authentication_class: ObjectRef<AuthenticationClass>,
+        authentication_class: ObjectRef<core::v1alpha1::AuthenticationClass>,
         supported: Vec<String>,
         provider: String,
     },
@@ -523,7 +521,7 @@ pub async fn reconcile_kafka(
         .await
         .context(ApplyRoleBindingSnafu)?;
 
-    let mut bootstrap_listeners = Vec::<Listener>::new();
+    let mut bootstrap_listeners = Vec::<listener::v1alpha1::Listener>::new();
 
     for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
         let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
@@ -639,14 +637,15 @@ pub async fn reconcile_kafka(
 
 /// Kafka clients will use the load-balanced bootstrap listener to get a list of broker addresses and will use those to
 /// transmit data to the correct broker.
+// TODO (@NickLarsenNZ): Move shared functionality to stackable-operator
 pub fn build_broker_rolegroup_bootstrap_listener(
     kafka: &v1alpha1::KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     merged_config: &KafkaConfig,
-) -> Result<Listener> {
-    Ok(Listener {
+) -> Result<listener::v1alpha1::Listener> {
+    Ok(listener::v1alpha1::Listener {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
             .name(kafka.bootstrap_service_name(rolegroup))
@@ -661,10 +660,10 @@ pub fn build_broker_rolegroup_bootstrap_listener(
             ))
             .context(MetadataBuildSnafu)?
             .build(),
-        spec: ListenerSpec {
+        spec: listener::v1alpha1::ListenerSpec {
             class_name: Some(merged_config.bootstrap_listener_class.clone()),
             ports: Some(listener_ports(kafka_security)),
-            ..ListenerSpec::default()
+            ..listener::v1alpha1::ListenerSpec::default()
         },
         status: None,
     })
@@ -1166,7 +1165,7 @@ fn build_broker_rolegroup_statefulset(
                 ),
                 ..LabelSelector::default()
             },
-            service_name: rolegroup_ref.object_name(),
+            service_name: Some(rolegroup_ref.object_name()),
             template: pod_template,
             volume_claim_templates: Some(pvcs),
             ..StatefulSetSpec::default()
@@ -1187,21 +1186,21 @@ pub fn error_policy(
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
-fn listener_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ListenerPort> {
+fn listener_ports(kafka_security: &KafkaTlsSecurity) -> Vec<listener::v1alpha1::ListenerPort> {
     let mut ports = vec![
-        ListenerPort {
+        listener::v1alpha1::ListenerPort {
             name: METRICS_PORT_NAME.to_string(),
             port: METRICS_PORT.into(),
             protocol: Some("TCP".to_string()),
         },
-        ListenerPort {
+        listener::v1alpha1::ListenerPort {
             name: kafka_security.client_port_name().to_string(),
             port: kafka_security.client_port().into(),
             protocol: Some("TCP".to_string()),
         },
     ];
     if kafka_security.has_kerberos_enabled() {
-        ports.push(ListenerPort {
+        ports.push(listener::v1alpha1::ListenerPort {
             name: kafka_security.bootstrap_port_name().to_string(),
             port: kafka_security.bootstrap_port().into(),
             protocol: Some("TCP".to_string()),

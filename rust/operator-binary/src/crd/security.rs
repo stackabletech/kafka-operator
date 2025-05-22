@@ -18,7 +18,7 @@ use stackable_operator::{
         },
     },
     client::Client,
-    commons::authentication::{AuthenticationClass, AuthenticationClassProvider},
+    crd::authentication::core,
     k8s_openapi::api::core::v1::Volume,
     product_logging::framework::{
         create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
@@ -199,7 +199,7 @@ impl KafkaTlsSecurity {
     }
 
     /// Retrieve an optional TLS `AuthenticationClass`.
-    pub fn tls_client_authentication_class(&self) -> Option<&AuthenticationClass> {
+    pub fn tls_client_authentication_class(&self) -> Option<&core::v1alpha1::AuthenticationClass> {
         self.resolved_authentication_classes
             .get_tls_authentication_class()
     }
@@ -223,7 +223,7 @@ impl KafkaTlsSecurity {
             .get_kerberos_authentication_class()
         {
             match &kerberos.spec.provider {
-                AuthenticationClassProvider::Kerberos(kerberos) => {
+                core::v1alpha1::AuthenticationClassProvider::Kerberos(kerberos) => {
                     Some(kerberos.kerberos_secret_class.clone())
                 }
                 _ => None,
@@ -607,7 +607,9 @@ impl KafkaTlsSecurity {
         self.resolved_authentication_classes
             .get_tls_authentication_class()
             .and_then(|auth_class| match &auth_class.spec.provider {
-                AuthenticationClassProvider::Tls(tls) => tls.client_cert_secret_class.as_ref(),
+                core::v1alpha1::AuthenticationClassProvider::Tls(tls) => {
+                    tls.client_cert_secret_class.as_ref()
+                }
                 _ => None,
             })
             .or(self.server_secret_class.as_ref())
