@@ -3,7 +3,8 @@ use std::num::TryFromIntError;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
-    commons::{listener::Listener, product_image_selection::ResolvedProductImage},
+    commons::product_image_selection::ResolvedProductImage,
+    crd::listener,
     k8s_openapi::api::core::v1::{ConfigMap, Service},
     kube::{Resource, ResourceExt, runtime::reflector::ObjectRef},
 };
@@ -61,7 +62,7 @@ pub async fn build_discovery_configmaps(
     owner: &impl Resource<DynamicType = ()>,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
-    listeners: &[Listener],
+    listeners: &[listener::v1alpha1::Listener],
 ) -> Result<Vec<ConfigMap>, Error> {
     let name = owner.name_unchecked();
     let port_name = if kafka_security.has_kerberos_enabled() {
@@ -145,7 +146,7 @@ fn build_discovery_configmap(
 }
 
 fn listener_hosts(
-    listeners: &[Listener],
+    listeners: &[listener::v1alpha1::Listener],
     port_name: &str,
 ) -> Result<impl IntoIterator<Item = (String, u16)>, Error> {
     listeners

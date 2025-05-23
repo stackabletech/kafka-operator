@@ -262,14 +262,8 @@ pub fn pod_fqdn(
 mod tests {
     use stackable_operator::{
         builder::meta::ObjectMetaBuilder,
-        commons::{
-            authentication::{
-                AuthenticationClass, AuthenticationClassProvider, AuthenticationClassSpec,
-                kerberos,
-                tls::{self},
-            },
-            networking::DomainName,
-        },
+        commons::networking::DomainName,
+        crd::authentication::{core, kerberos, tls},
     };
 
     use super::*;
@@ -306,12 +300,14 @@ mod tests {
         let kafka: v1alpha1::KafkaCluster =
             serde_yaml::from_str(kafka_cluster).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
-            ResolvedAuthenticationClasses::new(vec![AuthenticationClass {
+            ResolvedAuthenticationClasses::new(vec![core::v1alpha1::AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),
-                spec: AuthenticationClassSpec {
-                    provider: AuthenticationClassProvider::Tls(tls::AuthenticationProvider {
-                        client_cert_secret_class: Some("client-auth-secret-class".to_string()),
-                    }),
+                spec: core::v1alpha1::AuthenticationClassSpec {
+                    provider: core::v1alpha1::AuthenticationClassProvider::Tls(
+                        tls::v1alpha1::AuthenticationProvider {
+                            client_cert_secret_class: Some("client-auth-secret-class".to_string()),
+                        },
+                    ),
                 },
             }]),
             "internalTls".to_string(),
@@ -483,11 +479,11 @@ mod tests {
         let kafka: v1alpha1::KafkaCluster =
             serde_yaml::from_str(kafka_cluster).expect("illegal test input");
         let kafka_security = KafkaTlsSecurity::new(
-            ResolvedAuthenticationClasses::new(vec![AuthenticationClass {
+            ResolvedAuthenticationClasses::new(vec![core::v1alpha1::AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),
-                spec: AuthenticationClassSpec {
-                    provider: AuthenticationClassProvider::Kerberos(
-                        kerberos::AuthenticationProvider {
+                spec: core::v1alpha1::AuthenticationClassSpec {
+                    provider: core::v1alpha1::AuthenticationClassProvider::Kerberos(
+                        kerberos::v1alpha1::AuthenticationProvider {
                             kerberos_secret_class: "kerberos-secret-class".to_string(),
                         },
                     ),

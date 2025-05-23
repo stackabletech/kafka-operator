@@ -7,7 +7,7 @@ use stackable_operator::{
     YamlSchema,
     cli::{Command, ProductOperatorRun},
     client::{self, Client},
-    commons::listener::Listener,
+    crd::listener,
     k8s_openapi::api::{
         apps::v1::StatefulSet,
         core::v1::{ConfigMap, Service, ServiceAccount},
@@ -138,7 +138,7 @@ pub async fn create_controller(
             watcher::Config::default(),
         )
         .owns(
-            namespace.get_api::<Listener>(&client),
+            namespace.get_api::<listener::v1alpha1::Listener>(&client),
             watcher::Config::default(),
         )
         .owns(
