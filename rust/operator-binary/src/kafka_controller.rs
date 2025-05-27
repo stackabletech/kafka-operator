@@ -97,9 +97,6 @@ use crate::{
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
 pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.', OPERATOR_NAME);
 
-/// Used as runAsUser in the pod security context. This is specified in the kafka image file
-pub const KAFKA_UID: i64 = 1000;
-
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
     pub product_config: ProductConfigManager,
@@ -1088,13 +1085,7 @@ fn build_broker_rolegroup_statefulset(
         )
         .context(AddVolumeSnafu)?
         .service_account_name(service_account.name_any())
-        .security_context(
-            PodSecurityContextBuilder::new()
-                .run_as_user(KAFKA_UID)
-                .run_as_group(0)
-                .fs_group(1000)
-                .build(),
-        );
+        .security_context(PodSecurityContextBuilder::new().fs_group(1000).build());
 
     // Add vector container after kafka container to keep the defaulting into kafka container
     if merged_config.logging.enable_vector_agent {
