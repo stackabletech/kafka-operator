@@ -118,10 +118,13 @@ pub async fn create_controller(
     product_config: ProductConfigManager,
     namespace: WatchNamespace,
 ) {
-    let event_recorder = Arc::new(Recorder::new(client.as_kube_client(), Reporter {
-        controller: KAFKA_FULL_CONTROLLER_NAME.to_string(),
-        instance: None,
-    }));
+    let event_recorder = Arc::new(Recorder::new(
+        client.as_kube_client(),
+        Reporter {
+            controller: KAFKA_FULL_CONTROLLER_NAME.to_string(),
+            instance: None,
+        },
+    ));
 
     let kafka_controller = Controller::new(
         namespace.get_api::<DeserializeGuard<v1alpha1::KafkaCluster>>(&client),
