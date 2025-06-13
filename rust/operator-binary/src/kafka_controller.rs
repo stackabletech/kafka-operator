@@ -84,7 +84,7 @@ use crate::{
         security::KafkaTlsSecurity,
         v1alpha1,
     },
-    discovery::{self, build_discovery_configmaps},
+    discovery::{self, build_discovery_configmap},
     kerberos::{self, add_kerberos_pod_config},
     operations::{
         graceful_shutdown::{add_graceful_shutdown_config, graceful_shutdown_config_properties},
@@ -596,21 +596,19 @@ pub async fn reconcile_kafka(
             .context(FailedToCreatePdbSnafu)?;
     }
 
-    for discovery_cm in build_discovery_configmaps(
+    let discovery_cm = build_discovery_configmap(
         kafka,
         kafka,
         &resolved_product_image,
         &kafka_security,
         &bootstrap_listeners,
     )
-    .await
-    .context(BuildDiscoveryConfigSnafu)?
-    {
-        cluster_resources
-            .add(client, discovery_cm)
-            .await
-            .context(ApplyDiscoveryConfigSnafu)?;
-    }
+    .context(BuildDiscoveryConfigSnafu)?;
+
+    cluster_resources
+        .add(client, discovery_cm)
+        .await
+        .context(ApplyDiscoveryConfigSnafu)?;
 
     let cluster_operation_cond_builder =
         ClusterOperationsConditionBuilder::new(&kafka.spec.cluster_operation);

@@ -55,77 +55,33 @@ pub enum Error {
     },
 }
 
-/// Builds discovery [`ConfigMap`]s for connecting to a [`v1alpha1::KafkaCluster`] for all expected
-/// scenarios.
-pub async fn build_discovery_configmaps(
+/// Build a discovery [`ConfigMap`] containing information about how to connect to a certain
+/// [`v1alpha1::KafkaCluster`].
+pub fn build_discovery_configmap(
     kafka: &v1alpha1::KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
     listeners: &[listener::v1alpha1::Listener],
-) -> Result<Vec<ConfigMap>, Error> {
-    let name = owner.name_unchecked();
+) -> Result<ConfigMap, Error> {
     let port_name = if kafka_security.has_kerberos_enabled() {
         kafka_security.bootstrap_port_name()
     } else {
         kafka_security.client_port_name()
     };
-    Ok(vec![
-        build_discovery_configmap(
-            kafka,
-            owner,
-            resolved_product_image,
-            &name,
-            listener_hosts(listeners, port_name)?,
-        )?,
-        {
-            let mut nodeport = build_discovery_configmap(
-                kafka,
-                owner,
-                resolved_product_image,
-                &format!("{name}-nodeport"),
-                listener_hosts(listeners, port_name)?,
-            )?;
-            nodeport
-                .metadata
-                .annotations
-                .get_or_insert_with(Default::default)
-                .insert(
-                    "stackable.tech/deprecated".to_string(),
-                    format!(
-                        "Deprecated in 25.3, and scheduled for removal in the next version. \
-                             Use {name:?} instead. \
-                             See https://github.com/stackabletech/kafka-operator/issues/765 for more."
-                    ),
-                );
-            nodeport
-        },
-    ])
-}
 
-/// Build a discovery [`ConfigMap`] containing information about how to connect to a certain
-/// [`v1alpha1::KafkaCluster`].
-///
-/// `hosts` will usually come from [`listener_hosts`].
-fn build_discovery_configmap(
-    kafka: &v1alpha1::KafkaCluster,
-    owner: &impl Resource<DynamicType = ()>,
-    resolved_product_image: &ResolvedProductImage,
-    name: &str,
-    hosts: impl IntoIterator<Item = (impl Into<String>, u16)>,
-) -> Result<ConfigMap, Error> {
     // Write a list of bootstrap servers in the format that Kafka clients:
     // "{host1}:{port1},{host2:port2},..."
-    let bootstrap_servers = hosts
+    let bootstrap_servers = listener_hosts(listeners, port_name)?
         .into_iter()
-        .map(|(host, port)| format!("{}:{}", host.into(), port))
+        .map(|(host, port)| format!("{}:{}", host, port))
         .collect::<Vec<_>>()
         .join(",");
     ConfigMapBuilder::new()
         .metadata(
             ObjectMetaBuilder::new()
                 .name_and_namespace(kafka)
-                .name(name)
+                .name(owner.name_unchecked())
                 .ownerreference_from_resource(owner, None, Some(true))
                 .with_context(|_| ObjectMissingMetadataForOwnerRefSnafu {
                     kafka: ObjectRef::from_obj(kafka),

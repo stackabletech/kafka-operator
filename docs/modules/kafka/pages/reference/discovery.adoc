@@ -9,8 +9,6 @@ The Stackable Operator for Apache Kafka publishes a xref:concepts:service_discov
 
 The bundle includes a thrift connection string to access the Kafka broker service. This string may be used by other operators or tools to configure their products with access to Kafka. This is limited to internal cluster access.
 
-NOTE: The operator also creates a deprecated secondary discovery ConfigMap named `\{clusterName\}-nodeport`. In 24.7 and older, this ConfigMap was used to access the Kafka installation from outside the Kubernetes cluster. In 24.11, this was replaced by xref:usage-guide/listenerclass.adoc[Listener-based exposition], and the `-nodeport` ConfigMap was made equivalent to the primary one. This behaviour is deprecated as of 25.3, and will be removed in the next release. Any existing uses of the `-nodeport` ConfigMap should be migrated to the primary. See https://github.com/stackabletech/kafka-operator/issues/765[the deprecation issue] for more details.
-
 == Example
 
 Given the following Kafka cluster:

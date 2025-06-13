@@ -38,6 +38,7 @@ All notable changes to this project will be documented in this file.
 
 - test: ZooKeeper 3.9.2 removed ([#853]).
 - Support for Kafka 3.7.1 and 3.8.0 removed ([#860]).
+- Remove the `-nodeport` discovery ConfigMap ([#868]).
 
 [#840]: https://github.com/stackabletech/kafka-operator/pull/840
 [#844]: https://github.com/stackabletech/kafka-operator/pull/844
@@ -50,6 +51,8 @@ All notable changes to this project will be documented in this file.
 [#861]: https://github.com/stackabletech/kafka-operator/pull/861
 [#862]: https://github.com/stackabletech/kafka-operator/pull/862
 [#866]: https://github.com/stackabletech/kafka-operator/pull/866
+[#868]: https://github.com/stackabletech/kafka-operator/pull/868
+
 
 ## [25.3.0] - 2025-03-21
 
