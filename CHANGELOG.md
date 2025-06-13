@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
   - Use `--file-log-max-files` (or `FILE_LOG_MAX_FILES`) to limit the number of log files kept.
   - Use `--file-log-rotation-period` (or `FILE_LOG_ROTATION_PERIOD`) to configure the frequency of rotation.
   - Use `--console-log-format` (or `CONSOLE_LOG_FORMAT`) to set the format to `plain` (default) or `json`.
+- Add support for Kafka 3.9.1 ([#866]).
 
 ### Changed
 
@@ -49,6 +50,7 @@ All notable changes to this project will be documented in this file.
 [#860]: https://github.com/stackabletech/kafka-operator/pull/860
 [#861]: https://github.com/stackabletech/kafka-operator/pull/861
 [#862]: https://github.com/stackabletech/kafka-operator/pull/862
+[#866]: https://github.com/stackabletech/kafka-operator/pull/866
 [#868]: https://github.com/stackabletech/kafka-operator/pull/868
 
 ## [25.3.0] - 2025-03-21
