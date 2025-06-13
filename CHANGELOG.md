@@ -53,7 +53,6 @@ All notable changes to this project will be documented in this file.
 [#866]: https://github.com/stackabletech/kafka-operator/pull/866
 [#868]: https://github.com/stackabletech/kafka-operator/pull/868
 
-
 ## [25.3.0] - 2025-03-21
 
 ### Deprecated
