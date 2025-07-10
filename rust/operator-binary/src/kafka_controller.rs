@@ -386,7 +386,7 @@ impl ReconcilerError for Error {
             Error::FailedToInitializeSecurityContext { .. } => None,
             Error::CreateClusterResources { .. } => None,
             Error::FailedToResolveConfig { .. } => None,
-            Error::VectorAggregatorConfigMapMissing { .. } => None,
+            Error::VectorAggregatorConfigMapMissing => None,
             Error::InvalidLoggingConfig { .. } => None,
             Error::ApplyServiceAccount { .. } => None,
             Error::ApplyRoleBinding { .. } => None,
