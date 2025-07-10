@@ -30,7 +30,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    crd::{KafkaCluster, OPERATOR_NAME, v1alpha1},
+    crd::{KafkaCluster, KafkaClusterVersion, OPERATOR_NAME, v1alpha1},
     kafka_controller::KAFKA_FULL_CONTROLLER_NAME,
 };
 
@@ -67,7 +67,7 @@ struct KafkaRun {
 async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => KafkaCluster::merged_crd(KafkaCluster::V1Alpha1)?
+        Command::Crd => KafkaCluster::merged_crd(KafkaClusterVersion::V1Alpha1)?
             .print_yaml_schema(built_info::PKG_VERSION, SerializeOptions::default())?,
         Command::Run(KafkaRun {
             common:

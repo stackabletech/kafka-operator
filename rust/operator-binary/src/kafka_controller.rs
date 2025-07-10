@@ -866,7 +866,9 @@ fn build_broker_rolegroup_statefulset(
             &ListenerReference::ListenerName(kafka.bootstrap_service_name(rolegroup_ref)),
             &unversioned_recommended_labels,
         )
-        .and_then(|builder| builder.build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME))
+        .build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME)
+        // FIXME (@Techassi): This should either be an expect (if it can never fail) or should be
+        // handled via a proper error handling
         .unwrap(),
     );
 
