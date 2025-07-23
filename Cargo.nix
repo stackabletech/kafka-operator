@@ -8383,7 +8383,7 @@ rec {
       };
       "stackable-kafka-operator" = rec {
         crateName = "stackable-kafka-operator";
-        version = "25.7.0-rc1";
+        version = "25.7.0";
         edition = "2021";
         crateBin = [
           {
