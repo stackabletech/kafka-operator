@@ -23,7 +23,7 @@ use stackable_operator::{
     product_logging::framework::{
         create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
     },
-    time::Duration,
+    shared::time::Duration,
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 

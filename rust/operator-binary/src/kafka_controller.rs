@@ -28,7 +28,8 @@ use stackable_operator::{
     },
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::{
-        opa::OpaApiVersion, product_image_selection::ResolvedProductImage,
+        opa::OpaApiVersion,
+        product_image_selection::{self, ResolvedProductImage},
         rbac::build_rbac_resources,
     },
     crd::{authentication::core, listener},
@@ -62,11 +63,11 @@ use stackable_operator::{
         },
     },
     role_utils::{GenericRoleConfig, RoleGroupRef},
+    shared::time::Duration,
     status::condition::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
         statefulset::StatefulSetConditionBuilder,
     },
-    time::Duration,
     utils::cluster_info::KubernetesClusterInfo,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
@@ -342,6 +343,11 @@ pub enum Error {
 
     #[snafu(display("failed to construct JVM arguments"))]
     ConstructJvmArguments { source: crate::config::jvm::Error },
+
+    #[snafu(display("failed to resolve product image"))]
+    ResolveProductImage {
+        source: product_image_selection::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -408,6 +414,7 @@ impl ReconcilerError for Error {
             Error::FailedToValidateAuthenticationMethod { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
             Error::ConstructJvmArguments { .. } => None,
+            Error::ResolveProductImage { .. } => None,
         }
     }
 }
@@ -430,7 +437,8 @@ pub async fn reconcile_kafka(
     let resolved_product_image = kafka
         .spec
         .image
-        .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION);
+        .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION)
+        .context(ResolveProductImageSnafu)?;
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
@@ -649,7 +657,7 @@ pub fn build_broker_rolegroup_bootstrap_listener(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label,
+                &resolved_product_image.app_version_label_value,
                 &rolegroup.role,
                 &rolegroup.role_group,
             ))
@@ -707,7 +715,7 @@ fn build_broker_rolegroup_config_map(
                 .with_recommended_labels(build_recommended_labels(
                     kafka,
                     KAFKA_CONTROLLER_NAME,
-                    &resolved_product_image.app_version_label,
+                    &resolved_product_image.app_version_label_value,
                     &rolegroup.role,
                     &rolegroup.role_group,
                 ))
@@ -764,7 +772,7 @@ fn build_broker_rolegroup_service(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label,
+                &resolved_product_image.app_version_label_value,
                 &rolegroup.role,
                 &rolegroup.role_group,
             ))
@@ -813,7 +821,7 @@ fn build_broker_rolegroup_statefulset(
     let recommended_object_labels = build_recommended_labels(
         kafka,
         KAFKA_CONTROLLER_NAME,
-        &resolved_product_image.app_version_label,
+        &resolved_product_image.app_version_label_value,
         &rolegroup_ref.role,
         &rolegroup_ref.role_group,
     );
@@ -1134,7 +1142,7 @@ fn build_broker_rolegroup_statefulset(
             .with_recommended_labels(build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label,
+                &resolved_product_image.app_version_label_value,
                 &rolegroup_ref.role,
                 &rolegroup_ref.role_group,
             ))
