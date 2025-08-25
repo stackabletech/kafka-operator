@@ -903,18 +903,20 @@ fn build_broker_rolegroup_statefulset(
         })
         .collect::<Vec<_>>();
 
-    env.push(EnvVar {
-        name: "ZOOKEEPER".to_string(),
-        value_from: Some(EnvVarSource {
-            config_map_key_ref: Some(ConfigMapKeySelector {
-                name: kafka.spec.cluster_config.zookeeper_config_map_name.clone(),
-                key: "ZOOKEEPER".to_string(),
-                ..ConfigMapKeySelector::default()
+    if let Some(zookeeper_config_map_name) = &kafka.spec.cluster_config.zookeeper_config_map_name {
+        env.push(EnvVar {
+            name: "ZOOKEEPER".to_string(),
+            value_from: Some(EnvVarSource {
+                config_map_key_ref: Some(ConfigMapKeySelector {
+                    name: zookeeper_config_map_name.to_string(),
+                    key: "ZOOKEEPER".to_string(),
+                    ..ConfigMapKeySelector::default()
+                }),
+                ..EnvVarSource::default()
             }),
-            ..EnvVarSource::default()
-        }),
-        ..EnvVar::default()
-    });
+            ..EnvVar::default()
+        })
+    };
 
     env.push(EnvVar {
         name: "POD_NAME".to_string(),
