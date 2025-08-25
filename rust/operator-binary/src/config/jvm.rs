@@ -5,8 +5,8 @@ use stackable_operator::{
 };
 
 use crate::crd::{
-    BrokerConfig, BrokerConfigFragment, JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT,
-    STACKABLE_CONFIG_DIR,
+    JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT, STACKABLE_CONFIG_DIR,
+    role::broker::{BrokerConfig, BrokerConfigFragment},
 };
 
 const JAVA_HEAP_FACTOR: f32 = 0.8;

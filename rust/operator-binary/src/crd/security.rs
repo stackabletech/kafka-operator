@@ -29,11 +29,12 @@ use stackable_operator::{
 
 use super::listener::node_port_cmd;
 use crate::crd::{
-    KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, SERVER_PROPERTIES_FILE,
+    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, SERVER_PROPERTIES_FILE,
     STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR,
     STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_DIR,
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, KafkaListenerConfig, node_address_cmd},
+    role::KafkaRole,
     tls, v1alpha1,
 };
 

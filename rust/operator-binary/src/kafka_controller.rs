@@ -75,13 +75,17 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::{
-        APP_NAME, BrokerConfig, BrokerContainer, DOCKER_IMAGE_BASE_NAME,
-        JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, KafkaClusterStatus, KafkaRole,
-        LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
-        METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
-        STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
+        APP_NAME, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
+        KafkaClusterStatus, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
+        LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME,
+        SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
+        STACKABLE_LOG_DIR,
         listener::{KafkaListenerError, get_kafka_listener_config},
+        role::{
+            KafkaRole,
+            broker::{BrokerConfig, BrokerContainer},
+        },
         security::KafkaTlsSecurity,
         v1alpha1,
     },
@@ -854,7 +858,7 @@ fn build_broker_rolegroup_statefulset(
 
     // Add TLS related volumes and volume mounts
     let requested_secret_lifetime = merged_config
-        .common_role_config
+        .common_config
         .requested_secret_lifetime
         .context(MissingSecretLifetimeSnafu)?;
     kafka_security
@@ -1074,7 +1078,7 @@ fn build_broker_rolegroup_statefulset(
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(cb_kafka.build())
         .add_container(cb_kcat_prober.build())
-        .affinity(&merged_config.common_role_config.affinity)
+        .affinity(&merged_config.common_config.affinity)
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {

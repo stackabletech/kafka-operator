@@ -10,7 +10,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    crd::{KafkaRole, security::KafkaTlsSecurity, v1alpha1},
+    crd::{role::KafkaRole, security::KafkaTlsSecurity, v1alpha1},
     kafka_controller::KAFKA_CONTROLLER_NAME,
     utils::build_recommended_labels,
 };

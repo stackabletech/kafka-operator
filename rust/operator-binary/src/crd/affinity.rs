@@ -3,14 +3,14 @@ use stackable_operator::{
     k8s_openapi::api::core::v1::PodAntiAffinity,
 };
 
-use crate::crd::{APP_NAME, KafkaRole};
+use crate::crd::APP_NAME;
 
-pub fn get_affinity(cluster_name: &str, role: &KafkaRole) -> StackableAffinityFragment {
+pub fn get_affinity(cluster_name: &str, role: &str) -> StackableAffinityFragment {
     StackableAffinityFragment {
         pod_affinity: None,
         pod_anti_affinity: Some(PodAntiAffinity {
             preferred_during_scheduling_ignored_during_execution: Some(vec![
-                affinity_between_role_pods(APP_NAME, cluster_name, &role.to_string(), 70),
+                affinity_between_role_pods(APP_NAME, cluster_name, role, 70),
             ]),
             required_during_scheduling_ignored_during_execution: None,
         }),
@@ -32,8 +32,7 @@ mod tests {
         },
     };
 
-    use super::*;
-    use crate::crd::v1alpha1;
+    use crate::crd::{KafkaRole, v1alpha1};
 
     #[rstest]
     #[case(KafkaRole::Broker)]

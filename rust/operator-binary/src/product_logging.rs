@@ -9,7 +9,7 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
-use crate::crd::{BrokerContainer, STACKABLE_LOG_DIR, v1alpha1};
+use crate::crd::{STACKABLE_LOG_DIR, role::broker::BrokerContainer, v1alpha1};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
