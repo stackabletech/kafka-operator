@@ -130,7 +130,7 @@ pub mod versioned {
         pub image: ProductImage,
 
         // no doc - docs in Role struct.
-        pub brokers: Option<Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
+        pub brokers: Option<Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
 
         /// Kafka settings that affect all roles and role groups.
         ///
@@ -203,7 +203,7 @@ impl v1alpha1::KafkaCluster {
     pub fn role(
         &self,
         role_variant: &KafkaRole,
-    ) -> Result<&Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
+    ) -> Result<&Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
         match role_variant {
             KafkaRole::Broker => self.spec.brokers.as_ref(),
         }
@@ -215,7 +215,7 @@ impl v1alpha1::KafkaCluster {
     pub fn rolegroup(
         &self,
         rolegroup_ref: &RoleGroupRef<Self>,
-    ) -> Result<&RoleGroup<KafkaConfigFragment, JavaCommonConfig>, Error> {
+    ) -> Result<&RoleGroup<BrokerConfigFragment, JavaCommonConfig>, Error> {
         let role_variant =
             KafkaRole::from_str(&rolegroup_ref.role).with_context(|_| UnknownKafkaRoleSnafu {
                 role: rolegroup_ref.role.to_owned(),
@@ -266,9 +266,9 @@ impl v1alpha1::KafkaCluster {
         &self,
         role: &KafkaRole,
         rolegroup_ref: &RoleGroupRef<Self>,
-    ) -> Result<KafkaConfig, Error> {
+    ) -> Result<BrokerConfig, Error> {
         // Initialize the result with all default values as baseline
-        let conf_defaults = KafkaConfig::default_config(&self.name_any(), role);
+        let conf_defaults = BrokerConfig::default_config(&self.name_any(), role);
 
         // Retrieve role resource config
         let role = self.role(role)?;
@@ -467,7 +467,7 @@ impl CommonRoleConfig {
     ),
     serde(rename_all = "camelCase")
 )]
-pub struct KafkaConfig {
+pub struct BrokerConfig {
     #[fragment_attrs(serde(flatten))]
     pub common_role_config: CommonRoleConfig,
 
@@ -484,9 +484,9 @@ pub struct KafkaConfig {
     pub resources: Resources<Storage, NoRuntimeLimits>,
 }
 
-impl KafkaConfig {
-    pub fn default_config(cluster_name: &str, role: &KafkaRole) -> KafkaConfigFragment {
-        KafkaConfigFragment {
+impl BrokerConfig {
+    pub fn default_config(cluster_name: &str, role: &KafkaRole) -> BrokerConfigFragment {
+        BrokerConfigFragment {
             common_role_config: CommonRoleConfig::default_config(cluster_name, role),
             bootstrap_listener_class: Some("cluster-internal".to_string()),
             broker_listener_class: Some("cluster-internal".to_string()),
@@ -512,7 +512,7 @@ impl KafkaConfig {
     }
 }
 
-impl Configuration for KafkaConfigFragment {
+impl Configuration for BrokerConfigFragment {
     type Configurable = v1alpha1::KafkaCluster;
 
     fn compute_env(

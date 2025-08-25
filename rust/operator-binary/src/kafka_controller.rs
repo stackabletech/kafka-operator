@@ -75,8 +75,8 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::{
-        APP_NAME, Container, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
-        KafkaClusterStatus, KafkaConfig, KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME,
+        APP_NAME, BrokerConfig, Container, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE,
+        KAFKA_HEAP_OPTS, KafkaClusterStatus, KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
         OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
@@ -646,7 +646,7 @@ pub fn build_broker_rolegroup_bootstrap_listener(
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    merged_config: &KafkaConfig,
+    merged_config: &BrokerConfig,
 ) -> Result<listener::v1alpha1::Listener> {
     Ok(listener::v1alpha1::Listener {
         metadata: ObjectMetaBuilder::new()
@@ -679,7 +679,7 @@ fn build_broker_rolegroup_config_map(
     kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
-    merged_config: &KafkaConfig,
+    merged_config: &BrokerConfig,
 ) -> Result<ConfigMap> {
     let mut server_cfg = broker_config
         .get(&PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()))
@@ -810,7 +810,7 @@ fn build_broker_rolegroup_statefulset(
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
-    merged_config: &KafkaConfig,
+    merged_config: &BrokerConfig,
     service_account: &ServiceAccount,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet> {

@@ -5,7 +5,7 @@ use stackable_operator::{
 };
 
 use crate::crd::{
-    JVM_SECURITY_PROPERTIES_FILE, KafkaConfig, KafkaConfigFragment, METRICS_PORT,
+    BrokerConfig, BrokerConfigFragment, JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT,
     STACKABLE_CONFIG_DIR,
 };
 
@@ -27,8 +27,8 @@ pub enum Error {
 
 /// All JVM arguments.
 fn construct_jvm_args(
-    merged_config: &KafkaConfig,
-    role: &Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+    merged_config: &BrokerConfig,
+    role: &Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<Vec<String>, Error> {
     let heap_size = MemoryQuantity::try_from(
@@ -69,8 +69,8 @@ fn construct_jvm_args(
 /// Arguments that go into `EXTRA_ARGS`, so *not* the heap settings (which you can get using
 /// [`construct_heap_jvm_args`]).
 pub fn construct_non_heap_jvm_args(
-    merged_config: &KafkaConfig,
-    role: &Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+    merged_config: &BrokerConfig,
+    role: &Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<String, Error> {
     let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
@@ -82,8 +82,8 @@ pub fn construct_non_heap_jvm_args(
 /// Arguments that go into `KAFKA_HEAP_OPTS`.
 /// You can get the normal JVM arguments using [`construct_non_heap_jvm_args`].
 pub fn construct_heap_jvm_args(
-    merged_config: &KafkaConfig,
-    role: &Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+    merged_config: &BrokerConfig,
+    role: &Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<String, Error> {
     let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
@@ -186,8 +186,8 @@ mod tests {
     fn construct_boilerplate(
         kafka_cluster: &str,
     ) -> (
-        KafkaConfig,
-        Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+        BrokerConfig,
+        Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
         String,
     ) {
         let kafka: v1alpha1::KafkaCluster =
