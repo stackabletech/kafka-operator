@@ -60,7 +60,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            merged_config.affinity,
+            merged_config.common_config.affinity,
             StackableAffinity {
                 pod_affinity: None,
                 pod_anti_affinity: Some(PodAntiAffinity {

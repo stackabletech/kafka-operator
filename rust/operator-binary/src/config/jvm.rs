@@ -101,7 +101,7 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{KafkaRole, v1alpha1};
+    use crate::crd::{role::KafkaRole, v1alpha1};
 
     #[test]
     fn test_construct_jvm_arguments_defaults() {
