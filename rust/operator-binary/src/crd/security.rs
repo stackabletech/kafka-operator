@@ -455,7 +455,7 @@ impl KafkaTlsSecurity {
         Ok(())
     }
 
-    /// Returns required Kafka configuration settings for the `server.properties` file
+    /// Returns required Kafka configuration settings for the `broker.properties` file
     /// depending on the tls and authentication settings.
     pub fn config_settings(&self) -> BTreeMap<String, String> {
         let mut config = BTreeMap::new();

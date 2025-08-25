@@ -217,7 +217,7 @@ spec:
     zookeeperConfigMapName: simple-kafka-znode
   brokers:
     configOverrides:
-      server.properties:
+      broker.properties:
         opa.authorizer.cache.initial.capacity: "100"
         opa.authorizer.cache.maximum.size: "100"
         opa.authorizer.cache.expire.after.seconds: "10"

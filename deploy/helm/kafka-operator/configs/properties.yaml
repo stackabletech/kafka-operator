@@ -63,7 +63,7 @@ properties:
         - name: "authorizer.class.name"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "string"
       defaultValues:
@@ -82,7 +82,7 @@ properties:
         - name: "opa.authorizer.url"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "string"
         unit: *unitUrl
@@ -97,7 +97,7 @@ properties:
         - name: "opa.authorizer.cache.initial.capacity"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "integer"
         unit: *unitCapacity
@@ -115,7 +115,7 @@ properties:
         - name: "opa.authorizer.cache.maximum.size"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "integer"
         unit: *unitCapacity
@@ -133,7 +133,7 @@ properties:
         - name: "opa.authorizer.cache.expire.after.seconds"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "integer"
         unit: *unitCapacity
@@ -151,7 +151,7 @@ properties:
         - name: "log.dirs"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "string"
       recommendedValues:

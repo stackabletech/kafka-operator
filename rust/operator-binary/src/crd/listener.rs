@@ -52,7 +52,7 @@ pub struct KafkaListenerConfig {
 }
 
 impl KafkaListenerConfig {
-    /// Returns the `listeners` for the Kafka `server.properties` config.
+    /// Returns the `listeners` for the Kafka `broker.properties` config.
     pub fn listeners(&self) -> String {
         self.listeners
             .iter()
@@ -61,7 +61,7 @@ impl KafkaListenerConfig {
             .join(",")
     }
 
-    /// Returns the `advertised.listeners` for the Kafka `server.properties` config.
+    /// Returns the `advertised.listeners` for the Kafka `broker.properties` config.
     /// May contain ENV variables and therefore should be used as cli argument
     /// like --override \"advertised.listeners=xxx\".
     pub fn advertised_listeners(&self) -> String {
@@ -72,7 +72,7 @@ impl KafkaListenerConfig {
             .join(",")
     }
 
-    /// Returns the `listener.security.protocol.map` for the Kafka `server.properties` config.
+    /// Returns the `listener.security.protocol.map` for the Kafka `broker.properties` config.
     pub fn listener_security_protocol_map(&self) -> String {
         self.listener_security_protocol_map
             .iter()
