@@ -75,12 +75,12 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::{
-        APP_NAME, BrokerConfig, Container, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE,
-        KAFKA_HEAP_OPTS, KafkaClusterStatus, KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME,
-        LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
-        OPERATOR_NAME, SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
-        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
-        STACKABLE_LOG_DIR,
+        APP_NAME, BrokerConfig, BrokerContainer, DOCKER_IMAGE_BASE_NAME,
+        JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS, KafkaClusterStatus, KafkaRole,
+        LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
+        METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, SERVER_PROPERTIES_FILE,
+        STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+        STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
         listener::{KafkaListenerError, get_kafka_listener_config},
         security::KafkaTlsSecurity,
         v1alpha1,
@@ -838,13 +838,13 @@ fn build_broker_rolegroup_statefulset(
     ))
     .context(LabelBuildSnafu)?;
 
-    let kcat_prober_container_name = Container::KcatProber.to_string();
+    let kcat_prober_container_name = BrokerContainer::KcatProber.to_string();
     let mut cb_kcat_prober =
         ContainerBuilder::new(&kcat_prober_container_name).context(InvalidContainerNameSnafu {
             name: kcat_prober_container_name.clone(),
         })?;
 
-    let kafka_container_name = Container::Kafka.to_string();
+    let kafka_container_name = BrokerContainer::Kafka.to_string();
     let mut cb_kafka =
         ContainerBuilder::new(&kafka_container_name).context(InvalidContainerNameSnafu {
             name: kafka_container_name.clone(),
@@ -1040,7 +1040,10 @@ fn build_broker_rolegroup_statefulset(
             Some(ContainerLogConfigChoice::Custom(CustomContainerLogConfig {
                 custom: ConfigMapLogConfig { config_map },
             })),
-    }) = merged_config.logging.containers.get(&Container::Kafka)
+    }) = merged_config
+        .logging
+        .containers
+        .get(&BrokerContainer::Kafka)
     {
         pod_builder
             .add_volume(
@@ -1105,7 +1108,10 @@ fn build_broker_rolegroup_statefulset(
                         resolved_product_image,
                         "config",
                         "log",
-                        merged_config.logging.containers.get(&Container::Vector),
+                        merged_config
+                            .logging
+                            .containers
+                            .get(&BrokerContainer::Vector),
                         ResourceRequirementsBuilder::new()
                             .with_cpu_request("250m")
                             .with_cpu_limit("500m")

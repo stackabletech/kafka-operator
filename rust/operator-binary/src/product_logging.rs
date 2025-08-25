@@ -9,7 +9,7 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
-use crate::crd::{Container, STACKABLE_LOG_DIR, v1alpha1};
+use crate::crd::{BrokerContainer, STACKABLE_LOG_DIR, v1alpha1};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -47,19 +47,19 @@ const CONSOLE_CONVERSION_PATTERN: &str = "[%d] %p %m (%c)%n";
 /// Extend the role group ConfigMap with logging and Vector configurations
 pub fn extend_role_group_config_map(
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    logging: &Logging<Container>,
+    logging: &Logging<BrokerContainer>,
     cm_builder: &mut ConfigMapBuilder,
 ) -> Result<()> {
     if let Some(ContainerLogConfig {
         choice: Some(ContainerLogConfigChoice::Automatic(log_config)),
-    }) = logging.containers.get(&Container::Kafka)
+    }) = logging.containers.get(&BrokerContainer::Kafka)
     {
         cm_builder.add_data(
             LOG4J_CONFIG_FILE,
             product_logging::framework::create_log4j_config(
                 &format!(
                     "{STACKABLE_LOG_DIR}/{container}",
-                    container = Container::Kafka
+                    container = BrokerContainer::Kafka
                 ),
                 KAFKA_LOG_FILE,
                 MAX_KAFKA_LOG_FILES_SIZE
@@ -74,7 +74,7 @@ pub fn extend_role_group_config_map(
 
     let vector_log_config = if let Some(ContainerLogConfig {
         choice: Some(ContainerLogConfigChoice::Automatic(log_config)),
-    }) = logging.containers.get(&Container::Vector)
+    }) = logging.containers.get(&BrokerContainer::Vector)
     {
         Some(log_config)
     } else {

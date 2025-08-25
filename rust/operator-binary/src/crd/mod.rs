@@ -404,7 +404,7 @@ impl Storage {
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub enum Container {
+pub enum BrokerContainer {
     Vector,
     KcatProber,
     GetService,
@@ -478,7 +478,7 @@ pub struct BrokerConfig {
     pub broker_listener_class: String,
 
     #[fragment_attrs(serde(default))]
-    pub logging: Logging<Container>,
+    pub logging: Logging<BrokerContainer>,
 
     #[fragment_attrs(serde(default))]
     pub resources: Resources<Storage, NoRuntimeLimits>,
