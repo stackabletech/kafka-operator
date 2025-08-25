@@ -19,6 +19,8 @@ use crate::crd::{
     v1alpha1,
 };
 
+pub const CONTROLLER_PROPERTIES_FILE: &str = "controller.properties";
+
 #[derive(
     Clone,
     Debug,

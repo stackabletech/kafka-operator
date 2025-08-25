@@ -1,8 +1,8 @@
 //! Ensures that `Pod`s are configured and running for each [`v1alpha1::KafkaCluster`].
 
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, HashMap},
+    str::FromStr,
     sync::Arc,
 };
 
@@ -77,14 +77,13 @@ use crate::{
     crd::{
         APP_NAME, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
         KafkaClusterStatus, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
-        LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME,
-        SERVER_PROPERTIES_FILE, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
-        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
-        STACKABLE_LOG_DIR,
+        LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, STACKABLE_CONFIG_DIR,
+        STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
+        STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
         listener::{KafkaListenerError, get_kafka_listener_config},
         role::{
             KafkaRole,
-            broker::{BrokerConfig, BrokerContainer},
+            broker::{BROKER_PROPERTIES_FILE, BrokerConfig, BrokerContainer},
         },
         security::KafkaTlsSecurity,
         v1alpha1,
@@ -352,6 +351,9 @@ pub enum Error {
     ResolveProductImage {
         source: product_image_selection::Error,
     },
+
+    #[snafu(display("failed to parse role: {source}"))]
+    ParseRole { source: strum::ParseError },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -419,6 +421,7 @@ impl ReconcilerError for Error {
             Error::InvalidKafkaCluster { .. } => None,
             Error::ConstructJvmArguments { .. } => None,
             Error::ResolveProductImage { .. } => None,
+            Error::ParseRole { .. } => None,
         }
     }
 }
@@ -436,7 +439,6 @@ pub async fn reconcile_kafka(
         .context(InvalidKafkaClusterSnafu)?;
 
     let client = &ctx.client;
-    let kafka_role = KafkaRole::Broker;
 
     let resolved_product_image = kafka
         .spec
@@ -461,12 +463,13 @@ pub async fn reconcile_kafka(
                 KafkaRole::Broker.to_string(),
                 (
                     vec![
-                        PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()),
+                        PropertyNameKind::File(BROKER_PROPERTIES_FILE.to_string()),
                         PropertyNameKind::File(JVM_SECURITY_PROPERTIES_FILE.to_string()),
                         PropertyNameKind::Env,
                     ],
                     kafka.spec.brokers.clone().context(NoBrokerRoleSnafu)?,
                 ),
+                // TODO: ADD controller
             )]
             .into(),
         )
@@ -476,10 +479,6 @@ pub async fn reconcile_kafka(
         false,
     )
     .context(InvalidProductConfigSnafu)?;
-    let role_broker_config = validated_config
-        .get(&KafkaRole::Broker.to_string())
-        .map(Cow::Borrowed)
-        .unwrap_or_default();
 
     let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, kafka)
         .await
@@ -532,80 +531,84 @@ pub async fn reconcile_kafka(
 
     let mut bootstrap_listeners = Vec::<listener::v1alpha1::Listener>::new();
 
-    for (rolegroup_name, rolegroup_config) in role_broker_config.iter() {
-        let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
+    for (kafka_role_str, role_config) in &validated_config {
+        let kafka_role = KafkaRole::from_str(&kafka_role_str).context(ParseRoleSnafu)?;
 
-        let merged_config = kafka
-            .merged_config(&KafkaRole::Broker, &rolegroup_ref)
-            .context(FailedToResolveConfigSnafu)?;
+        for (rolegroup_name, rolegroup_config) in role_config.iter() {
+            let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
 
-        let rg_service =
-            build_broker_rolegroup_service(kafka, &resolved_product_image, &rolegroup_ref)?;
-        let rg_configmap = build_broker_rolegroup_config_map(
-            kafka,
-            &resolved_product_image,
-            &kafka_security,
-            &rolegroup_ref,
-            rolegroup_config,
-            &merged_config,
-        )?;
-        let rg_statefulset = build_broker_rolegroup_statefulset(
-            kafka,
-            &kafka_role,
-            &resolved_product_image,
-            &rolegroup_ref,
-            rolegroup_config,
-            opa_connect.as_deref(),
-            &kafka_security,
-            &merged_config,
-            &rbac_sa,
-            &client.kubernetes_cluster_info,
-        )?;
-        let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
-            kafka,
-            &resolved_product_image,
-            &kafka_security,
-            &rolegroup_ref,
-            &merged_config,
-        )?;
+            let merged_config = kafka
+                .merged_config(&KafkaRole::Broker, &rolegroup_ref)
+                .context(FailedToResolveConfigSnafu)?;
 
-        bootstrap_listeners.push(
+            let rg_service =
+                build_broker_rolegroup_service(kafka, &resolved_product_image, &rolegroup_ref)?;
+            let rg_configmap = build_broker_rolegroup_config_map(
+                kafka,
+                &resolved_product_image,
+                &kafka_security,
+                &rolegroup_ref,
+                rolegroup_config,
+                &merged_config,
+            )?;
+            let rg_statefulset = build_broker_rolegroup_statefulset(
+                kafka,
+                &kafka_role,
+                &resolved_product_image,
+                &rolegroup_ref,
+                rolegroup_config,
+                opa_connect.as_deref(),
+                &kafka_security,
+                &merged_config,
+                &rbac_sa,
+                &client.kubernetes_cluster_info,
+            )?;
+            let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
+                kafka,
+                &resolved_product_image,
+                &kafka_security,
+                &rolegroup_ref,
+                &merged_config,
+            )?;
+
+            bootstrap_listeners.push(
+                cluster_resources
+                    .add(client, rg_bootstrap_listener)
+                    .await
+                    .context(ApplyRoleServiceSnafu)?,
+            );
             cluster_resources
-                .add(client, rg_bootstrap_listener)
+                .add(client, rg_service)
                 .await
-                .context(ApplyRoleServiceSnafu)?,
-        );
-        cluster_resources
-            .add(client, rg_service)
-            .await
-            .with_context(|_| ApplyRoleGroupServiceSnafu {
-                rolegroup: rolegroup_ref.clone(),
-            })?;
-        cluster_resources
-            .add(client, rg_configmap)
-            .await
-            .with_context(|_| ApplyRoleGroupConfigSnafu {
-                rolegroup: rolegroup_ref.clone(),
-            })?;
-
-        ss_cond_builder.add(
-            cluster_resources
-                .add(client, rg_statefulset)
-                .await
-                .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
+                .with_context(|_| ApplyRoleGroupServiceSnafu {
                     rolegroup: rolegroup_ref.clone(),
-                })?,
-        );
-    }
+                })?;
+            cluster_resources
+                .add(client, rg_configmap)
+                .await
+                .with_context(|_| ApplyRoleGroupConfigSnafu {
+                    rolegroup: rolegroup_ref.clone(),
+                })?;
 
-    let role_config = kafka.role_config(&kafka_role);
-    if let Some(GenericRoleConfig {
-        pod_disruption_budget: pdb,
-    }) = role_config
-    {
-        add_pdbs(pdb, kafka, &kafka_role, client, &mut cluster_resources)
-            .await
-            .context(FailedToCreatePdbSnafu)?;
+            ss_cond_builder.add(
+                cluster_resources
+                    .add(client, rg_statefulset)
+                    .await
+                    .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
+                        rolegroup: rolegroup_ref.clone(),
+                    })?,
+            );
+        }
+
+        let role_config = kafka.role_config(&kafka_role);
+        if let Some(GenericRoleConfig {
+            pod_disruption_budget: pdb,
+        }) = role_config
+        {
+            add_pdbs(pdb, kafka, &kafka_role, client, &mut cluster_resources)
+                .await
+                .context(FailedToCreatePdbSnafu)?;
+        }
     }
 
     let discovery_cm = build_discovery_configmap(
@@ -686,7 +689,7 @@ fn build_broker_rolegroup_config_map(
     merged_config: &BrokerConfig,
 ) -> Result<ConfigMap> {
     let mut server_cfg = broker_config
-        .get(&PropertyNameKind::File(SERVER_PROPERTIES_FILE.to_string()))
+        .get(&PropertyNameKind::File(BROKER_PROPERTIES_FILE.to_string()))
         .cloned()
         .unwrap_or_default();
 
@@ -727,7 +730,7 @@ fn build_broker_rolegroup_config_map(
                 .build(),
         )
         .add_data(
-            SERVER_PROPERTIES_FILE,
+            BROKER_PROPERTIES_FILE,
             to_java_properties_string(server_cfg.iter().map(|(k, v)| (k, v))).with_context(
                 |_| SerializeZooCfgSnafu {
                     rolegroup: rolegroup.clone(),

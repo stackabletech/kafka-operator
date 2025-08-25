@@ -42,7 +42,6 @@ pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
 pub const METRICS_PORT_NAME: &str = "metrics";
 pub const METRICS_PORT: u16 = 9606;
 // config files
-pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 pub const JVM_SECURITY_PROPERTIES_FILE: &str = "security.properties";
 // env vars
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";

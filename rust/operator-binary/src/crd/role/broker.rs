@@ -15,10 +15,11 @@ use stackable_operator::{
 use strum::{Display, EnumIter};
 
 use crate::crd::{
-    SERVER_PROPERTIES_FILE,
     role::commons::{CommonConfig, Storage, StorageFragment},
     v1alpha1,
 };
+
+pub const BROKER_PROPERTIES_FILE: &str = "broker.properties";
 
 #[derive(
     Clone,
@@ -131,7 +132,7 @@ impl Configuration for BrokerConfigFragment {
     {
         let mut config = BTreeMap::new();
 
-        if file == SERVER_PROPERTIES_FILE {
+        if file == BROKER_PROPERTIES_FILE {
             // OPA
             if resource.spec.cluster_config.authorization.opa.is_some() {
                 config.insert(

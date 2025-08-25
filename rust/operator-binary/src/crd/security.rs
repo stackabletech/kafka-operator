@@ -29,12 +29,12 @@ use stackable_operator::{
 
 use super::listener::node_port_cmd;
 use crate::crd::{
-    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, SERVER_PROPERTIES_FILE,
-    STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-    STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_DIR,
+    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_CONFIG_DIR,
+    STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
+    STACKABLE_LOG_DIR,
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, KafkaListenerConfig, node_address_cmd},
-    role::KafkaRole,
+    role::{KafkaRole, broker::BROKER_PROPERTIES_FILE},
     tls, v1alpha1,
 };
 
@@ -364,7 +364,7 @@ impl KafkaTlsSecurity {
             prepare_signal_handlers
             containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
             {set_realm_env}
-            bin/kafka-server-start.sh {STACKABLE_CONFIG_DIR}/{SERVER_PROPERTIES_FILE} --override \"zookeeper.connect=$ZOOKEEPER\" --override \"listeners={listeners}\" --override \"advertised.listeners={advertised_listeners}\" --override \"listener.security.protocol.map={listener_security_protocol_map}\"{opa_config}{jaas_config} &
+            bin/kafka-server-start.sh {STACKABLE_CONFIG_DIR}/{BROKER_PROPERTIES_FILE} --override \"zookeeper.connect=$ZOOKEEPER\" --override \"listeners={listeners}\" --override \"advertised.listeners={advertised_listeners}\" --override \"listener.security.protocol.map={listener_security_protocol_map}\"{opa_config}{jaas_config} &
             wait_for_termination $!
             {create_vector_shutdown_file_command}
             ",
