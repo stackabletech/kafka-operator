@@ -60,4 +60,6 @@ impl KafkaRole {
     pub fn kerberos_service_name(&self) -> &'static str {
         "kafka"
     }
+
+    RoleConfigByPropertyKind
 }

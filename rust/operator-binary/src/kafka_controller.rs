@@ -53,7 +53,10 @@ use stackable_operator::{
     },
     kvp::{Label, Labels},
     logging::controller::ReconcilerError,
-    product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
+    product_config_utils::{
+        ValidatedRoleConfigByPropertyKind, transform_all_roles_to_config,
+        validate_all_roles_and_groups_config,
+    },
     product_logging::{
         self,
         framework::LoggingError,
@@ -75,7 +78,7 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::{
-        APP_NAME, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
+        self, APP_NAME, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
         KafkaClusterStatus, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
         LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, STACKABLE_CONFIG_DIR,
         STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
@@ -84,6 +87,7 @@ use crate::{
         role::{
             KafkaRole,
             broker::{BROKER_PROPERTIES_FILE, BrokerConfig, BrokerContainer},
+            controller::CONTROLLER_PROPERTIES_FILE,
         },
         security::KafkaTlsSecurity,
         v1alpha1,
@@ -113,8 +117,8 @@ pub enum Error {
     #[snafu(display("missing secret lifetime"))]
     MissingSecretLifetime,
 
-    #[snafu(display("object defines no broker role"))]
-    NoBrokerRole,
+    #[snafu(display("cluster object defines no '{role}' role"))]
+    MissingKafkaRole { role: KafkaRole },
 
     #[snafu(display("failed to apply role Service"))]
     ApplyRoleService {
@@ -303,6 +307,9 @@ pub enum Error {
         source: error_boundary::InvalidObject,
     },
 
+    #[snafu(display("KafkaCluster object is misconfigured"))]
+    MisconfiguredKafkaCluster { source: crd::Error },
+
     #[snafu(display("failed to construct JVM arguments"))]
     ConstructJvmArguments { source: crate::config::jvm::Error },
 
@@ -324,7 +331,7 @@ impl ReconcilerError for Error {
     fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
         match self {
             Error::MissingSecretLifetime => None,
-            Error::NoBrokerRole => None,
+            Error::MissingKafkaRole { .. } => None,
             Error::ApplyRoleService { .. } => None,
             Error::ApplyRoleGroupService { .. } => None,
             Error::BuildRoleGroupConfig { .. } => None,
@@ -364,6 +371,7 @@ impl ReconcilerError for Error {
             Error::AddKerberosConfig { .. } => None,
             Error::FailedToValidateAuthenticationMethod { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
+            Error::MisconfiguredKafkaCluster { .. } => None,
             Error::ConstructJvmArguments { .. } => None,
             Error::ResolveProductImage { .. } => None,
             Error::ParseRole { .. } => None,
@@ -391,6 +399,11 @@ pub async fn reconcile_kafka(
         .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION)
         .context(ResolveProductImageSnafu)?;
 
+    // check Kraft vs ZooKeeper and fail if misconfigured
+    kafka
+        .check_kraft_vs_zookeeper(&resolved_product_image.product_version)
+        .context(MisconfiguredKafkaClusterSnafu)?;
+
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
         OPERATOR_NAME,
@@ -400,30 +413,11 @@ pub async fn reconcile_kafka(
     )
     .context(CreateClusterResourcesSnafu)?;
 
-    let validated_config = validate_all_roles_and_groups_config(
+    let validated_config = validated_product_config(
+        kafka,
         &resolved_product_image.product_version,
-        &transform_all_roles_to_config(
-            kafka,
-            [(
-                KafkaRole::Broker.to_string(),
-                (
-                    vec![
-                        PropertyNameKind::File(BROKER_PROPERTIES_FILE.to_string()),
-                        PropertyNameKind::File(JVM_SECURITY_PROPERTIES_FILE.to_string()),
-                        PropertyNameKind::Env,
-                    ],
-                    kafka.spec.brokers.clone().context(NoBrokerRoleSnafu)?,
-                ),
-                // TODO: ADD controller
-            )]
-            .into(),
-        )
-        .context(GenerateProductConfigSnafu)?,
         &ctx.product_config,
-        false,
-        false,
-    )
-    .context(InvalidProductConfigSnafu)?;
+    )?;
 
     let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, kafka)
         .await
@@ -1194,4 +1188,73 @@ fn container_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ContainerPort> {
         });
     }
     ports
+}
+
+/// Defines all required roles and their required configuration.
+///
+/// The roles and their configs are then validated and complemented by the product config.
+///
+/// # Arguments
+/// * `resource`        - The TrinoCluster containing the role definitions.
+/// * `version`         - The TrinoCluster version.
+/// * `product_config`  - The product config to validate and complement the user config.
+///
+fn validated_product_config(
+    kafka: &v1alpha1::KafkaCluster,
+    product_version: &str,
+    product_config: &ProductConfigManager,
+) -> Result<ValidatedRoleConfigByPropertyKind, Error> {
+    let mut roles = HashMap::new();
+
+    roles.insert(
+        KafkaRole::Broker.to_string(),
+        (
+            vec![
+                PropertyNameKind::File(BROKER_PROPERTIES_FILE.to_string()),
+                PropertyNameKind::File(JVM_SECURITY_PROPERTIES_FILE.to_string()),
+                PropertyNameKind::Env,
+            ],
+            kafka
+                .spec
+                .brokers
+                .clone()
+                .context(MissingKafkaRoleSnafu {
+                    role: KafkaRole::Broker,
+                })?
+                .erase(),
+        ),
+    );
+
+    if kafka.is_controller_configured() {
+        roles.insert(
+            KafkaRole::Controller.to_string(),
+            (
+                vec![
+                    PropertyNameKind::File(CONTROLLER_PROPERTIES_FILE.to_string()),
+                    PropertyNameKind::File(JVM_SECURITY_PROPERTIES_FILE.to_string()),
+                    PropertyNameKind::Env,
+                ],
+                kafka
+                    .spec
+                    .controllers
+                    .clone()
+                    .context(MissingKafkaRoleSnafu {
+                        role: KafkaRole::Controller,
+                    })?
+                    .erase(),
+            ),
+        );
+    }
+
+    let role_config =
+        transform_all_roles_to_config(kafka, roles).context(GenerateProductConfigSnafu)?;
+
+    validate_all_roles_and_groups_config(
+        product_version,
+        &role_config,
+        product_config,
+        false,
+        false,
+    )
+    .context(InvalidProductConfigSnafu)
 }

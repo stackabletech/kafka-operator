@@ -83,6 +83,16 @@ pub enum Error {
 
     #[snafu(display("fragment validation failure"))]
     FragmentValidationFailure { source: ValidationError },
+
+    #[snafu(display(
+        "Kafka version 4 and higher requires a Kraft controller (configured via `spec.controller`)"
+    ))]
+    Kafka4RequiresKraft,
+
+    #[snafu(display(
+        "Kraft controller (`spec.controller`) and ZooKeeper (`spec.clusterConfig.zookeeperConfigMapName`) are configured. Please only choose one"
+    ))]
+    KraftAndZookeeperConfigured,
 }
 
 #[versioned(
@@ -173,6 +183,27 @@ impl HasStatusCondition for v1alpha1::KafkaCluster {
 }
 
 impl v1alpha1::KafkaCluster {
+    /// Supporting Kraft alongside Zookeeper requires a couple of CRD checks
+    /// - If Kafka 4 and higher is used, no zookeeper config map ref has to be provided
+    /// - Configuring the controller role means no zookeeper config map ref has to be provided
+    pub fn check_kraft_vs_zookeeper(&self, product_version: &str) -> Result<(), Error> {
+        if product_version.starts_with("4.") && self.spec.controllers.is_none() {
+            return Err(Error::Kafka4RequiresKraft);
+        }
+
+        if self.spec.controllers.is_some()
+            && self.spec.cluster_config.zookeeper_config_map_name.is_some()
+        {
+            return Err(Error::KraftAndZookeeperConfigured);
+        }
+
+        Ok(())
+    }
+
+    pub fn is_controller_configured(&self) -> bool {
+        self.spec.controllers.is_some()
+    }
+
     /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
     /// to get a list of broker addresses and will use those to transmit data to the correct broker.
     pub fn bootstrap_service_name(&self, rolegroup: &RoleGroupRef<Self>) -> String {
