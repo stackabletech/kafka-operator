@@ -68,8 +68,6 @@ pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
 pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
-const DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_minutes_unchecked(30);
-
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("object has no namespace associated"))]
@@ -413,6 +411,48 @@ pub enum Container {
     Kafka,
 }
 
+#[derive(Clone, Debug, Default, Fragment, JsonSchema, PartialEq)]
+#[fragment_attrs(
+    derive(
+        Clone,
+        Debug,
+        Default,
+        Deserialize,
+        Merge,
+        JsonSchema,
+        PartialEq,
+        Serialize
+    ),
+    serde(rename_all = "camelCase")
+)]
+pub struct CommonRoleConfig {
+    #[fragment_attrs(serde(default))]
+    pub affinity: StackableAffinity,
+
+    /// Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
+    #[fragment_attrs(serde(default))]
+    pub graceful_shutdown_timeout: Option<Duration>,
+
+    /// Request secret (currently only autoTls certificates) lifetime from the secret operator, e.g. `7d`, or `30d`.
+    /// Please note that this can be shortened by the `maxCertificateLifetime` setting on the SecretClass issuing the TLS certificate.
+    #[fragment_attrs(serde(default))]
+    pub requested_secret_lifetime: Option<Duration>,
+}
+
+impl CommonRoleConfig {
+    const DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_minutes_unchecked(30);
+    // Auto TLS certificate lifetime
+    const DEFAULT_SECRET_LIFETIME: Duration = Duration::from_days_unchecked(1);
+
+    pub fn default_config(cluster_name: &str, role: &KafkaRole) -> CommonRoleConfigFragment {
+        CommonRoleConfigFragment {
+            affinity: get_affinity(cluster_name, role),
+            graceful_shutdown_timeout: Some(Self::DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT),
+            requested_secret_lifetime: Some(Self::DEFAULT_SECRET_LIFETIME),
+        }
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Fragment, JsonSchema)]
 #[fragment_attrs(
     derive(
@@ -428,18 +468,8 @@ pub enum Container {
     serde(rename_all = "camelCase")
 )]
 pub struct KafkaConfig {
-    #[fragment_attrs(serde(default))]
-    pub logging: Logging<Container>,
-
-    #[fragment_attrs(serde(default))]
-    pub resources: Resources<Storage, NoRuntimeLimits>,
-
-    #[fragment_attrs(serde(default))]
-    pub affinity: StackableAffinity,
-
-    /// Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
-    #[fragment_attrs(serde(default))]
-    pub graceful_shutdown_timeout: Option<Duration>,
+    #[fragment_attrs(serde(flatten))]
+    pub common_role_config: CommonRoleConfig,
 
     /// The ListenerClass used for bootstrapping new clients. Should use a stable ListenerClass to avoid unnecessary client restarts (such as `cluster-internal` or `external-stable`).
     pub bootstrap_listener_class: String,
@@ -447,18 +477,19 @@ pub struct KafkaConfig {
     /// The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
     pub broker_listener_class: String,
 
-    /// Request secret (currently only autoTls certificates) lifetime from the secret operator, e.g. `7d`, or `30d`.
-    /// Please note that this can be shortened by the `maxCertificateLifetime` setting on the SecretClass issuing the TLS certificate.
     #[fragment_attrs(serde(default))]
-    pub requested_secret_lifetime: Option<Duration>,
+    pub logging: Logging<Container>,
+
+    #[fragment_attrs(serde(default))]
+    pub resources: Resources<Storage, NoRuntimeLimits>,
 }
 
 impl KafkaConfig {
-    // Auto TLS certificate lifetime
-    const DEFAULT_BROKER_SECRET_LIFETIME: Duration = Duration::from_days_unchecked(1);
-
     pub fn default_config(cluster_name: &str, role: &KafkaRole) -> KafkaConfigFragment {
         KafkaConfigFragment {
+            common_role_config: CommonRoleConfig::default_config(cluster_name, role),
+            bootstrap_listener_class: Some("cluster-internal".to_string()),
+            broker_listener_class: Some("cluster-internal".to_string()),
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {
@@ -477,11 +508,6 @@ impl KafkaConfig {
                     },
                 },
             },
-            affinity: get_affinity(cluster_name, role),
-            graceful_shutdown_timeout: Some(DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT),
-            bootstrap_listener_class: Some("cluster-internal".to_string()),
-            broker_listener_class: Some("cluster-internal".to_string()),
-            requested_secret_lifetime: Some(Self::DEFAULT_BROKER_SECRET_LIFETIME),
         }
     }
 }

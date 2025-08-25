@@ -854,6 +854,7 @@ fn build_broker_rolegroup_statefulset(
 
     // Add TLS related volumes and volume mounts
     let requested_secret_lifetime = merged_config
+        .common_role_config
         .requested_secret_lifetime
         .context(MissingSecretLifetimeSnafu)?;
     kafka_security
@@ -1068,7 +1069,7 @@ fn build_broker_rolegroup_statefulset(
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(cb_kafka.build())
         .add_container(cb_kcat_prober.build())
-        .affinity(&merged_config.affinity)
+        .affinity(&merged_config.common_role_config.affinity)
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {

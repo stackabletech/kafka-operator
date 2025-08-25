@@ -25,7 +25,9 @@ pub fn add_graceful_shutdown_config(
 ) -> Result<(), Error> {
     // This must be always set by the merge mechanism, as we provide a default value,
     // users can not disable graceful shutdown.
-    if let Some(graceful_shutdown_timeout) = merged_config.graceful_shutdown_timeout {
+    if let Some(graceful_shutdown_timeout) =
+        merged_config.common_role_config.graceful_shutdown_timeout
+    {
         pod_builder
             .termination_grace_period(&graceful_shutdown_timeout)
             .context(SetTerminationGracePeriodSnafu)?;
