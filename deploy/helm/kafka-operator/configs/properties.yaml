@@ -58,42 +58,6 @@ properties:
       comment: "TTL for domain names that cannot be resolved."
       description: "TTL for domain names that cannot be resolved."
 
-  - property: &zookeeperConnect
-      propertyNames:
-        - name: "zookeeper.connect"
-          kind:
-            type: "file"
-            file: "server.properties"
-      datatype:
-        type: "string"
-        unit: *unitUrl
-      defaultValues:
-        - fromVersion: "0.0.0"
-          value: "localhost:2181"
-      roles:
-        - name: "broker"
-          required: true
-      asOfVersion: "0.0.0"
-      description: "The zookeeper connection string"
-
-  - property: &zookeeperTimeout
-      propertyNames:
-        - name: "zookeeper.connection.timeout.ms"
-          kind:
-            type: "file"
-            file: "server.properties"
-      datatype:
-        type: "integer"
-        unit: *unitMilliseconds
-      defaultValues:
-        - fromVersion: "0.0.0"
-          value: "18000"
-      roles:
-        - name: "broker"
-          required: true
-      asOfVersion: "0.0.0"
-      description: "Zookeeper connection timeout in milliseconds."
-
   - property: &opaAuthorizerClassName
       propertyNames:
         - name: "authorizer.class.name"
