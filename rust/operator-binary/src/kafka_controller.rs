@@ -32,7 +32,7 @@ use stackable_operator::{
         product_image_selection::{self, ResolvedProductImage},
         rbac::build_rbac_resources,
     },
-    crd::{authentication::core, listener},
+    crd::listener,
     k8s_openapi::{
         DeepMerge,
         api::{
@@ -80,7 +80,7 @@ use crate::{
         LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME, OPERATOR_NAME, STACKABLE_CONFIG_DIR,
         STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
-        listener::{KafkaListenerError, get_kafka_listener_config},
+        listener::get_kafka_listener_config,
         role::{
             KafkaRole,
             broker::{BROKER_PROPERTIES_FILE, BrokerConfig, BrokerContainer},
@@ -113,27 +113,11 @@ pub enum Error {
     #[snafu(display("missing secret lifetime"))]
     MissingSecretLifetime,
 
-    #[snafu(display("object has no name"))]
-    ObjectHasNoName,
-
-    #[snafu(display("object has no namespace"))]
-    ObjectHasNoNamespace,
-
     #[snafu(display("object defines no broker role"))]
     NoBrokerRole,
 
     #[snafu(display("failed to apply role Service"))]
     ApplyRoleService {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to apply role ServiceAccount"))]
-    ApplyRoleServiceAccount {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to apply global RoleBinding"))]
-    ApplyRoleRoleBinding {
         source: stackable_operator::cluster_resources::Error,
     },
 
@@ -171,8 +155,8 @@ pub enum Error {
         source: stackable_operator::product_config_utils::Error,
     },
 
-    #[snafu(display("failed to serialize zoo.cfg for {}", rolegroup))]
-    SerializeZooCfg {
+    #[snafu(display("failed to serialize config for {}", rolegroup))]
+    SerializeConfig {
         source: PropertiesWriterError,
         rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
@@ -190,31 +174,9 @@ pub enum Error {
         source: stackable_operator::cluster_resources::Error,
     },
 
-    #[snafu(display("failed to find rolegroup {}", rolegroup))]
-    RoleGroupNotFound {
-        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
-    },
-
     #[snafu(display("invalid OpaConfig"))]
     InvalidOpaConfig {
         source: stackable_operator::commons::opa::Error,
-    },
-
-    #[snafu(display("failed to retrieve {}", authentication_class))]
-    AuthenticationClassRetrieval {
-        source: stackable_operator::commons::opa::Error,
-        authentication_class: ObjectRef<core::v1alpha1::AuthenticationClass>,
-    },
-
-    #[snafu(display(
-        "failed to use authentication provider {} - supported methods: {:?}",
-        provider,
-        supported
-    ))]
-    AuthenticationProviderNotSupported {
-        authentication_class: ObjectRef<core::v1alpha1::AuthenticationClass>,
-        supported: Vec<String>,
-        provider: String,
     },
 
     #[snafu(display("invalid kafka listeners"))]
@@ -319,9 +281,6 @@ pub enum Error {
     #[snafu(display("failed to add Secret Volumes and VolumeMounts"))]
     AddVolumesAndVolumeMounts { source: crate::crd::security::Error },
 
-    #[snafu(display("failed to resolve the fully-qualified pod name"))]
-    ResolveNamespace { source: KafkaListenerError },
-
     #[snafu(display("failed to add kerberos config"))]
     AddKerberosConfig { source: kerberos::Error },
 
@@ -365,32 +324,19 @@ impl ReconcilerError for Error {
     fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
         match self {
             Error::MissingSecretLifetime => None,
-            Error::ObjectHasNoName => None,
-            Error::ObjectHasNoNamespace => None,
             Error::NoBrokerRole => None,
             Error::ApplyRoleService { .. } => None,
-            Error::ApplyRoleServiceAccount { .. } => None,
-            Error::ApplyRoleRoleBinding { .. } => None,
             Error::ApplyRoleGroupService { .. } => None,
             Error::BuildRoleGroupConfig { .. } => None,
             Error::ApplyRoleGroupConfig { .. } => None,
             Error::ApplyRoleGroupStatefulSet { .. } => None,
             Error::GenerateProductConfig { .. } => None,
             Error::InvalidProductConfig { .. } => None,
-            Error::SerializeZooCfg { .. } => None,
+            Error::SerializeConfig { .. } => None,
             Error::ObjectMissingMetadataForOwnerRef { .. } => None,
             Error::BuildDiscoveryConfig { .. } => None,
             Error::ApplyDiscoveryConfig { .. } => None,
-            Error::RoleGroupNotFound { .. } => None,
             Error::InvalidOpaConfig { .. } => None,
-            Error::AuthenticationClassRetrieval {
-                authentication_class,
-                ..
-            } => Some(authentication_class.clone().erase()),
-            Error::AuthenticationProviderNotSupported {
-                authentication_class,
-                ..
-            } => Some(authentication_class.clone().erase()),
             Error::InvalidKafkaListeners { .. } => None,
             Error::AddListenerVolume { .. } => None,
             Error::InvalidContainerName { .. } => None,
@@ -415,7 +361,6 @@ impl ReconcilerError for Error {
             Error::ConfigureLogging { .. } => None,
             Error::AddVolume { .. } => None,
             Error::AddVolumeMount { .. } => None,
-            Error::ResolveNamespace { .. } => None,
             Error::AddKerberosConfig { .. } => None,
             Error::FailedToValidateAuthenticationMethod { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
@@ -538,7 +483,7 @@ pub async fn reconcile_kafka(
             let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
 
             let merged_config = kafka
-                .merged_config(&KafkaRole::Broker, &rolegroup_ref)
+                .merged_config(&kafka_role, &rolegroup_ref)
                 .context(FailedToResolveConfigSnafu)?;
 
             let rg_service =
@@ -732,7 +677,7 @@ fn build_broker_rolegroup_config_map(
         .add_data(
             BROKER_PROPERTIES_FILE,
             to_java_properties_string(server_cfg.iter().map(|(k, v)| (k, v))).with_context(
-                |_| SerializeZooCfgSnafu {
+                |_| SerializeConfigSnafu {
                     rolegroup: rolegroup.clone(),
                 },
             )?,

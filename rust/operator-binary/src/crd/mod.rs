@@ -65,20 +65,11 @@ pub enum Error {
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
 
-    #[snafu(display("failed to validate config of rolegroup {rolegroup}"))]
-    RoleGroupValidation {
-        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
-        source: ValidationError,
-    },
-
     #[snafu(display("the Kafka role [{role}] is missing from spec"))]
     MissingKafkaRole { role: String },
 
     #[snafu(display("the role {role} is not defined"))]
     CannotRetrieveKafkaRole { role: String },
-
-    #[snafu(display("the Kafka node role group [{role_group}] is missing from spec"))]
-    MissingKafkaRoleGroup { role_group: String },
 
     #[snafu(display("the role group {role_group} is not defined"))]
     CannotRetrieveKafkaRoleGroup { role_group: String },
