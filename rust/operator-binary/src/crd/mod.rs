@@ -6,15 +6,15 @@ pub mod role;
 pub mod security;
 pub mod tls;
 
-use std::{collections::BTreeMap, str::FromStr};
+use std::collections::BTreeMap;
 
 use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{OptionExt, Snafu};
 use stackable_operator::{
     commons::{cluster_operation::ClusterOperation, product_image_selection::ProductImage},
     kube::{CustomResource, runtime::reflector::ObjectRef},
-    role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroup, RoleGroupRef},
+    role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
     utils::cluster_info::KubernetesClusterInfo,
@@ -59,16 +59,6 @@ pub enum Error {
 
     #[snafu(display("the role {role} is not defined"))]
     CannotRetrieveKafkaRole { role: String },
-
-    #[snafu(display("the role group {role_group} is not defined"))]
-    CannotRetrieveKafkaRoleGroup { role_group: String },
-
-    #[snafu(display("unknown role {role}. Should be one of {roles:?}"))]
-    UnknownKafkaRole {
-        source: strum::ParseError,
-        role: String,
-        roles: Vec<String>,
-    },
 
     #[snafu(display(
         "Kafka version 4 and higher requires a Kraft controller (configured via `spec.controller`)"
@@ -203,37 +193,6 @@ impl v1alpha1::KafkaCluster {
             role: KafkaRole::Broker.to_string(),
             role_group: group_name.into(),
         }
-    }
-
-    pub fn role(
-        &self,
-        role: &KafkaRole,
-    ) -> Result<&Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
-        match role {
-            KafkaRole::Broker => self.spec.brokers.as_ref(),
-            KafkaRole::Controller => todo!(),
-        }
-        .with_context(|| CannotRetrieveKafkaRoleSnafu {
-            role: role.to_string(),
-        })
-    }
-
-    pub fn rolegroup(
-        &self,
-        rolegroup_ref: &RoleGroupRef<Self>,
-    ) -> Result<&RoleGroup<BrokerConfigFragment, JavaCommonConfig>, Error> {
-        let role_variant =
-            KafkaRole::from_str(&rolegroup_ref.role).with_context(|_| UnknownKafkaRoleSnafu {
-                role: rolegroup_ref.role.to_owned(),
-                roles: KafkaRole::roles(),
-            })?;
-
-        let role = self.role(&role_variant)?;
-        role.role_groups
-            .get(&rolegroup_ref.role_group)
-            .with_context(|| CannotRetrieveKafkaRoleGroupSnafu {
-                role_group: rolegroup_ref.role_group.to_owned(),
-            })
     }
 
     pub fn role_config(&self, role: &KafkaRole) -> Option<&GenericRoleConfig> {

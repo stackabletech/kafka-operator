@@ -55,12 +55,10 @@ mod tests {
 
         let kafka: v1alpha1::KafkaCluster =
             serde_yaml::from_str(input).expect("illegal test input");
-        let merged_config = kafka
-            .merged_config(&role, &role.rolegroup_ref(&kafka, "default"))
-            .unwrap();
+        let merged_config = role.merged_config(&kafka, "default").unwrap();
 
         assert_eq!(
-            merged_config.common_config.affinity,
+            merged_config.affinity,
             StackableAffinity {
                 pod_affinity: None,
                 pod_anti_affinity: Some(PodAntiAffinity {

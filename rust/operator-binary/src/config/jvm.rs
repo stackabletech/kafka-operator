@@ -5,8 +5,7 @@ use stackable_operator::{
 };
 
 use crate::crd::{
-    JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT, STACKABLE_CONFIG_DIR,
-    role::{AnyConfig, broker::BrokerConfigFragment},
+    JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT, STACKABLE_CONFIG_DIR, role::AnyConfig,
 };
 
 const JAVA_HEAP_FACTOR: f32 = 0.8;
@@ -26,9 +25,9 @@ pub enum Error {
 }
 
 /// All JVM arguments.
-fn construct_jvm_args(
+fn construct_jvm_args<ConfigFragment>(
     merged_config: &AnyConfig,
-    role: &Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+    role: &Role<ConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<Vec<String>, Error> {
     let heap_size = MemoryQuantity::try_from(
@@ -68,9 +67,9 @@ fn construct_jvm_args(
 
 /// Arguments that go into `EXTRA_ARGS`, so *not* the heap settings (which you can get using
 /// [`construct_heap_jvm_args`]).
-pub fn construct_non_heap_jvm_args(
+pub fn construct_non_heap_jvm_args<ConfigFragment>(
     merged_config: &AnyConfig,
-    role: &Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+    role: &Role<ConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<String, Error> {
     let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
@@ -81,9 +80,9 @@ pub fn construct_non_heap_jvm_args(
 
 /// Arguments that go into `KAFKA_HEAP_OPTS`.
 /// You can get the normal JVM arguments using [`construct_non_heap_jvm_args`].
-pub fn construct_heap_jvm_args(
+pub fn construct_heap_jvm_args<ConfigFragment>(
     merged_config: &AnyConfig,
-    role: &Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+    role: &Role<ConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<String, Error> {
     let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
@@ -101,7 +100,10 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{role::KafkaRole, v1alpha1};
+    use crate::crd::{
+        role::{KafkaRole, broker::BrokerConfigFragment},
+        v1alpha1,
+    };
 
     #[test]
     fn test_construct_jvm_arguments_defaults() {
@@ -186,7 +188,7 @@ mod tests {
     fn construct_boilerplate(
         kafka_cluster: &str,
     ) -> (
-        BrokerConfig,
+        AnyConfig,
         Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
         String,
     ) {
@@ -195,7 +197,9 @@ mod tests {
 
         let kafka_role = KafkaRole::Broker;
         let rolegroup_ref = kafka.broker_rolegroup_ref("default");
-        let merged_config = kafka.merged_config(&kafka_role, &rolegroup_ref).unwrap();
+        let merged_config = kafka_role
+            .merged_config(&kafka, &rolegroup_ref.role_group)
+            .unwrap();
         let role = kafka.spec.brokers.unwrap();
 
         (merged_config, role, "default".to_owned())

@@ -12,6 +12,7 @@ use stackable_operator::{
         fragment::{self, ValidationError},
         merge::Merge,
     },
+    k8s_openapi::api::core::v1::PodTemplateSpec,
     kube::{ResourceExt, runtime::reflector::ObjectRef},
     product_logging::spec::ContainerLogConfig,
     role_utils::RoleGroupRef,
@@ -20,8 +21,9 @@ use stackable_operator::{
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
 use crate::{
+    config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::role::{
-        broker::BrokerConfig,
+        broker::{BrokerConfig, BrokerConfigFragment},
         commons::{CommonConfig, Storage},
         controller::ControllerConfig,
     },
@@ -36,8 +38,11 @@ pub enum Error {
     #[snafu(display("the Kafka role [{role}] is missing from spec"))]
     MissingRole { role: String },
 
-    #[snafu(display("missing role group {role_group:?} for role {role:?}"))]
-    MissingRoleGroup { role: String, role_group: String },
+    #[snafu(display("missing role group {rolegroup:?} for role {role:?}"))]
+    MissingRoleGroup { role: String, rolegroup: String },
+
+    #[snafu(display("failed to construct JVM arguments"))]
+    ConstructJvmArguments { source: crate::config::jvm::Error },
 }
 
 #[derive(
@@ -95,7 +100,7 @@ impl KafkaRole {
     pub fn merged_config(
         &self,
         kafka: &v1alpha1::KafkaCluster,
-        role_group: &str,
+        rolegroup: &str,
     ) -> Result<AnyConfig, Error> {
         match self {
             Self::Broker => {
@@ -116,10 +121,10 @@ impl KafkaRole {
                 // Retrieve rolegroup specific resource config
                 let mut role_group_config = role
                     .role_groups
-                    .get(role_group)
+                    .get(rolegroup)
                     .with_context(|| MissingRoleGroupSnafu {
                         role: self.to_string(),
-                        role_group: role_group.to_string(),
+                        rolegroup: rolegroup.to_string(),
                     })?
                     .config
                     .config
@@ -155,10 +160,10 @@ impl KafkaRole {
                 // Retrieve rolegroup specific resource config
                 let mut role_group_config = role
                     .role_groups
-                    .get(role_group)
+                    .get(rolegroup)
                     .with_context(|| MissingRoleGroupSnafu {
                         role: self.to_string(),
-                        role_group: role_group.to_string(),
+                        rolegroup: rolegroup.to_string(),
                     })?
                     .config
                     .config
@@ -177,6 +182,192 @@ impl KafkaRole {
                 ))
             }
         }
+    }
+
+    pub fn construct_non_heap_jvm_args(
+        &self,
+        merged_config: &AnyConfig,
+        kafka: &v1alpha1::KafkaCluster,
+        rolegroup: &str,
+    ) -> Result<String, Error> {
+        match self {
+            Self::Broker => construct_non_heap_jvm_args::<BrokerConfigFragment>(
+                merged_config,
+                &kafka
+                    .spec
+                    .brokers
+                    .clone()
+                    .with_context(|| MissingRoleSnafu {
+                        role: self.to_string(),
+                    })?,
+                rolegroup,
+            )
+            .context(ConstructJvmArgumentsSnafu),
+            Self::Controller => construct_non_heap_jvm_args(
+                merged_config,
+                &kafka
+                    .spec
+                    .controllers
+                    .clone()
+                    .with_context(|| MissingRoleSnafu {
+                        role: self.to_string(),
+                    })?,
+                rolegroup,
+            )
+            .context(ConstructJvmArgumentsSnafu),
+        }
+    }
+
+    pub fn construct_heap_jvm_args(
+        &self,
+        merged_config: &AnyConfig,
+        kafka: &v1alpha1::KafkaCluster,
+        rolegroup: &str,
+    ) -> Result<String, Error> {
+        match self {
+            Self::Broker => construct_heap_jvm_args::<BrokerConfigFragment>(
+                merged_config,
+                &kafka
+                    .spec
+                    .brokers
+                    .clone()
+                    .with_context(|| MissingRoleSnafu {
+                        role: self.to_string(),
+                    })?,
+                rolegroup,
+            )
+            .context(ConstructJvmArgumentsSnafu),
+            Self::Controller => construct_heap_jvm_args(
+                merged_config,
+                &kafka
+                    .spec
+                    .controllers
+                    .clone()
+                    .with_context(|| MissingRoleSnafu {
+                        role: self.to_string(),
+                    })?,
+                rolegroup,
+            )
+            .context(ConstructJvmArgumentsSnafu),
+        }
+    }
+
+    pub fn role_pod_overrides(
+        &self,
+        kafka: &v1alpha1::KafkaCluster,
+    ) -> Result<PodTemplateSpec, Error> {
+        let pod_overrides = match self {
+            Self::Broker => {
+                kafka
+                    .spec
+                    .brokers
+                    .clone()
+                    .with_context(|| MissingRoleSnafu {
+                        role: self.to_string(),
+                    })?
+                    .config
+                    .pod_overrides
+            }
+            Self::Controller => {
+                kafka
+                    .spec
+                    .controllers
+                    .clone()
+                    .with_context(|| MissingRoleSnafu {
+                        role: self.to_string(),
+                    })?
+                    .config
+                    .pod_overrides
+            }
+        };
+
+        Ok(pod_overrides)
+    }
+
+    pub fn role_group_pod_overrides(
+        &self,
+        kafka: &v1alpha1::KafkaCluster,
+        rolegroup: &str,
+    ) -> Result<PodTemplateSpec, Error> {
+        let pod_overrides = match self {
+            Self::Broker => kafka
+                .spec
+                .brokers
+                .clone()
+                .with_context(|| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?
+                .role_groups
+                .get(rolegroup)
+                .with_context(|| MissingRoleGroupSnafu {
+                    role: self.to_string(),
+                    rolegroup: rolegroup.to_string(),
+                })?
+                .config
+                .pod_overrides
+                .clone(),
+            Self::Controller => kafka
+                .spec
+                .controllers
+                .clone()
+                .with_context(|| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?
+                .role_groups
+                .get(rolegroup)
+                .with_context(|| MissingRoleGroupSnafu {
+                    role: self.to_string(),
+                    rolegroup: rolegroup.to_string(),
+                })?
+                .config
+                .pod_overrides
+                .clone(),
+        };
+
+        Ok(pod_overrides)
+    }
+
+    pub fn replicas(
+        &self,
+        kafka: &v1alpha1::KafkaCluster,
+        rolegroup: &str,
+    ) -> Result<Option<u16>, Error> {
+        let replicas = match self {
+            Self::Broker => {
+                kafka
+                    .spec
+                    .brokers
+                    .clone()
+                    .with_context(|| MissingRoleSnafu {
+                        role: self.to_string(),
+                    })?
+                    .role_groups
+                    .get(rolegroup)
+                    .with_context(|| MissingRoleGroupSnafu {
+                        role: self.to_string(),
+                        rolegroup: rolegroup.to_string(),
+                    })?
+                    .replicas
+            }
+            Self::Controller => {
+                kafka
+                    .spec
+                    .controllers
+                    .clone()
+                    .with_context(|| MissingRoleSnafu {
+                        role: self.to_string(),
+                    })?
+                    .role_groups
+                    .get(rolegroup)
+                    .with_context(|| MissingRoleGroupSnafu {
+                        role: self.to_string(),
+                        rolegroup: rolegroup.to_string(),
+                    })?
+                    .replicas
+            }
+        };
+
+        Ok(replicas)
     }
 }
 

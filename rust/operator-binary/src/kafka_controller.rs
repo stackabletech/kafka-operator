@@ -77,7 +77,6 @@ use stackable_operator::{
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
-    config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::{
         self, APP_NAME, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KAFKA_HEAP_OPTS,
         KafkaClusterStatus, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
@@ -239,9 +238,6 @@ pub enum Error {
         source: stackable_operator::commons::rbac::Error,
     },
 
-    #[snafu(display("internal operator failure"))]
-    InternalOperatorError { source: crate::crd::Error },
-
     #[snafu(display(
         "failed to serialize [{JVM_SECURITY_PROPERTIES_FILE}] for {}",
         rolegroup
@@ -306,7 +302,7 @@ pub enum Error {
     MisconfiguredKafkaCluster { source: crd::Error },
 
     #[snafu(display("failed to construct JVM arguments"))]
-    ConstructJvmArguments { source: crate::config::jvm::Error },
+    ConstructJvmArguments { source: crate::crd::role::Error },
 
     #[snafu(display("failed to resolve product image"))]
     ResolveProductImage {
@@ -315,6 +311,12 @@ pub enum Error {
 
     #[snafu(display("failed to parse role: {source}"))]
     ParseRole { source: strum::ParseError },
+
+    #[snafu(display("failed to merge pod overrides"))]
+    MergePodOverrides { source: crd::role::Error },
+
+    #[snafu(display("failed to retrieve rolegroup replicas"))]
+    RoleGroupReplicas { source: crd::role::Error },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -351,7 +353,6 @@ impl ReconcilerError for Error {
             Error::ApplyRoleBinding { .. } => None,
             Error::ApplyStatus { .. } => None,
             Error::BuildRbacResources { .. } => None,
-            Error::InternalOperatorError { .. } => None,
             Error::JvmSecurityPoperties { .. } => None,
             Error::FailedToCreatePdb { .. } => None,
             Error::GracefulShutdown { .. } => None,
@@ -369,6 +370,8 @@ impl ReconcilerError for Error {
             Error::ConstructJvmArguments { .. } => None,
             Error::ResolveProductImage { .. } => None,
             Error::ParseRole { .. } => None,
+            Error::MergePodOverrides { .. } => None,
+            Error::RoleGroupReplicas { .. } => None,
         }
     }
 }
@@ -465,13 +468,13 @@ pub async fn reconcile_kafka(
     let mut bootstrap_listeners = Vec::<listener::v1alpha1::Listener>::new();
 
     for (kafka_role_str, role_config) in &validated_config {
-        let kafka_role = KafkaRole::from_str(&kafka_role_str).context(ParseRoleSnafu)?;
+        let kafka_role = KafkaRole::from_str(kafka_role_str).context(ParseRoleSnafu)?;
 
         for (rolegroup_name, rolegroup_config) in role_config.iter() {
             let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
 
             let merged_config = kafka_role
-                .merged_config(&kafka, &rolegroup_ref.role_group)
+                .merged_config(kafka, &rolegroup_ref.role_group)
                 .context(FailedToResolveConfigSnafu)?;
 
             let rg_service =
@@ -686,7 +689,7 @@ fn build_broker_rolegroup_config_map(
     tracing::debug!(?server_cfg, "Applied server config");
     tracing::debug!(?jvm_sec_props, "Applied JVM config");
 
-    extend_role_group_config_map(rolegroup, &merged_config, &mut cm_builder);
+    extend_role_group_config_map(rolegroup, merged_config, &mut cm_builder);
 
     cm_builder
         .build()
@@ -754,10 +757,6 @@ fn build_broker_rolegroup_statefulset(
     service_account: &ServiceAccount,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet> {
-    let role = kafka.role(kafka_role).context(InternalOperatorSnafu)?;
-    let rolegroup = kafka
-        .rolegroup(rolegroup_ref)
-        .context(InternalOperatorSnafu)?;
     let recommended_object_labels = build_recommended_labels(
         kafka,
         KAFKA_CONTROLLER_NAME,
@@ -898,12 +897,14 @@ fn build_broker_rolegroup_statefulset(
         ])
         .add_env_var(
             "EXTRA_ARGS",
-            construct_non_heap_jvm_args(merged_config, role, &rolegroup_ref.role_group)
+            kafka_role
+                .construct_non_heap_jvm_args(merged_config, kafka, &rolegroup_ref.role_group)
                 .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
             KAFKA_HEAP_OPTS,
-            construct_heap_jvm_args(merged_config, role, &rolegroup_ref.role_group)
+            kafka_role
+                .construct_heap_jvm_args(merged_config, kafka, &rolegroup_ref.role_group)
                 .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
@@ -1076,8 +1077,16 @@ fn build_broker_rolegroup_statefulset(
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
     pod_template_spec.share_process_namespace = Some(true);
 
-    pod_template.merge_from(role.config.pod_overrides.clone());
-    pod_template.merge_from(rolegroup.config.pod_overrides.clone());
+    pod_template.merge_from(
+        kafka_role
+            .role_pod_overrides(kafka)
+            .context(MergePodOverridesSnafu)?,
+    );
+    pod_template.merge_from(
+        kafka_role
+            .role_group_pod_overrides(kafka, &rolegroup_ref.role_group)
+            .context(MergePodOverridesSnafu)?,
+    );
 
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
@@ -1096,7 +1105,10 @@ fn build_broker_rolegroup_statefulset(
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
-            replicas: rolegroup.replicas.map(i32::from),
+            replicas: kafka_role
+                .replicas(kafka, &rolegroup_ref.role_group)
+                .context(RoleGroupReplicasSnafu)?
+                .map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
                     Labels::role_group_selector(
