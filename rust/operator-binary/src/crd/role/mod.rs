@@ -257,28 +257,26 @@ impl KafkaRole {
         kafka: &v1alpha1::KafkaCluster,
     ) -> Result<PodTemplateSpec, Error> {
         let pod_overrides = match self {
-            Self::Broker => {
-                kafka
-                    .spec
-                    .brokers
-                    .clone()
-                    .with_context(|| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?
-                    .config
-                    .pod_overrides
-            }
-            Self::Controller => {
-                kafka
-                    .spec
-                    .controllers
-                    .clone()
-                    .with_context(|| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?
-                    .config
-                    .pod_overrides
-            }
+            Self::Broker => kafka
+                .spec
+                .brokers
+                .as_ref()
+                .with_context(|| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?
+                .config
+                .pod_overrides
+                .clone(),
+            Self::Controller => kafka
+                .spec
+                .controllers
+                .as_ref()
+                .with_context(|| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?
+                .config
+                .pod_overrides
+                .clone(),
         };
 
         Ok(pod_overrides)
@@ -293,7 +291,7 @@ impl KafkaRole {
             Self::Broker => kafka
                 .spec
                 .brokers
-                .clone()
+                .as_ref()
                 .with_context(|| MissingRoleSnafu {
                     role: self.to_string(),
                 })?
@@ -309,7 +307,7 @@ impl KafkaRole {
             Self::Controller => kafka
                 .spec
                 .controllers
-                .clone()
+                .as_ref()
                 .with_context(|| MissingRoleSnafu {
                     role: self.to_string(),
                 })?
@@ -337,7 +335,7 @@ impl KafkaRole {
                 kafka
                     .spec
                     .brokers
-                    .clone()
+                    .as_ref()
                     .with_context(|| MissingRoleSnafu {
                         role: self.to_string(),
                     })?
@@ -353,7 +351,7 @@ impl KafkaRole {
                 kafka
                     .spec
                     .controllers
-                    .clone()
+                    .as_ref()
                     .with_context(|| MissingRoleSnafu {
                         role: self.to_string(),
                     })?
