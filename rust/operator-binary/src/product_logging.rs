@@ -1,6 +1,5 @@
 use std::{borrow::Cow, fmt::Display};
 
-use snafu::Snafu;
 use stackable_operator::{
     builder::configmap::ConfigMapBuilder,
     memory::{BinaryMultiple, MemoryQuantity},
@@ -12,29 +11,6 @@ use stackable_operator::{
 };
 
 use crate::crd::{STACKABLE_LOG_DIR, role::AnyConfig, v1alpha1};
-
-#[derive(Snafu, Debug)]
-pub enum Error {
-    #[snafu(display("object has no namespace"))]
-    ObjectHasNoNamespace,
-
-    #[snafu(display("failed to retrieve the ConfigMap {cm_name}"))]
-    ConfigMapNotFound {
-        source: stackable_operator::client::Error,
-        cm_name: String,
-    },
-
-    #[snafu(display("failed to retrieve the entry {entry} for ConfigMap {cm_name}"))]
-    MissingConfigMapEntry {
-        entry: &'static str,
-        cm_name: String,
-    },
-
-    #[snafu(display("crd validation failure"))]
-    CrdValidationFailure { source: crate::crd::Error },
-}
-
-type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub const LOG4J_CONFIG_FILE: &str = "log4j.properties";
 pub const KAFKA_LOG_FILE: &str = "kafka.log4j.xml";
@@ -51,7 +27,7 @@ pub fn extend_role_group_config_map(
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     merged_config: &AnyConfig,
     cm_builder: &mut ConfigMapBuilder,
-) -> Result<()> {
+) {
     fn add_log4j_config_if_automatic(
         cm_builder: &mut ConfigMapBuilder,
         log_config: Option<Cow<ContainerLogConfig>>,
@@ -105,6 +81,4 @@ pub fn extend_role_group_config_map(
             product_logging::framework::create_vector_config(rolegroup, vector_log_config),
         );
     }
-
-    Ok(())
 }

@@ -187,18 +187,6 @@ pub enum AnyConfig {
     Controller(ControllerConfig),
 }
 
-// impl From<BrokerConfig> for AnyConfig {
-//     fn from(broker_config: BrokerConfig) -> Self {
-//         Self::Broker(broker_config)
-//     }
-// }
-
-// impl From<ControllerConfig> for AnyConfig {
-//     fn from(controller_config: ControllerConfig) -> Self {
-//         Self::Controller(controller_config)
-//     }
-// }
-
 impl Deref for AnyConfig {
     type Target = CommonConfig;
 

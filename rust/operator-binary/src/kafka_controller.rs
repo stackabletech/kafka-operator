@@ -219,12 +219,6 @@ pub enum Error {
     #[snafu(display("vector agent is enabled but vector aggregator ConfigMap is missing"))]
     VectorAggregatorConfigMapMissing,
 
-    #[snafu(display("failed to add the logging configuration to the ConfigMap [{cm_name}]"))]
-    InvalidLoggingConfig {
-        source: crate::product_logging::Error,
-        cm_name: String,
-    },
-
     #[snafu(display("failed to patch service account"))]
     ApplyServiceAccount {
         source: stackable_operator::cluster_resources::Error,
@@ -353,7 +347,6 @@ impl ReconcilerError for Error {
             Error::CreateClusterResources { .. } => None,
             Error::FailedToResolveConfig { .. } => None,
             Error::VectorAggregatorConfigMapMissing => None,
-            Error::InvalidLoggingConfig { .. } => None,
             Error::ApplyServiceAccount { .. } => None,
             Error::ApplyRoleBinding { .. } => None,
             Error::ApplyStatus { .. } => None,
@@ -693,11 +686,7 @@ fn build_broker_rolegroup_config_map(
     tracing::debug!(?server_cfg, "Applied server config");
     tracing::debug!(?jvm_sec_props, "Applied JVM config");
 
-    extend_role_group_config_map(rolegroup, &merged_config, &mut cm_builder).context(
-        InvalidLoggingConfigSnafu {
-            cm_name: rolegroup.object_name(),
-        },
-    )?;
+    extend_role_group_config_map(rolegroup, &merged_config, &mut cm_builder);
 
     cm_builder
         .build()
