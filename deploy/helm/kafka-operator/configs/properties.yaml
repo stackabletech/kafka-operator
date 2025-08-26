@@ -35,6 +35,8 @@ properties:
       roles:
         - name: "broker"
           required: true
+        - name: "controller"
+          required: true
       asOfVersion: "0.0.0"
       comment: "TTL for successfully resolved domain names."
       description: "TTL for successfully resolved domain names."
@@ -53,6 +55,8 @@ properties:
           value: "0"
       roles:
         - name: "broker"
+          required: true
+        - name: "controller"
           required: true
       asOfVersion: "0.0.0"
       comment: "TTL for domain names that cannot be resolved."
