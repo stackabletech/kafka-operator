@@ -13,11 +13,7 @@ use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::{cluster_operation::ClusterOperation, product_image_selection::ProductImage},
-    config::{
-        fragment::{self, ValidationError},
-        merge::Merge,
-    },
-    kube::{CustomResource, ResourceExt, runtime::reflector::ObjectRef},
+    kube::{CustomResource, runtime::reflector::ObjectRef},
     role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroup, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
@@ -27,11 +23,7 @@ use stackable_operator::{
 
 use crate::crd::{
     authorization::KafkaAuthorization,
-    role::{
-        KafkaRole,
-        broker::{BrokerConfig, BrokerConfigFragment},
-        controller::ControllerConfigFragment,
-    },
+    role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
     tls::KafkaTls,
 };
 
@@ -65,9 +57,6 @@ pub enum Error {
     #[snafu(display("object has no namespace associated"))]
     NoNamespace,
 
-    #[snafu(display("the Kafka role [{role}] is missing from spec"))]
-    MissingKafkaRole { role: String },
-
     #[snafu(display("the role {role} is not defined"))]
     CannotRetrieveKafkaRole { role: String },
 
@@ -80,9 +69,6 @@ pub enum Error {
         role: String,
         roles: Vec<String>,
     },
-
-    #[snafu(display("fragment validation failure"))]
-    FragmentValidationFailure { source: ValidationError },
 
     #[snafu(display(
         "Kafka version 4 and higher requires a Kraft controller (configured via `spec.controller`)"
@@ -280,35 +266,6 @@ impl v1alpha1::KafkaCluster {
                     pod_name: format!("{}-{}", rolegroup_ref.object_name(), i),
                 })
             }))
-    }
-
-    /// Retrieve and merge resource configs for role and role groups
-    pub fn merged_config(
-        &self,
-        role: &KafkaRole,
-        rolegroup_ref: &RoleGroupRef<Self>,
-    ) -> Result<BrokerConfig, Error> {
-        // Initialize the result with all default values as baseline
-        let conf_defaults = BrokerConfig::default_config(&self.name_any(), &role.to_string());
-
-        // Retrieve role resource config
-        let role = self.role(role)?;
-        let mut conf_role = role.config.config.to_owned();
-
-        // Retrieve rolegroup specific resource config
-        let role_group = self.rolegroup(rolegroup_ref)?;
-        let mut conf_role_group = role_group.config.config.to_owned();
-
-        // Merge more specific configs into default config
-        // Hierarchy is:
-        // 1. RoleGroup
-        // 2. Role
-        // 3. Default
-        conf_role.merge(&conf_defaults);
-        conf_role_group.merge(&conf_role);
-
-        tracing::debug!("Merged config: {:?}", conf_role_group);
-        fragment::validate(conf_role_group).context(FragmentValidationFailureSnafu)
     }
 }
 

@@ -58,7 +58,7 @@ pub enum ControllerContainer {
 )]
 pub struct ControllerConfig {
     #[fragment_attrs(serde(flatten))]
-    pub common_role_config: CommonConfig,
+    pub common_config: CommonConfig,
 
     #[fragment_attrs(serde(default))]
     pub logging: Logging<ControllerContainer>,
@@ -70,7 +70,7 @@ pub struct ControllerConfig {
 impl ControllerConfig {
     pub fn default_config(cluster_name: &str, role: &str) -> ControllerConfigFragment {
         ControllerConfigFragment {
-            common_role_config: CommonConfig::default_config(cluster_name, role),
+            common_config: CommonConfig::default_config(cluster_name, role),
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {

@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
+    ops::Deref,
     str::FromStr,
     sync::Arc,
 };
@@ -85,7 +86,7 @@ use crate::{
         STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
         listener::get_kafka_listener_config,
         role::{
-            KafkaRole,
+            AnyConfig, KafkaRole,
             broker::{BROKER_PROPERTIES_FILE, BrokerConfig, BrokerContainer},
             controller::CONTROLLER_PROPERTIES_FILE,
         },
@@ -213,7 +214,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to resolve and merge config for role and role group"))]
-    FailedToResolveConfig { source: crate::crd::Error },
+    FailedToResolveConfig { source: crate::crd::role::Error },
 
     #[snafu(display("vector agent is enabled but vector aggregator ConfigMap is missing"))]
     VectorAggregatorConfigMapMissing,
@@ -476,8 +477,8 @@ pub async fn reconcile_kafka(
         for (rolegroup_name, rolegroup_config) in role_config.iter() {
             let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
 
-            let merged_config = kafka
-                .merged_config(&kafka_role, &rolegroup_ref)
+            let merged_config = kafka_role
+                .merged_config(&kafka, &rolegroup_ref.role_group)
                 .context(FailedToResolveConfigSnafu)?;
 
             let rg_service =
@@ -502,20 +503,24 @@ pub async fn reconcile_kafka(
                 &rbac_sa,
                 &client.kubernetes_cluster_info,
             )?;
-            let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
-                kafka,
-                &resolved_product_image,
-                &kafka_security,
-                &rolegroup_ref,
-                &merged_config,
-            )?;
 
-            bootstrap_listeners.push(
-                cluster_resources
-                    .add(client, rg_bootstrap_listener)
-                    .await
-                    .context(ApplyRoleServiceSnafu)?,
-            );
+            // TODO: broker / controller?
+            if let AnyConfig::Broker(broker_config) = merged_config {
+                let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
+                    kafka,
+                    &resolved_product_image,
+                    &kafka_security,
+                    &rolegroup_ref,
+                    &broker_config,
+                )?;
+                bootstrap_listeners.push(
+                    cluster_resources
+                        .add(client, rg_bootstrap_listener)
+                        .await
+                        .context(ApplyRoleServiceSnafu)?,
+                );
+            }
+
             cluster_resources
                 .add(client, rg_service)
                 .await
@@ -625,7 +630,7 @@ fn build_broker_rolegroup_config_map(
     kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
-    merged_config: &BrokerConfig,
+    merged_config: &AnyConfig,
 ) -> Result<ConfigMap> {
     let mut server_cfg = broker_config
         .get(&PropertyNameKind::File(BROKER_PROPERTIES_FILE.to_string()))
@@ -688,7 +693,7 @@ fn build_broker_rolegroup_config_map(
     tracing::debug!(?server_cfg, "Applied server config");
     tracing::debug!(?jvm_sec_props, "Applied JVM config");
 
-    extend_role_group_config_map(rolegroup, &merged_config.logging, &mut cm_builder).context(
+    extend_role_group_config_map(rolegroup, &merged_config, &mut cm_builder).context(
         InvalidLoggingConfigSnafu {
             cm_name: rolegroup.object_name(),
         },
@@ -756,7 +761,7 @@ fn build_broker_rolegroup_statefulset(
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
-    merged_config: &BrokerConfig,
+    merged_config: &AnyConfig,
     service_account: &ServiceAccount,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet> {
@@ -800,7 +805,7 @@ fn build_broker_rolegroup_statefulset(
 
     // Add TLS related volumes and volume mounts
     let requested_secret_lifetime = merged_config
-        .common_config
+        .deref()
         .requested_secret_lifetime
         .context(MissingSecretLifetimeSnafu)?;
     kafka_security
@@ -812,7 +817,7 @@ fn build_broker_rolegroup_statefulset(
         )
         .context(AddVolumesAndVolumeMountsSnafu)?;
 
-    let mut pvcs = merged_config.resources.storage.build_pvcs();
+    let mut pvcs = merged_config.resources().storage.build_pvcs();
 
     // bootstrap listener should be persistent,
     // main broker listener is an ephemeral PVC instead
@@ -938,7 +943,7 @@ fn build_broker_rolegroup_statefulset(
         .context(AddVolumeMountSnafu)?
         .add_volume_mount("log", STACKABLE_LOG_DIR)
         .context(AddVolumeMountSnafu)?
-        .resources(merged_config.resources.clone().into());
+        .resources(merged_config.resources().clone().into());
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
     // unacceptable perf overhead
@@ -983,15 +988,12 @@ fn build_broker_rolegroup_statefulset(
             ..Probe::default()
         });
 
-    if let Some(ContainerLogConfig {
+    if let ContainerLogConfig {
         choice:
             Some(ContainerLogConfigChoice::Custom(CustomContainerLogConfig {
                 custom: ConfigMapLogConfig { config_map },
             })),
-    }) = merged_config
-        .logging
-        .containers
-        .get(&BrokerContainer::Kafka)
+    } = &*merged_config.kafka_logging()
     {
         pod_builder
             .add_volume(
@@ -1015,12 +1017,21 @@ fn build_broker_rolegroup_statefulset(
         .context(MetadataBuildSnafu)?
         .build();
 
+    if let Some(listener_class) = merged_config.listener_class() {
+        pod_builder
+            .add_listener_volume_by_listener_class(
+                LISTENER_BROKER_VOLUME_NAME,
+                listener_class,
+                &recommended_labels,
+            )
+            .context(AddListenerVolumeSnafu)?;
+    }
     pod_builder
         .metadata(metadata)
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(cb_kafka.build())
         .add_container(cb_kcat_prober.build())
-        .affinity(&merged_config.common_config.affinity)
+        .affinity(&merged_config.affinity)
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {
@@ -1031,12 +1042,6 @@ fn build_broker_rolegroup_statefulset(
         })
         .context(AddVolumeSnafu)?
         // bootstrap volume is a persistent volume template instead, to keep addresses persistent
-        .add_listener_volume_by_listener_class(
-            LISTENER_BROKER_VOLUME_NAME,
-            &merged_config.broker_listener_class,
-            &recommended_labels,
-        )
-        .context(AddListenerVolumeSnafu)?
         .add_empty_dir_volume(
             "log",
             Some(product_logging::framework::calculate_log_volume_size_limit(
@@ -1048,7 +1053,7 @@ fn build_broker_rolegroup_statefulset(
         .security_context(PodSecurityContextBuilder::new().fs_group(1000).build());
 
     // Add vector container after kafka container to keep the defaulting into kafka container
-    if merged_config.logging.enable_vector_agent {
+    if merged_config.vector_logging_enabled() {
         match &kafka.spec.cluster_config.vector_aggregator_config_map_name {
             Some(vector_aggregator_config_map_name) => {
                 pod_builder.add_container(
@@ -1056,10 +1061,7 @@ fn build_broker_rolegroup_statefulset(
                         resolved_product_image,
                         "config",
                         "log",
-                        merged_config
-                            .logging
-                            .containers
-                            .get(&BrokerContainer::Vector),
+                        Some(&*merged_config.vector_logging()),
                         ResourceRequirementsBuilder::new()
                             .with_cpu_request("250m")
                             .with_cpu_limit("500m")

@@ -6,7 +6,7 @@ use stackable_operator::{
 
 use crate::crd::{
     JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT, STACKABLE_CONFIG_DIR,
-    role::broker::{BrokerConfig, BrokerConfigFragment},
+    role::{AnyConfig, broker::BrokerConfigFragment},
 };
 
 const JAVA_HEAP_FACTOR: f32 = 0.8;
@@ -27,13 +27,13 @@ pub enum Error {
 
 /// All JVM arguments.
 fn construct_jvm_args(
-    merged_config: &BrokerConfig,
+    merged_config: &AnyConfig,
     role: &Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<Vec<String>, Error> {
     let heap_size = MemoryQuantity::try_from(
         merged_config
-            .resources
+            .resources()
             .memory
             .limit
             .as_ref()
@@ -69,7 +69,7 @@ fn construct_jvm_args(
 /// Arguments that go into `EXTRA_ARGS`, so *not* the heap settings (which you can get using
 /// [`construct_heap_jvm_args`]).
 pub fn construct_non_heap_jvm_args(
-    merged_config: &BrokerConfig,
+    merged_config: &AnyConfig,
     role: &Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<String, Error> {
@@ -82,7 +82,7 @@ pub fn construct_non_heap_jvm_args(
 /// Arguments that go into `KAFKA_HEAP_OPTS`.
 /// You can get the normal JVM arguments using [`construct_non_heap_jvm_args`].
 pub fn construct_heap_jvm_args(
-    merged_config: &BrokerConfig,
+    merged_config: &AnyConfig,
     role: &Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<String, Error> {
