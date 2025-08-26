@@ -6,18 +6,15 @@ pub mod role;
 pub mod security;
 pub mod tls;
 
-use std::collections::BTreeMap;
-
 use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, Snafu};
+use snafu::Snafu;
 use stackable_operator::{
     commons::{cluster_operation::ClusterOperation, product_image_selection::ProductImage},
     kube::{CustomResource, runtime::reflector::ObjectRef},
     role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
-    utils::cluster_info::KubernetesClusterInfo,
     versioned::versioned,
 };
 
@@ -200,53 +197,6 @@ impl v1alpha1::KafkaCluster {
             KafkaRole::Broker => self.spec.brokers.as_ref().map(|b| &b.role_config),
             KafkaRole::Controller => self.spec.controllers.as_ref().map(|b| &b.role_config),
         }
-    }
-
-    /// List all pods expected to form the cluster
-    ///
-    /// We try to predict the pods here rather than looking at the current cluster state in order to
-    /// avoid instance churn.
-    pub fn pods(&self) -> Result<impl Iterator<Item = KafkaPodRef> + '_, Error> {
-        let ns = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
-        Ok(self
-            .spec
-            .brokers
-            .iter()
-            .flat_map(|role| &role.role_groups)
-            // Order rolegroups consistently, to avoid spurious downstream rewrites
-            .collect::<BTreeMap<_, _>>()
-            .into_iter()
-            .flat_map(move |(rolegroup_name, rolegroup)| {
-                let rolegroup_ref = self.broker_rolegroup_ref(rolegroup_name);
-                let ns = ns.clone();
-                (0..rolegroup.replicas.unwrap_or(0)).map(move |i| KafkaPodRef {
-                    namespace: ns.clone(),
-                    role_group_service_name: rolegroup_ref.object_name(),
-                    pod_name: format!("{}-{}", rolegroup_ref.object_name(), i),
-                })
-            }))
-    }
-}
-
-/// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
-///
-/// Used for service discovery.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct KafkaPodRef {
-    pub namespace: String,
-    pub role_group_service_name: String,
-    pub pod_name: String,
-}
-
-impl KafkaPodRef {
-    pub fn fqdn(&self, cluster_info: &KubernetesClusterInfo) -> String {
-        format!(
-            "{pod_name}.{service_name}.{namespace}.svc.{cluster_domain}",
-            pod_name = self.pod_name,
-            service_name = self.role_group_service_name,
-            namespace = self.namespace,
-            cluster_domain = cluster_info.cluster_domain
-        )
     }
 }
 
