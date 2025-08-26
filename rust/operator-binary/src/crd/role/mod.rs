@@ -23,9 +23,9 @@ use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::role::{
-        broker::{BrokerConfig, BrokerConfigFragment},
+        broker::{BROKER_PROPERTIES_FILE, BrokerConfig, BrokerConfigFragment},
         commons::{CommonConfig, Storage},
-        controller::ControllerConfig,
+        controller::{CONTROLLER_PROPERTIES_FILE, ControllerConfig},
     },
     v1alpha1,
 };
@@ -36,7 +36,10 @@ pub enum Error {
     FragmentValidationFailure { source: ValidationError },
 
     #[snafu(display("the Kafka role [{role}] is missing from spec"))]
-    MissingRole { role: String },
+    MissingRole {
+        source: crate::crd::Error,
+        role: String,
+    },
 
     #[snafu(display("missing role group {rolegroup:?} for role {role:?}"))]
     MissingRoleGroup { role: String, rolegroup: String },
@@ -109,13 +112,9 @@ impl KafkaRole {
                     BrokerConfig::default_config(&kafka.name_any(), &self.to_string());
 
                 // Retrieve role resource config
-                let role = kafka
-                    .spec
-                    .brokers
-                    .as_ref()
-                    .with_context(|| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?;
+                let role = kafka.broker_role().with_context(|_| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?;
 
                 let mut role_config = role.config.config.clone();
                 // Retrieve rolegroup specific resource config
@@ -148,13 +147,9 @@ impl KafkaRole {
                     ControllerConfig::default_config(&kafka.name_any(), &self.to_string());
 
                 // Retrieve role resource config
-                let role = kafka
-                    .spec
-                    .controllers
-                    .as_ref()
-                    .with_context(|| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?;
+                let role = kafka.controller_role().with_context(|_| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?;
 
                 let mut role_config = role.config.config.clone();
                 // Retrieve rolegroup specific resource config
@@ -193,25 +188,17 @@ impl KafkaRole {
         match self {
             Self::Broker => construct_non_heap_jvm_args::<BrokerConfigFragment>(
                 merged_config,
-                &kafka
-                    .spec
-                    .brokers
-                    .clone()
-                    .with_context(|| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?,
+                kafka.broker_role().with_context(|_| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?,
                 rolegroup,
             )
             .context(ConstructJvmArgumentsSnafu),
             Self::Controller => construct_non_heap_jvm_args(
                 merged_config,
-                &kafka
-                    .spec
-                    .controllers
-                    .clone()
-                    .with_context(|| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?,
+                kafka.controller_role().with_context(|_| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?,
                 rolegroup,
             )
             .context(ConstructJvmArgumentsSnafu),
@@ -227,25 +214,17 @@ impl KafkaRole {
         match self {
             Self::Broker => construct_heap_jvm_args::<BrokerConfigFragment>(
                 merged_config,
-                &kafka
-                    .spec
-                    .brokers
-                    .clone()
-                    .with_context(|| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?,
+                kafka.broker_role().with_context(|_| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?,
                 rolegroup,
             )
             .context(ConstructJvmArgumentsSnafu),
             Self::Controller => construct_heap_jvm_args(
                 merged_config,
-                &kafka
-                    .spec
-                    .controllers
-                    .clone()
-                    .with_context(|| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?,
+                kafka.controller_role().with_context(|_| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?,
                 rolegroup,
             )
             .context(ConstructJvmArgumentsSnafu),
@@ -258,20 +237,16 @@ impl KafkaRole {
     ) -> Result<PodTemplateSpec, Error> {
         let pod_overrides = match self {
             Self::Broker => kafka
-                .spec
-                .brokers
-                .as_ref()
-                .with_context(|| MissingRoleSnafu {
+                .broker_role()
+                .with_context(|_| MissingRoleSnafu {
                     role: self.to_string(),
                 })?
                 .config
                 .pod_overrides
                 .clone(),
             Self::Controller => kafka
-                .spec
-                .controllers
-                .as_ref()
-                .with_context(|| MissingRoleSnafu {
+                .controller_role()
+                .with_context(|_| MissingRoleSnafu {
                     role: self.to_string(),
                 })?
                 .config
@@ -289,10 +264,8 @@ impl KafkaRole {
     ) -> Result<PodTemplateSpec, Error> {
         let pod_overrides = match self {
             Self::Broker => kafka
-                .spec
-                .brokers
-                .as_ref()
-                .with_context(|| MissingRoleSnafu {
+                .broker_role()
+                .with_context(|_| MissingRoleSnafu {
                     role: self.to_string(),
                 })?
                 .role_groups
@@ -305,10 +278,8 @@ impl KafkaRole {
                 .pod_overrides
                 .clone(),
             Self::Controller => kafka
-                .spec
-                .controllers
-                .as_ref()
-                .with_context(|| MissingRoleSnafu {
+                .controller_role()
+                .with_context(|_| MissingRoleSnafu {
                     role: self.to_string(),
                 })?
                 .role_groups
@@ -333,10 +304,8 @@ impl KafkaRole {
         let replicas = match self {
             Self::Broker => {
                 kafka
-                    .spec
-                    .brokers
-                    .as_ref()
-                    .with_context(|| MissingRoleSnafu {
+                    .broker_role()
+                    .with_context(|_| MissingRoleSnafu {
                         role: self.to_string(),
                     })?
                     .role_groups
@@ -349,10 +318,8 @@ impl KafkaRole {
             }
             Self::Controller => {
                 kafka
-                    .spec
-                    .controllers
-                    .as_ref()
-                    .with_context(|| MissingRoleSnafu {
+                    .controller_role()
+                    .with_context(|_| MissingRoleSnafu {
                         role: self.to_string(),
                     })?
                     .role_groups
@@ -430,6 +397,13 @@ impl AnyConfig {
         match self {
             AnyConfig::Broker(broker_config) => Some(&broker_config.broker_listener_class),
             AnyConfig::Controller(_) => None,
+        }
+    }
+
+    pub fn config_file_name(&self) -> &str {
+        match self {
+            AnyConfig::Broker(_) => BROKER_PROPERTIES_FILE,
+            AnyConfig::Controller(_) => CONTROLLER_PROPERTIES_FILE,
         }
     }
 }

@@ -471,7 +471,7 @@ pub async fn reconcile_kafka(
         let kafka_role = KafkaRole::from_str(kafka_role_str).context(ParseRoleSnafu)?;
 
         for (rolegroup_name, rolegroup_config) in role_config.iter() {
-            let rolegroup_ref = kafka.broker_rolegroup_ref(rolegroup_name);
+            let rolegroup_ref = kafka.rolegroup_ref(&kafka_role, rolegroup_name);
 
             let merged_config = kafka_role
                 .merged_config(kafka, &rolegroup_ref.role_group)
@@ -479,7 +479,7 @@ pub async fn reconcile_kafka(
 
             let rg_service =
                 build_broker_rolegroup_service(kafka, &resolved_product_image, &rolegroup_ref)?;
-            let rg_configmap = build_broker_rolegroup_config_map(
+            let rg_configmap = build_rolegroup_config_map(
                 kafka,
                 &resolved_product_image,
                 &kafka_security,
@@ -620,28 +620,30 @@ pub fn build_broker_rolegroup_bootstrap_listener(
 }
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
-fn build_broker_rolegroup_config_map(
+fn build_rolegroup_config_map(
     kafka: &v1alpha1::KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
+    rolegroup_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     merged_config: &AnyConfig,
 ) -> Result<ConfigMap> {
-    let mut server_cfg = broker_config
-        .get(&PropertyNameKind::File(BROKER_PROPERTIES_FILE.to_string()))
+    let kafka_config_file_name = merged_config.config_file_name();
+
+    let mut kafka_config = rolegroup_config
+        .get(&PropertyNameKind::File(kafka_config_file_name.to_string()))
         .cloned()
         .unwrap_or_default();
 
-    server_cfg.extend(kafka_security.config_settings());
-    server_cfg.extend(graceful_shutdown_config_properties());
+    kafka_config.extend(kafka_security.config_settings());
+    kafka_config.extend(graceful_shutdown_config_properties());
 
-    let server_cfg = server_cfg
+    let server_cfg = kafka_config
         .into_iter()
         .map(|(k, v)| (k, Some(v)))
         .collect::<Vec<_>>();
 
-    let jvm_sec_props: BTreeMap<String, Option<String>> = broker_config
+    let jvm_sec_props: BTreeMap<String, Option<String>> = rolegroup_config
         .get(&PropertyNameKind::File(
             JVM_SECURITY_PROPERTIES_FILE.to_string(),
         ))
@@ -670,7 +672,7 @@ fn build_broker_rolegroup_config_map(
                 .build(),
         )
         .add_data(
-            BROKER_PROPERTIES_FILE,
+            kafka_config_file_name,
             to_java_properties_string(server_cfg.iter().map(|(k, v)| (k, v))).with_context(
                 |_| SerializeConfigSnafu {
                     rolegroup: rolegroup.clone(),

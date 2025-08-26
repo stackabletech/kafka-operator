@@ -8,7 +8,7 @@ pub mod tls;
 
 use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
-use snafu::Snafu;
+use snafu::{OptionExt, Snafu};
 use stackable_operator::{
     commons::{cluster_operation::ClusterOperation, product_image_selection::ProductImage},
     kube::{CustomResource, runtime::reflector::ObjectRef},
@@ -51,11 +51,8 @@ pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("object has no namespace associated"))]
-    NoNamespace,
-
-    #[snafu(display("the role {role} is not defined"))]
-    CannotRetrieveKafkaRole { role: String },
+    #[snafu(display("the Kafka role [{role}] is missing from spec"))]
+    MissingRole { role: String },
 
     #[snafu(display(
         "Kafka version 4 and higher requires a Kraft controller (configured via `spec.controller`)"
@@ -183,11 +180,15 @@ impl v1alpha1::KafkaCluster {
         format!("{}-bootstrap", rolegroup.object_name())
     }
 
-    /// Metadata about a broker rolegroup
-    pub fn broker_rolegroup_ref(&self, group_name: impl Into<String>) -> RoleGroupRef<Self> {
+    /// Metadata about a rolegroup
+    pub fn rolegroup_ref(
+        &self,
+        role: &KafkaRole,
+        group_name: impl Into<String>,
+    ) -> RoleGroupRef<Self> {
         RoleGroupRef {
             cluster: ObjectRef::from_obj(self),
-            role: KafkaRole::Broker.to_string(),
+            role: role.to_string(),
             role_group: group_name.into(),
         }
     }
@@ -197,6 +198,22 @@ impl v1alpha1::KafkaCluster {
             KafkaRole::Broker => self.spec.brokers.as_ref().map(|b| &b.role_config),
             KafkaRole::Controller => self.spec.controllers.as_ref().map(|b| &b.role_config),
         }
+    }
+
+    pub fn broker_role(
+        &self,
+    ) -> Result<&Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
+        self.spec.brokers.as_ref().context(MissingRoleSnafu {
+            role: KafkaRole::Broker.to_string(),
+        })
+    }
+
+    pub fn controller_role(
+        &self,
+    ) -> Result<&Role<ControllerConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
+        self.spec.controllers.as_ref().context(MissingRoleSnafu {
+            role: KafkaRole::Controller.to_string(),
+        })
     }
 }
 

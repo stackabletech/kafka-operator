@@ -196,7 +196,7 @@ mod tests {
             serde_yaml::from_str(kafka_cluster).expect("illegal test input");
 
         let kafka_role = KafkaRole::Broker;
-        let rolegroup_ref = kafka.broker_rolegroup_ref("default");
+        let rolegroup_ref = kafka.rolegroup_ref(&kafka_role, "default");
         let merged_config = kafka_role
             .merged_config(&kafka, &rolegroup_ref.role_group)
             .unwrap();
