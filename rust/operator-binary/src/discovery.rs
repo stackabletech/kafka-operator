@@ -5,7 +5,7 @@ use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
     commons::product_image_selection::ResolvedProductImage,
     crd::listener,
-    k8s_openapi::api::core::v1::{ConfigMap, Service},
+    k8s_openapi::api::core::v1::ConfigMap,
     kube::{Resource, ResourceExt, runtime::reflector::ObjectRef},
 };
 
@@ -26,20 +26,8 @@ pub enum Error {
     #[snafu(display("object has no name associated"))]
     NoName,
 
-    #[snafu(display("object has no namespace associated"))]
-    NoNamespace,
-
     #[snafu(display("could not find service port with name {}", port_name))]
     NoServicePort { port_name: String },
-
-    #[snafu(display("service port with name {} does not have a nodePort", port_name))]
-    NoNodePort { port_name: String },
-
-    #[snafu(display("could not find Endpoints for {}", svc))]
-    FindEndpoints {
-        source: stackable_operator::client::Error,
-        svc: ObjectRef<Service>,
-    },
 
     #[snafu(display("nodePort was out of range"))]
     InvalidNodePort { source: TryFromIntError },
