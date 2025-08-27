@@ -320,6 +320,11 @@ pub enum Error {
 
     #[snafu(display("failed to retrieve rolegroup replicas"))]
     RoleGroupReplicas { source: crd::role::Error },
+
+    #[snafu(display("failed to builld bootstrap listener pvc"))]
+    BuildBootstrapListenerPvc {
+        source: stackable_operator::builder::pod::volume::ListenerOperatorVolumeSourceBuilderError,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -375,6 +380,7 @@ impl ReconcilerError for Error {
             Error::ParseRole { .. } => None,
             Error::MergePodOverrides { .. } => None,
             Error::RoleGroupReplicas { .. } => None,
+            Error::BuildBootstrapListenerPvc { .. } => None,
         }
     }
 }
@@ -820,9 +826,7 @@ fn build_broker_rolegroup_statefulset(
             &unversioned_recommended_labels,
         )
         .build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME)
-        // FIXME (@Techassi): This should either be an expect (if it can never fail) or should be
-        // handled via a proper error handling
-        .unwrap(),
+        .context(BuildBootstrapListenerPvcSnafu)?,
     );
 
     if kafka_security.has_kerberos_enabled() {
