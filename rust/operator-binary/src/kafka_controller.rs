@@ -118,7 +118,10 @@ pub enum Error {
     MissingSecretLifetime,
 
     #[snafu(display("cluster object defines no '{role}' role"))]
-    MissingKafkaRole { role: KafkaRole },
+    MissingKafkaRole {
+        source: crate::crd::Error,
+        role: KafkaRole,
+    },
 
     #[snafu(display("failed to apply role Service"))]
     ApplyRoleService {
@@ -638,7 +641,7 @@ fn build_rolegroup_config_map(
     kafka_config.extend(kafka_security.config_settings());
     kafka_config.extend(graceful_shutdown_config_properties());
 
-    let server_cfg = kafka_config
+    let kafka_config = kafka_config
         .into_iter()
         .map(|(k, v)| (k, Some(v)))
         .collect::<Vec<_>>();
@@ -673,7 +676,7 @@ fn build_rolegroup_config_map(
         )
         .add_data(
             kafka_config_file_name,
-            to_java_properties_string(server_cfg.iter().map(|(k, v)| (k, v))).with_context(
+            to_java_properties_string(kafka_config.iter().map(|(k, v)| (k, v))).with_context(
                 |_| SerializeConfigSnafu {
                     rolegroup: rolegroup.clone(),
                 },
@@ -688,7 +691,7 @@ fn build_rolegroup_config_map(
             })?,
         );
 
-    tracing::debug!(?server_cfg, "Applied server config");
+    tracing::debug!(?kafka_config, "Applied kafka config");
     tracing::debug!(?jvm_sec_props, "Applied JVM config");
 
     extend_role_group_config_map(rolegroup, merged_config, &mut cm_builder);
@@ -1220,9 +1223,8 @@ fn validated_product_config(
                 PropertyNameKind::Env,
             ],
             kafka
-                .spec
-                .brokers
-                .clone()
+                .broker_role()
+                .cloned()
                 .context(MissingKafkaRoleSnafu {
                     role: KafkaRole::Broker,
                 })?
@@ -1240,9 +1242,8 @@ fn validated_product_config(
                     PropertyNameKind::Env,
                 ],
                 kafka
-                    .spec
-                    .controllers
-                    .clone()
+                    .controller_role()
+                    .cloned()
                     .context(MissingKafkaRoleSnafu {
                         role: KafkaRole::Controller,
                     })?
