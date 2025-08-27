@@ -149,19 +149,3 @@ properties:
           required: false
       asOfVersion: "0.0.0"
       description: "The number of seconds after which the OPA authorizer cache expires"
-
-  - property: &logDirs
-      propertyNames:
-        - name: "log.dirs"
-          kind:
-            type: "file"
-            file: "broker.properties"
-      datatype:
-        type: "string"
-      recommendedValues:
-        - value: "/stackable/data/topicdata"
-      roles:
-        - name: "broker"
-          required: true
-      asOfVersion: "0.0.0"
-      description: "A comma separated list of directories under which to store log files"

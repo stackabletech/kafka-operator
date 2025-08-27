@@ -15,7 +15,10 @@ use stackable_operator::{
 use strum::{Display, EnumIter};
 
 use crate::crd::{
-    role::commons::{CommonConfig, Storage, StorageFragment},
+    role::{
+        KafkaRole, LOG_DIRS, NODE_ID, PROCESS_ROLES,
+        commons::{CommonConfig, Storage, StorageFragment},
+    },
     v1alpha1,
 };
 
@@ -118,9 +121,40 @@ impl Configuration for ControllerConfigFragment {
         &self,
         _resource: &Self::Configurable,
         _role_name: &str,
-        _file: &str,
+        file: &str,
     ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
     {
-        Ok(BTreeMap::new())
+        let mut config = BTreeMap::new();
+
+        if file == CONTROLLER_PROPERTIES_FILE {
+            // TODO: generate?
+            config.insert(NODE_ID.to_string(), Some("2".to_string()));
+
+            config.insert(
+                PROCESS_ROLES.to_string(),
+                Some(KafkaRole::Controller.to_string()),
+            );
+
+            config.insert(
+                LOG_DIRS.to_string(),
+                Some("/stackable/data/kraft".to_string()),
+            );
+
+            // TEST:
+            config.insert(
+                "listeners".to_string(),
+                Some("listeners=INTERNAL://simple-kafka-controller-default-0.simple-kafka-controller-default.default.svc.cluster.local:9093".to_string()),
+            );
+            config.insert(
+                "controller.quorum.bootstrap.servers".to_string(),
+                Some("simple-kafka-controller-default-0.simple-kafka-controller-default.default.svc.cluster.local:9093".to_string()),
+            );
+            config.insert(
+                "listener.security.protocol.map".to_string(),
+                Some("INTERNAL:PLAINTEXT".to_string()),
+            );
+        }
+
+        Ok(config)
     }
 }

@@ -29,6 +29,15 @@ use crate::{
     },
     v1alpha1,
 };
+// See: https://kafka.apache.org/documentation/#brokerconfigs
+
+// The node ID associated with the roles this process is playing when process.roles is non-empty.
+// This is required configuration when running in KRaft mode.
+pub const NODE_ID: &str = "node.id";
+// The roles that this process plays: 'broker', 'controller', or 'broker,controller' if it is both.
+pub const PROCESS_ROLES: &str = "process.roles";
+// A comma-separated list of the directories where the log data is stored. If not set, the value in log.dir is used.
+pub const LOG_DIRS: &str = "log.dirs";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -231,7 +240,13 @@ impl KafkaRole {
         }
     }
 
-    pub fn role_pod_overrides(
+    pub fn role_pod_overrides(JvmArgumentsSnafu),
+        }
+    }
+
+    pub fn construct_heap_jvm_args(
+        &self,
+        merged_config: &AnyCon
         &self,
         kafka: &v1alpha1::KafkaCluster,
     ) -> Result<PodTemplateSpec, Error> {

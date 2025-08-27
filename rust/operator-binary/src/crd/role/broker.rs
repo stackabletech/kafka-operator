@@ -15,7 +15,10 @@ use stackable_operator::{
 use strum::{Display, EnumIter};
 
 use crate::crd::{
-    role::commons::{CommonConfig, Storage, StorageFragment},
+    role::{
+        KafkaRole, LOG_DIRS, NODE_ID, PROCESS_ROLES,
+        commons::{CommonConfig, Storage, StorageFragment},
+    },
     v1alpha1,
 };
 
@@ -133,6 +136,19 @@ impl Configuration for BrokerConfigFragment {
         let mut config = BTreeMap::new();
 
         if file == BROKER_PROPERTIES_FILE {
+            // TODO: generate?
+            config.insert(NODE_ID.to_string(), Some("1".to_string()));
+
+            config.insert(
+                PROCESS_ROLES.to_string(),
+                Some(KafkaRole::Broker.to_string()),
+            );
+
+            config.insert(
+                LOG_DIRS.to_string(),
+                Some("/stackable/data/topicdata".to_string()),
+            );
+
             // OPA
             if resource.spec.cluster_config.authorization.opa.is_some() {
                 config.insert(

@@ -45,6 +45,7 @@ mod kafka_controller;
 mod kerberos;
 mod operations;
 mod product_logging;
+mod resource;
 mod utils;
 
 mod built_info {
