@@ -67,7 +67,10 @@ pub fn build_rolegroup_config_map(
         .cloned()
         .unwrap_or_default();
 
-    kafka_config.extend(kafka_security.config_settings());
+    if let AnyConfig::Broker(_) = merged_config {
+        kafka_config.extend(kafka_security.config_settings())
+    }
+
     kafka_config.extend(graceful_shutdown_config_properties());
 
     let kafka_config = kafka_config

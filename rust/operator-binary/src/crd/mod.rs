@@ -6,15 +6,21 @@ pub mod role;
 pub mod security;
 pub mod tls;
 
+use std::collections::BTreeMap;
+
 use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
 use stackable_operator::{
-    commons::{cluster_operation::ClusterOperation, product_image_selection::ProductImage},
+    commons::{
+        cluster_operation::ClusterOperation, networking::DomainName,
+        product_image_selection::ProductImage,
+    },
     kube::{CustomResource, runtime::reflector::ObjectRef},
     role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
+    utils::cluster_info::KubernetesClusterInfo,
     versioned::versioned,
 };
 
@@ -53,6 +59,9 @@ pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 pub enum Error {
     #[snafu(display("the Kafka role [{role}] is missing from spec"))]
     MissingRole { role: String },
+
+    #[snafu(display("object has no namespace associated"))]
+    NoNamespace,
 
     #[snafu(display(
         "Kafka version 4 and higher requires a Kraft controller (configured via `spec.controller`)"
@@ -174,6 +183,10 @@ impl v1alpha1::KafkaCluster {
         self.spec.controllers.is_some()
     }
 
+    pub fn uid(&self) -> Option<&str> {
+        self.metadata.uid.as_deref()
+    }
+
     /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
     /// to get a list of broker addresses and will use those to transmit data to the correct broker.
     pub fn bootstrap_service_name(&self, rolegroup: &RoleGroupRef<Self>) -> String {
@@ -214,6 +227,116 @@ impl v1alpha1::KafkaCluster {
         self.spec.controllers.as_ref().context(MissingRoleSnafu {
             role: KafkaRole::Controller.to_string(),
         })
+    }
+
+    /// List all pod descriptors of a provided role expected to form the cluster.
+    ///
+    /// We try to predict the pods here rather than looking at the current cluster state in order to
+    /// avoid instance churn.
+    pub fn pod_descriptors(
+        &self,
+        kafka_role: &KafkaRole,
+        cluster_info: &KubernetesClusterInfo,
+    ) -> Result<Vec<KafkaPodDescriptor>, Error> {
+        let ns = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
+        Ok(match kafka_role {
+            KafkaRole::Broker => self
+                .broker_role()
+                .iter()
+                .flat_map(|role| &role.role_groups)
+                // Order rolegroups consistently, to avoid spurious downstream rewrites
+                .collect::<BTreeMap<_, _>>()
+                .into_iter()
+                .flat_map(move |(rolegroup_name, rolegroup)| {
+                    let rolegroup_ref = self.rolegroup_ref(kafka_role, rolegroup_name);
+                    let ns = ns.clone();
+                    (0..rolegroup.replicas.unwrap_or(0)).map(move |i| KafkaPodDescriptor {
+                        namespace: ns.clone(),
+                        role_group_service_name: rolegroup_ref.object_name(),
+                        replica: i,
+                        cluster_domain: cluster_info.cluster_domain.clone(),
+                    })
+                })
+                .collect(),
+
+            KafkaRole::Controller => self
+                .controller_role()
+                .iter()
+                .flat_map(|role| &role.role_groups)
+                // Order rolegroups consistently, to avoid spurious downstream rewrites
+                .collect::<BTreeMap<_, _>>()
+                .into_iter()
+                .flat_map(move |(rolegroup_name, rolegroup)| {
+                    let rolegroup_ref = self.rolegroup_ref(kafka_role, rolegroup_name);
+                    let ns = ns.clone();
+                    (0..rolegroup.replicas.unwrap_or(0)).map(move |i| KafkaPodDescriptor {
+                        namespace: ns.clone(),
+                        role_group_service_name: rolegroup_ref.object_name(),
+                        replica: i,
+                        cluster_domain: cluster_info.cluster_domain.clone(),
+                    })
+                })
+                .collect(),
+        })
+    }
+}
+
+/// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
+///
+/// Used for service discovery.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct KafkaPodDescriptor {
+    namespace: String,
+    role_group_service_name: String,
+    replica: u16,
+    cluster_domain: DomainName,
+}
+
+impl KafkaPodDescriptor {
+    /// Return the fully qualified domain name
+    /// Format: <pod-name>.<service>.<namespace>.svc.<cluster-domain>
+    pub fn fqdn(&self) -> String {
+        format!(
+            "{pod_name}.{service_name}.{namespace}.svc.{cluster_domain}",
+            pod_name = self.pod_name(),
+            service_name = self.role_group_service_name,
+            namespace = self.namespace,
+            cluster_domain = self.cluster_domain
+        )
+    }
+
+    /// Return the fully qualified domain name for "replica"
+    /// Format: <service>-<replica>.<service>.<namespace>.svc.<cluster-domain>
+    pub fn fqdn_for_replica(&self, replica: u16) -> String {
+        format!(
+            "{service_name}-{replica}.{service_name}.{namespace}.svc.{cluster_domain}",
+            service_name = self.role_group_service_name,
+            namespace = self.namespace,
+            cluster_domain = self.cluster_domain
+        )
+    }
+
+    pub fn pod_name(&self) -> String {
+        format!("{}-{}", self.role_group_service_name, self.replica)
+    }
+
+    /// Build the Kraft voter String
+    /// See: https://kafka.apache.org/documentation/#kraft_storage_voters
+    /// Example: 0@controller-0:1234:0000000000-00000000000
+    ///   * 0 is the replica id
+    ///   * 0000000000-00000000000 is the replica directory id (even though the used Uuid states to be type 4 it does not work)
+    ///     See: https://github.com/apache/kafka/blob/c5169ca805bd03d870a5bcd49744dcc34891cf15/clients/src/main/java/org/apache/kafka/common/Uuid.java#L29
+    ///   * controller-0 is the replica's host,
+    ///   * 1234 is the replica's port.
+    // TODO(@maltesander): Even though the used Uuid states to be type 4 it does not work... 0000000000-00000000000 works...
+    pub fn as_voter(&self) -> String {
+        format!(
+            "{replica}@{fqdn}:{port}:0000000000-{replica:0>11}",
+            replica = self.replica,
+            fqdn = self.fqdn(),
+            // TODO: make port configureable
+            port = 9093
+        )
     }
 }
 

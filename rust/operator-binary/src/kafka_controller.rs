@@ -351,18 +351,15 @@ pub async fn reconcile_kafka(
                 build_broker_rolegroup_service(kafka, &resolved_product_image, &rolegroup_ref)
                     .context(BuildServiceSnafu)?;
 
-            let rg_configmap = match kafka_role {
-                KafkaRole::Broker => build_rolegroup_config_map(
-                    kafka,
-                    &resolved_product_image,
-                    &kafka_security,
-                    &rolegroup_ref,
-                    rolegroup_config,
-                    &merged_config,
-                )
-                .context(BuildConfigMapSnafu)?,
-                KafkaRole::Controller => todo!(),
-            };
+            let rg_configmap = build_rolegroup_config_map(
+                kafka,
+                &resolved_product_image,
+                &kafka_security,
+                &rolegroup_ref,
+                rolegroup_config,
+                &merged_config,
+            )
+            .context(BuildConfigMapSnafu)?;
 
             let rg_statefulset = match kafka_role {
                 KafkaRole::Broker => build_broker_rolegroup_statefulset(
@@ -387,6 +384,7 @@ pub async fn reconcile_kafka(
                     &kafka_security,
                     &merged_config,
                     &rbac_sa,
+                    &client.kubernetes_cluster_info,
                 )
                 .context(BuildStatefulsetSnafu)?,
             };

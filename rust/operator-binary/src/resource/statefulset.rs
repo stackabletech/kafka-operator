@@ -42,13 +42,14 @@ use stackable_operator::{
 };
 
 use crate::{
+    config::command::controller_kafka_container_command,
     crd::{
         self, APP_NAME, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
         STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
         STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
         listener::get_kafka_listener_config,
-        role::{AnyConfig, KafkaRole, broker::BrokerContainer},
+        role::{AnyConfig, KafkaRole, broker::BrokerContainer, controller::ControllerContainer},
         security::KafkaTlsSecurity,
         v1alpha1,
     },
@@ -82,10 +83,13 @@ pub enum Error {
         source: stackable_operator::builder::pod::Error,
     },
 
-    #[snafu(display("failed to builld bootstrap listener pvc"))]
+    #[snafu(display("failed to build bootstrap listener pvc"))]
     BuildBootstrapListenerPvc {
         source: stackable_operator::builder::pod::volume::ListenerOperatorVolumeSourceBuilderError,
     },
+
+    #[snafu(display("failed to build pod descriptors"))]
+    BuildPodDescriptors { source: crate::crd::Error },
 
     #[snafu(display("failed to configure logging"))]
     ConfigureLogging {
@@ -134,6 +138,9 @@ pub enum Error {
 
     #[snafu(display("failed to retrieve rolegroup replicas"))]
     RoleGroupReplicas { source: crd::role::Error },
+
+    #[snafu(display("cluster does not define UID"))]
+    ClusterUidMissing,
 
     #[snafu(display("vector agent is enabled but vector aggregator ConfigMap is missing"))]
     VectorAggregatorConfigMapMissing,
@@ -273,6 +280,8 @@ pub fn build_broker_rolegroup_statefulset(
     )
     .context(InvalidKafkaListenersSnafu)?;
 
+    let cluster_id = kafka.uid().context(ClusterUidMissingSnafu)?;
+
     cb_kafka
         .image_from_product_image(resolved_product_image)
         .command(vec![
@@ -288,6 +297,7 @@ pub fn build_broker_rolegroup_statefulset(
                     &kafka_listeners,
                     opa_connect_string,
                     kafka_security.has_kerberos_enabled(),
+                    cluster_id,
                 )
                 .join("\n"),
         ])
@@ -538,6 +548,7 @@ pub fn build_controller_rolegroup_statefulset(
     kafka_security: &KafkaTlsSecurity,
     merged_config: &AnyConfig,
     service_account: &ServiceAccount,
+    cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet, Error> {
     let recommended_object_labels = build_recommended_labels(
         kafka,
@@ -547,7 +558,7 @@ pub fn build_controller_rolegroup_statefulset(
         &rolegroup_ref.role_group,
     );
 
-    let kafka_container_name = BrokerContainer::Kafka.to_string();
+    let kafka_container_name = ControllerContainer::Kafka.to_string();
     let mut cb_kafka =
         ContainerBuilder::new(&kafka_container_name).context(InvalidContainerNameSnafu {
             name: kafka_container_name.clone(),
@@ -567,6 +578,18 @@ pub fn build_controller_rolegroup_statefulset(
         .collect::<Vec<_>>();
 
     env.push(EnvVar {
+        name: "NAMESPACE".to_string(),
+        value_from: Some(EnvVarSource {
+            field_ref: Some(ObjectFieldSelector {
+                api_version: Some("v1".to_string()),
+                field_path: "metadata.namespace".to_string(),
+            }),
+            ..EnvVarSource::default()
+        }),
+        ..EnvVar::default()
+    });
+
+    env.push(EnvVar {
         name: "POD_NAME".to_string(),
         value_from: Some(EnvVarSource {
             field_ref: Some(ObjectFieldSelector {
@@ -575,6 +598,18 @@ pub fn build_controller_rolegroup_statefulset(
             }),
             ..EnvVarSource::default()
         }),
+        ..EnvVar::default()
+    });
+
+    env.push(EnvVar {
+        name: "ROLEGROUP_REF".to_string(),
+        value: Some(rolegroup_ref.object_name()),
+        ..EnvVar::default()
+    });
+
+    env.push(EnvVar {
+        name: "CLUSTER_DOMAIN".to_string(),
+        value: Some(cluster_info.cluster_domain.to_string()),
         ..EnvVar::default()
     });
 
@@ -587,9 +622,14 @@ pub fn build_controller_rolegroup_statefulset(
             "pipefail".to_string(),
             "-c".to_string(),
         ])
-        .args(vec![
-            "bin/kafka-server-start.sh /stackable/config/controller.properties".to_string(),
-        ])
+        .args(vec![controller_kafka_container_command(
+            kafka.uid().context(ClusterUidMissingSnafu)?,
+            kafka
+                .pod_descriptors(kafka_role, cluster_info)
+                .context(BuildPodDescriptorsSnafu)?,
+            // TODO: fix overrides
+            BTreeMap::new(),
+        )])
         .add_env_var(
             "EXTRA_ARGS",
             kafka_role

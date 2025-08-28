@@ -29,15 +29,30 @@ use crate::{
     },
     v1alpha1,
 };
-// See: https://kafka.apache.org/documentation/#brokerconfigs
 
-// The node ID associated with the roles this process is playing when process.roles is non-empty.
-// This is required configuration when running in KRaft mode.
-pub const NODE_ID: &str = "node.id";
-// The roles that this process plays: 'broker', 'controller', or 'broker,controller' if it is both.
-pub const PROCESS_ROLES: &str = "process.roles";
-// A comma-separated list of the directories where the log data is stored. If not set, the value in log.dir is used.
-pub const LOG_DIRS: &str = "log.dirs";
+// See: https://kafka.apache.org/documentation/#brokerconfigs
+/// The node ID associated with the roles this process is playing when process.roles is non-empty.
+/// This is required configuration when running in KRaft mode.
+pub const KAFKA_NODE_ID: &str = "node.id";
+
+/// The roles that this process plays: 'broker', 'controller', or 'broker,controller' if it is both.
+pub const KAFKA_PROCESS_ROLES: &str = "process.roles";
+
+/// A comma-separated list of the directories where the log data is stored. If not set, the value in log.dir is used.
+pub const KAFKA_LOG_DIRS: &str = "log.dirs";
+
+/// Listener List - Comma-separated list of URIs we will listen on and the listener names.
+/// If the listener name is not a security protocol, listener.security.protocol.map must also be set.
+pub const KAFKA_LISTENERS: &str = "listeners";
+
+/// Map between listener names and security protocols. This must be defined for the same security protocol to be usable in more than one port or IP.
+/// For example, internal and external traffic can be separated even if SSL is required for both.
+/// Concretely, the user could define listeners with names INTERNAL and EXTERNAL and this property as: INTERNAL:SSL,EXTERNAL:SSL
+pub const KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: &str = "listener.security.protocol.map";
+
+/// List of endpoints to use for bootstrapping the cluster metadata. The endpoints are specified in comma-separated list of {host}:{port} entries.
+/// For example: localhost:9092,localhost:9093,localhost:9094.
+pub const KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS: &str = "controller.quorum.bootstrap.servers";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -240,13 +255,7 @@ impl KafkaRole {
         }
     }
 
-    pub fn role_pod_overrides(JvmArgumentsSnafu),
-        }
-    }
-
-    pub fn construct_heap_jvm_args(
-        &self,
-        merged_config: &AnyCon
+    pub fn role_pod_overrides(
         &self,
         kafka: &v1alpha1::KafkaCluster,
     ) -> Result<PodTemplateSpec, Error> {

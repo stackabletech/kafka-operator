@@ -16,7 +16,7 @@ use strum::{Display, EnumIter};
 
 use crate::crd::{
     role::{
-        KafkaRole, LOG_DIRS, NODE_ID, PROCESS_ROLES,
+        KAFKA_LOG_DIRS, KAFKA_PROCESS_ROLES, KafkaRole,
         commons::{CommonConfig, Storage, StorageFragment},
     },
     v1alpha1,
@@ -127,31 +127,19 @@ impl Configuration for ControllerConfigFragment {
         let mut config = BTreeMap::new();
 
         if file == CONTROLLER_PROPERTIES_FILE {
-            // TODO: generate?
-            config.insert(NODE_ID.to_string(), Some("2".to_string()));
-
             config.insert(
-                PROCESS_ROLES.to_string(),
+                KAFKA_PROCESS_ROLES.to_string(),
                 Some(KafkaRole::Controller.to_string()),
             );
 
             config.insert(
-                LOG_DIRS.to_string(),
+                KAFKA_LOG_DIRS.to_string(),
                 Some("/stackable/data/kraft".to_string()),
             );
 
-            // TEST:
             config.insert(
-                "listeners".to_string(),
-                Some("listeners=INTERNAL://simple-kafka-controller-default-0.simple-kafka-controller-default.default.svc.cluster.local:9093".to_string()),
-            );
-            config.insert(
-                "controller.quorum.bootstrap.servers".to_string(),
-                Some("simple-kafka-controller-default-0.simple-kafka-controller-default.default.svc.cluster.local:9093".to_string()),
-            );
-            config.insert(
-                "listener.security.protocol.map".to_string(),
-                Some("INTERNAL:PLAINTEXT".to_string()),
+                "controller.listener.names".to_string(),
+                Some("CONTROLLER".to_string()),
             );
         }
 
