@@ -291,19 +291,16 @@ pub fn build_broker_rolegroup_statefulset(
             "pipefail".to_string(),
             "-c".to_string(),
         ])
-        .args(vec![
-            broker_kafka_container_commands(
-                cluster_id,
-                // we need controller pods
-                kafka
-                    .pod_descriptors(&KafkaRole::Controller, cluster_info)
-                    .context(BuildPodDescriptorsSnafu)?,
-                &kafka_listeners,
-                opa_connect_string,
-                kafka_security.has_kerberos_enabled(),
-            )
-            .join("\n"),
-        ])
+        .args(vec![broker_kafka_container_commands(
+            cluster_id,
+            // we need controller pods
+            kafka
+                .pod_descriptors(&KafkaRole::Controller, cluster_info)
+                .context(BuildPodDescriptorsSnafu)?,
+            &kafka_listeners,
+            opa_connect_string,
+            kafka_security.has_kerberos_enabled(),
+        )])
         .add_env_var(
             "EXTRA_ARGS",
             kafka_role

@@ -109,14 +109,6 @@ pub fn get_kafka_listener_config(
     let mut listener_security_protocol_map: BTreeMap<KafkaListenerName, KafkaListenerProtocol> =
         BTreeMap::new();
 
-    // TODO: REMOVE - Testing
-    listener_security_protocol_map.insert(
-        KafkaListenerName::Controller,
-        KafkaListenerProtocol::Plaintext,
-    );
-    // TODO: REMOVE - Testing
-    listener_security_protocol_map.insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
-
     // CLIENT
     if kafka_security.tls_client_authentication_class().is_some() {
         // 1) If client authentication required, we expose only CLIENT_AUTH connection with SSL
@@ -239,6 +231,14 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Bootstrap, KafkaListenerProtocol::SaslSsl);
+    }
+
+    // CONTROLLER
+    if kafka.is_controller_configured() {
+        listener_security_protocol_map.insert(
+            KafkaListenerName::Controller,
+            KafkaListenerProtocol::Plaintext,
+        );
     }
 
     Ok(KafkaListenerConfig {

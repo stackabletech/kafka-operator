@@ -27,30 +27,30 @@ pub fn broker_kafka_container_commands(
     kafka_listeners: &KafkaListenerConfig,
     opa_connect_string: Option<&str>,
     kerberos_enabled: bool,
-) -> Vec<String> {
-    // TODO: fix the "10$REPLICA_ID" fix to not clash with controller ids
-    vec![formatdoc! {"
-            {COMMON_BASH_TRAP_FUNCTIONS}
-            {remove_vector_shutdown_file_command}
-            prepare_signal_handlers
-            containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
-            {set_realm_env}
+) -> String {
+    // TODO: copy to tmp? mount readwrite folder?
+    formatdoc! {"
+        {COMMON_BASH_TRAP_FUNCTIONS}
+        {remove_vector_shutdown_file_command}
+        prepare_signal_handlers
+        containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
+        {set_realm_env}
 
-            export REPLICA_ID=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
-            cp {config_dir}/{properties_file} /tmp/{properties_file}
+        export REPLICA_ID=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
+        cp {config_dir}/{properties_file} /tmp/{properties_file}
 
-            echo \"{KAFKA_NODE_ID}=$((REPLICA_ID + {KAFKA_BROKER_ID_OFFSET}))\" >> /tmp/{properties_file}
-            echo \"{KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS}={bootstrap_servers}\" >> /tmp/{properties_file}
-            echo \"{KAFKA_LISTENERS}={listeners}\" >> /tmp/{properties_file}
-            echo \"{KAFKA_ADVERTISED_LISTENERS}={advertised_listeners}\" >> /tmp/{properties_file}
-            echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}
-            
-            bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --initial-controllers {initial_controllers} --ignore-formatted
-            bin/kafka-server-start.sh /tmp/{properties_file} {opa_config}{jaas_config} &
+        echo \"{KAFKA_NODE_ID}=$((REPLICA_ID + {KAFKA_BROKER_ID_OFFSET}))\" >> /tmp/{properties_file}
+        echo \"{KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS}={bootstrap_servers}\" >> /tmp/{properties_file}
+        echo \"{KAFKA_LISTENERS}={listeners}\" >> /tmp/{properties_file}
+        echo \"{KAFKA_ADVERTISED_LISTENERS}={advertised_listeners}\" >> /tmp/{properties_file}
+        echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}
+        
+        bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --initial-controllers {initial_controllers} --ignore-formatted
+        bin/kafka-server-start.sh /tmp/{properties_file} {opa_config}{jaas_config} &
 
-            wait_for_termination $!
-            {create_vector_shutdown_file_command}
-            ",
+        wait_for_termination $!
+        {create_vector_shutdown_file_command}
+        ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         set_realm_env = match kerberos_enabled {
@@ -77,7 +77,7 @@ pub fn broker_kafka_container_commands(
                 format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{broker_address}@$KERBEROS_REALM\\\";\" --override \"listener.name.bootstrap.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{bootstrap_address}@$KERBEROS_REALM\\\";\"").to_string()},
             false => "".to_string(),
         },
-    }]
+    }
 }
 
 pub fn controller_kafka_container_command(
@@ -87,25 +87,25 @@ pub fn controller_kafka_container_command(
 ) -> String {
     // TODO: copy to tmp? mount readwrite folder?
     formatdoc! {"
-    {COMMON_BASH_TRAP_FUNCTIONS}
-    {remove_vector_shutdown_file_command}
-    prepare_signal_handlers
-    containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
+        {COMMON_BASH_TRAP_FUNCTIONS}
+        {remove_vector_shutdown_file_command}
+        prepare_signal_handlers
+        containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
 
-    export REPLICA_ID=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
-    cp {config_dir}/{properties_file} /tmp/{properties_file}
+        export REPLICA_ID=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
+        cp {config_dir}/{properties_file} /tmp/{properties_file}
 
-    echo \"{KAFKA_NODE_ID}=$REPLICA_ID\" >> /tmp/{properties_file}
-    echo \"{KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS}={bootstrap_servers}\" >> /tmp/{properties_file}
-    echo \"{KAFKA_LISTENERS}={listeners}\" >> /tmp/{properties_file}
-    echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}
+        echo \"{KAFKA_NODE_ID}=$REPLICA_ID\" >> /tmp/{properties_file}
+        echo \"{KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS}={bootstrap_servers}\" >> /tmp/{properties_file}
+        echo \"{KAFKA_LISTENERS}={listeners}\" >> /tmp/{properties_file}
+        echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}
 
-    bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --initial-controllers {initial_controllers} --ignore-formatted
-    bin/kafka-server-start.sh /tmp/{properties_file} {overrides} &
+        bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --initial-controllers {initial_controllers} --ignore-formatted
+        bin/kafka-server-start.sh /tmp/{properties_file} {overrides} &
 
-    wait_for_termination $!
-    {create_vector_shutdown_file_command}
-    ", 
+        wait_for_termination $!
+        {create_vector_shutdown_file_command}
+        ", 
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = CONTROLLER_PROPERTIES_FILE,
@@ -122,6 +122,7 @@ fn to_listeners() -> String {
     // TODO:
     // - document that variables are set in stateful set
     // - customize listener (CONTROLLER)
+    // - customize port
     "CONTROLLER://$POD_NAME.$ROLEGROUP_REF.$NAMESPACE.svc.$CLUSTER_DOMAIN:9093".to_string()
 }
 
