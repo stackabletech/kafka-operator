@@ -30,6 +30,9 @@ use crate::{
     v1alpha1,
 };
 
+/// Broker and Kafka node.id properties should not clash; This is an offset for brokers.
+pub const KAFKA_BROKER_ID_OFFSET: u16 = 1000;
+
 // See: https://kafka.apache.org/documentation/#brokerconfigs
 /// The node ID associated with the roles this process is playing when process.roles is non-empty.
 /// This is required configuration when running in KRaft mode.
@@ -44,6 +47,15 @@ pub const KAFKA_LOG_DIRS: &str = "log.dirs";
 /// Listener List - Comma-separated list of URIs we will listen on and the listener names.
 /// If the listener name is not a security protocol, listener.security.protocol.map must also be set.
 pub const KAFKA_LISTENERS: &str = "listeners";
+
+/// Specifies the listener addresses that the Kafka brokers will advertise to clients and other brokers.
+/// The config is useful where the actual listener configuration listeners does not represent the addresses that clients should use to connect,
+/// such as in cloud environments. The addresses are published to and managed by the controller, the brokers pull these data from the controller as needed.
+/// In IaaS environments, this may need to be different from the interface to which the broker binds. If this is not set, the value for listeners will be used.
+/// Unlike listeners, it is not valid to advertise the 0.0.0.0 meta-address.
+/// Also unlike listeners, there can be duplicated ports in this property, so that one listener can be configured to advertise another listener's address.
+/// This can be useful in some cases where external load balancers are used.
+pub const KAFKA_ADVERTISED_LISTENERS: &str = "advertised.listeners";
 
 /// Map between listener names and security protocols. This must be defined for the same security protocol to be usable in more than one port or IP.
 /// For example, internal and external traffic can be separated even if SSL is required for both.

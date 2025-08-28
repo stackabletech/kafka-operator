@@ -6,7 +6,6 @@
 //! This is required due to overlaps between TLS encryption and e.g. mTLS authentication or Kerberos
 use std::collections::BTreeMap;
 
-use indoc::formatdoc;
 use snafu::{ResultExt, Snafu, ensure};
 use stackable_operator::{
     builder::{
@@ -20,21 +19,16 @@ use stackable_operator::{
     client::Client,
     crd::authentication::core,
     k8s_openapi::api::core::v1::Volume,
-    product_logging::framework::{
-        create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
-    },
     shared::time::Duration,
-    utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
 use super::listener::node_port_cmd;
 use crate::crd::{
-    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_CONFIG_DIR,
-    STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
-    STACKABLE_LOG_DIR,
+    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_KRB5_PATH,
+    STACKABLE_LISTENER_BROKER_DIR,
     authentication::{self, ResolvedAuthenticationClasses},
-    listener::{self, KafkaListenerConfig, node_address_cmd},
-    role::{KafkaRole, broker::BROKER_PROPERTIES_FILE},
+    listener::{self, node_address_cmd},
+    role::KafkaRole,
     tls, v1alpha1,
 };
 
@@ -349,50 +343,6 @@ impl KafkaTlsSecurity {
         }
 
         args
-    }
-
-    /// Returns the commands to start the main Kafka container
-    pub fn kafka_container_commands(
-        &self,
-        kafka_listeners: &KafkaListenerConfig,
-        opa_connect_string: Option<&str>,
-        kerberos_enabled: bool,
-    ) -> Vec<String> {
-        vec![formatdoc! {"
-            {COMMON_BASH_TRAP_FUNCTIONS}
-            {remove_vector_shutdown_file_command}
-            prepare_signal_handlers
-            containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
-            {set_realm_env}
-            bin/kafka-server-start.sh {STACKABLE_CONFIG_DIR}/{BROKER_PROPERTIES_FILE} --override \"zookeeper.connect=$ZOOKEEPER\" --override \"listeners={listeners}\" --override \"advertised.listeners={advertised_listeners}\" --override \"listener.security.protocol.map={listener_security_protocol_map}\"{opa_config}{jaas_config} &
-            wait_for_termination $!
-            {create_vector_shutdown_file_command}
-            ",
-        remove_vector_shutdown_file_command =
-            remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
-        create_vector_shutdown_file_command =
-            create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
-            set_realm_env = match kerberos_enabled {
-                true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {})", STACKABLE_KERBEROS_KRB5_PATH),
-                false => "".to_string(),
-            },
-            listeners = kafka_listeners.listeners(),
-            advertised_listeners = kafka_listeners.advertised_listeners(),
-            listener_security_protocol_map = kafka_listeners.listener_security_protocol_map(),
-            opa_config = match opa_connect_string {
-                None => "".to_string(),
-                Some(opa_connect_string) => format!(" --override \"opa.authorizer.url={opa_connect_string}\""),
-            },
-            jaas_config = match kerberos_enabled {
-                true => {
-                    let service_name = KafkaRole::Broker.kerberos_service_name();
-                    let broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR);
-                    let bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR);
-                    // TODO replace client and bootstrap below with constants
-                    format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{broker_address}@$KERBEROS_REALM\\\";\" --override \"listener.name.bootstrap.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{bootstrap_address}@$KERBEROS_REALM\\\";\"").to_string()},
-                false => "".to_string(),
-            },
-        }]
     }
 
     /// Adds required volumes and volume mounts to the pod and container builders

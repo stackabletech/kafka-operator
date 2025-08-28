@@ -15,8 +15,9 @@ use stackable_operator::{
 use strum::{Display, EnumIter};
 
 use crate::crd::{
+    listener::KafkaListenerName,
     role::{
-        KafkaRole, LOG_DIRS, NODE_ID, PROCESS_ROLES,
+        KAFKA_LOG_DIRS, KAFKA_PROCESS_ROLES, KafkaRole,
         commons::{CommonConfig, Storage, StorageFragment},
     },
     v1alpha1,
@@ -90,7 +91,7 @@ impl BrokerConfig {
                     max: Some(Quantity("1000m".to_owned())),
                 },
                 memory: MemoryLimitsFragment {
-                    limit: Some(Quantity("1Gi".to_owned())),
+                    limit: Some(Quantity("2Gi".to_owned())),
                     runtime_limits: NoRuntimeLimitsFragment {},
                 },
                 storage: StorageFragment {
@@ -136,17 +137,19 @@ impl Configuration for BrokerConfigFragment {
         let mut config = BTreeMap::new();
 
         if file == BROKER_PROPERTIES_FILE {
-            // TODO: generate?
-            config.insert(NODE_ID.to_string(), Some("1".to_string()));
-
             config.insert(
-                PROCESS_ROLES.to_string(),
+                KAFKA_PROCESS_ROLES.to_string(),
                 Some(KafkaRole::Broker.to_string()),
             );
 
             config.insert(
-                LOG_DIRS.to_string(),
+                KAFKA_LOG_DIRS.to_string(),
                 Some("/stackable/data/topicdata".to_string()),
+            );
+
+            config.insert(
+                "controller.listener.names".to_string(),
+                Some(KafkaListenerName::Controller.to_string()),
             );
 
             // OPA

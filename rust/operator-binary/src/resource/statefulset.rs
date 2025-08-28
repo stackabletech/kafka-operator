@@ -42,7 +42,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    config::command::controller_kafka_container_command,
+    config::command::{broker_kafka_container_commands, controller_kafka_container_command},
     crd::{
         self, APP_NAME, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
@@ -292,14 +292,17 @@ pub fn build_broker_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![
-            kafka_security
-                .kafka_container_commands(
-                    &kafka_listeners,
-                    opa_connect_string,
-                    kafka_security.has_kerberos_enabled(),
-                    cluster_id,
-                )
-                .join("\n"),
+            broker_kafka_container_commands(
+                cluster_id,
+                // we need controller pods
+                kafka
+                    .pod_descriptors(&KafkaRole::Controller, cluster_info)
+                    .context(BuildPodDescriptorsSnafu)?,
+                &kafka_listeners,
+                opa_connect_string,
+                kafka_security.has_kerberos_enabled(),
+            )
+            .join("\n"),
         ])
         .add_env_var(
             "EXTRA_ARGS",

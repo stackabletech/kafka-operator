@@ -42,6 +42,8 @@ pub enum KafkaListenerName {
     Internal,
     #[strum(serialize = "BOOTSTRAP")]
     Bootstrap,
+    #[strum(serialize = "CONTROLLER")]
+    Controller,
 }
 
 #[derive(Debug)]
@@ -104,7 +106,16 @@ pub fn get_kafka_listener_config(
     let pod_fqdn = pod_fqdn(kafka, object_name, cluster_info)?;
     let mut listeners = vec![];
     let mut advertised_listeners = vec![];
-    let mut listener_security_protocol_map = BTreeMap::new();
+    let mut listener_security_protocol_map: BTreeMap<KafkaListenerName, KafkaListenerProtocol> =
+        BTreeMap::new();
+
+    // TODO: REMOVE - Testing
+    listener_security_protocol_map.insert(
+        KafkaListenerName::Controller,
+        KafkaListenerProtocol::Plaintext,
+    );
+    // TODO: REMOVE - Testing
+    listener_security_protocol_map.insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
 
     // CLIENT
     if kafka_security.tls_client_authentication_class().is_some() {
