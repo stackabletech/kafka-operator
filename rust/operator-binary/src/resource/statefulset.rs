@@ -23,10 +23,11 @@ use stackable_operator::{
             apps::v1::{StatefulSet, StatefulSetSpec},
             core::v1::{
                 ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource,
-                ExecAction, ObjectFieldSelector, PodSpec, Probe, ServiceAccount, Volume,
+                ExecAction, ObjectFieldSelector, PodSpec, Probe, ServiceAccount, TCPSocketAction,
+                Volume,
             },
         },
-        apimachinery::pkg::apis::meta::v1::LabelSelector,
+        apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
     },
     kube::ResourceExt,
     kvp::Labels,
@@ -292,6 +293,7 @@ pub fn build_broker_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![broker_kafka_container_commands(
+            kafka,
             cluster_id,
             // we need controller pods
             kafka
@@ -661,7 +663,26 @@ pub fn build_controller_rolegroup_statefulset(
         .context(AddVolumeMountSnafu)?
         .add_volume_mount("log", STACKABLE_LOG_DIR)
         .context(AddVolumeMountSnafu)?
-        .resources(merged_config.resources().clone().into());
+        .resources(merged_config.resources().clone().into())
+        // TODO: improve probes
+        .liveness_probe(Probe {
+            tcp_socket: Some(TCPSocketAction {
+                port: IntOrString::Int(kafka_security.client_port().into()),
+                ..Default::default()
+            }),
+            timeout_seconds: Some(5),
+            period_seconds: Some(5),
+            ..Probe::default()
+        })
+        .readiness_probe(Probe {
+            tcp_socket: Some(TCPSocketAction {
+                port: IntOrString::Int(kafka_security.client_port().into()),
+                ..Default::default()
+            }),
+            timeout_seconds: Some(5),
+            period_seconds: Some(5),
+            ..Probe::default()
+        });
 
     if let ContainerLogConfig {
         choice:

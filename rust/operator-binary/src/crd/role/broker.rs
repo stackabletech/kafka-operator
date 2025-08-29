@@ -138,20 +138,22 @@ impl Configuration for BrokerConfigFragment {
 
         if file == BROKER_PROPERTIES_FILE {
             config.insert(
-                KAFKA_PROCESS_ROLES.to_string(),
-                Some(KafkaRole::Broker.to_string()),
-            );
-
-            config.insert(
                 KAFKA_LOG_DIRS.to_string(),
                 Some("/stackable/data/topicdata".to_string()),
             );
 
-            config.insert(
-                "controller.listener.names".to_string(),
-                Some(KafkaListenerName::Controller.to_string()),
-            );
+            // KRAFT
+            if resource.is_controller_configured() {
+                config.insert(
+                    KAFKA_PROCESS_ROLES.to_string(),
+                    Some(KafkaRole::Broker.to_string()),
+                );
 
+                config.insert(
+                    "controller.listener.names".to_string(),
+                    Some(KafkaListenerName::Controller.to_string()),
+                );
+            }
             // OPA
             if resource.spec.cluster_config.authorization.opa.is_some() {
                 config.insert(

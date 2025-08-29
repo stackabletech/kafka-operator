@@ -235,6 +235,7 @@ pub fn get_kafka_listener_config(
 
     // CONTROLLER
     if kafka.is_controller_configured() {
+        // TODO: SSL?
         listener_security_protocol_map.insert(
             KafkaListenerName::Controller,
             KafkaListenerProtocol::Plaintext,
