@@ -1,19 +1,73 @@
 ---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperCluster
+metadata:
+  name: simple-zk
+spec:
+  image:
+    productVersion: 3.8.3
+  servers:
+    roleGroups:
+      default:
+        replicas: 3
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperZnode
+metadata:
+  name: simple-kafka-znode
+spec:
+  clusterRef:
+    name: simple-zk
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-internal-tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-kafka-internal-tls-ca
+          namespace: default
+        autoGenerate: true
+---
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: kafka-client-auth-tls
+spec:
+  provider:
+    tls:
+      clientCertSecretClass: kafka-client-auth-secret
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-client-auth-secret
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-tls-kafka-client-ca
+          namespace: default
+        autoGenerate: true
+---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.9.1
+    productVersion: 3.7.2
   clusterConfig:
+    authentication:
+      - authenticationClass: kafka-client-auth-tls
     tls:
-      internalSecretClass: tls
+      internalSecretClass: kafka-internal-tls
       serverSecretClass: tls
-  controllers:
-    roleGroups:
-      default:
-        replicas: 3
+    zookeeperConfigMapName: simple-kafka-znode
   brokers:
     roleGroups:
       default:

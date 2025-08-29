@@ -4,27 +4,18 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug stackable-kafka-operator",
+            "name": "Debug operator binary",
             "cargo": {
                 "args": [
                     "build"
                 ],
                 "filter": {
-                    "name": "stackable-kafka-operator",
+                    "name": "stackable-{[ operator.name }]",
                     "kind": "bin"
                 }
             },
-            "program": "${workspaceFolder}/target/debug/stackable-kafka-operator",
             "args": [
-                "run",
-                "--kafka-broker-clusterrole",
-                "kafka-operator",
-                "--operator-namespace",
-                "default",
-                "--operator-service-name",
-                "kafka-operator",
-                "--kubernetes-node-name",
-                "kind-control-plane"
+                "run"
             ],
             "cwd": "${workspaceFolder}"
         }
