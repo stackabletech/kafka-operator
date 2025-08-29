@@ -10,7 +10,11 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
-use crate::crd::{STACKABLE_LOG_DIR, role::AnyConfig, v1alpha1};
+use crate::crd::{
+    STACKABLE_LOG_DIR,
+    role::{AnyConfig, broker::BrokerContainer, controller::ControllerContainer},
+    v1alpha1,
+};
 
 pub const LOG4J_CONFIG_FILE: &str = "log4j.properties";
 pub const KAFKA_LOG_FILE: &str = "kafka.log4j.xml";
@@ -59,8 +63,10 @@ pub fn extend_role_group_config_map(
         cm_builder,
         Some(merged_config.kafka_logging()),
         LOG4J_CONFIG_FILE,
-        // TODO: configure?
-        "kafka",
+        match merged_config {
+            AnyConfig::Broker(_) => BrokerContainer::Kafka.to_string(),
+            AnyConfig::Controller(_) => ControllerContainer::Kafka.to_string(),
+        },
         KAFKA_LOG_FILE,
         MAX_KAFKA_LOG_FILES_SIZE,
     );

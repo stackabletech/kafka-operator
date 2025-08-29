@@ -389,7 +389,6 @@ pub async fn reconcile_kafka(
                 .context(BuildStatefulsetSnafu)?,
             };
 
-            // TODO: broker / controller?
             if let AnyConfig::Broker(broker_config) = merged_config {
                 let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
                     kafka,

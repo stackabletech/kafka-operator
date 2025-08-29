@@ -259,6 +259,7 @@ impl v1alpha1::KafkaCluster {
                 })
                 .collect(),
 
+            // TODO: this does not work for multiple rolegroups (the index / replica)
             KafkaRole::Controller => self
                 .controller_role()
                 .iter()
@@ -269,7 +270,7 @@ impl v1alpha1::KafkaCluster {
                 .flat_map(move |(rolegroup_name, rolegroup)| {
                     let rolegroup_ref = self.rolegroup_ref(kafka_role, rolegroup_name);
                     let ns = ns.clone();
-                    (0..rolegroup.replicas.unwrap_or(0)).map(move |i| KafkaPodDescriptor {
+                    (0..rolegroup.replicas.unwrap_or(0)).map(move |i: u16| KafkaPodDescriptor {
                         namespace: ns.clone(),
                         role_group_service_name: rolegroup_ref.object_name(),
                         replica: i,
@@ -329,13 +330,11 @@ impl KafkaPodDescriptor {
     ///   * controller-0 is the replica's host,
     ///   * 1234 is the replica's port.
     // TODO(@maltesander): Even though the used Uuid states to be type 4 it does not work... 0000000000-00000000000 works...
-    pub fn as_voter(&self) -> String {
+    pub fn as_voter(&self, port: u16) -> String {
         format!(
             "{replica}@{fqdn}:{port}:0000000000-{replica:0>11}",
             replica = self.replica,
             fqdn = self.fqdn(),
-            // TODO: make port configureable
-            port = 9093
         )
     }
 }

@@ -301,7 +301,7 @@ pub fn build_broker_rolegroup_statefulset(
                 .context(BuildPodDescriptorsSnafu)?,
             &kafka_listeners,
             opa_connect_string,
-            kafka_security.has_kerberos_enabled(),
+            kafka_security,
         )])
         .add_env_var(
             "EXTRA_ARGS",
@@ -629,8 +629,7 @@ pub fn build_controller_rolegroup_statefulset(
             kafka
                 .pod_descriptors(kafka_role, cluster_info)
                 .context(BuildPodDescriptorsSnafu)?,
-            // TODO: fix overrides
-            BTreeMap::new(),
+            kafka_security,
         )])
         .add_env_var(
             "EXTRA_ARGS",

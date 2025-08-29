@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use indoc::formatdoc;
 use stackable_operator::{
     product_logging::framework::{
@@ -18,6 +16,7 @@ use crate::crd::{
         KAFKA_LISTENERS, KAFKA_NODE_ID, KafkaRole, broker::BROKER_PROPERTIES_FILE,
         controller::CONTROLLER_PROPERTIES_FILE,
     },
+    security::KafkaTlsSecurity,
     v1alpha1,
 };
 
@@ -28,7 +27,7 @@ pub fn broker_kafka_container_commands(
     controller_descriptors: Vec<KafkaPodDescriptor>,
     kafka_listeners: &KafkaListenerConfig,
     opa_connect_string: Option<&str>,
-    kerberos_enabled: bool,
+    kafka_security: &KafkaTlsSecurity,
 ) -> String {
     formatdoc! {"
         {COMMON_BASH_TRAP_FUNCTIONS}
@@ -44,11 +43,11 @@ pub fn broker_kafka_container_commands(
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
-        set_realm_env = match kerberos_enabled {
+        set_realm_env = match kafka_security.has_kerberos_enabled() {
             true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {})", STACKABLE_KERBEROS_KRB5_PATH),
             false => "".to_string(),
         },
-        broker_start_command = broker_start_command(kafka, cluster_id, controller_descriptors, kafka_listeners, opa_connect_string, kerberos_enabled),
+        broker_start_command = broker_start_command(kafka, cluster_id, controller_descriptors, kafka_listeners, opa_connect_string, kafka_security),
     }
 }
 
@@ -58,7 +57,7 @@ fn broker_start_command(
     controller_descriptors: Vec<KafkaPodDescriptor>,
     kafka_listeners: &KafkaListenerConfig,
     opa_connect_string: Option<&str>,
-    kerberos_enabled: bool,
+    kafka_security: &KafkaTlsSecurity,
 ) -> String {
     let opa_config = match opa_connect_string {
         None => "".to_string(),
@@ -67,7 +66,7 @@ fn broker_start_command(
         }
     };
 
-    let jaas_config = match kerberos_enabled {
+    let jaas_config = match kafka_security.has_kerberos_enabled() {
         true => {
             let service_name = KafkaRole::Broker.kerberos_service_name();
             let broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR);
@@ -77,6 +76,8 @@ fn broker_start_command(
         }
         false => "".to_string(),
     };
+
+    let client_port = kafka_security.client_port();
 
     // TODO: copy to tmp? mount readwrite folder?
     if kafka.is_controller_configured() {
@@ -95,8 +96,8 @@ fn broker_start_command(
         ",
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = BROKER_PROPERTIES_FILE,
-        bootstrap_servers = to_bootstrap_servers(&controller_descriptors),
-        initial_controllers = to_initial_controllers(&controller_descriptors),
+        bootstrap_servers = to_bootstrap_servers(&controller_descriptors, client_port),
+        initial_controllers = to_initial_controllers(&controller_descriptors, client_port),
         listeners = kafka_listeners.listeners(),
         advertised_listeners = kafka_listeners.advertised_listeners(),
         listener_security_protocol_map = kafka_listeners.listener_security_protocol_map(),
@@ -123,8 +124,9 @@ fn broker_start_command(
 pub fn controller_kafka_container_command(
     cluster_id: &str,
     controller_descriptors: Vec<KafkaPodDescriptor>,
-    server_start_overrides: BTreeMap<String, String>,
+    kafka_security: &KafkaTlsSecurity,
 ) -> String {
+    let client_port = kafka_security.client_port();
     // TODO: copy to tmp? mount readwrite folder?
     formatdoc! {"
         {COMMON_BASH_TRAP_FUNCTIONS}
@@ -141,7 +143,7 @@ pub fn controller_kafka_container_command(
         echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}
 
         bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --initial-controllers {initial_controllers} --ignore-formatted
-        bin/kafka-server-start.sh /tmp/{properties_file} {overrides} &
+        bin/kafka-server-start.sh /tmp/{properties_file} &
 
         wait_for_termination $!
         {create_vector_shutdown_file_command}
@@ -149,21 +151,19 @@ pub fn controller_kafka_container_command(
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = CONTROLLER_PROPERTIES_FILE,
-        bootstrap_servers = to_bootstrap_servers(&controller_descriptors),
-        listeners = to_listeners(),
+        bootstrap_servers = to_bootstrap_servers(&controller_descriptors, client_port),
+        listeners = to_listeners(client_port),
         listener_security_protocol_map = to_listener_security_protocol_map(),
-        initial_controllers = to_initial_controllers(&controller_descriptors),
-        overrides = to_kafka_overrides(server_start_overrides),
+        initial_controllers = to_initial_controllers(&controller_descriptors, client_port),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
     }
 }
 
-fn to_listeners() -> String {
+fn to_listeners(port: u16) -> String {
     // TODO:
     // - document that variables are set in stateful set
     // - customize listener (CONTROLLER)
-    // - customize port
-    "CONTROLLER://$POD_NAME.$ROLEGROUP_REF.$NAMESPACE.svc.$CLUSTER_DOMAIN:9093".to_string()
+    format!("CONTROLLER://$POD_NAME.$ROLEGROUP_REF.$NAMESPACE.svc.$CLUSTER_DOMAIN:{port}")
 }
 
 fn to_listener_security_protocol_map() -> String {
@@ -171,27 +171,26 @@ fn to_listener_security_protocol_map() -> String {
     "CONTROLLER:PLAINTEXT".to_string()
 }
 
-fn to_initial_controllers(controller_descriptors: &[KafkaPodDescriptor]) -> String {
+fn to_initial_controllers(controller_descriptors: &[KafkaPodDescriptor], port: u16) -> String {
     controller_descriptors
         .iter()
-        .map(|desc| desc.as_voter())
+        .map(|desc| desc.as_voter(port))
         .collect::<Vec<String>>()
         .join(",")
 }
 
-fn to_bootstrap_servers(controller_descriptors: &[KafkaPodDescriptor]) -> String {
+fn to_bootstrap_servers(controller_descriptors: &[KafkaPodDescriptor], port: u16) -> String {
     controller_descriptors
         .iter()
-        // TODO: make port configureable
-        .map(|desc| format!("{fqdn}:{port}", fqdn = desc.fqdn(), port = 9093))
+        .map(|desc| format!("{fqdn}:{port}", fqdn = desc.fqdn()))
         .collect::<Vec<String>>()
         .join(",")
 }
 
-fn to_kafka_overrides(overrides: BTreeMap<String, String>) -> String {
-    overrides
-        .iter()
-        .map(|(key, value)| format!("--override \"{key}={value}\""))
-        .collect::<Vec<String>>()
-        .join(" ")
-}
+// fn to_kafka_overrides(overrides: BTreeMap<String, String>) -> String {
+//     overrides
+//         .iter()
+//         .map(|(key, value)| format!("--override \"{key}={value}\""))
+//         .collect::<Vec<String>>()
+//         .join(" ")
+// }
