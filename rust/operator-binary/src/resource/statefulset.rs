@@ -203,7 +203,7 @@ pub fn build_broker_rolegroup_statefulset(
         .requested_secret_lifetime
         .context(MissingSecretLifetimeSnafu)?;
     kafka_security
-        .add_volume_and_volume_mounts(
+        .add_broker_volume_and_volume_mounts(
             &mut pod_builder,
             &mut cb_kcat_prober,
             &mut cb_kafka,
@@ -615,6 +615,14 @@ pub fn build_controller_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
+    let kafka_listeners = get_kafka_listener_config(
+        kafka,
+        kafka_security,
+        &rolegroup_ref.object_name(),
+        cluster_info,
+    )
+    .context(InvalidKafkaListenersSnafu)?;
+
     cb_kafka
         .image_from_product_image(resolved_product_image)
         .command(vec![
@@ -629,6 +637,7 @@ pub fn build_controller_rolegroup_statefulset(
             kafka
                 .pod_descriptors(kafka_role, cluster_info)
                 .context(BuildPodDescriptorsSnafu)?,
+            &kafka_listeners,
             kafka_security,
         )])
         .add_env_var(
@@ -711,6 +720,19 @@ pub fn build_controller_rolegroup_statefulset(
         .with_recommended_labels(recommended_object_labels)
         .context(MetadataBuildSnafu)?
         .build();
+
+    // Add TLS related volumes and volume mounts
+    let requested_secret_lifetime = merged_config
+        .deref()
+        .requested_secret_lifetime
+        .context(MissingSecretLifetimeSnafu)?;
+    kafka_security
+        .add_controller_volume_and_volume_mounts(
+            &mut pod_builder,
+            &mut cb_kafka,
+            &requested_secret_lifetime,
+        )
+        .context(AddVolumesAndVolumeMountsSnafu)?;
 
     pod_builder
         .metadata(metadata)

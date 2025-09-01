@@ -143,11 +143,6 @@ impl Configuration for ControllerConfigFragment {
                 "controller.listener.names".to_string(),
                 Some(KafkaListenerName::Controller.to_string()),
             );
-
-            config.insert(
-                "controller.listener.names".to_string(),
-                Some("CONTROLLER".to_string()),
-            );
         }
 
         Ok(config)
