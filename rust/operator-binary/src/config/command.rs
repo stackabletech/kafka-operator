@@ -12,9 +12,9 @@ use crate::crd::{
     listener::{KafkaListenerConfig, KafkaListenerName, node_address_cmd},
     role::{
         KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID_OFFSET,
-        KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP,
-        KAFKA_LISTENERS, KAFKA_NODE_ID, KafkaRole, broker::BROKER_PROPERTIES_FILE,
-        controller::CONTROLLER_PROPERTIES_FILE,
+        KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS, KAFKA_CONTROLLER_QUORUM_VOTERS,
+        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS, KAFKA_NODE_ID, KafkaRole,
+        broker::BROKER_PROPERTIES_FILE, controller::CONTROLLER_PROPERTIES_FILE,
     },
     security::KafkaTlsSecurity,
     v1alpha1,
@@ -28,6 +28,7 @@ pub fn broker_kafka_container_commands(
     kafka_listeners: &KafkaListenerConfig,
     opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
+    product_version: &str,
 ) -> String {
     formatdoc! {"
         {COMMON_BASH_TRAP_FUNCTIONS}
@@ -47,7 +48,7 @@ pub fn broker_kafka_container_commands(
             true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {})", STACKABLE_KERBEROS_KRB5_PATH),
             false => "".to_string(),
         },
-        broker_start_command = broker_start_command(kafka, cluster_id, controller_descriptors, kafka_listeners, opa_connect_string, kafka_security),
+        broker_start_command = broker_start_command(kafka, cluster_id, controller_descriptors, kafka_listeners, opa_connect_string, kafka_security, product_version),
     }
 }
 
@@ -58,6 +59,7 @@ fn broker_start_command(
     kafka_listeners: &KafkaListenerConfig,
     opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
+    product_version: &str,
 ) -> String {
     let opa_config = match opa_connect_string {
         None => "".to_string(),
@@ -90,17 +92,23 @@ fn broker_start_command(
             echo \"{KAFKA_LISTENERS}={listeners}\" >> /tmp/{properties_file}
             echo \"{KAFKA_ADVERTISED_LISTENERS}={advertised_listeners}\" >> /tmp/{properties_file}
             echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}
-            
-            bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --initial-controllers {initial_controllers} --ignore-formatted
+            {controller_quorum_voters}
+
+            bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --ignore-formatted {initial_controller_command}
             bin/kafka-server-start.sh /tmp/{properties_file} {opa_config}{jaas_config} &
         ",
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = BROKER_PROPERTIES_FILE,
         bootstrap_servers = to_bootstrap_servers(&controller_descriptors, client_port),
-        initial_controllers = to_initial_controllers(&controller_descriptors, client_port),
         listeners = kafka_listeners.listeners(),
         advertised_listeners = kafka_listeners.advertised_listeners(),
         listener_security_protocol_map = kafka_listeners.listener_security_protocol_map(),
+        controller_quorum_voters = controller_quorum_voters_command(
+            product_version,
+            BROKER_PROPERTIES_FILE,
+            &to_quorum_voters(&controller_descriptors, client_port)
+        ),
+        initial_controller_command = initial_controllers_command(&controller_descriptors, product_version, client_port),
         }
     } else {
         formatdoc! {"
@@ -126,8 +134,10 @@ pub fn controller_kafka_container_command(
     controller_descriptors: Vec<KafkaPodDescriptor>,
     kafka_listeners: &KafkaListenerConfig,
     kafka_security: &KafkaTlsSecurity,
+    product_version: &str,
 ) -> String {
     let client_port = kafka_security.client_port();
+
     // TODO: copy to tmp? mount readwrite folder?
     formatdoc! {"
         {COMMON_BASH_TRAP_FUNCTIONS}
@@ -142,8 +152,10 @@ pub fn controller_kafka_container_command(
         echo \"{KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS}={bootstrap_servers}\" >> /tmp/{properties_file}
         echo \"{KAFKA_LISTENERS}={listeners}\" >> /tmp/{properties_file}
         echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}
+        {controller_quorum_voters}
+        cat /tmp/{properties_file}
 
-        bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --initial-controllers {initial_controllers} --ignore-formatted
+        bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --ignore-formatted {initial_controller_command} 
         bin/kafka-server-start.sh /tmp/{properties_file} &
 
         wait_for_termination $!
@@ -155,7 +167,12 @@ pub fn controller_kafka_container_command(
         bootstrap_servers = to_bootstrap_servers(&controller_descriptors, client_port),
         listeners = to_listeners(client_port),
         listener_security_protocol_map = to_listener_security_protocol_map(kafka_listeners),
-        initial_controllers = to_initial_controllers(&controller_descriptors, client_port),
+        initial_controller_command = initial_controllers_command(&controller_descriptors, product_version, client_port),
+        controller_quorum_voters = controller_quorum_voters_command(
+            product_version,
+            CONTROLLER_PROPERTIES_FILE,
+            &to_quorum_voters(&controller_descriptors, client_port)
+        ),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
     }
 }
@@ -186,10 +203,45 @@ fn to_initial_controllers(controller_descriptors: &[KafkaPodDescriptor], port: u
         .join(",")
 }
 
+fn to_quorum_voters(controller_descriptors: &[KafkaPodDescriptor], port: u16) -> String {
+    controller_descriptors
+        .iter()
+        .map(|desc| desc.as_quorum_voter(port))
+        .collect::<Vec<String>>()
+        .join(",")
+}
+
 fn to_bootstrap_servers(controller_descriptors: &[KafkaPodDescriptor], port: u16) -> String {
     controller_descriptors
         .iter()
         .map(|desc| format!("{fqdn}:{port}", fqdn = desc.fqdn()))
         .collect::<Vec<String>>()
         .join(",")
+}
+
+fn initial_controllers_command(
+    controller_descriptors: &[KafkaPodDescriptor],
+    product_version: &str,
+    client_port: u16,
+) -> String {
+    match product_version.starts_with("3.7") {
+        true => "".to_string(),
+        false => format!(
+            "--initial-controllers {initial_controllers}",
+            initial_controllers = to_initial_controllers(controller_descriptors, client_port),
+        ),
+    }
+}
+
+fn controller_quorum_voters_command(
+    product_version: &str,
+    properties_file: &str,
+    quorum_voters: &str,
+) -> String {
+    match product_version.starts_with("3.7") {
+        true => format!(
+            "echo \"{KAFKA_CONTROLLER_QUORUM_VOTERS}={quorum_voters}\" >> /tmp/{properties_file}"
+        ),
+        false => "".to_string(),
+    }
 }

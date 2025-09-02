@@ -302,6 +302,7 @@ pub fn build_broker_rolegroup_statefulset(
             &kafka_listeners,
             opa_connect_string,
             kafka_security,
+            &resolved_product_image.product_version,
         )])
         .add_env_var(
             "EXTRA_ARGS",
@@ -639,6 +640,7 @@ pub fn build_controller_rolegroup_statefulset(
                 .context(BuildPodDescriptorsSnafu)?,
             &kafka_listeners,
             kafka_security,
+            &resolved_product_image.product_version,
         )])
         .add_env_var(
             "EXTRA_ARGS",

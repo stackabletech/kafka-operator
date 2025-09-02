@@ -337,6 +337,14 @@ impl KafkaPodDescriptor {
             fqdn = self.fqdn(),
         )
     }
+
+    pub fn as_quorum_voter(&self, port: u16) -> String {
+        format!(
+            "{replica}@{fqdn}:{port}",
+            replica = self.replica,
+            fqdn = self.fqdn(),
+        )
+    }
 }
 
 #[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
