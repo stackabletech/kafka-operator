@@ -11,10 +11,10 @@ use crate::crd::{
     STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_DIR,
     listener::{KafkaListenerConfig, KafkaListenerName, node_address_cmd},
     role::{
-        KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID_OFFSET,
-        KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS, KAFKA_CONTROLLER_QUORUM_VOTERS,
-        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS, KAFKA_NODE_ID, KafkaRole,
-        broker::BROKER_PROPERTIES_FILE, controller::CONTROLLER_PROPERTIES_FILE,
+        KAFKA_ADVERTISED_LISTENERS, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
+        KAFKA_CONTROLLER_QUORUM_VOTERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS,
+        KAFKA_NODE_ID, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BROKER_PROPERTIES_FILE,
+        controller::CONTROLLER_PROPERTIES_FILE,
     },
     security::KafkaTlsSecurity,
     v1alpha1,
@@ -87,7 +87,7 @@ fn broker_start_command(
             export REPLICA_ID=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
             cp {config_dir}/{properties_file} /tmp/{properties_file}
 
-            echo \"{KAFKA_NODE_ID}=$((REPLICA_ID + {KAFKA_BROKER_ID_OFFSET}))\" >> /tmp/{properties_file}
+            echo \"{KAFKA_NODE_ID}=$((REPLICA_ID + ${KAFKA_NODE_ID_OFFSET}))\" >> /tmp/{properties_file}
             echo \"{KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS}={bootstrap_servers}\" >> /tmp/{properties_file}
             echo \"{KAFKA_LISTENERS}={listeners}\" >> /tmp/{properties_file}
             echo \"{KAFKA_ADVERTISED_LISTENERS}={advertised_listeners}\" >> /tmp/{properties_file}
@@ -148,7 +148,7 @@ pub fn controller_kafka_container_command(
         export REPLICA_ID=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
         cp {config_dir}/{properties_file} /tmp/{properties_file}
 
-        echo \"{KAFKA_NODE_ID}=$REPLICA_ID\" >> /tmp/{properties_file}
+        echo \"{KAFKA_NODE_ID}=$((REPLICA_ID + ${KAFKA_NODE_ID_OFFSET}))\" >> /tmp/{properties_file}
         echo \"{KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS}={bootstrap_servers}\" >> /tmp/{properties_file}
         echo \"{KAFKA_LISTENERS}={listeners}\" >> /tmp/{properties_file}
         echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}

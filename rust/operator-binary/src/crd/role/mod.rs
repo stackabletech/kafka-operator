@@ -30,8 +30,8 @@ use crate::{
     v1alpha1,
 };
 
-/// Broker and Kafka node.id properties should not clash; This is an offset for brokers.
-pub const KAFKA_BROKER_ID_OFFSET: u16 = 1000;
+/// Env var
+pub const KAFKA_NODE_ID_OFFSET: &str = "NODE_ID_OFFSET";
 
 // See: https://kafka.apache.org/documentation/#brokerconfigs
 /// The node ID associated with the roles this process is playing when process.roles is non-empty.

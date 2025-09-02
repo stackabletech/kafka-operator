@@ -43,14 +43,20 @@ use stackable_operator::{
 };
 
 use crate::{
-    config::command::{broker_kafka_container_commands, controller_kafka_container_command},
+    config::{
+        command::{broker_kafka_container_commands, controller_kafka_container_command},
+        node_id_hasher::node_id_hash32_offset,
+    },
     crd::{
         self, APP_NAME, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
         STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
         STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
         listener::get_kafka_listener_config,
-        role::{AnyConfig, KafkaRole, broker::BrokerContainer, controller::ControllerContainer},
+        role::{
+            AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
+            controller::ControllerContainer,
+        },
         security::KafkaTlsSecurity,
         v1alpha1,
     },
@@ -324,6 +330,10 @@ pub fn build_broker_rolegroup_statefulset(
         .add_env_var(
             "CONTAINERDEBUG_LOG_DIRECTORY",
             format!("{STACKABLE_LOG_DIR}/containerdebug"),
+        )
+        .add_env_var(
+            KAFKA_NODE_ID_OFFSET,
+            node_id_hash32_offset(&rolegroup_ref.role_group).to_string(),
         )
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
@@ -662,6 +672,10 @@ pub fn build_controller_rolegroup_statefulset(
         .add_env_var(
             "CONTAINERDEBUG_LOG_DIRECTORY",
             format!("{STACKABLE_LOG_DIR}/containerdebug"),
+        )
+        .add_env_var(
+            KAFKA_NODE_ID_OFFSET,
+            node_id_hash32_offset(&rolegroup_ref.role_group).to_string(),
         )
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))

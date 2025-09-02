@@ -24,10 +24,13 @@ use stackable_operator::{
     versioned::versioned,
 };
 
-use crate::crd::{
-    authorization::KafkaAuthorization,
-    role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
-    tls::KafkaTls,
+use crate::{
+    config::node_id_hasher::node_id_hash32_offset,
+    crd::{
+        authorization::KafkaAuthorization,
+        role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
+        tls::KafkaTls,
+    },
 };
 
 pub const DOCKER_IMAGE_BASE_NAME: &str = "kafka";
@@ -255,6 +258,7 @@ impl v1alpha1::KafkaCluster {
                         role_group_service_name: rolegroup_ref.object_name(),
                         replica: i,
                         cluster_domain: cluster_info.cluster_domain.clone(),
+                        node_id: node_id_hash32_offset(rolegroup_name) + u32::from(i),
                     })
                 })
                 .collect(),
@@ -275,6 +279,7 @@ impl v1alpha1::KafkaCluster {
                         role_group_service_name: rolegroup_ref.object_name(),
                         replica: i,
                         cluster_domain: cluster_info.cluster_domain.clone(),
+                        node_id: node_id_hash32_offset(rolegroup_name) + u32::from(i),
                     })
                 })
                 .collect(),
@@ -291,6 +296,7 @@ pub struct KafkaPodDescriptor {
     role_group_service_name: String,
     replica: u16,
     cluster_domain: DomainName,
+    node_id: u32,
 }
 
 impl KafkaPodDescriptor {
@@ -332,16 +338,16 @@ impl KafkaPodDescriptor {
     // TODO(@maltesander): Even though the used Uuid states to be type 4 it does not work... 0000000000-00000000000 works...
     pub fn as_voter(&self, port: u16) -> String {
         format!(
-            "{replica}@{fqdn}:{port}:0000000000-{replica:0>11}",
-            replica = self.replica,
+            "{node_id}@{fqdn}:{port}:0000000000-{node_id:0>11}",
+            node_id = self.node_id,
             fqdn = self.fqdn(),
         )
     }
 
     pub fn as_quorum_voter(&self, port: u16) -> String {
         format!(
-            "{replica}@{fqdn}:{port}",
-            replica = self.replica,
+            "{node_id}@{fqdn}:{port}",
+            node_id = self.node_id,
             fqdn = self.fqdn(),
         )
     }
