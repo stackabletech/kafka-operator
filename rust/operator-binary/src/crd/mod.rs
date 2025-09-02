@@ -258,12 +258,12 @@ impl v1alpha1::KafkaCluster {
                         role_group_service_name: rolegroup_ref.object_name(),
                         replica: i,
                         cluster_domain: cluster_info.cluster_domain.clone(),
-                        node_id: node_id_hash32_offset(rolegroup_name) + u32::from(i),
+                        // TODO: check for hash collisions?
+                        node_id: node_id_hash32_offset(&rolegroup_ref) + u32::from(i),
                     })
                 })
                 .collect(),
 
-            // TODO: this does not work for multiple rolegroups (the index / replica)
             KafkaRole::Controller => self
                 .controller_role()
                 .iter()
@@ -279,7 +279,8 @@ impl v1alpha1::KafkaCluster {
                         role_group_service_name: rolegroup_ref.object_name(),
                         replica: i,
                         cluster_domain: cluster_info.cluster_domain.clone(),
-                        node_id: node_id_hash32_offset(rolegroup_name) + u32::from(i),
+                        // TODO: check for hash collisions?
+                        node_id: node_id_hash32_offset(&rolegroup_ref) + u32::from(i),
                     })
                 })
                 .collect(),
@@ -306,17 +307,6 @@ impl KafkaPodDescriptor {
         format!(
             "{pod_name}.{service_name}.{namespace}.svc.{cluster_domain}",
             pod_name = self.pod_name(),
-            service_name = self.role_group_service_name,
-            namespace = self.namespace,
-            cluster_domain = self.cluster_domain
-        )
-    }
-
-    /// Return the fully qualified domain name for "replica"
-    /// Format: <service>-<replica>.<service>.<namespace>.svc.<cluster-domain>
-    pub fn fqdn_for_replica(&self, replica: u16) -> String {
-        format!(
-            "{service_name}-{replica}.{service_name}.{namespace}.svc.{cluster_domain}",
             service_name = self.role_group_service_name,
             namespace = self.namespace,
             cluster_domain = self.cluster_domain

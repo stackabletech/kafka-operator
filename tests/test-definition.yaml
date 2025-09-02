@@ -120,6 +120,7 @@ tests:
       - openshift
       - broker-listener-class
       - bootstrap-listener-class
+      - use-kraft-controller
 
 suites:
   - name: nightly

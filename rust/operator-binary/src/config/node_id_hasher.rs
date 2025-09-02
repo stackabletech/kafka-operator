@@ -1,7 +1,16 @@
-pub fn node_id_hash32_offset(rolegroup: &str) -> u32 {
-    let hash = fnv_hash32(rolegroup);
+use stackable_operator::role_utils::RoleGroupRef;
+
+use crate::crd::v1alpha1::KafkaCluster;
+
+pub fn node_id_hash32_offset(rolegroup_ref: &RoleGroupRef<KafkaCluster>) -> u32 {
+    let hash = fnv_hash32(&format!(
+        "{role}-{rolegroup}",
+        role = rolegroup_ref.role,
+        rolegroup = rolegroup_ref.role_group
+    ));
     let range = hash & 0x0000FFFF;
-    let offset = range * 0x0000FFFF;
+    // unsigned in kafka
+    let offset = range * 0x00007FFF;
     offset
 }
 
