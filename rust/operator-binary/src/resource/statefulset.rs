@@ -333,7 +333,7 @@ pub fn build_broker_rolegroup_statefulset(
         )
         .add_env_var(
             KAFKA_NODE_ID_OFFSET,
-            node_id_hash32_offset(&rolegroup_ref).to_string(),
+            node_id_hash32_offset(rolegroup_ref).to_string(),
         )
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
@@ -675,7 +675,7 @@ pub fn build_controller_rolegroup_statefulset(
         )
         .add_env_var(
             KAFKA_NODE_ID_OFFSET,
-            node_id_hash32_offset(&rolegroup_ref).to_string(),
+            node_id_hash32_offset(rolegroup_ref).to_string(),
         )
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))

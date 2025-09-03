@@ -9,9 +9,8 @@ pub fn node_id_hash32_offset(rolegroup_ref: &RoleGroupRef<KafkaCluster>) -> u32 
         rolegroup = rolegroup_ref.role_group
     ));
     let range = hash & 0x0000FFFF;
-    // unsigned in kafka
-    let offset = range * 0x00007FFF;
-    offset
+    // Kafka uses signed integer
+    range * 0x00007FFF
 }
 
 /// Simple FNV-1a hash impl

@@ -6,7 +6,7 @@ pub mod role;
 pub mod security;
 pub mod tls;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
@@ -60,10 +60,10 @@ pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("the Kafka role [{role}] is missing from spec"))]
+    #[snafu(display("The Kafka role [{role}] is missing from spec"))]
     MissingRole { role: String },
 
-    #[snafu(display("object has no namespace associated"))]
+    #[snafu(display("Object has no namespace associated"))]
     NoNamespace,
 
     #[snafu(display(
@@ -75,6 +75,15 @@ pub enum Error {
         "Kraft controller (`spec.controller`) and ZooKeeper (`spec.clusterConfig.zookeeperConfigMapName`) are configured. Please only choose one"
     ))]
     KraftAndZookeeperConfigured,
+
+    #[snafu(display(
+        "Could not calculate ({role}) 'node.id' hash offset for rolegroup '{rolegroup}' which collides with rolegroup '{colliding_rolegroup}'. Please try to rename one of the rolegroups."
+    ))]
+    KafkaNodeIdHashCollision {
+        role: KafkaRole,
+        rolegroup: String,
+        colliding_rolegroup: String,
+    },
 }
 
 #[versioned(
@@ -241,49 +250,65 @@ impl v1alpha1::KafkaCluster {
         kafka_role: &KafkaRole,
         cluster_info: &KubernetesClusterInfo,
     ) -> Result<Vec<KafkaPodDescriptor>, Error> {
-        let ns = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
+        let namespace = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
+        let rolegroup_replicas = self.extract_rolegroup_replicas(kafka_role)?;
+        let mut pod_descriptors = Vec::new();
+        let mut seen_hashes = HashMap::<u32, String>::new();
+
+        for (rolegroup, replicas) in rolegroup_replicas {
+            let rolegroup_ref = self.rolegroup_ref(kafka_role, &rolegroup);
+            let node_id_hash_offset = node_id_hash32_offset(&rolegroup_ref);
+
+            match seen_hashes.get(&node_id_hash_offset) {
+                Some(colliding_rolegroup) => {
+                    return KafkaNodeIdHashCollisionSnafu {
+                        role: kafka_role.clone(),
+                        rolegroup: rolegroup.clone(),
+                        colliding_rolegroup: colliding_rolegroup.clone(),
+                    }
+                    .fail();
+                }
+                None => seen_hashes.insert(node_id_hash_offset, rolegroup),
+            };
+
+            for replica in 0..replicas {
+                pod_descriptors.push(KafkaPodDescriptor {
+                    namespace: namespace.clone(),
+                    role_group_service_name: rolegroup_ref.object_name(),
+                    replica,
+                    cluster_domain: cluster_info.cluster_domain.clone(),
+                    node_id: node_id_hash_offset + u32::from(replica),
+                });
+            }
+        }
+
+        Ok(pod_descriptors)
+    }
+
+    fn extract_rolegroup_replicas(
+        &self,
+        kafka_role: &KafkaRole,
+    ) -> Result<BTreeMap<String, u16>, Error> {
         Ok(match kafka_role {
             KafkaRole::Broker => self
                 .broker_role()
                 .iter()
                 .flat_map(|role| &role.role_groups)
-                // Order rolegroups consistently, to avoid spurious downstream rewrites
-                .collect::<BTreeMap<_, _>>()
-                .into_iter()
-                .flat_map(move |(rolegroup_name, rolegroup)| {
-                    let rolegroup_ref = self.rolegroup_ref(kafka_role, rolegroup_name);
-                    let ns = ns.clone();
-                    (0..rolegroup.replicas.unwrap_or(0)).map(move |i| KafkaPodDescriptor {
-                        namespace: ns.clone(),
-                        role_group_service_name: rolegroup_ref.object_name(),
-                        replica: i,
-                        cluster_domain: cluster_info.cluster_domain.clone(),
-                        // TODO: check for hash collisions?
-                        node_id: node_id_hash32_offset(&rolegroup_ref) + u32::from(i),
-                    })
+                .flat_map(|(rolegroup_name, rolegroup)| {
+                    std::iter::once((rolegroup_name.to_string(), rolegroup.replicas.unwrap_or(0)))
                 })
-                .collect(),
+                // Order rolegroups consistently, to avoid spurious downstream rewrites
+                .collect::<BTreeMap<_, _>>(),
 
             KafkaRole::Controller => self
                 .controller_role()
                 .iter()
                 .flat_map(|role| &role.role_groups)
-                // Order rolegroups consistently, to avoid spurious downstream rewrites
-                .collect::<BTreeMap<_, _>>()
-                .into_iter()
-                .flat_map(move |(rolegroup_name, rolegroup)| {
-                    let rolegroup_ref = self.rolegroup_ref(kafka_role, rolegroup_name);
-                    let ns = ns.clone();
-                    (0..rolegroup.replicas.unwrap_or(0)).map(move |i: u16| KafkaPodDescriptor {
-                        namespace: ns.clone(),
-                        role_group_service_name: rolegroup_ref.object_name(),
-                        replica: i,
-                        cluster_domain: cluster_info.cluster_domain.clone(),
-                        // TODO: check for hash collisions?
-                        node_id: node_id_hash32_offset(&rolegroup_ref) + u32::from(i),
-                    })
+                .flat_map(|(rolegroup_name, rolegroup)| {
+                    std::iter::once((rolegroup_name.to_string(), rolegroup.replicas.unwrap_or(0)))
                 })
-                .collect(),
+                // Order rolegroups consistently, to avoid spurious downstream rewrites
+                .collect::<BTreeMap<_, _>>(),
         })
     }
 }
