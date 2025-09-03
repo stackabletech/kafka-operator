@@ -10,11 +10,13 @@ metadata:
 status:
   readyReplicas: 1
   replicas: 1
+{% if test_scenario['values']['use-kraft-controller'] == 'true' %}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-kafka-broker-secondary
+  name: test-kafka-controller-default
 status:
-  readyReplicas: 1
-  replicas: 1
+  readyReplicas: 2
+  replicas: 2
+{% endif %}  

@@ -99,6 +99,7 @@ tests:
     dimensions:
       - kafka
       - zookeeper-latest
+      - use-kraft-controller
       - openshift
   - name: logging
     dimensions:

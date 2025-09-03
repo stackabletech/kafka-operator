@@ -258,6 +258,7 @@ impl v1alpha1::KafkaCluster {
     ///
     /// We try to predict the pods here rather than looking at the current cluster state in order to
     /// avoid instance churn.
+    // TODO: this currently only checks within each role, node.id must be unique for all brokers and controllers
     pub fn pod_descriptors(
         &self,
         kafka_role: &KafkaRole,
