@@ -16,14 +16,23 @@ spec:
     productVersion: "{{ test_scenario['values']['kafka-latest'] }}"
 {% endif %}
     pullPolicy: IfNotPresent
+{% if lookup('env', 'VECTOR_AGGREGATOR') or test_scenario['values']['use-kraft-controller'] == 'false' %}    
   clusterConfig:
+{% endif %}
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
+{% if test_scenario['values']['use-kraft-controller'] == 'false' %}
     zookeeperConfigMapName: test-zk
-  clusterOperation:
-    stopped: false
-    reconciliationPaused: true
+{% else %}
+  controllers:
+    config:
+      logging:
+        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+    roleGroups:
+      default:
+        replicas: 1
+{% endif %}
   brokers:
     config:
       logging:
@@ -31,3 +40,6 @@ spec:
     roleGroups:
       default:
         replicas: 1
+  clusterOperation:
+    stopped: false
+    reconciliationPaused: true

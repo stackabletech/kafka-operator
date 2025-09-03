@@ -110,6 +110,7 @@ tests:
     dimensions:
       - zookeeper-latest
       - kafka-latest
+      - use-kraft-controller
       - openshift
   - name: kerberos
     dimensions:

@@ -609,6 +609,14 @@ spec:
                     - roleGroups
                   type: object
                 clusterConfig:
+                  default:
+                    authentication: []
+                    authorization:
+                      opa: null
+                    tls:
+                      internalSecretClass: tls
+                      serverSecretClass: tls
+                    zookeeperConfigMapName: null
                   description: |-
                     Kafka settings that affect all roles and role groups.
 
@@ -1320,7 +1328,6 @@ spec:
                       type: string
                   type: object
               required:
-                - clusterConfig
                 - image
               type: object
             status:

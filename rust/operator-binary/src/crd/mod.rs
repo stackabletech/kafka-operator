@@ -123,6 +123,7 @@ pub mod versioned {
         /// Kafka settings that affect all roles and role groups.
         ///
         /// The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
+        #[serde(default)]
         pub cluster_config: v1alpha1::KafkaClusterConfig,
 
         // no doc - docs in ClusterOperation struct.
@@ -161,6 +162,18 @@ pub mod versioned {
         /// This can only be used up to Kafka version 3.9.x. Since Kafka 4.0.0, ZooKeeper suppport was dropped.
         /// Please use the 'controller' role instead.
         pub zookeeper_config_map_name: Option<String>,
+    }
+}
+
+impl Default for v1alpha1::KafkaClusterConfig {
+    fn default() -> Self {
+        Self {
+            authentication: vec![],
+            authorization: KafkaAuthorization::default(),
+            tls: tls::default_kafka_tls(),
+            vector_aggregator_config_map_name: None,
+            zookeeper_config_map_name: None,
+        }
     }
 }
 
