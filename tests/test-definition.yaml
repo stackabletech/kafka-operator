@@ -77,7 +77,6 @@ tests:
   - name: configuration
     dimensions:
       - kafka-latest
-      - zookeeper-latest
       - openshift
   - name: upgrade
     dimensions:
