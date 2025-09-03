@@ -20,7 +20,7 @@ use stackable_operator::{
     k8s_openapi::{
         DeepMerge,
         api::{
-            apps::v1::{StatefulSet, StatefulSetSpec},
+            apps::v1::{StatefulSet, StatefulSetSpec, StatefulSetUpdateStrategy},
             core::v1::{
                 ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource,
                 ExecAction, ObjectFieldSelector, PodSpec, Probe, ServiceAccount, TCPSocketAction,
@@ -839,6 +839,10 @@ pub fn build_controller_rolegroup_statefulset(
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
+            update_strategy: Some(StatefulSetUpdateStrategy {
+                type_: Some("RollingUpdate".to_string()),
+                ..StatefulSetUpdateStrategy::default()
+            }),
             replicas: kafka_role
                 .replicas(kafka, &rolegroup_ref.role_group)
                 .context(RoleGroupReplicasSnafu)?

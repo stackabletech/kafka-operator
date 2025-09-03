@@ -85,6 +85,7 @@ tests:
       - upgrade_old
       - use-client-tls
       - use-client-auth-tls
+      - use-kraft-controller
       - openshift
   - name: tls
     dimensions:

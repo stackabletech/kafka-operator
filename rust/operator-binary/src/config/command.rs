@@ -82,6 +82,7 @@ fn broker_start_command(
     let client_port = kafka_security.client_port();
 
     // TODO: copy to tmp? mount readwrite folder?
+    // TODO: do "cat /tmp/{properties_file}" ?
     if kafka.is_controller_configured() {
         formatdoc! {"
             export REPLICA_ID=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
@@ -92,7 +93,7 @@ fn broker_start_command(
             echo \"{KAFKA_LISTENERS}={listeners}\" >> /tmp/{properties_file}
             echo \"{KAFKA_ADVERTISED_LISTENERS}={advertised_listeners}\" >> /tmp/{properties_file}
             echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}
-            {controller_quorum_voters}
+            echo \"{KAFKA_CONTROLLER_QUORUM_VOTERS}={controller_quorum_voters}\" >> /tmp/{properties_file}
 
             bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --ignore-formatted {initial_controller_command}
             bin/kafka-server-start.sh /tmp/{properties_file} {opa_config}{jaas_config} &
@@ -103,11 +104,7 @@ fn broker_start_command(
         listeners = kafka_listeners.listeners(),
         advertised_listeners = kafka_listeners.advertised_listeners(),
         listener_security_protocol_map = kafka_listeners.listener_security_protocol_map(),
-        controller_quorum_voters = controller_quorum_voters_command(
-            product_version,
-            BROKER_PROPERTIES_FILE,
-            &to_quorum_voters(&controller_descriptors, client_port)
-        ),
+        controller_quorum_voters = to_quorum_voters(&controller_descriptors, client_port),
         initial_controller_command = initial_controllers_command(&controller_descriptors, product_version, client_port),
         }
     } else {
@@ -152,8 +149,7 @@ pub fn controller_kafka_container_command(
         echo \"{KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS}={bootstrap_servers}\" >> /tmp/{properties_file}
         echo \"{KAFKA_LISTENERS}={listeners}\" >> /tmp/{properties_file}
         echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}
-        {controller_quorum_voters}
-        cat /tmp/{properties_file}
+        echo \"{KAFKA_CONTROLLER_QUORUM_VOTERS}={controller_quorum_voters}\" >> /tmp/{properties_file}
 
         bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --ignore-formatted {initial_controller_command} 
         bin/kafka-server-start.sh /tmp/{properties_file} &
@@ -168,11 +164,7 @@ pub fn controller_kafka_container_command(
         listeners = to_listeners(client_port),
         listener_security_protocol_map = to_listener_security_protocol_map(kafka_listeners),
         initial_controller_command = initial_controllers_command(&controller_descriptors, product_version, client_port),
-        controller_quorum_voters = controller_quorum_voters_command(
-            product_version,
-            CONTROLLER_PROPERTIES_FILE,
-            &to_quorum_voters(&controller_descriptors, client_port)
-        ),
+        controller_quorum_voters = to_quorum_voters(&controller_descriptors, client_port),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
     }
 }
@@ -230,18 +222,5 @@ fn initial_controllers_command(
             "--initial-controllers {initial_controllers}",
             initial_controllers = to_initial_controllers(controller_descriptors, client_port),
         ),
-    }
-}
-
-fn controller_quorum_voters_command(
-    product_version: &str,
-    properties_file: &str,
-    quorum_voters: &str,
-) -> String {
-    match product_version.starts_with("3.7") {
-        true => format!(
-            "echo \"{KAFKA_CONTROLLER_QUORUM_VOTERS}={quorum_voters}\" >> /tmp/{properties_file}"
-        ),
-        false => "".to_string(),
     }
 }
