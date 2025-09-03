@@ -104,6 +104,7 @@ tests:
     dimensions:
       - kafka
       - zookeeper-latest
+      - use-kraft-controller
       - openshift
   - name: cluster-operation
     dimensions:
