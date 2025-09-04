@@ -1,0 +1,104 @@
+= KRaft
+:description: Apache Kafka KRaft mode with the Stackable Operator for Apache Kafka
+
+Apache Kafka's KRaft mode (Kafka Raft Metadata mode) replaces Apache ZooKeeper with Kafka’s own built-in consensus mechanism based on the Raft protocol. 
+This simplifies Kafka’s architecture, reducing operational complexity by consolidating cluster metadata management into Kafka itself.
+
+WARNING: The Stackable Operator for Apache Kafka currently does not support automatic cluster upgrades from Apache ZooKeeper to KRaft.
+
+== Overview
+
+* Introduced: Kafka 2.8.0 (early preview, not production-ready).
+* Matured: Kafka 3.3.x (production-ready, though ZooKeeper is still supported).
+* Default & Recommended: Kafka 3.5+ strongly recommends KRaft for new clusters.
+* Full Replacement: Kafka 4.0.0 (2025) removes ZooKeeper completely.
+* Migration: Tools exist to migrate from ZooKeeper to KRaft, but new deployments should start with KRaft.
+
+== Configuration
+
+The Stackable Kafka operator introduces a new xref:concepts:roles-and-role-groups.adoc[role] in the KafkaCluster CRD called KRaft `Controller`.
+Configuring the `Controller` will put Kafka into KRaft mode. Apache ZooKeeper will not be required anymore.
+
+[source,yaml]
+----
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: kafka
+spec:
+  image:
+    productVersion: "3.9.1"
+  brokers:
+    roleGroups:
+      default:
+        replicas: 1
+  controllers:
+    roleGroups:
+      default:
+        replicas: 3
+----
+
+NOTE: This is mutally exclusive with `spec.clusterConfig.zookeeperConfigMapName`.
+
+=== Recommendations
+
+A minimal KRaft setup consisting of at least 3 Controllers has the following https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[resource requirements]:
+
+* `600m` CPU request
+* `3000m` CPU limit
+* `3000Mi` memory request and limit
+* `6Gi` persistent storage
+
+NOTE: The Controller replicas should sum up to an odd number for the Raft consensus.
+
+=== Resources
+
+Corresponding to the values above, the operator uses the following resource defaults:
+
+[source,yaml]
+----
+controllers:
+  config:
+    resources:
+      memory:
+        limit: 1Gi
+      cpu:
+        min: 250m
+        max: 1000m
+      storage:
+        logDirs:
+          capacity: 2Gi
+----
+
+=== Affinities
+
+=== PDBs
+
+=== Overrides
+
+== Internal operator details  
+
+KRaft mode requires major configuration changes compared to ZooKeeper:
+
+* `cluster-id`: This is set to the `metadata.uid` of the KafkaCluster resource during initial formatting
+* `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and `replica` id.
+* `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not possible.
+
+== Troubleshooting
+
+=== Cluster does not start
+
+Check that at least a quorum (majority) of controllers are reachable.
+
+=== Frequent leader elections
+
+Likely caused by controller resource starvation or unstable Kubernetes scheduling.
+
+=== Migration issues (ZooKeeper to KRaft)
+
+Ensure Kafka version 3.9.x and higher and follow the official migration documentation.
+
+=== Scaling issues
+
+The https://developers.redhat.com/articles/2024/11/27/dynamic-kafka-controller-quorum?utm_source=chatgpt.com#[Dynamic scaling] is only supported from Kafka version 3.9.0.
+If you are using older versions, automatic scaling may not work properly (e.g. adding or removing controller replicas).
