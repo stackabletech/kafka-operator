@@ -62,17 +62,21 @@ dimensions:
       - "cluster-internal"
       - "external-stable"
       - "external-unstable"
+  - name: use-kraft-controller
+    values:
+      - "true"
+      - "false"
 tests:
   - name: smoke
     dimensions:
       - kafka
       - zookeeper
       - use-client-tls
+      - use-kraft-controller
       - openshift
   - name: configuration
     dimensions:
       - kafka-latest
-      - zookeeper-latest
       - openshift
   - name: upgrade
     dimensions:
@@ -81,6 +85,7 @@ tests:
       - upgrade_old
       - use-client-tls
       - use-client-auth-tls
+      - use-kraft-controller
       - openshift
   - name: tls
     dimensions:
@@ -88,21 +93,25 @@ tests:
       - zookeeper-latest
       - use-client-tls
       - use-client-auth-tls
+      - use-kraft-controller
       - openshift
   - name: delete-rolegroup
     dimensions:
       - kafka
       - zookeeper-latest
+      - use-kraft-controller
       - openshift
   - name: logging
     dimensions:
       - kafka
       - zookeeper-latest
+      - use-kraft-controller
       - openshift
   - name: cluster-operation
     dimensions:
       - zookeeper-latest
       - kafka-latest
+      - use-kraft-controller
       - openshift
   - name: kerberos
     dimensions:
@@ -114,6 +123,7 @@ tests:
       - openshift
       - broker-listener-class
       - bootstrap-listener-class
+      - use-kraft-controller
 
 suites:
   - name: nightly

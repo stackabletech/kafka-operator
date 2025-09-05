@@ -12,8 +12,8 @@ use stackable_operator::builder::{
 };
 
 use crate::crd::{
-    KafkaRole, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_DIR,
-    STACKABLE_KERBEROS_KRB5_PATH, security::KafkaTlsSecurity,
+    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_DIR,
+    STACKABLE_KERBEROS_KRB5_PATH, role::KafkaRole, security::KafkaTlsSecurity,
 };
 
 #[derive(Snafu, Debug)]

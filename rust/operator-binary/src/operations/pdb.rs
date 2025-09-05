@@ -5,7 +5,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    crd::{APP_NAME, KafkaRole, OPERATOR_NAME, v1alpha1},
+    crd::{APP_NAME, OPERATOR_NAME, role::KafkaRole, v1alpha1},
     kafka_controller::KAFKA_CONTROLLER_NAME,
 };
 
@@ -35,6 +35,7 @@ pub async fn add_pdbs(
     }
     let max_unavailable = pdb.max_unavailable.unwrap_or(match role {
         KafkaRole::Broker => max_unavailable_brokers(),
+        KafkaRole::Controller => max_unavailable_controllers(),
     });
     let pdb = PodDisruptionBudgetBuilder::new_with_role(
         kafka,
@@ -59,5 +60,10 @@ pub async fn add_pdbs(
 
 fn max_unavailable_brokers() -> u16 {
     // We can not make any assumptions about topic replication factors.
+    1
+}
+
+fn max_unavailable_controllers() -> u16 {
+    // TODO: what do we want here?
     1
 }

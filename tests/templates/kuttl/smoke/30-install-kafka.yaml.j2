@@ -26,10 +26,24 @@ spec:
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
+{% if test_scenario['values']['use-kraft-controller'] == 'false' %}
     zookeeperConfigMapName: test-zk
+{% else %}
+  controllers:
+    envOverrides:
+      COMMON_VAR: role-value # overridden by role group below
+      ROLE_VAR: role-value   # only defined here at role level
+    config:
+      logging:
+        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+      requestedSecretLifetime: 7d
+    roleGroups:
+      default:
+        replicas: 3
+{% endif %}
   brokers:
     configOverrides:
-      server.properties:
+      broker.properties:
         compression.type: uncompressed # overridden by role group below
         controller.quorum.election.backoff.max.ms: "2000"
     envOverrides:
@@ -46,7 +60,7 @@ spec:
           COMMON_VAR: group-value # overrides role value
           GROUP_VAR: group-value # only defined here at group level
         configOverrides:
-          server.properties:
+          broker.properties:
             compression.type: snappy
             controller.quorum.fetch.timeout.ms: "3000"
         podOverrides:

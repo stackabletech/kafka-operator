@@ -45,6 +45,7 @@ mod kafka_controller;
 mod kerberos;
 mod operations;
 mod product_logging;
+mod resource;
 mod utils;
 
 mod built_info {
@@ -207,7 +208,7 @@ fn references_config_map(
         return false;
     };
 
-    kafka.spec.cluster_config.zookeeper_config_map_name == config_map.name_any()
+    kafka.spec.cluster_config.zookeeper_config_map_name == Some(config_map.name_any())
         || match &kafka.spec.cluster_config.authorization.opa {
             Some(opa_config) => opa_config.config_map_name == config_map.name_any(),
             None => false,

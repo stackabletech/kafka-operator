@@ -14,6 +14,6 @@ commands:
   # Test configOverrides
   #
   - script: |
-      kubectl -n $NAMESPACE get cm test-kafka-broker-default -o yaml | yq -e '.data."server.properties"' | grep "compression.type=snappy"
-      kubectl -n $NAMESPACE get cm test-kafka-broker-default -o yaml | yq -e '.data."server.properties"' | grep "controller.quorum.election.backoff.max.ms=2000"
-      kubectl -n $NAMESPACE get cm test-kafka-broker-default -o yaml | yq -e '.data."server.properties"' | grep "controller.quorum.fetch.timeout.ms=3000"
+      kubectl -n $NAMESPACE get cm test-kafka-broker-default -o yaml | yq -e '.data."broker.properties"' | grep "compression.type=snappy"
+      kubectl -n $NAMESPACE get cm test-kafka-broker-default -o yaml | yq -e '.data."broker.properties"' | grep "controller.quorum.election.backoff.max.ms=2000"
+      kubectl -n $NAMESPACE get cm test-kafka-broker-default -o yaml | yq -e '.data."broker.properties"' | grep "controller.quorum.fetch.timeout.ms=3000"

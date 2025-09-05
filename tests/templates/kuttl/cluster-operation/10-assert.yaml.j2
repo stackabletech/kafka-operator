@@ -1,3 +1,4 @@
+{% if test_scenario['values']['use-kraft-controller'] == 'false' %}
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
@@ -6,7 +7,8 @@ timeout: 300
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-kafka-broker-default
+  name: test-zk-server-default
 status:
   readyReplicas: 1
   replicas: 1
+{% endif %}

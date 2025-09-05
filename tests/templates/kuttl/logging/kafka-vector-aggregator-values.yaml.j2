@@ -48,6 +48,32 @@ customConfig:
       condition: >-
         .pod == "test-kafka-broker-custom-log-config-0" &&
         .container == "vector"
+{% if test_scenario['values']['use-kraft-controller'] == 'true' %}
+    filteredAutomaticLogConfigControllerKafka:
+      type: filter
+      inputs: [validEvents]
+      condition: >-
+        .pod == "test-kafka-controller-automatic-log-config-0" &&
+        .container == "kafka"
+    filteredAutomaticLogConfigControllerVector:
+      type: filter
+      inputs: [validEvents]
+      condition: >-
+        .pod == "test-kafka-controller-automatic-log-config-0" &&
+        .container == "vector"
+    filteredCustomLogConfigControllerKafka:
+      type: filter
+      inputs: [validEvents]
+      condition: >-
+        .pod == "test-kafka-controller-custom-log-config-0" &&
+        .container == "kafka"
+    filteredCustomLogConfigControllerVector:
+      type: filter
+      inputs: [validEvents]
+      condition: >-
+        .pod == "test-kafka-controller-custom-log-config-0" &&
+        .container == "vector"
+{% endif %}
     filteredInvalidEvents:
       type: filter
       inputs: [vector]
