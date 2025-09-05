@@ -132,7 +132,7 @@ mod tests {
             "-Djava.security.properties=/stackable/config/security.properties \
             -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9606:/stackable/jmx/broker.yaml"
         );
-        assert_eq!(heap_jvm_args, "-Xmx819m -Xms819m");
+        assert_eq!(heap_jvm_args, "-Xmx1638m -Xms1638m");
     }
 
     #[test]

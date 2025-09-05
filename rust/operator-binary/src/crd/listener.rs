@@ -429,11 +429,15 @@ mod tests {
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol},{controller_name}:{controller_protocol},{controller_auth_name}:{controller_auth_protocol}",
                 name = KafkaListenerName::ClientAuth,
                 protocol = KafkaListenerProtocol::Ssl,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Ssl,
+                controller_name = KafkaListenerName::Controller,
+                controller_protocol = KafkaListenerProtocol::Ssl,
+                controller_auth_name = KafkaListenerName::ControllerAuth,
+                controller_auth_protocol = KafkaListenerProtocol::Ssl,
             )
         );
 
@@ -477,11 +481,13 @@ mod tests {
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol},{controller_name}:{controller_protocol}",
                 name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::Ssl,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Ssl,
+                controller_name = KafkaListenerName::Controller,
+                controller_protocol = KafkaListenerProtocol::Ssl,
             )
         );
 
@@ -526,11 +532,13 @@ mod tests {
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol},{controller_name}:{controller_protocol}",
                 name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::Plaintext,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Plaintext,
+                controller_name = KafkaListenerName::Controller,
+                controller_protocol = KafkaListenerProtocol::Plaintext,
             )
         );
     }
@@ -617,13 +625,15 @@ mod tests {
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol},{bootstrap_name}:{bootstrap_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol},{bootstrap_name}:{bootstrap_protocol},{controller_name}:{controller_protocol}",
                 name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::SaslSsl,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Ssl,
                 bootstrap_name = KafkaListenerName::Bootstrap,
                 bootstrap_protocol = KafkaListenerProtocol::SaslSsl,
+                controller_name = KafkaListenerName::Controller,
+                controller_protocol = KafkaListenerProtocol::Ssl,
             )
         );
     }
