@@ -34,7 +34,7 @@ pub enum Error {
 /// The rolegroup [`Service`] is a headless service that allows direct access to the instances of a certain rolegroup
 ///
 /// This is mostly useful for internal communication between peers, or for clients that perform client-side load balancing.
-pub fn build_broker_rolegroup_service(
+pub fn build_rolegroup_service(
     kafka: &v1alpha1::KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,

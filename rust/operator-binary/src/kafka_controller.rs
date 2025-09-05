@@ -49,7 +49,7 @@ use crate::{
     resource::{
         configmap::build_rolegroup_config_map,
         listener::build_broker_rolegroup_bootstrap_listener,
-        service::build_broker_rolegroup_service,
+        service::build_rolegroup_service,
         statefulset::{build_broker_rolegroup_statefulset, build_controller_rolegroup_statefulset},
     },
 };
@@ -348,7 +348,7 @@ pub async fn reconcile_kafka(
                 .context(FailedToResolveConfigSnafu)?;
 
             let rg_service =
-                build_broker_rolegroup_service(kafka, &resolved_product_image, &rolegroup_ref)
+                build_rolegroup_service(kafka, &resolved_product_image, &rolegroup_ref)
                     .context(BuildServiceSnafu)?;
 
             let rg_configmap = build_rolegroup_config_map(

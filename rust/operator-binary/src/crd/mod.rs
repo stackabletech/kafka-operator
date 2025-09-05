@@ -341,7 +341,7 @@ pub struct KafkaPodDescriptor {
 
 impl KafkaPodDescriptor {
     /// Return the fully qualified domain name
-    /// Format: <pod-name>.<service>.<namespace>.svc.<cluster-domain>
+    /// Format: `<pod-name>.<service>.<namespace>.svc.<cluster-domain>`
     pub fn fqdn(&self) -> String {
         format!(
             "{pod_name}.{service_name}.{namespace}.svc.{cluster_domain}",
@@ -357,11 +357,11 @@ impl KafkaPodDescriptor {
     }
 
     /// Build the Kraft voter String
-    /// See: https://kafka.apache.org/documentation/#kraft_storage_voters
+    /// See: <https://kafka.apache.org/documentation/#kraft_storage_voters>
     /// Example: 0@controller-0:1234:0000000000-00000000000
     ///   * 0 is the replica id
     ///   * 0000000000-00000000000 is the replica directory id (even though the used Uuid states to be type 4 it does not work)
-    ///     See: https://github.com/apache/kafka/blob/c5169ca805bd03d870a5bcd49744dcc34891cf15/clients/src/main/java/org/apache/kafka/common/Uuid.java#L29
+    ///     See: <https://github.com/apache/kafka/blob/c5169ca805bd03d870a5bcd49744dcc34891cf15/clients/src/main/java/org/apache/kafka/common/Uuid.java#L29>
     ///   * controller-0 is the replica's host,
     ///   * 1234 is the replica's port.
     // TODO(@maltesander): Even though the used Uuid states to be type 4 it does not work... 0000000000-00000000000 works...
