@@ -151,12 +151,12 @@ pub fn controller_kafka_container_command(
         echo \"{KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}={listener_security_protocol_map}\" >> /tmp/{properties_file}
         echo \"{KAFKA_CONTROLLER_QUORUM_VOTERS}={controller_quorum_voters}\" >> /tmp/{properties_file}
 
-        bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --ignore-formatted {initial_controller_command} 
+        bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --ignore-formatted {initial_controller_command}
         bin/kafka-server-start.sh /tmp/{properties_file} &
 
         wait_for_termination $!
         {create_vector_shutdown_file_command}
-        ", 
+        ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = CONTROLLER_PROPERTIES_FILE,

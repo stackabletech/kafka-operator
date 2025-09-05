@@ -60,11 +60,11 @@ spec:
     config:
       gracefulShutdownTimeout: 30s # speed up tests
       logging:
-        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}  
+        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
     roleGroups:
       default:
         replicas: 3
-{% endif %}   
+{% endif %}
   brokers:
     config:
       gracefulShutdownTimeout: 30s # speed up tests

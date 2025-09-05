@@ -1,7 +1,7 @@
 = KRaft
 :description: Apache Kafka KRaft mode with the Stackable Operator for Apache Kafka
 
-Apache Kafka's KRaft mode (Kafka Raft Metadata mode) replaces Apache ZooKeeper with Kafka’s own built-in consensus mechanism based on the Raft protocol. 
+Apache Kafka's KRaft mode (Kafka Raft Metadata mode) replaces Apache ZooKeeper with Kafka’s own built-in consensus mechanism based on the Raft protocol.
 This simplifies Kafka’s architecture, reducing operational complexity by consolidating cluster metadata management into Kafka itself.
 
 WARNING: The Stackable Operator for Apache Kafka currently does not support automatic cluster upgrades from Apache ZooKeeper to KRaft.
@@ -76,7 +76,7 @@ controllers:
 
 === Overrides
 
-== Internal operator details  
+== Internal operator details
 
 KRaft mode requires major configuration changes compared to ZooKeeper:
 

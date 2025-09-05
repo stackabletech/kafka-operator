@@ -16,7 +16,7 @@ spec:
     productVersion: "{{ test_scenario['values']['kafka-latest'] }}"
 {% endif %}
     pullPolicy: IfNotPresent
-{% if lookup('env', 'VECTOR_AGGREGATOR') or test_scenario['values']['use-kraft-controller'] == 'false' %}    
+{% if lookup('env', 'VECTOR_AGGREGATOR') or test_scenario['values']['use-kraft-controller'] == 'false' %}
   clusterConfig:
 {% endif %}
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
