@@ -94,7 +94,7 @@ Likely caused by controller resource starvation or unstable Kubernetes schedulin
 
 === Migration issues (ZooKeeper to KRaft)
 
-Ensure Kafka version 3.9.x and higher and follow the official migration documentation. 
+Ensure Kafka version 3.9.x and higher and follow the official migration documentation.
 The Stackable Kafka operator currently does not support the migration.
 
 === Scaling issues
