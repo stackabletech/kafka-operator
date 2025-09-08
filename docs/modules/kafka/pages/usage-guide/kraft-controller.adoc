@@ -1,7 +1,7 @@
-= KRaft
+= KRaft mode
 :description: Apache Kafka KRaft mode with the Stackable Operator for Apache Kafka
 
-Apache Kafka's KRaft mode (Kafka Raft Metadata mode) replaces Apache ZooKeeper with Kafka’s own built-in consensus mechanism based on the Raft protocol.
+Apache Kafka's KRaft mode replaces Apache ZooKeeper with Kafka’s own built-in consensus mechanism based on the Raft protocol.
 This simplifies Kafka’s architecture, reducing operational complexity by consolidating cluster metadata management into Kafka itself.
 
 WARNING: The Stackable Operator for Apache Kafka currently does not support automatic cluster upgrades from Apache ZooKeeper to KRaft.
@@ -38,7 +38,7 @@ spec:
         replicas: 3
 ----
 
-NOTE: This is mutally exclusive with `spec.clusterConfig.zookeeperConfigMapName`.
+NOTE: Using `spec.controllers` is mutally exclusive with `spec.clusterConfig.zookeeperConfigMapName`.
 
 === Recommendations
 
@@ -70,19 +70,17 @@ controllers:
           capacity: 2Gi
 ----
 
-=== Affinities
-
-=== PDBs
-
 === Overrides
+
+The configuration of overrides, JVM arguments etc. is similar to the Broker and documented on the xref:concepts:overrides.adoc[concepts page].
 
 == Internal operator details
 
 KRaft mode requires major configuration changes compared to ZooKeeper:
 
 * `cluster-id`: This is set to the `metadata.uid` of the KafkaCluster resource during initial formatting
-* `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and `replica` id.
-* `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not possible.
+* `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
+* `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not supported.
 
 == Troubleshooting
 
@@ -96,7 +94,8 @@ Likely caused by controller resource starvation or unstable Kubernetes schedulin
 
 === Migration issues (ZooKeeper to KRaft)
 
-Ensure Kafka version 3.9.x and higher and follow the official migration documentation.
+Ensure Kafka version 3.9.x and higher and follow the official migration documentation. 
+The Stackable Kafka operator currently does not support the migration.
 
 === Scaling issues
 

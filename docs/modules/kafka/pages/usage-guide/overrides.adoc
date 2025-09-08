@@ -8,7 +8,8 @@ IMPORTANT: Overriding operator-set properties (such as the ports) can interfere 
 
 For a role or role group, at the same level of `config`, you can specify: `configOverrides` for the following files:
 
-* `broker.properties`
+* `broker.properties` (brokers only)
+* `controller.properties` (KRaft controllers only)
 * `security.properties`
 
 For example, if you want to set the `auto.create.topics.enable` to disable automatic topic creation, it can be configured in the KafkaCluster resource like so:
