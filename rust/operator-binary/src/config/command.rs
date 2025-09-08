@@ -70,11 +70,16 @@ fn broker_start_command(
 
     let jaas_config = match kafka_security.has_kerberos_enabled() {
         true => {
-            let service_name = KafkaRole::Broker.kerberos_service_name();
-            let broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR);
-            let bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR);
-            // TODO replace client and bootstrap below with constants
-            format!(" --override \"listener.name.client.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{broker_address}@$KERBEROS_REALM\\\";\" --override \"listener.name.bootstrap.gssapi.sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{bootstrap_address}@$KERBEROS_REALM\\\";\"").to_string()
+            formatdoc! {"
+                --override \"{client_jaas_config}=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{broker_address}@$KERBEROS_REALM\\\";\" \
+                --override \"{bootstrap_jaas_config}=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{bootstrap_address}@$KERBEROS_REALM\\\";\"
+            ",
+            client_jaas_config = KafkaListenerName::Client.listener_gssapi_sasl_jaas_config(),
+            bootstrap_jaas_config = KafkaListenerName::Bootstrap.listener_gssapi_sasl_jaas_config(),
+            service_name = KafkaRole::Broker.kerberos_service_name(),
+            broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+            bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
+            }
         }
         false => "".to_string(),
     };
