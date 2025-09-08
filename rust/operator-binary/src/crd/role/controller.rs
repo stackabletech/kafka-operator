@@ -42,7 +42,6 @@ pub const CONTROLLER_PROPERTIES_FILE: &str = "controller.properties";
 #[strum(serialize_all = "kebab-case")]
 pub enum ControllerContainer {
     Vector,
-    // TODO: Kafka, Kraft, Controller?
     Kafka,
 }
 

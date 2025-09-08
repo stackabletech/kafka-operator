@@ -175,9 +175,7 @@ pub fn controller_kafka_container_command(
 }
 
 fn to_listeners(port: u16) -> String {
-    // TODO:
-    // - document that variables are set in stateful set
-    // - customize listener (CONTROLLER / CONTROLLER_AUTH?)
+    // The environment variables are set in the statefulset of the controller
     format!(
         "{listener_name}://$POD_NAME.$ROLEGROUP_REF.$NAMESPACE.svc.$CLUSTER_DOMAIN:{port}",
         listener_name = KafkaListenerName::Controller
@@ -185,10 +183,8 @@ fn to_listeners(port: u16) -> String {
 }
 
 fn to_listener_security_protocol_map(kafka_listeners: &KafkaListenerConfig) -> String {
-    // TODO: make configurable - CONTROLLER_AUTH
     kafka_listeners
         .listener_security_protocol_map_for_listener(&KafkaListenerName::Controller)
-        // todo better error
         .unwrap_or("".to_string())
 }
 
