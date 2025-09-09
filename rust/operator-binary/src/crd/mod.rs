@@ -77,11 +77,12 @@ pub enum Error {
     KraftAndZookeeperConfigured,
 
     #[snafu(display(
-        "Could not calculate ({role}) 'node.id' hash offset for rolegroup '{rolegroup}' which collides with rolegroup '{colliding_rolegroup}'. Please try to rename one of the rolegroups."
+        "Could not calculate 'node.id' hash offset for role '{role}' and rolegroup '{rolegroup}' which collides with role '{coliding_role}' and rolegroup '{colliding_rolegroup}'. Please try to rename one of the rolegroups."
     ))]
     KafkaNodeIdHashCollision {
         role: KafkaRole,
         rolegroup: String,
+        coliding_role: KafkaRole,
         colliding_rolegroup: String,
     },
 }
@@ -258,41 +259,49 @@ impl v1alpha1::KafkaCluster {
     ///
     /// We try to predict the pods here rather than looking at the current cluster state in order to
     /// avoid instance churn.
-    // TODO: this currently only checks within each role, node.id must be unique for all brokers and controllers
     pub fn pod_descriptors(
         &self,
-        kafka_role: &KafkaRole,
+        requested_kafka_role: &KafkaRole,
         cluster_info: &KubernetesClusterInfo,
     ) -> Result<Vec<KafkaPodDescriptor>, Error> {
         let namespace = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
-        let rolegroup_replicas = self.extract_rolegroup_replicas(kafka_role)?;
         let mut pod_descriptors = Vec::new();
-        let mut seen_hashes = HashMap::<u32, String>::new();
+        let mut seen_hashes = HashMap::<u32, (KafkaRole, String)>::new();
 
-        for (rolegroup, replicas) in rolegroup_replicas {
-            let rolegroup_ref = self.rolegroup_ref(kafka_role, &rolegroup);
-            let node_id_hash_offset = node_id_hash32_offset(&rolegroup_ref);
+        for current_role in KafkaRole::roles() {
+            let rolegroup_replicas = self.extract_rolegroup_replicas(&current_role)?;
+            for (rolegroup, replicas) in rolegroup_replicas {
+                let rolegroup_ref = self.rolegroup_ref(&current_role, &rolegroup);
+                let node_id_hash_offset = node_id_hash32_offset(&rolegroup_ref);
 
-            match seen_hashes.get(&node_id_hash_offset) {
-                Some(colliding_rolegroup) => {
-                    return KafkaNodeIdHashCollisionSnafu {
-                        role: kafka_role.clone(),
-                        rolegroup: rolegroup.clone(),
-                        colliding_rolegroup: colliding_rolegroup.clone(),
+                // check collisions
+                match seen_hashes.get(&node_id_hash_offset) {
+                    Some((coliding_role, coliding_rolegroup)) => {
+                        return KafkaNodeIdHashCollisionSnafu {
+                            role: current_role.clone(),
+                            rolegroup: rolegroup.clone(),
+                            coliding_role: coliding_role.clone(),
+                            colliding_rolegroup: coliding_rolegroup.to_string(),
+                        }
+                        .fail();
                     }
-                    .fail();
-                }
-                None => seen_hashes.insert(node_id_hash_offset, rolegroup),
-            };
+                    None => {
+                        seen_hashes.insert(node_id_hash_offset, (current_role.clone(), rolegroup))
+                    }
+                };
 
-            for replica in 0..replicas {
-                pod_descriptors.push(KafkaPodDescriptor {
-                    namespace: namespace.clone(),
-                    role_group_service_name: rolegroup_ref.object_name(),
-                    replica,
-                    cluster_domain: cluster_info.cluster_domain.clone(),
-                    node_id: node_id_hash_offset + u32::from(replica),
-                });
+                // only return descriptors for selected role
+                if current_role == *requested_kafka_role {
+                    for replica in 0..replicas {
+                        pod_descriptors.push(KafkaPodDescriptor {
+                            namespace: namespace.clone(),
+                            role_group_service_name: rolegroup_ref.object_name(),
+                            replica,
+                            cluster_domain: cluster_info.cluster_domain.clone(),
+                            node_id: node_id_hash_offset + u32::from(replica),
+                        });
+                    }
+                }
             }
         }
 

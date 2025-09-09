@@ -110,10 +110,10 @@ pub enum KafkaRole {
 
 impl KafkaRole {
     /// Return all available roles
-    pub fn roles() -> Vec<String> {
+    pub fn roles() -> Vec<KafkaRole> {
         let mut roles = vec![];
         for role in Self::iter() {
-            roles.push(role.to_string())
+            roles.push(role)
         }
         roles
     }
