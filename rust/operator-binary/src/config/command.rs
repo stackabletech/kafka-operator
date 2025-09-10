@@ -6,18 +6,21 @@ use stackable_operator::{
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
-use crate::crd::{
-    KafkaPodDescriptor, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
-    STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_DIR,
-    listener::{KafkaListenerConfig, KafkaListenerName, node_address_cmd},
-    role::{
-        KAFKA_ADVERTISED_LISTENERS, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
-        KAFKA_CONTROLLER_QUORUM_VOTERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS,
-        KAFKA_NODE_ID, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BROKER_PROPERTIES_FILE,
-        controller::CONTROLLER_PROPERTIES_FILE,
+use crate::{
+    crd::{
+        KafkaPodDescriptor, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
+        listener::{KafkaListenerConfig, KafkaListenerName, node_address_cmd},
+        role::{
+            KAFKA_ADVERTISED_LISTENERS, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
+            KAFKA_CONTROLLER_QUORUM_VOTERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS,
+            KAFKA_NODE_ID, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BROKER_PROPERTIES_FILE,
+            controller::CONTROLLER_PROPERTIES_FILE,
+        },
+        security::KafkaTlsSecurity,
+        v1alpha1,
     },
-    security::KafkaTlsSecurity,
-    v1alpha1,
+    product_logging::STACKABLE_LOG_DIR,
 };
 
 /// Returns the commands to start the main Kafka container
@@ -45,7 +48,7 @@ pub fn broker_kafka_container_commands(
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         set_realm_env = match kafka_security.has_kerberos_enabled() {
-            true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {})", STACKABLE_KERBEROS_KRB5_PATH),
+            true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})"),
             false => "".to_string(),
         },
         broker_start_command = broker_start_command(kafka, cluster_id, controller_descriptors, kafka_listeners, opa_connect_string, kafka_security, product_version),

@@ -129,7 +129,12 @@ pub fn build_rolegroup_config_map(
     tracing::debug!(?kafka_config, "Applied kafka config");
     tracing::debug!(?jvm_sec_props, "Applied JVM config");
 
-    extend_role_group_config_map(rolegroup, merged_config, &mut cm_builder);
+    extend_role_group_config_map(
+        &resolved_product_image.product_version,
+        rolegroup,
+        merged_config,
+        &mut cm_builder,
+    );
 
     cm_builder
         .build()

@@ -51,7 +51,7 @@ use crate::{
         self, APP_NAME, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
         STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
+        STACKABLE_LISTENER_BROKER_DIR,
         listener::get_kafka_listener_config,
         role::{
             AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
@@ -63,7 +63,10 @@ use crate::{
     kafka_controller::KAFKA_CONTROLLER_NAME,
     kerberos::add_kerberos_pod_config,
     operations::graceful_shutdown::add_graceful_shutdown_config,
-    product_logging::{LOG4J_CONFIG_FILE, MAX_KAFKA_LOG_FILES_SIZE},
+    product_logging::{
+        MAX_KAFKA_LOG_FILES_SIZE, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR, kafka_log_opts,
+        kafka_log_opts_env_var,
+    },
     utils::build_recommended_labels,
 };
 
@@ -324,8 +327,8 @@ pub fn build_broker_rolegroup_statefulset(
                 .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
-            "KAFKA_LOG4J_OPTS",
-            format!("-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J_CONFIG_FILE}"),
+            kafka_log_opts_env_var(&resolved_product_image.product_version),
+            kafka_log_opts(&resolved_product_image.product_version),
         )
         // Needed for the `containerdebug` process to log it's tracing information to.
         .add_env_var(
@@ -666,8 +669,8 @@ pub fn build_controller_rolegroup_statefulset(
                 .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
-            "KAFKA_LOG4J_OPTS",
-            format!("-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J_CONFIG_FILE}"),
+            kafka_log_opts_env_var(&resolved_product_image.product_version),
+            kafka_log_opts(&resolved_product_image.product_version),
         )
         // Needed for the `containerdebug` process to log it's tracing information to.
         .add_env_var(
