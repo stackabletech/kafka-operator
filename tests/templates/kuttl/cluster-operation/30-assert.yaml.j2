@@ -11,7 +11,7 @@ metadata:
   name: test-kafka-broker-default
 status:
   replicas: 0
-{% if test_scenario['values']['use-kraft-controller'] == 'true' %}
+{% if test_scenario['values']['zookeeper-latest'] == 'false' %}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
