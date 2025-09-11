@@ -36,7 +36,7 @@ spec:
     tls:
       serverSecretClass: null
     vectorAggregatorConfigMapName: kafka-vector-aggregator-discovery
-{% if test_scenario['values']['use-kraft-controller'] == 'false' %}
+{% if test_scenario['values']['zookeeper-latest'] != 'false' %}
     zookeeperConfigMapName: test-kafka-znode
 {% else %}
   controllers:
