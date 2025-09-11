@@ -58,7 +58,7 @@ spec:
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
-{% if test_scenario['values']['use-kraft-controller'] == 'false' %}
+{% if test_scenario['values']['zookeeper-latest'] != 'false' %}
     zookeeperConfigMapName: test-kafka-znode
 {% else %}
   controllers:
