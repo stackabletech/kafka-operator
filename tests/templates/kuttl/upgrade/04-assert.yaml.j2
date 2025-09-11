@@ -14,7 +14,7 @@ status:
   replicas: 1
   currentReplicas: 1
   updatedReplicas: 1
-{% if test_scenario['values']['use-kraft-controller'] == 'true' %}
+{% if test_scenario['values']['zookeeper'] == 'false' %}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
