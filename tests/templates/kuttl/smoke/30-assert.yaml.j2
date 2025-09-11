@@ -86,7 +86,7 @@ status:
   expectedPods: 1
   currentHealthy: 1
   disruptionsAllowed: 1
-{% if test_scenario['values']['use-kraft-controller'] == 'true' %}
+{% if test_scenario['values']['zookeeper'] == 'false' %}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
