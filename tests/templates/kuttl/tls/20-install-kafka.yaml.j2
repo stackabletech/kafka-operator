@@ -1,3 +1,4 @@
+{% if test_scenario['values']['zookeeper-latest'] == 'false' %}
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperZnode
@@ -6,6 +7,7 @@ metadata:
 spec:
   clusterRef:
     name: test-zk
+{% endif %}
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
 ---
 apiVersion: authentication.stackable.tech/v1alpha1

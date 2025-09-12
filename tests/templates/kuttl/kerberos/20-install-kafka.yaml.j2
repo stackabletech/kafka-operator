@@ -4,6 +4,7 @@ kind: TestStep
 commands:
   - script: |
       kubectl apply -n $NAMESPACE -f - <<EOF
+{% if test_scenario['values']['zookeeper-latest'] != 'false' %}
       ---
       apiVersion: zookeeper.stackable.tech/v1alpha1
       kind: ZookeeperZnode
@@ -12,6 +13,7 @@ commands:
       spec:
         clusterRef:
           name: test-zk
+{% endif %}
       ---
       apiVersion: authentication.stackable.tech/v1alpha1
       kind: AuthenticationClass
