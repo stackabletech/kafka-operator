@@ -78,7 +78,7 @@ The configuration of overrides, JVM arguments etc. is similar to the Broker and 
 
 KRaft mode requires major configuration changes compared to ZooKeeper:
 
-* `cluster-id`: This is set to the `metadata.uid` of the KafkaCluster resource during initial formatting
+* `cluster-id`: This is set to the `metadata.name` of the KafkaCluster resource during initial formatting
 * `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
 * `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not supported.
 
