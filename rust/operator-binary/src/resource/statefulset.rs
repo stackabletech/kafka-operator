@@ -149,8 +149,10 @@ pub enum Error {
     #[snafu(display("failed to retrieve rolegroup replicas"))]
     RoleGroupReplicas { source: crd::role::Error },
 
-    #[snafu(display("cluster does not define UID"))]
-    ClusterUidMissing,
+    #[snafu(display(
+        "cluster does not define 'metadata.name' which is required for the Kafka cluster id"
+    ))]
+    ClusterIdMissing,
 
     #[snafu(display("vector agent is enabled but vector aggregator ConfigMap is missing"))]
     VectorAggregatorConfigMapMissing,
@@ -291,7 +293,7 @@ pub fn build_broker_rolegroup_statefulset(
     )
     .context(InvalidKafkaListenersSnafu)?;
 
-    let cluster_id = kafka.uid().context(ClusterUidMissingSnafu)?;
+    let cluster_id = kafka.cluster_id().context(ClusterIdMissingSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -648,7 +650,7 @@ pub fn build_controller_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![controller_kafka_container_command(
-            kafka.uid().context(ClusterUidMissingSnafu)?,
+            kafka.cluster_id().context(ClusterIdMissingSnafu)?,
             kafka
                 .pod_descriptors(kafka_role, cluster_info)
                 .context(BuildPodDescriptorsSnafu)?,

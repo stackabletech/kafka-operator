@@ -207,8 +207,9 @@ impl v1alpha1::KafkaCluster {
         self.spec.controllers.is_some()
     }
 
-    pub fn uid(&self) -> Option<&str> {
-        self.metadata.uid.as_deref()
+    // The cluster-id for Kafka
+    pub fn cluster_id(&self) -> Option<&str> {
+        self.metadata.name.as_deref()
     }
 
     /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
