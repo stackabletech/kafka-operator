@@ -38,7 +38,7 @@ spec:
         replicas: 3
 ----
 
-NOTE: Using `spec.controllers` is mutally exclusive with `spec.clusterConfig.zookeeperConfigMapName`.
+NOTE: Using `spec.controllers` is mutually exclusive with `spec.clusterConfig.zookeeperConfigMapName`.
 
 === Recommendations
 
@@ -99,5 +99,5 @@ The Stackable Kafka operator currently does not support the migration.
 
 === Scaling issues
 
-The https://developers.redhat.com/articles/2024/11/27/dynamic-kafka-controller-quorum?utm_source=chatgpt.com#[Dynamic scaling] is only supported from Kafka version 3.9.0.
+The https://developers.redhat.com/articles/2024/11/27/dynamic-kafka-controller-quorum[Dynamic scaling] is only supported from Kafka version 3.9.0.
 If you are using older versions, automatic scaling may not work properly (e.g. adding or removing controller replicas).

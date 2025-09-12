@@ -364,7 +364,7 @@ impl KafkaPodDescriptor {
     }
 
     /// Build the Kraft voter String
-    /// See: <https://kafka.apache.org/documentation/#kraft_storage_voters>
+    /// See: <https://kafka.apache.org/40/documentation.html#kraft_storage_voters>
     /// Example: 0@controller-0:1234:0000000000-00000000000
     ///   * 0 is the replica id
     ///   * 0000000000-00000000000 is the replica directory id (even though the used Uuid states to be type 4 it does not work)
