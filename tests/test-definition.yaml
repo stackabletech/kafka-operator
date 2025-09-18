@@ -151,3 +151,18 @@ suites:
             expr: "true"
           - name: use-client-auth-tls
             expr: "true"
+  - name: kraft
+    patch:
+      - dimensions:
+          - name: zookeeper
+            expr: "false"
+          - name: zookeeper-latest
+            expr: "false"
+          - name: use-client-tls
+            expr: "true"
+          - name: use-client-auth-tls
+            expr: "true"
+          - name: bootstrap-listener-class
+            expr: "cluster-internal"
+          - name: kerberos-realm
+            expr: "PROD.MYCORP"
