@@ -49,11 +49,11 @@ pub const KAFKA_LOG_DIRS: &str = "log.dirs";
 pub const KAFKA_LISTENERS: &str = "listeners";
 
 /// Specifies the listener addresses that the Kafka brokers will advertise to clients and other brokers.
-/// The config is useful where the actual listener configuration listeners does not represent the addresses that clients should use to connect,
+/// The config is useful where the actual listener configuration 'listeners' does not represent the addresses that clients should use to connect,
 /// such as in cloud environments. The addresses are published to and managed by the controller, the brokers pull these data from the controller as needed.
-/// In IaaS environments, this may need to be different from the interface to which the broker binds. If this is not set, the value for listeners will be used.
-/// Unlike listeners, it is not valid to advertise the 0.0.0.0 meta-address.
-/// Also unlike listeners, there can be duplicated ports in this property, so that one listener can be configured to advertise another listener's address.
+/// In IaaS environments, this may need to be different from the interface to which the broker binds. If this is not set, the value for 'listeners' will be used.
+/// Unlike 'listeners', it is not valid to advertise the 0.0.0.0 meta-address.
+/// Also unlike 'listeners', there can be duplicated ports in this property, so that one listener can be configured to advertise another listener's address.
 /// This can be useful in some cases where external load balancers are used.
 pub const KAFKA_ADVERTISED_LISTENERS: &str = "advertised.listeners";
 
