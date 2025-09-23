@@ -41,7 +41,7 @@ pub const KAFKA_NODE_ID: &str = "node.id";
 /// The roles that this process plays: 'broker', 'controller', or 'broker,controller' if it is both.
 pub const KAFKA_PROCESS_ROLES: &str = "process.roles";
 
-/// A comma-separated list of the directories where the log data is stored. If not set, the value in log.dir is used.
+/// A comma-separated list of the directories where the topic data is stored.
 pub const KAFKA_LOG_DIRS: &str = "log.dirs";
 
 /// Listener List - Comma-separated list of URIs we will listen on and the listener names.
@@ -132,7 +132,6 @@ impl KafkaRole {
     }
 
     /// A Kerberos principal has three parts, with the form username/fully.qualified.domain.name@YOUR-REALM.COM.
-    /// We only have one role and will use "kafka" everywhere (which e.g. differs from the current hdfs implementation,
     /// but is similar to HBase).
     // TODO: split into broker / controller?
     pub fn kerberos_service_name(&self) -> &'static str {

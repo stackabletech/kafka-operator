@@ -83,7 +83,7 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 * `cluster-id`: This is set to the `metadata.name` of the KafkaCluster resource during initial formatting
 * `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
 * `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not supported.
-
+* The operator configures a static voter list containing the controller pods. Controllers are not dynamicaly managed.
 == Troubleshooting
 
 === Cluster does not start
