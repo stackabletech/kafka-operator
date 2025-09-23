@@ -1,0 +1,12 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: >
+      kubectl create configmap prepared-logs
+{% if test_scenario['values']['kafka-kraft'].startswith('3.') %}
+      --from-file=prepared-logs.log4j.xml
+{% else %}
+      --from-file=prepared-logs.log4j2.xml
+{% endif %}
+      --namespace=$NAMESPACE

@@ -1,0 +1,200 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-log-config
+data:
+{% if test_scenario['values']['kafka-kraft'].startswith('3.') %}
+  log4j.properties: |
+    log4j.rootLogger=INFO, CONSOLE, FILE
+
+    log4j.appender.CONSOLE=org.apache.log4j.ConsoleAppender
+    log4j.appender.CONSOLE.Threshold=INFO
+    log4j.appender.CONSOLE.layout=org.apache.log4j.PatternLayout
+    log4j.appender.CONSOLE.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+    log4j.appender.FILE=org.apache.log4j.RollingFileAppender
+    log4j.appender.FILE.Threshold=INFO
+    log4j.appender.FILE.File=/stackable/log/kafka/kafka.log4j.xml
+    log4j.appender.FILE.MaxFileSize=5MB
+    log4j.appender.FILE.MaxBackupIndex=1
+    log4j.appender.FILE.layout=org.apache.log4j.xml.XMLLayout
+{% else %}
+  log4j2.properties: |-
+    appenders = FILE
+
+    appender.FILE.type = File
+    appender.FILE.name = FILE
+    appender.FILE.fileName = /stackable/log/kafka/kafka.log4j2.xml
+    appender.FILE.layout.type = XMLLayout
+
+    rootLogger.level=INFO
+    rootLogger.appenderRefs = FILE
+    rootLogger.appenderRef.FILE.ref = FILE
+{% endif %}
+---
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: test-kafka-client-auth-tls
+spec:
+  provider:
+    tls:
+      clientCertSecretClass: test-kafka-client-auth-tls
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: test-kafka-client-auth-tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-tls-kafka-client-auth-ca
+          namespace: default
+        autoGenerate: true
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+spec:
+  image:
+{% if test_scenario['values']['kafka-kraft'].find(",") > 0 %}
+    custom: "{{ test_scenario['values']['kafka-kraft'].split(',')[1] }}"
+    productVersion: "{{ test_scenario['values']['kafka-kraft'].split(',')[0] }}"
+{% else %}
+    productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
+{% endif %}
+    pullPolicy: IfNotPresent
+  clusterConfig:
+    authentication:
+      - authenticationClass: test-kafka-client-auth-tls
+    tls:
+      serverSecretClass: tls
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
+  controllers:
+    envOverrides:
+      COMMON_VAR: role-value # overridden by role group below
+      ROLE_VAR: role-value   # only defined here at role level
+    config:
+      logging:
+        enableVectorAgent: true
+      requestedSecretLifetime: 7d
+    roleGroups:
+      automatic-log-config:
+        replicas: 1
+        config:
+          logging:
+            enableVectorAgent: true
+            containers:
+              kafka:
+                console:
+                  level: INFO
+                file:
+                  level: INFO
+                loggers:
+                  ROOT:
+                    level: INFO
+              vector:
+                console:
+                  level: INFO
+                file:
+                  level: INFO
+                loggers:
+                  ROOT:
+                    level: INFO
+        podOverrides:
+          spec:
+            containers:
+              - name: vector
+                volumeMounts:
+                  - name: prepared-logs
+                    mountPath: /stackable/log/prepared-logs
+            volumes:
+              - name: prepared-logs
+                configMap:
+                  name: prepared-logs
+      custom-log-config:
+        replicas: 1
+        config:
+          logging:
+            enableVectorAgent: true
+            containers:
+              kafka:
+                custom:
+                  configMap: kafka-log-config
+  brokers:
+    configOverrides:
+      broker.properties:
+        compression.type: uncompressed # overridden by role group below
+        controller.quorum.election.backoff.max.ms: "2000"
+    envOverrides:
+      COMMON_VAR: role-value # overridden by role group below
+      ROLE_VAR: role-value   # only defined here at role level
+    config:
+      logging:
+        enableVectorAgent: true
+      requestedSecretLifetime: 7d
+    roleGroups:
+      default:
+        replicas: 1
+        envOverrides:
+          COMMON_VAR: group-value # overrides role value
+          GROUP_VAR: group-value # only defined here at group level
+        configOverrides:
+          broker.properties:
+            compression.type: snappy
+            controller.quorum.fetch.timeout.ms: "3000"
+        podOverrides:
+          spec:
+            containers:
+              - name: kafka
+                resources:
+                  requests:
+                    cpu: 300m
+                  limits:
+                    cpu: 1100m
+      automatic-log-config:
+        replicas: 1
+        config:
+          logging:
+            enableVectorAgent: true
+            containers:
+              kafka:
+                console:
+                  level: INFO
+                file:
+                  level: INFO
+                loggers:
+                  ROOT:
+                    level: INFO
+              vector:
+                console:
+                  level: INFO
+                file:
+                  level: INFO
+                loggers:
+                  ROOT:
+                    level: INFO
+        podOverrides:
+          spec:
+            containers:
+              - name: vector
+                volumeMounts:
+                  - name: prepared-logs
+                    mountPath: /stackable/log/prepared-logs
+            volumes:
+              - name: prepared-logs
+                configMap:
+                  name: prepared-logs
+      custom-log-config:
+        replicas: 1
+        config:
+          logging:
+            enableVectorAgent: true
+            containers:
+              kafka:
+                custom:
+                  configMap: kafka-log-config

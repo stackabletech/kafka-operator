@@ -4,11 +4,15 @@
 #
 ---
 dimensions:
-  - name: kafka
+  - name: kafka-kraft
     values:
       - 3.7.2
       - 3.9.1
       - 4.0.0
+  - name: kafka
+    values:
+      - 3.7.2
+      - 3.9.1
       # Alternatively, if you want to use a custom image, append a comma and the full image name to the product version
       # as in the example below.
       # - 3.8.0,oci.stackable.tech/sdp/kafka:3.8.0-stackable0.0.0-dev
@@ -67,6 +71,10 @@ dimensions:
       - "external-stable"
       - "external-unstable"
 tests:
+  - name: smoke-kraft
+    dimensions:
+      - kafka-kraft
+      - openshift
   - name: smoke
     dimensions:
       - kafka
