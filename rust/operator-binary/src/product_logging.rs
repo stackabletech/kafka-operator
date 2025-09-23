@@ -33,19 +33,16 @@ const CONSOLE_CONVERSION_PATTERN_LOG4J: &str = "[%d] %p %m (%c)%n";
 const CONSOLE_CONVERSION_PATTERN_LOG4J2: &str = "%d{ISO8601} %p [%t] %c - %m%n";
 
 pub fn kafka_log_opts(product_version: &str) -> String {
-    if product_version.starts_with("4.") {
-        format!("-Dlog4j2.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J2_CONFIG_FILE}")
-    } else {
+    if product_version.starts_with("3.") {
         format!("-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J_CONFIG_FILE}")
+    } else {
+        // TODO: -Dlog4j2 vs -Dlog4j
+        format!("-Dlog4j2.configurationFile=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J2_CONFIG_FILE}")
     }
 }
 
-pub fn kafka_log_opts_env_var(product_version: &str) -> String {
-    if product_version.starts_with("4.") {
-        "KAFKA_LOG4J2_OPTS".to_string()
-    } else {
-        "KAFKA_LOG4J_OPTS".to_string()
-    }
+pub fn kafka_log_opts_env_var() -> String {
+    "KAFKA_LOG4J_OPTS".to_string()
 }
 
 /// Extend the role group ConfigMap with logging and Vector configurations
@@ -61,21 +58,21 @@ pub fn extend_role_group_config_map(
     };
 
     // Starting with Kafka 4.0, log4j2 is used instead of log4j.
-    match product_version.starts_with("4.") {
-        true => add_log4j2_config_if_automatic(
-            cm_builder,
-            Some(merged_config.kafka_logging()),
-            LOG4J2_CONFIG_FILE,
-            container_name,
-            KAFKA_LOG4J2_FILE,
-            MAX_KAFKA_LOG_FILES_SIZE,
-        ),
-        false => add_log4j_config_if_automatic(
+    match product_version.starts_with("3.") {
+        true => add_log4j_config_if_automatic(
             cm_builder,
             Some(merged_config.kafka_logging()),
             LOG4J_CONFIG_FILE,
             container_name,
             KAFKA_LOG4J_FILE,
+            MAX_KAFKA_LOG_FILES_SIZE,
+        ),
+        false => add_log4j2_config_if_automatic(
+            cm_builder,
+            Some(merged_config.kafka_logging()),
+            LOG4J2_CONFIG_FILE,
+            container_name,
+            KAFKA_LOG4J2_FILE,
             MAX_KAFKA_LOG_FILES_SIZE,
         ),
     }

@@ -329,7 +329,7 @@ pub fn build_broker_rolegroup_statefulset(
                 .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
-            kafka_log_opts_env_var(&resolved_product_image.product_version),
+            kafka_log_opts_env_var(),
             kafka_log_opts(&resolved_product_image.product_version),
         )
         // Needed for the `containerdebug` process to log it's tracing information to.
@@ -671,7 +671,7 @@ pub fn build_controller_rolegroup_statefulset(
                 .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
-            kafka_log_opts_env_var(&resolved_product_image.product_version),
+            kafka_log_opts_env_var(),
             kafka_log_opts(&resolved_product_image.product_version),
         )
         // Needed for the `containerdebug` process to log it's tracing information to.
