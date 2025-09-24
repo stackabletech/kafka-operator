@@ -71,6 +71,10 @@ dimensions:
       - "external-stable"
       - "external-unstable"
 tests:
+  - name: operations-kraft
+    dimensions:
+      - kafka-kraft
+      - openshift
   - name: smoke-kraft
     dimensions:
       - kafka-kraft
