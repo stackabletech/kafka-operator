@@ -1,4 +1,3 @@
-{% if test_scenario['values']['zookeeper'] != 'false' %}
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperZnode
@@ -7,7 +6,6 @@ metadata:
 spec:
   clusterRef:
     name: test-zk
-{% endif %}
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
 ---
 apiVersion: authentication.stackable.tech/v1alpha1
@@ -55,18 +53,7 @@ spec:
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
-{% if test_scenario['values']['zookeeper'] != 'false' %}
     zookeeperConfigMapName: test-zk
-{% else %}
-  controllers:
-    config:
-      gracefulShutdownTimeout: 30s # speed up tests
-      logging:
-        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
-    roleGroups:
-      default:
-        replicas: 3
-{% endif %}
   brokers:
     config:
       gracefulShutdownTimeout: 30s # speed up tests

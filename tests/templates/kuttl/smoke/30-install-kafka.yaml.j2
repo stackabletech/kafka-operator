@@ -26,21 +26,7 @@ spec:
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
-{% if test_scenario['values']['zookeeper'] != 'false' %}
     zookeeperConfigMapName: test-zk
-{% else %}
-  controllers:
-    envOverrides:
-      COMMON_VAR: role-value # overridden by role group below
-      ROLE_VAR: role-value   # only defined here at role level
-    config:
-      logging:
-        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
-      requestedSecretLifetime: 7d
-    roleGroups:
-      default:
-        replicas: 3
-{% endif %}
   brokers:
     configOverrides:
       broker.properties:

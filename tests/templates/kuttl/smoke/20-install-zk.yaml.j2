@@ -1,4 +1,3 @@
-{% if test_scenario['values']['zookeeper'] != 'false' %}
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperCluster
@@ -19,4 +18,3 @@ spec:
     roleGroups:
       default:
         replicas: 1
-{% endif %}
