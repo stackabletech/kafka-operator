@@ -87,8 +87,8 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 
 == Known Issues
 
-* Controllers in Kafka versions lower than `3.9.x` cannot be scaled at all due to the static controller quorum.
-* Scaling controllers down to one single replica does not work. Scaling e.g. from 5 to 3 replicas works.
+* Automatic migration from Apache ZooKeeper to KRaft is not supported.
+* Scaling controller replicas might lead to unstable clusters.
 * Kerberos is currently not supported for KRaft in all versions.
 
 == Troubleshooting
