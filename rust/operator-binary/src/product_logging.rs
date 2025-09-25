@@ -36,7 +36,6 @@ pub fn kafka_log_opts(product_version: &str) -> String {
     if product_version.starts_with("3.") {
         format!("-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J_CONFIG_FILE}")
     } else {
-        // TODO: -Dlog4j2 vs -Dlog4j
         format!("-Dlog4j2.configurationFile=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J2_CONFIG_FILE}")
     }
 }
