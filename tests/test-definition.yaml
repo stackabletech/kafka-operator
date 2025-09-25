@@ -8,7 +8,7 @@ dimensions:
     values:
       - 3.7.2
       - 3.9.1
-      - 4.0.0
+      - 4.1.0
   - name: kafka
     values:
       - 3.7.2
