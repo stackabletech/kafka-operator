@@ -372,7 +372,7 @@ impl KafkaPodDescriptor {
     ///     See: <https://github.com/apache/kafka/blob/c5169ca805bd03d870a5bcd49744dcc34891cf15/clients/src/main/java/org/apache/kafka/common/Uuid.java#L29>
     ///   * controller-0 is the replica's host,
     ///   * 1234 is the replica's port.
-    // TODO(@maltesander): Even though the used Uuid states to be type 4 it does not work... 0000000000-00000000000 works...
+    // NOTE(@maltesander): Even though the used Uuid states to be type 4 it does not work... 0000000000-00000000000 works...
     pub fn as_voter(&self, port: u16) -> String {
         format!(
             "{node_id}@{fqdn}:{port}:0000000000-{node_id:0>11}",

@@ -133,7 +133,6 @@ impl KafkaRole {
 
     /// A Kerberos principal has three parts, with the form username/fully.qualified.domain.name@YOUR-REALM.COM.
     /// but is similar to HBase).
-    // TODO: split into broker / controller?
     pub fn kerberos_service_name(&self) -> &'static str {
         "kafka"
     }

@@ -548,7 +548,6 @@ impl KafkaTlsSecurity {
         // Kerberos
         if self.has_kerberos_enabled() {
             config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
-            // TODO: what service name?
             config.insert(
                 "sasl.kerberos.service.name".to_string(),
                 KafkaRole::Broker.kerberos_service_name().to_string(),
@@ -617,10 +616,9 @@ impl KafkaTlsSecurity {
         // Kerberos
         if self.has_kerberos_enabled() {
             config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
-            // TODO: what service name?
             config.insert(
                 "sasl.kerberos.service.name".to_string(),
-                KafkaRole::Broker.kerberos_service_name().to_string(),
+                KafkaRole::Controller.kerberos_service_name().to_string(),
             );
             config.insert(
                 "sasl.mechanism.inter.broker.protocol".to_string(),

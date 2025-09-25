@@ -825,11 +825,6 @@ pub fn build_controller_rolegroup_statefulset(
     add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
 
     let mut pod_template = pod_builder.build_template();
-    let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
-
-    // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
-    // TODO: we need that?
-    pod_template_spec.share_process_namespace = Some(true);
 
     pod_template.merge_from(
         kafka_role

@@ -89,8 +89,11 @@ fn broker_start_command(
 
     let client_port = kafka_security.client_port();
 
-    // TODO: copy to tmp? mount readwrite folder?
-    // TODO: do "cat /tmp/{properties_file}" ?
+    // TODO: The properties file from the configmap is copied to the /tmp folder and appended with dynamic properties
+    // This should be improved:
+    // - mount emptyDir as readWriteConfig
+    // - use config-utils for proper replacements?
+    // - should we print the adapted properties file at startup?
     if kafka.is_controller_configured() {
         formatdoc! {"
             export REPLICA_ID=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
@@ -143,7 +146,11 @@ pub fn controller_kafka_container_command(
 ) -> String {
     let client_port = kafka_security.client_port();
 
-    // TODO: copy to tmp? mount readwrite folder?
+    // TODO: The properties file from the configmap is copied to the /tmp folder and appended with dynamic properties
+    // This should be improved:
+    // - mount emptyDir as readWriteConfig
+    // - use config-utils for proper replacements?
+    // - should we print the adapted properties file at startup?
     formatdoc! {"
         {COMMON_BASH_TRAP_FUNCTIONS}
         {remove_vector_shutdown_file_command}
@@ -165,16 +172,24 @@ pub fn controller_kafka_container_command(
         wait_for_termination $!
         {create_vector_shutdown_file_command}
         ",
-        remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
-        config_dir = STACKABLE_CONFIG_DIR,
-        properties_file = CONTROLLER_PROPERTIES_FILE,
-        bootstrap_servers = to_bootstrap_servers(&controller_descriptors, client_port),
-        listeners = to_listeners(client_port),
-        listener_security_protocol_map = to_listener_security_protocol_map(kafka_listeners),
-        initial_controller_command = initial_controllers_command(&controller_descriptors, product_version, client_port),
-        controller_quorum_voters = to_quorum_voters(&controller_descriptors, client_port),
-        create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
-    }
+            remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+            config_dir = STACKABLE_CONFIG_DIR,
+            properties_file = CONTROLLER_PROPERTIES_FILE,
+            bootstrap_servers = to_bootstrap_servers(&controller_descriptors, client_port),
+            listeners = to_listeners(client_port),
+            listener_security_protocol_map = to_listener_security_protocol_map(kafka_listeners),
+            initial_controller_command = initial_controllers_command(&controller_descriptors, product_version, client_port),
+            controller_quorum_voters = to_quorum_voters(&controller_descriptors, client_port),
+            create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
+
+
+    controller.quorum.bootstrap.servers=test-kafka-controller-default-0.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093,test-kafka-controller-default-1.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093,test-kafka-controller-default-2.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093
+    listeners=CONTROLLER://test-kafka-controller-default-1.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093
+    listener.security.protocol.map=CONTROLLER:SSL
+    controller.quorum.voters=2110489703@test-kafka-controller-default-0.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093,2110489704@test-kafka-controller-default-1.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093,2110489705@test-kafka-controller-default-2.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093
+
+
+        }
 }
 
 fn to_listeners(port: u16) -> String {
@@ -199,6 +214,7 @@ fn to_initial_controllers(controller_descriptors: &[KafkaPodDescriptor], port: u
         .join(",")
 }
 
+// TODO: This can be removed once 3.7.2 is removed. Used in command.rs.
 fn to_quorum_voters(controller_descriptors: &[KafkaPodDescriptor], port: u16) -> String {
     controller_descriptors
         .iter()
