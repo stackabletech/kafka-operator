@@ -172,24 +172,16 @@ pub fn controller_kafka_container_command(
         wait_for_termination $!
         {create_vector_shutdown_file_command}
         ",
-            remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
-            config_dir = STACKABLE_CONFIG_DIR,
-            properties_file = CONTROLLER_PROPERTIES_FILE,
-            bootstrap_servers = to_bootstrap_servers(&controller_descriptors, client_port),
-            listeners = to_listeners(client_port),
-            listener_security_protocol_map = to_listener_security_protocol_map(kafka_listeners),
-            initial_controller_command = initial_controllers_command(&controller_descriptors, product_version, client_port),
-            controller_quorum_voters = to_quorum_voters(&controller_descriptors, client_port),
-            create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
-
-
-    controller.quorum.bootstrap.servers=test-kafka-controller-default-0.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093,test-kafka-controller-default-1.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093,test-kafka-controller-default-2.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093
-    listeners=CONTROLLER://test-kafka-controller-default-1.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093
-    listener.security.protocol.map=CONTROLLER:SSL
-    controller.quorum.voters=2110489703@test-kafka-controller-default-0.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093,2110489704@test-kafka-controller-default-1.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093,2110489705@test-kafka-controller-default-2.test-kafka-controller-default.kuttl-test-cute-ghoul.svc.cluster.local:9093
-
-
-        }
+        remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+        config_dir = STACKABLE_CONFIG_DIR,
+        properties_file = CONTROLLER_PROPERTIES_FILE,
+        bootstrap_servers = to_bootstrap_servers(&controller_descriptors, client_port),
+        listeners = to_listeners(client_port),
+        listener_security_protocol_map = to_listener_security_protocol_map(kafka_listeners),
+        initial_controller_command = initial_controllers_command(&controller_descriptors, product_version, client_port),
+        controller_quorum_voters = to_quorum_voters(&controller_descriptors, client_port),
+        create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
+    }
 }
 
 fn to_listeners(port: u16) -> String {
