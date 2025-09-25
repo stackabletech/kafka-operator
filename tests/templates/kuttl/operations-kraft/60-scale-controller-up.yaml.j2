@@ -25,7 +25,7 @@ spec:
         enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
     roleGroups:
       default:
-        replicas: 1
+        replicas: 5
   brokers:
     config:
       logging:
