@@ -84,6 +84,13 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 * `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
 * `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not supported.
 * The operator configures a static voter list containing the controller pods. Controllers are not dynamicaly managed.
+
+== Known Issues
+
+* Controllers in Kafka versions lower than `3.9.x` cannot be scaled at all due to the static controller quorum.
+* Scaling controllers down to one single replica does not work. Scaling e.g. from 5 to 3 replicas works.
+* Kerberos is currently not supported for KRaft in all versions.
+
 == Troubleshooting
 
 === Cluster does not start
