@@ -18,21 +18,3 @@ metadata:
 status:
   readyReplicas: 1
   replicas: 1
-{% if test_scenario['values']['zookeeper-latest'] == 'false' %}
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: test-kafka-controller-default
-status:
-  readyReplicas: 2
-  replicas: 2
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: test-kafka-controller-secondary
-status:
-  readyReplicas: 1
-  replicas: 1
-{% endif %}

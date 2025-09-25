@@ -28,8 +28,6 @@ dimensions:
   - name: zookeeper-latest
     values:
       - 3.9.3
-      # This enables KRaft mode
-      - "false"
   - name: upgrade_old
     values:
       - 3.7.2
