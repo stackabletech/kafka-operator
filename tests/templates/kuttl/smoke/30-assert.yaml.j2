@@ -15,10 +15,10 @@ spec:
           resources:
             limits:
               cpu: 1100m # From podOverrides
-              memory: 1Gi
+              memory: 2Gi
             requests:
               cpu: 300m # From podOverrides
-              memory: 1Gi
+              memory: 2Gi
         - name: kcat-prober
           resources:
             limits:
@@ -60,8 +60,8 @@ spec:
                 annotations:
                   secrets.stackable.tech/backend.autotls.cert.lifetime: 7d
         - name: log-config
-        - name: config
         - name: listener-broker
+        - name: config
         - name: log
 status:
   readyReplicas: 1

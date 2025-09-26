@@ -21,9 +21,6 @@ spec:
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
     zookeeperConfigMapName: test-zk
-  clusterOperation:
-    stopped: false
-    reconciliationPaused: true
   brokers:
     config:
       logging:
@@ -31,3 +28,6 @@ spec:
     roleGroups:
       default:
         replicas: 1
+  clusterOperation:
+    stopped: false
+    reconciliationPaused: true

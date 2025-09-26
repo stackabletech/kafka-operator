@@ -29,7 +29,7 @@ spec:
     zookeeperConfigMapName: test-zk
   brokers:
     configOverrides:
-      server.properties:
+      broker.properties:
         compression.type: uncompressed # overridden by role group below
         controller.quorum.election.backoff.max.ms: "2000"
     envOverrides:
@@ -46,7 +46,7 @@ spec:
           COMMON_VAR: group-value # overrides role value
           GROUP_VAR: group-value # only defined here at group level
         configOverrides:
-          server.properties:
+          broker.properties:
             compression.type: snappy
             controller.quorum.fetch.timeout.ms: "3000"
         podOverrides:

@@ -59,7 +59,7 @@ spec:
     zookeeperConfigMapName: simple-kafka-znode
   brokers:
     configOverrides:
-      server.properties:
+      broker.properties:
         opa.authorizer.cache.expire.after.seconds: "0"
     roleGroups:
       default:

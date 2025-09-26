@@ -17,12 +17,12 @@ spec:
               # value set in the role configuration
               cpu: 500m
               # value set in the rolegroup configuration
-              memory: 2Gi
+              memory: 3Gi
             requests:
               # default value set by the operator
               cpu: 250m
               # value set in the rolegroup configuration
-              memory: 2Gi
+              memory: 3Gi
         - name: kcat-prober
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
         - name: vector
