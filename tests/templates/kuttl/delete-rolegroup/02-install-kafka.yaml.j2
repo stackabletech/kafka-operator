@@ -20,20 +20,7 @@ spec:
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
-{% if test_scenario['values']['zookeeper-latest'] != 'false' %}
     zookeeperConfigMapName: test-zk
-{% else %}
-  controllers:
-    config:
-      gracefulShutdownTimeout: 30s # speed up tests
-      logging:
-        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
-    roleGroups:
-      default:
-        replicas: 2
-      secondary:
-        replicas: 1
-{% endif %}
   brokers:
     config:
       gracefulShutdownTimeout: 30s # speed up tests

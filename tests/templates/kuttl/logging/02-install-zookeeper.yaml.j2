@@ -1,4 +1,3 @@
-{% if test_scenario['values']['zookeeper-latest'] != 'false' %}
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperCluster
@@ -27,4 +26,3 @@ metadata:
 spec:
   clusterRef:
     name: test-zk
-{% endif %}

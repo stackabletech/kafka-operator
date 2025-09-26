@@ -50,54 +50,7 @@ spec:
     tls:
       serverSecretClass: null
     vectorAggregatorConfigMapName: kafka-vector-aggregator-discovery
-{% if test_scenario['values']['zookeeper-latest'] != 'false' %}
     zookeeperConfigMapName: test-kafka-znode
-{% else %}
-  controllers:
-    roleGroups:
-      automatic-log-config:
-        replicas: 1
-        config:
-          logging:
-            enableVectorAgent: true
-            containers:
-              kafka:
-                console:
-                  level: INFO
-                file:
-                  level: INFO
-                loggers:
-                  ROOT:
-                    level: INFO
-              vector:
-                console:
-                  level: INFO
-                file:
-                  level: INFO
-                loggers:
-                  ROOT:
-                    level: INFO
-        podOverrides:
-          spec:
-            containers:
-              - name: vector
-                volumeMounts:
-                  - name: prepared-logs
-                    mountPath: /stackable/log/prepared-logs
-            volumes:
-              - name: prepared-logs
-                configMap:
-                  name: prepared-logs
-      custom-log-config:
-        replicas: 1
-        config:
-          logging:
-            enableVectorAgent: true
-            containers:
-              kafka:
-                custom:
-                  configMap: kafka-log-config
-{% endif %}
   brokers:
     roleGroups:
       automatic-log-config:

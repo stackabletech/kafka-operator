@@ -1,4 +1,3 @@
-{% if test_scenario['values']['zookeeper-latest'] != 'false' %}
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
@@ -11,4 +10,3 @@ metadata:
 status:
   readyReplicas: 1
   replicas: 1
-{% endif %}
