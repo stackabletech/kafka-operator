@@ -51,6 +51,7 @@ commands:
               enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
             brokerListenerClass: {{ test_scenario['values']['broker-listener-class'] }}
             bootstrapListenerClass: {{ test_scenario['values']['bootstrap-listener-class'] }}
+            gracefulShutdownTimeout: 30s # speed up tests
           roleGroups:
             default:
               replicas: 3
