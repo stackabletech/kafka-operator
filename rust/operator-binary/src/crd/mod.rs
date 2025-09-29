@@ -2,45 +2,36 @@ pub mod affinity;
 pub mod authentication;
 pub mod authorization;
 pub mod listener;
+pub mod role;
 pub mod security;
 pub mod tls;
 
-use std::{collections::BTreeMap, str::FromStr};
+use std::collections::{BTreeMap, HashMap};
 
-use affinity::get_affinity;
 use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{OptionExt, Snafu};
 use stackable_operator::{
     commons::{
-        affinity::StackableAffinity,
-        cluster_operation::ClusterOperation,
+        cluster_operation::ClusterOperation, networking::DomainName,
         product_image_selection::ProductImage,
-        resources::{
-            CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
-            PvcConfig, PvcConfigFragment, Resources, ResourcesFragment,
-        },
     },
-    config::{
-        fragment::{self, Fragment, ValidationError},
-        merge::Merge,
-    },
-    k8s_openapi::{
-        api::core::v1::PersistentVolumeClaim, apimachinery::pkg::api::resource::Quantity,
-    },
-    kube::{CustomResource, ResourceExt, runtime::reflector::ObjectRef},
-    product_config_utils::Configuration,
-    product_logging::{self, spec::Logging},
-    role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroup, RoleGroupRef},
+    kube::{CustomResource, runtime::reflector::ObjectRef},
+    role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroupRef},
     schemars::{self, JsonSchema},
-    shared::time::Duration,
     status::condition::{ClusterCondition, HasStatusCondition},
     utils::cluster_info::KubernetesClusterInfo,
     versioned::versioned,
 };
-use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
-use crate::crd::{authorization::KafkaAuthorization, tls::KafkaTls};
+use crate::{
+    config::node_id_hasher::node_id_hash32_offset,
+    crd::{
+        authorization::KafkaAuthorization,
+        role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
+        tls::KafkaTls,
+    },
+};
 
 pub const DOCKER_IMAGE_BASE_NAME: &str = "kafka";
 pub const APP_NAME: &str = "kafka";
@@ -49,7 +40,6 @@ pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
 pub const METRICS_PORT_NAME: &str = "metrics";
 pub const METRICS_PORT: u16 = 9606;
 // config files
-pub const SERVER_PROPERTIES_FILE: &str = "server.properties";
 pub const JVM_SECURITY_PROPERTIES_FILE: &str = "security.properties";
 // env vars
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
@@ -62,46 +52,37 @@ pub const STACKABLE_LISTENER_BROKER_DIR: &str = "/stackable/listener-broker";
 pub const STACKABLE_LISTENER_BOOTSTRAP_DIR: &str = "/stackable/listener-bootstrap";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
-pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
-pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
 // kerberos
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
 pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
-const DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_minutes_unchecked(30);
-
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("object has no namespace associated"))]
+    #[snafu(display("The Kafka role [{role}] is missing from spec"))]
+    MissingRole { role: String },
+
+    #[snafu(display("Object has no namespace associated"))]
     NoNamespace,
 
-    #[snafu(display("failed to validate config of rolegroup {rolegroup}"))]
-    RoleGroupValidation {
-        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
-        source: ValidationError,
+    #[snafu(display(
+        "Kafka version 4 and higher requires a Kraft controller (configured via `spec.controller`)"
+    ))]
+    Kafka4RequiresKraft,
+
+    #[snafu(display(
+        "Kraft controller (`spec.controller`) and ZooKeeper (`spec.clusterConfig.zookeeperConfigMapName`) are configured. Please only choose one"
+    ))]
+    KraftAndZookeeperConfigured,
+
+    #[snafu(display(
+        "Could not calculate 'node.id' hash offset for role '{role}' and rolegroup '{rolegroup}' which collides with role '{coliding_role}' and rolegroup '{colliding_rolegroup}'. Please try to rename one of the rolegroups."
+    ))]
+    KafkaNodeIdHashCollision {
+        role: KafkaRole,
+        rolegroup: String,
+        coliding_role: KafkaRole,
+        colliding_rolegroup: String,
     },
-
-    #[snafu(display("the Kafka role [{role}] is missing from spec"))]
-    MissingKafkaRole { role: String },
-
-    #[snafu(display("the role {role} is not defined"))]
-    CannotRetrieveKafkaRole { role: String },
-
-    #[snafu(display("the Kafka node role group [{role_group}] is missing from spec"))]
-    MissingKafkaRoleGroup { role_group: String },
-
-    #[snafu(display("the role group {role_group} is not defined"))]
-    CannotRetrieveKafkaRoleGroup { role_group: String },
-
-    #[snafu(display("unknown role {role}. Should be one of {roles:?}"))]
-    UnknownKafkaRole {
-        source: strum::ParseError,
-        role: String,
-        roles: Vec<String>,
-    },
-
-    #[snafu(display("fragment validation failure"))]
-    FragmentValidationFailure { source: ValidationError },
 }
 
 #[versioned(
@@ -132,11 +113,16 @@ pub mod versioned {
         pub image: ProductImage,
 
         // no doc - docs in Role struct.
-        pub brokers: Option<Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
+        pub brokers: Option<Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
+
+        // no doc - docs in Role struct.
+        pub controllers:
+            Option<Role<ControllerConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
 
         /// Kafka settings that affect all roles and role groups.
         ///
         /// The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
+        #[serde(default)]
         pub cluster_config: v1alpha1::KafkaClusterConfig,
 
         // no doc - docs in ClusterOperation struct.
@@ -169,11 +155,24 @@ pub mod versioned {
         #[serde(skip_serializing_if = "Option::is_none")]
         pub vector_aggregator_config_map_name: Option<String>,
 
-        /// Kafka requires a ZooKeeper cluster connection to run.
         /// Provide the name of the ZooKeeper [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery)
         /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
         /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
-        pub zookeeper_config_map_name: String,
+        /// This can only be used up to Kafka version 3.9.x. Since Kafka 4.0.0, ZooKeeper suppport was dropped.
+        /// Please use the 'controller' role instead.
+        pub zookeeper_config_map_name: Option<String>,
+    }
+}
+
+impl Default for v1alpha1::KafkaClusterConfig {
+    fn default() -> Self {
+        Self {
+            authentication: vec![],
+            authorization: KafkaAuthorization::default(),
+            tls: tls::default_kafka_tls(),
+            vector_aggregator_config_map_name: None,
+            zookeeper_config_map_name: None,
+        }
     }
 }
 
@@ -187,109 +186,152 @@ impl HasStatusCondition for v1alpha1::KafkaCluster {
 }
 
 impl v1alpha1::KafkaCluster {
+    /// Supporting Kraft alongside Zookeeper requires a couple of CRD checks
+    /// - If Kafka 4 and higher is used, no zookeeper config map ref has to be provided
+    /// - Configuring the controller role means no zookeeper config map ref has to be provided
+    pub fn check_kraft_vs_zookeeper(&self, product_version: &str) -> Result<(), Error> {
+        if product_version.starts_with("4.") && self.spec.controllers.is_none() {
+            return Err(Error::Kafka4RequiresKraft);
+        }
+
+        if self.spec.controllers.is_some()
+            && self.spec.cluster_config.zookeeper_config_map_name.is_some()
+        {
+            return Err(Error::KraftAndZookeeperConfigured);
+        }
+
+        Ok(())
+    }
+
+    pub fn is_controller_configured(&self) -> bool {
+        self.spec.controllers.is_some()
+    }
+
+    // The cluster-id for Kafka
+    pub fn cluster_id(&self) -> Option<&str> {
+        self.metadata.name.as_deref()
+    }
+
     /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
     /// to get a list of broker addresses and will use those to transmit data to the correct broker.
     pub fn bootstrap_service_name(&self, rolegroup: &RoleGroupRef<Self>) -> String {
         format!("{}-bootstrap", rolegroup.object_name())
     }
 
-    /// Metadata about a broker rolegroup
-    pub fn broker_rolegroup_ref(&self, group_name: impl Into<String>) -> RoleGroupRef<Self> {
+    /// Metadata about a rolegroup
+    pub fn rolegroup_ref(
+        &self,
+        role: &KafkaRole,
+        group_name: impl Into<String>,
+    ) -> RoleGroupRef<Self> {
         RoleGroupRef {
             cluster: ObjectRef::from_obj(self),
-            role: KafkaRole::Broker.to_string(),
+            role: role.to_string(),
             role_group: group_name.into(),
         }
-    }
-
-    pub fn role(
-        &self,
-        role_variant: &KafkaRole,
-    ) -> Result<&Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
-        match role_variant {
-            KafkaRole::Broker => self.spec.brokers.as_ref(),
-        }
-        .with_context(|| CannotRetrieveKafkaRoleSnafu {
-            role: role_variant.to_string(),
-        })
-    }
-
-    pub fn rolegroup(
-        &self,
-        rolegroup_ref: &RoleGroupRef<Self>,
-    ) -> Result<&RoleGroup<KafkaConfigFragment, JavaCommonConfig>, Error> {
-        let role_variant =
-            KafkaRole::from_str(&rolegroup_ref.role).with_context(|_| UnknownKafkaRoleSnafu {
-                role: rolegroup_ref.role.to_owned(),
-                roles: KafkaRole::roles(),
-            })?;
-
-        let role = self.role(&role_variant)?;
-        role.role_groups
-            .get(&rolegroup_ref.role_group)
-            .with_context(|| CannotRetrieveKafkaRoleGroupSnafu {
-                role_group: rolegroup_ref.role_group.to_owned(),
-            })
     }
 
     pub fn role_config(&self, role: &KafkaRole) -> Option<&GenericRoleConfig> {
         match role {
             KafkaRole::Broker => self.spec.brokers.as_ref().map(|b| &b.role_config),
+            KafkaRole::Controller => self.spec.controllers.as_ref().map(|b| &b.role_config),
         }
     }
 
-    /// List all pods expected to form the cluster
+    pub fn broker_role(
+        &self,
+    ) -> Result<&Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
+        self.spec.brokers.as_ref().context(MissingRoleSnafu {
+            role: KafkaRole::Broker.to_string(),
+        })
+    }
+
+    pub fn controller_role(
+        &self,
+    ) -> Result<&Role<ControllerConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
+        self.spec.controllers.as_ref().context(MissingRoleSnafu {
+            role: KafkaRole::Controller.to_string(),
+        })
+    }
+
+    /// List all pod descriptors of a provided role expected to form the cluster.
     ///
     /// We try to predict the pods here rather than looking at the current cluster state in order to
     /// avoid instance churn.
-    pub fn pods(&self) -> Result<impl Iterator<Item = KafkaPodRef> + '_, Error> {
-        let ns = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
-        Ok(self
-            .spec
-            .brokers
-            .iter()
-            .flat_map(|role| &role.role_groups)
-            // Order rolegroups consistently, to avoid spurious downstream rewrites
-            .collect::<BTreeMap<_, _>>()
-            .into_iter()
-            .flat_map(move |(rolegroup_name, rolegroup)| {
-                let rolegroup_ref = self.broker_rolegroup_ref(rolegroup_name);
-                let ns = ns.clone();
-                (0..rolegroup.replicas.unwrap_or(0)).map(move |i| KafkaPodRef {
-                    namespace: ns.clone(),
-                    role_group_service_name: rolegroup_ref.object_name(),
-                    pod_name: format!("{}-{}", rolegroup_ref.object_name(), i),
-                })
-            }))
+    pub fn pod_descriptors(
+        &self,
+        requested_kafka_role: &KafkaRole,
+        cluster_info: &KubernetesClusterInfo,
+    ) -> Result<Vec<KafkaPodDescriptor>, Error> {
+        let namespace = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
+        let mut pod_descriptors = Vec::new();
+        let mut seen_hashes = HashMap::<u32, (KafkaRole, String)>::new();
+
+        for current_role in KafkaRole::roles() {
+            let rolegroup_replicas = self.extract_rolegroup_replicas(&current_role)?;
+            for (rolegroup, replicas) in rolegroup_replicas {
+                let rolegroup_ref = self.rolegroup_ref(&current_role, &rolegroup);
+                let node_id_hash_offset = node_id_hash32_offset(&rolegroup_ref);
+
+                // check collisions
+                match seen_hashes.get(&node_id_hash_offset) {
+                    Some((coliding_role, coliding_rolegroup)) => {
+                        return KafkaNodeIdHashCollisionSnafu {
+                            role: current_role.clone(),
+                            rolegroup: rolegroup.clone(),
+                            coliding_role: coliding_role.clone(),
+                            colliding_rolegroup: coliding_rolegroup.to_string(),
+                        }
+                        .fail();
+                    }
+                    None => {
+                        seen_hashes.insert(node_id_hash_offset, (current_role.clone(), rolegroup))
+                    }
+                };
+
+                // only return descriptors for selected role
+                if current_role == *requested_kafka_role {
+                    for replica in 0..replicas {
+                        pod_descriptors.push(KafkaPodDescriptor {
+                            namespace: namespace.clone(),
+                            role_group_service_name: rolegroup_ref.object_name(),
+                            replica,
+                            cluster_domain: cluster_info.cluster_domain.clone(),
+                            node_id: node_id_hash_offset + u32::from(replica),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(pod_descriptors)
     }
 
-    /// Retrieve and merge resource configs for role and role groups
-    pub fn merged_config(
+    fn extract_rolegroup_replicas(
         &self,
-        role: &KafkaRole,
-        rolegroup_ref: &RoleGroupRef<Self>,
-    ) -> Result<KafkaConfig, Error> {
-        // Initialize the result with all default values as baseline
-        let conf_defaults = KafkaConfig::default_config(&self.name_any(), role);
+        kafka_role: &KafkaRole,
+    ) -> Result<BTreeMap<String, u16>, Error> {
+        Ok(match kafka_role {
+            KafkaRole::Broker => self
+                .broker_role()
+                .iter()
+                .flat_map(|role| &role.role_groups)
+                .flat_map(|(rolegroup_name, rolegroup)| {
+                    std::iter::once((rolegroup_name.to_string(), rolegroup.replicas.unwrap_or(0)))
+                })
+                // Order rolegroups consistently, to avoid spurious downstream rewrites
+                .collect::<BTreeMap<_, _>>(),
 
-        // Retrieve role resource config
-        let role = self.role(role)?;
-        let mut conf_role = role.config.config.to_owned();
-
-        // Retrieve rolegroup specific resource config
-        let role_group = self.rolegroup(rolegroup_ref)?;
-        let mut conf_role_group = role_group.config.config.to_owned();
-
-        // Merge more specific configs into default config
-        // Hierarchy is:
-        // 1. RoleGroup
-        // 2. Role
-        // 3. Default
-        conf_role.merge(&conf_defaults);
-        conf_role_group.merge(&conf_role);
-
-        tracing::debug!("Merged config: {:?}", conf_role_group);
-        fragment::validate(conf_role_group).context(FragmentValidationFailureSnafu)
+            KafkaRole::Controller => self
+                .controller_role()
+                .iter()
+                .flat_map(|role| &role.role_groups)
+                .flat_map(|(rolegroup_name, rolegroup)| {
+                    std::iter::once((rolegroup_name.to_string(), rolegroup.replicas.unwrap_or(0)))
+                })
+                // Order rolegroups consistently, to avoid spurious downstream rewrites
+                .collect::<BTreeMap<_, _>>(),
+        })
     }
 }
 
@@ -297,240 +339,54 @@ impl v1alpha1::KafkaCluster {
 ///
 /// Used for service discovery.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct KafkaPodRef {
-    pub namespace: String,
-    pub role_group_service_name: String,
-    pub pod_name: String,
+pub struct KafkaPodDescriptor {
+    namespace: String,
+    role_group_service_name: String,
+    replica: u16,
+    cluster_domain: DomainName,
+    node_id: u32,
 }
 
-impl KafkaPodRef {
-    pub fn fqdn(&self, cluster_info: &KubernetesClusterInfo) -> String {
+impl KafkaPodDescriptor {
+    /// Return the fully qualified domain name
+    /// Format: `<pod-name>.<service>.<namespace>.svc.<cluster-domain>`
+    pub fn fqdn(&self) -> String {
         format!(
             "{pod_name}.{service_name}.{namespace}.svc.{cluster_domain}",
-            pod_name = self.pod_name,
+            pod_name = self.pod_name(),
             service_name = self.role_group_service_name,
             namespace = self.namespace,
-            cluster_domain = cluster_info.cluster_domain
+            cluster_domain = self.cluster_domain
         )
     }
-}
 
-#[derive(
-    Clone,
-    Debug,
-    Deserialize,
-    Display,
-    EnumIter,
-    Eq,
-    Hash,
-    JsonSchema,
-    PartialEq,
-    Serialize,
-    EnumString,
-)]
-pub enum KafkaRole {
-    #[strum(serialize = "broker")]
-    Broker,
-}
-
-impl KafkaRole {
-    /// Metadata about a rolegroup
-    pub fn rolegroup_ref(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-        group_name: impl Into<String>,
-    ) -> RoleGroupRef<v1alpha1::KafkaCluster> {
-        RoleGroupRef {
-            cluster: ObjectRef::from_obj(kafka),
-            role: self.to_string(),
-            role_group: group_name.into(),
-        }
+    pub fn pod_name(&self) -> String {
+        format!("{}-{}", self.role_group_service_name, self.replica)
     }
 
-    pub fn roles() -> Vec<String> {
-        let mut roles = vec![];
-        for role in Self::iter() {
-            roles.push(role.to_string())
-        }
-        roles
+    /// Build the Kraft voter String
+    /// See: <https://kafka.apache.org/40/documentation.html#kraft_storage_voters>
+    /// Example: 0@controller-0:1234:0000000000-00000000000
+    ///   * 0 is the replica id
+    ///   * 0000000000-00000000000 is the replica directory id (even though the used Uuid states to be type 4 it does not work)
+    ///     See: <https://github.com/apache/kafka/blob/c5169ca805bd03d870a5bcd49744dcc34891cf15/clients/src/main/java/org/apache/kafka/common/Uuid.java#L29>
+    ///   * controller-0 is the replica's host,
+    ///   * 1234 is the replica's port.
+    // NOTE(@maltesander): Even though the used Uuid states to be type 4 it does not work... 0000000000-00000000000 works...
+    pub fn as_voter(&self, port: u16) -> String {
+        format!(
+            "{node_id}@{fqdn}:{port}:0000000000-{node_id:0>11}",
+            node_id = self.node_id,
+            fqdn = self.fqdn(),
+        )
     }
 
-    /// A Kerberos principal has three parts, with the form username/fully.qualified.domain.name@YOUR-REALM.COM.
-    /// We only have one role and will use "kafka" everywhere (which e.g. differs from the current hdfs implementation,
-    /// but is similar to HBase).
-    pub fn kerberos_service_name(&self) -> &'static str {
-        "kafka"
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Fragment, JsonSchema)]
-#[fragment_attrs(
-    derive(
-        Clone,
-        Debug,
-        Default,
-        Deserialize,
-        JsonSchema,
-        Merge,
-        PartialEq,
-        Serialize
-    ),
-    serde(rename_all = "camelCase")
-)]
-pub struct Storage {
-    #[fragment_attrs(serde(default))]
-    pub log_dirs: PvcConfig,
-}
-
-impl Storage {
-    pub fn build_pvcs(&self) -> Vec<PersistentVolumeClaim> {
-        let data_pvc = self
-            .log_dirs
-            .build_pvc(LOG_DIRS_VOLUME_NAME, Some(vec!["ReadWriteOnce"]));
-        vec![data_pvc]
-    }
-}
-
-#[derive(
-    Clone,
-    Debug,
-    Deserialize,
-    Display,
-    Eq,
-    EnumIter,
-    JsonSchema,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Serialize,
-)]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub enum Container {
-    Vector,
-    KcatProber,
-    GetService,
-    Kafka,
-}
-
-#[derive(Debug, Default, PartialEq, Fragment, JsonSchema)]
-#[fragment_attrs(
-    derive(
-        Clone,
-        Debug,
-        Default,
-        Deserialize,
-        JsonSchema,
-        Merge,
-        PartialEq,
-        Serialize
-    ),
-    serde(rename_all = "camelCase")
-)]
-pub struct KafkaConfig {
-    #[fragment_attrs(serde(default))]
-    pub logging: Logging<Container>,
-
-    #[fragment_attrs(serde(default))]
-    pub resources: Resources<Storage, NoRuntimeLimits>,
-
-    #[fragment_attrs(serde(default))]
-    pub affinity: StackableAffinity,
-
-    /// Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
-    #[fragment_attrs(serde(default))]
-    pub graceful_shutdown_timeout: Option<Duration>,
-
-    /// The ListenerClass used for bootstrapping new clients. Should use a stable ListenerClass to avoid unnecessary client restarts (such as `cluster-internal` or `external-stable`).
-    pub bootstrap_listener_class: String,
-
-    /// The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
-    pub broker_listener_class: String,
-
-    /// Request secret (currently only autoTls certificates) lifetime from the secret operator, e.g. `7d`, or `30d`.
-    /// Please note that this can be shortened by the `maxCertificateLifetime` setting on the SecretClass issuing the TLS certificate.
-    #[fragment_attrs(serde(default))]
-    pub requested_secret_lifetime: Option<Duration>,
-}
-
-impl KafkaConfig {
-    // Auto TLS certificate lifetime
-    const DEFAULT_BROKER_SECRET_LIFETIME: Duration = Duration::from_days_unchecked(1);
-
-    pub fn default_config(cluster_name: &str, role: &KafkaRole) -> KafkaConfigFragment {
-        KafkaConfigFragment {
-            logging: product_logging::spec::default_logging(),
-            resources: ResourcesFragment {
-                cpu: CpuLimitsFragment {
-                    min: Some(Quantity("250m".to_owned())),
-                    max: Some(Quantity("1000m".to_owned())),
-                },
-                memory: MemoryLimitsFragment {
-                    limit: Some(Quantity("1Gi".to_owned())),
-                    runtime_limits: NoRuntimeLimitsFragment {},
-                },
-                storage: StorageFragment {
-                    log_dirs: PvcConfigFragment {
-                        capacity: Some(Quantity("2Gi".to_owned())),
-                        storage_class: None,
-                        selectors: None,
-                    },
-                },
-            },
-            affinity: get_affinity(cluster_name, role),
-            graceful_shutdown_timeout: Some(DEFAULT_BROKER_GRACEFUL_SHUTDOWN_TIMEOUT),
-            bootstrap_listener_class: Some("cluster-internal".to_string()),
-            broker_listener_class: Some("cluster-internal".to_string()),
-            requested_secret_lifetime: Some(Self::DEFAULT_BROKER_SECRET_LIFETIME),
-        }
-    }
-}
-
-impl Configuration for KafkaConfigFragment {
-    type Configurable = v1alpha1::KafkaCluster;
-
-    fn compute_env(
-        &self,
-        _resource: &Self::Configurable,
-        _role_name: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
-    {
-        Ok(BTreeMap::new())
-    }
-
-    fn compute_cli(
-        &self,
-        _resource: &Self::Configurable,
-        _role_name: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
-    {
-        Ok(BTreeMap::new())
-    }
-
-    fn compute_files(
-        &self,
-        resource: &Self::Configurable,
-        _role_name: &str,
-        file: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
-    {
-        let mut config = BTreeMap::new();
-
-        if file == SERVER_PROPERTIES_FILE {
-            // OPA
-            if resource.spec.cluster_config.authorization.opa.is_some() {
-                config.insert(
-                    "authorizer.class.name".to_string(),
-                    Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),
-                );
-                config.insert(
-                    "opa.authorizer.metrics.enabled".to_string(),
-                    Some("true".to_string()),
-                );
-            }
-        }
-
-        Ok(config)
+    pub fn as_quorum_voter(&self, port: u16) -> String {
+        format!(
+            "{node_id}@{fqdn}:{port}",
+            node_id = self.node_id,
+            fqdn = self.fqdn(),
+        )
     }
 }
 
@@ -574,7 +430,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -593,7 +449,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
@@ -618,7 +474,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           clusterConfig:
             tls:
               serverSecretClass: null
@@ -639,7 +495,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
@@ -664,7 +520,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -683,7 +539,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls
@@ -704,7 +560,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls

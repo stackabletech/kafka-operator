@@ -50,7 +50,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.7.2
+    productVersion: 3.9.1
   clusterConfig:
     authorization:
       opa:
@@ -59,7 +59,7 @@ spec:
     zookeeperConfigMapName: simple-kafka-znode
   brokers:
     configOverrides:
-      server.properties:
+      broker.properties:
         opa.authorizer.cache.expire.after.seconds: "0"
     roleGroups:
       default:

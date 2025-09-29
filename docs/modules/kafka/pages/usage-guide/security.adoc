@@ -15,7 +15,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.7.2
+    productVersion: 3.9.1
   clusterConfig:
     zookeeperConfigMapName: simple-kafka-znode
     tls:
@@ -95,7 +95,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.7.2
+    productVersion: 3.9.1
   clusterConfig:
     authentication:
       - authenticationClass: kafka-client-tls # <1>
@@ -140,7 +140,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.7.2
+    productVersion: 3.9.1
   clusterConfig:
     authentication:
       - authenticationClass: kafka-client-kerberos # <1>
@@ -184,7 +184,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.7.2
+    productVersion: 3.9.1
   clusterConfig:
     authorization:
       opa:
@@ -208,7 +208,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.7.2
+    productVersion: 3.9.1
   clusterConfig:
     authorization:
       opa:
@@ -217,7 +217,7 @@ spec:
     zookeeperConfigMapName: simple-kafka-znode
   brokers:
     configOverrides:
-      server.properties:
+      broker.properties:
         opa.authorizer.cache.initial.capacity: "100"
         opa.authorizer.cache.maximum.size: "100"
         opa.authorizer.cache.expire.after.seconds: "10"

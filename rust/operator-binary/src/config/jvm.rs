@@ -5,8 +5,7 @@ use stackable_operator::{
 };
 
 use crate::crd::{
-    JVM_SECURITY_PROPERTIES_FILE, KafkaConfig, KafkaConfigFragment, METRICS_PORT,
-    STACKABLE_CONFIG_DIR,
+    JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT, STACKABLE_CONFIG_DIR, role::AnyConfig,
 };
 
 const JAVA_HEAP_FACTOR: f32 = 0.8;
@@ -26,14 +25,14 @@ pub enum Error {
 }
 
 /// All JVM arguments.
-fn construct_jvm_args(
-    merged_config: &KafkaConfig,
-    role: &Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+fn construct_jvm_args<ConfigFragment>(
+    merged_config: &AnyConfig,
+    role: &Role<ConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<Vec<String>, Error> {
     let heap_size = MemoryQuantity::try_from(
         merged_config
-            .resources
+            .resources()
             .memory
             .limit
             .as_ref()
@@ -68,9 +67,9 @@ fn construct_jvm_args(
 
 /// Arguments that go into `EXTRA_ARGS`, so *not* the heap settings (which you can get using
 /// [`construct_heap_jvm_args`]).
-pub fn construct_non_heap_jvm_args(
-    merged_config: &KafkaConfig,
-    role: &Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+pub fn construct_non_heap_jvm_args<ConfigFragment>(
+    merged_config: &AnyConfig,
+    role: &Role<ConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<String, Error> {
     let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
@@ -81,9 +80,9 @@ pub fn construct_non_heap_jvm_args(
 
 /// Arguments that go into `KAFKA_HEAP_OPTS`.
 /// You can get the normal JVM arguments using [`construct_non_heap_jvm_args`].
-pub fn construct_heap_jvm_args(
-    merged_config: &KafkaConfig,
-    role: &Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+pub fn construct_heap_jvm_args<ConfigFragment>(
+    merged_config: &AnyConfig,
+    role: &Role<ConfigFragment, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
 ) -> Result<String, Error> {
     let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
@@ -101,7 +100,10 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{KafkaRole, v1alpha1};
+    use crate::crd::{
+        role::{KafkaRole, broker::BrokerConfigFragment},
+        v1alpha1,
+    };
 
     #[test]
     fn test_construct_jvm_arguments_defaults() {
@@ -112,7 +114,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:
@@ -130,7 +132,7 @@ mod tests {
             "-Djava.security.properties=/stackable/config/security.properties \
             -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9606:/stackable/jmx/broker.yaml"
         );
-        assert_eq!(heap_jvm_args, "-Xmx819m -Xms819m");
+        assert_eq!(heap_jvm_args, "-Xmx1638m -Xms1638m");
     }
 
     #[test]
@@ -142,7 +144,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:
@@ -186,16 +188,18 @@ mod tests {
     fn construct_boilerplate(
         kafka_cluster: &str,
     ) -> (
-        KafkaConfig,
-        Role<KafkaConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+        AnyConfig,
+        Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
         String,
     ) {
         let kafka: v1alpha1::KafkaCluster =
             serde_yaml::from_str(kafka_cluster).expect("illegal test input");
 
         let kafka_role = KafkaRole::Broker;
-        let rolegroup_ref = kafka.broker_rolegroup_ref("default");
-        let merged_config = kafka.merged_config(&kafka_role, &rolegroup_ref).unwrap();
+        let rolegroup_ref = kafka.rolegroup_ref(&kafka_role, "default");
+        let merged_config = kafka_role
+            .merged_config(&kafka, &rolegroup_ref.role_group)
+            .unwrap();
         let role = kafka.spec.brokers.unwrap();
 
         (merged_config, role, "default".to_owned())

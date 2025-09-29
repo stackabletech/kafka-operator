@@ -1,0 +1,9 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+metadata:
+  name: metrics
+commands:
+  - script: kubectl exec -n $NAMESPACE python-0 -- python /tmp/metrics.py
+  - script: kubectl exec -n $NAMESPACE test-kafka-broker-default-0 -- /tmp/test_heap.sh
+  - script: kubectl exec -n $NAMESPACE python-0 -- python /tmp/test_log_aggregation.py -n $NAMESPACE

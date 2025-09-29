@@ -53,9 +53,10 @@ spec:
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
-    zookeeperConfigMapName: test-kafka-znode
+    zookeeperConfigMapName: test-zk
   brokers:
     config:
+      gracefulShutdownTimeout: 30s # speed up tests
       logging:
         enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
     roleGroups:

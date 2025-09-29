@@ -4,20 +4,24 @@
 #
 ---
 dimensions:
+  - name: kafka-kraft
+    values:
+      - 3.7.2
+      - 3.9.1
+      - 4.1.0
   - name: kafka
     values:
       - 3.7.2
-      - 3.9.0
       - 3.9.1
       # Alternatively, if you want to use a custom image, append a comma and the full image name to the product version
       # as in the example below.
-      # - 3.8.0,oci.stackable.tech/sdp/kafka:3.8.0-stackable0.0.0-dev
+      # - 3.9.1,oci.stackable.tech/sdp/kafka:3.9.1-stackable0.0.0-dev
   - name: kafka-latest
     values:
-      - 3.7.2 # Using LTS version here
+      - 3.9.1 # Using LTS version here
       # Alternatively, if you want to use a custom image, append a comma and the full image name to the product version
       # as in the example below.
-      # - 3.7.2,oci.stackable.tech/sdp/kafka:3.7.2-stackable0.0.0-dev
+      # - 3.9.1,oci.stackable.tech/sdp/kafka:3.9.1-stackable0.0.0-dev
   - name: zookeeper
     values:
       - 3.9.3
@@ -63,6 +67,14 @@ dimensions:
       - "external-stable"
       - "external-unstable"
 tests:
+  - name: operations-kraft
+    dimensions:
+      - kafka-kraft
+      - openshift
+  - name: smoke-kraft
+    dimensions:
+      - kafka-kraft
+      - openshift
   - name: smoke
     dimensions:
       - kafka
@@ -72,7 +84,6 @@ tests:
   - name: configuration
     dimensions:
       - kafka-latest
-      - zookeeper-latest
       - openshift
   - name: upgrade
     dimensions:

@@ -42,6 +42,68 @@ pub enum KafkaListenerName {
     Internal,
     #[strum(serialize = "BOOTSTRAP")]
     Bootstrap,
+    #[strum(serialize = "CONTROLLER")]
+    Controller,
+    #[strum(serialize = "CONTROLLER_AUTH")]
+    ControllerAuth,
+}
+
+impl KafkaListenerName {
+    pub fn listener_ssl_keystore_location(&self) -> String {
+        format!(
+            "listener.name.{listener_name}.ssl.keystore.location",
+            listener_name = self.to_string().to_lowercase()
+        )
+    }
+
+    pub fn listener_ssl_keystore_password(&self) -> String {
+        format!(
+            "listener.name.{listener_name}.ssl.keystore.password",
+            listener_name = self.to_string().to_lowercase()
+        )
+    }
+
+    pub fn listener_ssl_keystore_type(&self) -> String {
+        format!(
+            "listener.name.{listener_name}.ssl.keystore.type",
+            listener_name = self.to_string().to_lowercase()
+        )
+    }
+
+    pub fn listener_ssl_truststore_location(&self) -> String {
+        format!(
+            "listener.name.{listener_name}.ssl.truststore.location",
+            listener_name = self.to_string().to_lowercase()
+        )
+    }
+
+    pub fn listener_ssl_truststore_password(&self) -> String {
+        format!(
+            "listener.name.{listener_name}.ssl.truststore.password",
+            listener_name = self.to_string().to_lowercase()
+        )
+    }
+
+    pub fn listener_ssl_truststore_type(&self) -> String {
+        format!(
+            "listener.name.{listener_name}.ssl.truststore.type",
+            listener_name = self.to_string().to_lowercase()
+        )
+    }
+
+    pub fn listener_ssl_client_auth(&self) -> String {
+        format!(
+            "listener.name.{listener_name}.ssl.client.auth",
+            listener_name = self.to_string().to_lowercase()
+        )
+    }
+
+    pub fn listener_gssapi_sasl_jaas_config(&self) -> String {
+        format!(
+            "listener.name.{listener_name}.gssapi.sasl.jaas.config",
+            listener_name = self.to_string().to_lowercase()
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -52,7 +114,7 @@ pub struct KafkaListenerConfig {
 }
 
 impl KafkaListenerConfig {
-    /// Returns the `listeners` for the Kafka `server.properties` config.
+    /// Returns the `listeners` for the Kafka `broker.properties` config.
     pub fn listeners(&self) -> String {
         self.listeners
             .iter()
@@ -61,7 +123,7 @@ impl KafkaListenerConfig {
             .join(",")
     }
 
-    /// Returns the `advertised.listeners` for the Kafka `server.properties` config.
+    /// Returns the `advertised.listeners` for the Kafka `broker.properties` config.
     /// May contain ENV variables and therefore should be used as cli argument
     /// like --override \"advertised.listeners=xxx\".
     pub fn advertised_listeners(&self) -> String {
@@ -72,13 +134,23 @@ impl KafkaListenerConfig {
             .join(",")
     }
 
-    /// Returns the `listener.security.protocol.map` for the Kafka `server.properties` config.
+    /// Returns the `listener.security.protocol.map` for the Kafka `broker.properties` config.
     pub fn listener_security_protocol_map(&self) -> String {
         self.listener_security_protocol_map
             .iter()
             .map(|(name, protocol)| format!("{name}:{protocol}"))
             .collect::<Vec<String>>()
             .join(",")
+    }
+
+    /// Returns the `listener.security.protocol.map` for the Kafka `broker.properties` config.
+    pub fn listener_security_protocol_map_for_listener(
+        &self,
+        listener_name: &KafkaListenerName,
+    ) -> Option<String> {
+        self.listener_security_protocol_map
+            .get(listener_name)
+            .map(|protocol| format!("{listener_name}:{protocol}"))
     }
 }
 
@@ -104,7 +176,8 @@ pub fn get_kafka_listener_config(
     let pod_fqdn = pod_fqdn(kafka, object_name, cluster_info)?;
     let mut listeners = vec![];
     let mut advertised_listeners = vec![];
-    let mut listener_security_protocol_map = BTreeMap::new();
+    let mut listener_security_protocol_map: BTreeMap<KafkaListenerName, KafkaListenerProtocol> =
+        BTreeMap::new();
 
     // CLIENT
     if kafka_security.tls_client_authentication_class().is_some() {
@@ -124,6 +197,10 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::ClientAuth, KafkaListenerProtocol::Ssl);
+        listener_security_protocol_map.insert(
+            KafkaListenerName::ControllerAuth,
+            KafkaListenerProtocol::Ssl,
+        );
     } else if kafka_security.has_kerberos_enabled() {
         // 2) Kerberos and TLS authentication classes are mutually exclusive
         listeners.push(KafkaListener {
@@ -141,6 +218,10 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::SaslSsl);
+        listener_security_protocol_map.insert(
+            KafkaListenerName::Controller,
+            KafkaListenerProtocol::SaslSsl,
+        );
     } else if kafka_security.tls_server_secret_class().is_some() {
         // 3) If no client authentication but tls is required we expose CLIENT with SSL
         listeners.push(KafkaListener {
@@ -177,7 +258,7 @@ pub fn get_kafka_listener_config(
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::Plaintext);
     }
 
-    // INTERNAL
+    // INTERNAL / CONTROLLER
     if kafka_security.has_kerberos_enabled() || kafka_security.tls_internal_secret_class().is_some()
     {
         // 5) & 6) Kerberos and TLS authentication classes are mutually exclusive but both require internal tls to be used
@@ -193,6 +274,8 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
+        listener_security_protocol_map
+            .insert(KafkaListenerName::Controller, KafkaListenerProtocol::Ssl);
     } else {
         // 7) If no internal tls is required we expose INTERNAL as PLAINTEXT
         listeners.push(KafkaListener {
@@ -207,6 +290,10 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map.insert(
             KafkaListenerName::Internal,
+            KafkaListenerProtocol::Plaintext,
+        );
+        listener_security_protocol_map.insert(
+            KafkaListenerName::Controller,
             KafkaListenerProtocol::Plaintext,
         );
     }
@@ -288,7 +375,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           clusterConfig:
             authentication:
               - authenticationClass: kafka-client-tls
@@ -349,11 +436,15 @@ mod tests {
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol},{controller_name}:{controller_protocol},{controller_auth_name}:{controller_auth_protocol}",
                 name = KafkaListenerName::ClientAuth,
                 protocol = KafkaListenerProtocol::Ssl,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Ssl,
+                controller_name = KafkaListenerName::Controller,
+                controller_protocol = KafkaListenerProtocol::Ssl,
+                controller_auth_name = KafkaListenerName::ControllerAuth,
+                controller_auth_protocol = KafkaListenerProtocol::Ssl,
             )
         );
 
@@ -397,11 +488,13 @@ mod tests {
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol},{controller_name}:{controller_protocol}",
                 name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::Ssl,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Ssl,
+                controller_name = KafkaListenerName::Controller,
+                controller_protocol = KafkaListenerProtocol::Ssl,
             )
         );
 
@@ -446,11 +539,13 @@ mod tests {
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol},{controller_name}:{controller_protocol}",
                 name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::Plaintext,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Plaintext,
+                controller_name = KafkaListenerName::Controller,
+                controller_protocol = KafkaListenerProtocol::Plaintext,
             )
         );
     }
@@ -468,7 +563,7 @@ mod tests {
           namespace: default
         spec:
           image:
-            productVersion: 3.7.2
+            productVersion: 3.9.1
           clusterConfig:
             authentication:
               - authenticationClass: kafka-kerberos
@@ -537,13 +632,15 @@ mod tests {
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol},{bootstrap_name}:{bootstrap_protocol}",
+                "{name}:{protocol},{internal_name}:{internal_protocol},{bootstrap_name}:{bootstrap_protocol},{controller_name}:{controller_protocol}",
                 name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::SaslSsl,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Ssl,
                 bootstrap_name = KafkaListenerName::Bootstrap,
                 bootstrap_protocol = KafkaListenerProtocol::SaslSsl,
+                controller_name = KafkaListenerName::Controller,
+                controller_protocol = KafkaListenerProtocol::Ssl,
             )
         );
     }
