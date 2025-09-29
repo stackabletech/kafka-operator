@@ -50,7 +50,7 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.7.2
+    productVersion: 3.9.1
   clusterConfig:
     authorization:
       opa:
