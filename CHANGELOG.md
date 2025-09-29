@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Helm: Allow Pod `priorityClassName` to be configured ([#890]).
 - Add experimental support for Kafka KRaft mode ([#889]).
-- Add experimental support for Kafka `4.0.0` ([#889]).
+- Add experimental support for Kafka `4.1.0` ([#889]).
 
 ### Changed
 
