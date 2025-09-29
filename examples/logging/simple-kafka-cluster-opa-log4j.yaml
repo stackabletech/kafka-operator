@@ -62,7 +62,7 @@ spec:
     logging:
       enableVectorAgent: true
     configOverrides:
-      server.properties:
+      broker.properties:
         opa.authorizer.cache.expire.after.seconds: "10"
     roleGroups:
       default:

@@ -1,0 +1,13 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  # Use the same Kafka image in the test Job as in the Kafka broker StatefulSet
+  - script: >-
+      KAFKA_IMAGE=$(
+      kubectl get statefulsets.apps test-kafka-broker-default
+      --namespace $NAMESPACE
+      --output=jsonpath='{.spec.template.spec.containers[?(.name=="kafka")].image}'
+      )
+      envsubst < 70_test-tls-job.yaml |
+      kubectl apply --namespace $NAMESPACE --filename -

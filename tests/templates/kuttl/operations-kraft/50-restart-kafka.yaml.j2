@@ -1,0 +1,38 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 300
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+spec:
+  image:
+{% if test_scenario['values']['kafka-kraft'].find(",") > 0 %}
+    custom: "{{ test_scenario['values']['kafka-kraft'].split(',')[1] }}"
+    productVersion: "{{ test_scenario['values']['kafka-kraft'].split(',')[0] }}"
+{% else %}
+    productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
+{% endif %}
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
+  clusterConfig:
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
+{% endif %}
+  controllers:
+    config:
+      logging:
+        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+    roleGroups:
+      default:
+        replicas: 3
+  brokers:
+    config:
+      logging:
+        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+    roleGroups:
+      default:
+        replicas: 3
+  clusterOperation:
+    stopped: false
+    reconciliationPaused: false

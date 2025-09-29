@@ -1,3 +1,4 @@
+---
 version: 0.1.0
 spec:
   units:
@@ -35,6 +36,8 @@ properties:
       roles:
         - name: "broker"
           required: true
+        - name: "controller"
+          required: true
       asOfVersion: "0.0.0"
       comment: "TTL for successfully resolved domain names."
       description: "TTL for successfully resolved domain names."
@@ -54,52 +57,18 @@ properties:
       roles:
         - name: "broker"
           required: true
+        - name: "controller"
+          required: true
       asOfVersion: "0.0.0"
       comment: "TTL for domain names that cannot be resolved."
       description: "TTL for domain names that cannot be resolved."
-
-  - property: &zookeeperConnect
-      propertyNames:
-        - name: "zookeeper.connect"
-          kind:
-            type: "file"
-            file: "server.properties"
-      datatype:
-        type: "string"
-        unit: *unitUrl
-      defaultValues:
-        - fromVersion: "0.0.0"
-          value: "localhost:2181"
-      roles:
-        - name: "broker"
-          required: true
-      asOfVersion: "0.0.0"
-      description: "The zookeeper connection string"
-
-  - property: &zookeeperTimeout
-      propertyNames:
-        - name: "zookeeper.connection.timeout.ms"
-          kind:
-            type: "file"
-            file: "server.properties"
-      datatype:
-        type: "integer"
-        unit: *unitMilliseconds
-      defaultValues:
-        - fromVersion: "0.0.0"
-          value: "18000"
-      roles:
-        - name: "broker"
-          required: true
-      asOfVersion: "0.0.0"
-      description: "Zookeeper connection timeout in milliseconds."
 
   - property: &opaAuthorizerClassName
       propertyNames:
         - name: "authorizer.class.name"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "string"
       defaultValues:
@@ -118,7 +87,7 @@ properties:
         - name: "opa.authorizer.url"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "string"
         unit: *unitUrl
@@ -133,7 +102,7 @@ properties:
         - name: "opa.authorizer.cache.initial.capacity"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "integer"
         unit: *unitCapacity
@@ -151,7 +120,7 @@ properties:
         - name: "opa.authorizer.cache.maximum.size"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "integer"
         unit: *unitCapacity
@@ -169,7 +138,7 @@ properties:
         - name: "opa.authorizer.cache.expire.after.seconds"
           kind:
             type: "file"
-            file: "server.properties"
+            file: "broker.properties"
       datatype:
         type: "integer"
         unit: *unitCapacity
@@ -181,19 +150,3 @@ properties:
           required: false
       asOfVersion: "0.0.0"
       description: "The number of seconds after which the OPA authorizer cache expires"
-
-  - property: &logDirs
-      propertyNames:
-        - name: "log.dirs"
-          kind:
-            type: "file"
-            file: "server.properties"
-      datatype:
-        type: "string"
-      recommendedValues:
-        - value: "/stackable/data/topicdata"
-      roles:
-        - name: "broker"
-          required: true
-      asOfVersion: "0.0.0"
-      description: "A comma separated list of directories under which to store log files"

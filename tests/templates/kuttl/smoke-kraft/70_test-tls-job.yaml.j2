@@ -1,0 +1,73 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-tls
+spec:
+  template:
+    spec:
+      containers:
+        - name: kafka
+          image: ${KAFKA_IMAGE}
+          workingDir: /stackable/test
+          command:
+            - ./test_client_auth_tls.sh
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 200m
+              memory: 512Mi
+          env:
+            - name: KAFKA
+              valueFrom:
+                configMapKeyRef:
+                  name: test-kafka
+                  key: KAFKA
+          volumeMounts:
+            - name: test-scripts
+              mountPath: /stackable/test
+            - mountPath: /stackable/tls_keystore_internal
+              name: tls-keystore-internal
+            - mountPath: /stackable/tls_keystore_server
+              name: tls-keystore-server
+      volumes:
+        - name: test-scripts
+          configMap:
+            name: test-scripts
+            defaultMode: 0777
+        - name: tls-keystore-server
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: test-kafka-client-auth-tls
+                  secrets.stackable.tech/format: tls-pkcs12
+                  secrets.stackable.tech/scope: pod,node
+              spec:
+                storageClassName: secrets.stackable.tech
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: "1"
+        - name: tls-keystore-internal
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: tls
+                  secrets.stackable.tech/format: tls-pkcs12
+                  secrets.stackable.tech/scope: pod,node
+              spec:
+                storageClassName: secrets.stackable.tech
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: "1"
+      securityContext:
+        fsGroup: 1000
+      serviceAccountName: test-sa
+      restartPolicy: OnFailure
