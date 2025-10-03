@@ -25,9 +25,10 @@ dimensions:
   - name: zookeeper
     values:
       - 3.9.3
+      - 3.9.4
   - name: zookeeper-latest
     values:
-      - 3.9.3
+      - 3.9.4
   - name: upgrade_old
     values:
       - 3.7.2
