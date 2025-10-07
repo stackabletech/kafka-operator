@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
 - Helm: Allow Pod `priorityClassName` to be configured ([#890]).
 - Add experimental support for Kafka KRaft mode ([#889]).
 - Add experimental support for Kafka `4.1.0` ([#889]).
+- Add end-of-support checker ([#895]).
+  - `EOS_CHECK_MODE` (`--eos-check-mode`) to set the EoS check mode. Currently, only "offline" is supported.
+  - `EOS_INTERVAL` (`--eos-interval`) to set the interval in which the operator checks if it is EoS.
+  - `EOS_DISABLED` (`--eos-disabled`) to disable the EoS checker completely.
 
 ### Changed
 
@@ -17,6 +21,7 @@ All notable changes to this project will be documented in this file.
 [#889]: https://github.com/stackabletech/kafka-operator/pull/889
 [#890]: https://github.com/stackabletech/kafka-operator/pull/890
 [#892]: https://github.com/stackabletech/kafka-operator/pull/892
+[#895]: https://github.com/stackabletech/kafka-operator/pull/895
 
 ## [25.7.0] - 2025-07-23
 
