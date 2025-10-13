@@ -12,7 +12,7 @@ if __name__ == "__main__":
         stream=sys.stdout,
     )
 
-    http_code = requests.get("http://test-kafka-broker-default:9606").status_code
+    http_code = requests.get("http://test-kafka-broker-default-metrics:9606").status_code
     if http_code != 200:
         result = 1
 
