@@ -157,7 +157,7 @@ prepare_signal_handlers()
 handle_term_signal()
 {
     if [ "${term_child_pid}" ]; then
-        [ -z "$PRE_STOP_CONTROLLER_SLEEP_SECONDS" ] && sleep "$PRE_STOP_CONTROLLER_SLEEP_SECONDS"
+        [ -n "$PRE_STOP_CONTROLLER_SLEEP_SECONDS" ] && sleep "$PRE_STOP_CONTROLLER_SLEEP_SECONDS"
         kill -TERM "${term_child_pid}" 2>/dev/null
     else
         term_kill_needed="yes"
@@ -169,7 +169,7 @@ wait_for_termination()
     set +e
     term_child_pid=$1
     if [[ -v term_kill_needed ]]; then
-        [ -z "$PRE_STOP_CONTROLLER_SLEEP_SECONDS" ] && sleep "$PRE_STOP_CONTROLLER_SLEEP_SECONDS"
+        [ -n "$PRE_STOP_CONTROLLER_SLEEP_SECONDS" ] && sleep "$PRE_STOP_CONTROLLER_SLEEP_SECONDS"
         kill -TERM "${term_child_pid}" 2>/dev/null
     fi
     wait ${term_child_pid} 2>/dev/null
