@@ -43,7 +43,7 @@ pub fn build_rolegroup_headless_service(
     Ok(Service {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
-            .name(rolegroup_headless_service_name(rolegroup))
+            .name(rolegroup.rolegroup_headless_service_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(build_recommended_labels(
@@ -85,7 +85,7 @@ pub fn build_rolegroup_metrics_service(
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
             // TODO: Use method on RoleGroupRef once op-rs is released
-            .name(rolegroup_metrics_service_name(rolegroup))
+            .name(rolegroup.rolegroup_metrics_service_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(build_recommended_labels(
@@ -120,18 +120,6 @@ pub fn build_rolegroup_metrics_service(
         status: None,
     };
     Ok(metrics_service)
-}
-
-/// Headless service for cluster internal purposes only.
-// TODO: Move to operator-rs
-fn rolegroup_headless_service_name(rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>) -> String {
-    format!("{name}-headless", name = rolegroup.object_name())
-}
-
-/// Headless metrics service exposes Prometheus endpoint only
-// TODO: Move to operator-rs
-fn rolegroup_metrics_service_name(rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>) -> String {
-    format!("{name}-metrics", name = rolegroup.object_name())
 }
 
 fn metrics_ports() -> Vec<ServicePort> {

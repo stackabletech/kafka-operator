@@ -547,7 +547,7 @@ pub fn build_broker_rolegroup_statefulset(
                 ),
                 ..LabelSelector::default()
             },
-            service_name: Some(rolegroup_ref.object_name()),
+            service_name: Some(rolegroup_ref.rolegroup_headless_service_name()),
             template: pod_template,
             volume_claim_templates: Some(pvcs),
             ..StatefulSetSpec::default()
@@ -621,8 +621,8 @@ pub fn build_controller_rolegroup_statefulset(
     });
 
     env.push(EnvVar {
-        name: "ROLEGROUP_REF".to_string(),
-        value: Some(rolegroup_ref.object_name()),
+        name: "ROLEGROUP_HEADLESS_SERVICE_NAME".to_string(),
+        value: Some(rolegroup_ref.rolegroup_headless_service_name()),
         ..EnvVar::default()
     });
 
@@ -875,7 +875,7 @@ pub fn build_controller_rolegroup_statefulset(
                 ),
                 ..LabelSelector::default()
             },
-            service_name: Some(rolegroup_ref.object_name()),
+            service_name: Some(rolegroup_ref.rolegroup_headless_service_name()),
             template: pod_template,
             volume_claim_templates: Some(merged_config.resources().storage.build_pvcs()),
             ..StatefulSetSpec::default()
