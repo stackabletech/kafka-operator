@@ -146,7 +146,7 @@ fn broker_start_command(
 // controller processes to give the brokers more time to offload data and shutdown gracefully.
 // Kubernetes has a built in `pre-stop` hook feature that is not yet generally available on all platforms
 // supported by the operator.
-const NOT_SO_COMMON_BASH_TRAP_FUNCTIONS: &str = r#"
+const BASH_TRAP_FUNCTIONS: &str = r#"
 prepare_signal_handlers()
 {
     unset term_child_pid
@@ -194,7 +194,7 @@ pub fn controller_kafka_container_command(
     // - use config-utils for proper replacements?
     // - should we print the adapted properties file at startup?
     formatdoc! {"
-        {NOT_SO_COMMON_BASH_TRAP_FUNCTIONS}
+        {BASH_TRAP_FUNCTIONS}
         {remove_vector_shutdown_file_command}
         prepare_signal_handlers
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
