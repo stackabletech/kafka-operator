@@ -84,7 +84,6 @@ pub fn build_rolegroup_metrics_service(
     let metrics_service = Service {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
-            // TODO: Use method on RoleGroupRef once op-rs is released
             .name(rolegroup.rolegroup_metrics_service_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
