@@ -42,3 +42,113 @@ metadata:
 status:
   readyReplicas: 1
   replicas: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-broker-default-headless
+spec:
+  ports:
+  - name: kafka-tls
+    port: 9093
+    protocol: TCP
+    targetPort: 9093
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-broker-default-metrics
+spec:
+  ports:
+  - name: metrics
+    port: 9606
+    protocol: TCP
+    targetPort: 9606
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-broker-automatic-log-config-headless
+spec:
+  ports:
+  - name: kafka-tls
+    port: 9093
+    protocol: TCP
+    targetPort: 9093
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-broker-automatic-log-config-metrics
+spec:
+  ports:
+  - name: metrics
+    port: 9606
+    protocol: TCP
+    targetPort: 9606
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-broker-custom-log-config-headless
+spec:
+  ports:
+  - name: kafka-tls
+    port: 9093
+    protocol: TCP
+    targetPort: 9093
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-broker-custom-log-config-metrics
+spec:
+  ports:
+  - name: metrics
+    port: 9606
+    protocol: TCP
+    targetPort: 9606
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-controller-automatic-log-config-headless
+spec:
+  ports:
+  - name: kafka-tls
+    port: 9093
+    protocol: TCP
+    targetPort: 9093
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-controller-automatic-log-config-metrics
+spec:
+  ports:
+  - name: metrics
+    port: 9606
+    protocol: TCP
+    targetPort: 9606
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-controller-custom-log-config-headless
+spec:
+  ports:
+  - name: kafka-tls
+    port: 9093
+    protocol: TCP
+    targetPort: 9093
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-controller-custom-log-config-metrics
+spec:
+  ports:
+  - name: metrics
+    port: 9606
+    protocol: TCP
+    targetPort: 9606

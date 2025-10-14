@@ -229,7 +229,7 @@ pub fn controller_kafka_container_command(
 fn to_listeners(port: u16) -> String {
     // The environment variables are set in the statefulset of the controller
     format!(
-        "{listener_name}://$POD_NAME.$ROLEGROUP_REF.$NAMESPACE.svc.$CLUSTER_DOMAIN:{port}",
+        "{listener_name}://$POD_NAME.$ROLEGROUP_HEADLESS_SERVICE_NAME.$NAMESPACE.svc.$CLUSTER_DOMAIN:{port}",
         listener_name = KafkaListenerName::Controller
     )
 }

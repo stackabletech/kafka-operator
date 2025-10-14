@@ -49,7 +49,7 @@ use crate::{
     resource::{
         configmap::build_rolegroup_config_map,
         listener::build_broker_rolegroup_bootstrap_listener,
-        service::build_rolegroup_service,
+        service::{build_rolegroup_headless_service, build_rolegroup_metrics_service},
         statefulset::{build_broker_rolegroup_statefulset, build_controller_rolegroup_statefulset},
     },
 };
@@ -347,8 +347,16 @@ pub async fn reconcile_kafka(
                 .merged_config(kafka, &rolegroup_ref.role_group)
                 .context(FailedToResolveConfigSnafu)?;
 
-            let rg_service =
-                build_rolegroup_service(kafka, &resolved_product_image, &rolegroup_ref)
+            let rg_headless_service = build_rolegroup_headless_service(
+                kafka,
+                &resolved_product_image,
+                &rolegroup_ref,
+                &kafka_security,
+            )
+            .context(BuildServiceSnafu)?;
+
+            let rg_metrics_service =
+                build_rolegroup_metrics_service(kafka, &resolved_product_image, &rolegroup_ref)
                     .context(BuildServiceSnafu)?;
 
             let rg_configmap = build_rolegroup_config_map(
@@ -407,7 +415,13 @@ pub async fn reconcile_kafka(
             }
 
             cluster_resources
-                .add(client, rg_service)
+                .add(client, rg_headless_service)
+                .await
+                .with_context(|_| ApplyRoleGroupServiceSnafu {
+                    rolegroup: rolegroup_ref.clone(),
+                })?;
+            cluster_resources
+                .add(client, rg_metrics_service)
                 .await
                 .with_context(|_| ApplyRoleGroupServiceSnafu {
                     rolegroup: rolegroup_ref.clone(),

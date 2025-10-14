@@ -9,14 +9,18 @@ All notable changes to this project will be documented in this file.
 - Helm: Allow Pod `priorityClassName` to be configured ([#890]).
 - Add experimental support for Kafka KRaft mode ([#889]).
 - Add experimental support for Kafka `4.1.0` ([#889]).
+- Add `prometheus.io/path|port|scheme` annotations to metrics service ([#897]).
 
 ### Changed
 
 - Deprecate support for Kafka `3.7.2` ([#892]).
+- BREAKING: The `<cluster>-<role>-<rolegroup>` rolegroup service was replaced with a `<cluster>-<role>-<rolegroup>-headless`
+  and `<cluster>-<role>-<rolegroup>-metrics` rolegroup service ([#897]).
 
 [#889]: https://github.com/stackabletech/kafka-operator/pull/889
 [#890]: https://github.com/stackabletech/kafka-operator/pull/890
 [#892]: https://github.com/stackabletech/kafka-operator/pull/892
+[#897]: https://github.com/stackabletech/kafka-operator/pull/897
 
 ## [25.7.0] - 2025-07-23
 

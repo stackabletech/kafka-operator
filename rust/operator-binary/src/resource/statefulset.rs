@@ -161,7 +161,7 @@ pub enum Error {
 /// The broker rolegroup [`StatefulSet`] runs the rolegroup, as configured by the administrator.
 ///
 /// The [`Pod`](`stackable_operator::k8s_openapi::api::core::v1::Pod`)s are accessible through the corresponding
-/// [`Service`](`stackable_operator::k8s_openapi::api::core::v1::Service`) from [`build_rolegroup_service`](`crate::resource::service::build_rolegroup_service`).
+/// [`Service`](`stackable_operator::k8s_openapi::api::core::v1::Service`) from [`build_rolegroup_service`](`crate::resource::service::build_rolegroup_headless_service`).
 #[allow(clippy::too_many_arguments)]
 pub fn build_broker_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
@@ -285,13 +285,9 @@ pub fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let kafka_listeners = get_kafka_listener_config(
-        kafka,
-        kafka_security,
-        &rolegroup_ref.object_name(),
-        cluster_info,
-    )
-    .context(InvalidKafkaListenersSnafu)?;
+    let kafka_listeners =
+        get_kafka_listener_config(kafka, kafka_security, rolegroup_ref, cluster_info)
+            .context(InvalidKafkaListenersSnafu)?;
 
     let cluster_id = kafka.cluster_id().context(ClusterIdMissingSnafu)?;
 
@@ -547,7 +543,7 @@ pub fn build_broker_rolegroup_statefulset(
                 ),
                 ..LabelSelector::default()
             },
-            service_name: Some(rolegroup_ref.object_name()),
+            service_name: Some(rolegroup_ref.rolegroup_headless_service_name()),
             template: pod_template,
             volume_claim_templates: Some(pvcs),
             ..StatefulSetSpec::default()
@@ -621,8 +617,8 @@ pub fn build_controller_rolegroup_statefulset(
     });
 
     env.push(EnvVar {
-        name: "ROLEGROUP_REF".to_string(),
-        value: Some(rolegroup_ref.object_name()),
+        name: "ROLEGROUP_HEADLESS_SERVICE_NAME".to_string(),
+        value: Some(rolegroup_ref.rolegroup_headless_service_name()),
         ..EnvVar::default()
     });
 
@@ -632,13 +628,9 @@ pub fn build_controller_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let kafka_listeners = get_kafka_listener_config(
-        kafka,
-        kafka_security,
-        &rolegroup_ref.object_name(),
-        cluster_info,
-    )
-    .context(InvalidKafkaListenersSnafu)?;
+    let kafka_listeners =
+        get_kafka_listener_config(kafka, kafka_security, rolegroup_ref, cluster_info)
+            .context(InvalidKafkaListenersSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -864,7 +856,7 @@ pub fn build_controller_rolegroup_statefulset(
                 ),
                 ..LabelSelector::default()
             },
-            service_name: Some(rolegroup_ref.object_name()),
+            service_name: Some(rolegroup_ref.rolegroup_headless_service_name()),
             template: pod_template,
             volume_claim_templates: Some(merged_config.resources().storage.build_pvcs()),
             ..StatefulSetSpec::default()
