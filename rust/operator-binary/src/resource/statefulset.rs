@@ -285,13 +285,9 @@ pub fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let kafka_listeners = get_kafka_listener_config(
-        kafka,
-        kafka_security,
-        &rolegroup_ref.object_name(),
-        cluster_info,
-    )
-    .context(InvalidKafkaListenersSnafu)?;
+    let kafka_listeners =
+        get_kafka_listener_config(kafka, kafka_security, rolegroup_ref, cluster_info)
+            .context(InvalidKafkaListenersSnafu)?;
 
     let cluster_id = kafka.cluster_id().context(ClusterIdMissingSnafu)?;
 
@@ -632,13 +628,9 @@ pub fn build_controller_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let kafka_listeners = get_kafka_listener_config(
-        kafka,
-        kafka_security,
-        &rolegroup_ref.object_name(),
-        cluster_info,
-    )
-    .context(InvalidKafkaListenersSnafu)?;
+    let kafka_listeners =
+        get_kafka_listener_config(kafka, kafka_security, rolegroup_ref, cluster_info)
+            .context(InvalidKafkaListenersSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)

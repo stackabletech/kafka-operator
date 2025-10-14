@@ -4,7 +4,9 @@ use std::{
 };
 
 use snafu::{OptionExt, Snafu};
-use stackable_operator::{kube::ResourceExt, utils::cluster_info::KubernetesClusterInfo};
+use stackable_operator::{
+    kube::ResourceExt, role_utils::RoleGroupRef, utils::cluster_info::KubernetesClusterInfo,
+};
 use strum::{EnumDiscriminants, EnumString};
 
 use crate::crd::{STACKABLE_LISTENER_BROKER_DIR, security::KafkaTlsSecurity, v1alpha1};
@@ -170,10 +172,14 @@ impl Display for KafkaListener {
 pub fn get_kafka_listener_config(
     kafka: &v1alpha1::KafkaCluster,
     kafka_security: &KafkaTlsSecurity,
-    object_name: &str,
+    rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<KafkaListenerConfig, KafkaListenerError> {
-    let pod_fqdn = pod_fqdn(kafka, object_name, cluster_info)?;
+    let pod_fqdn = pod_fqdn(
+        kafka,
+        &rolegroup_ref.rolegroup_headless_service_name(),
+        cluster_info,
+    )?;
     let mut listeners = vec![];
     let mut advertised_listeners = vec![];
     let mut listener_security_protocol_map: BTreeMap<KafkaListenerName, KafkaListenerProtocol> =
@@ -334,12 +340,11 @@ pub fn node_port_cmd(directory: &str, port_name: &str) -> String {
 
 pub fn pod_fqdn(
     kafka: &v1alpha1::KafkaCluster,
-    object_name: &str,
+    sts_service_name: &str,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<String, KafkaListenerError> {
     Ok(format!(
-        "$POD_NAME.{object_name}.{namespace}.svc.{cluster_domain}",
-        object_name = object_name,
+        "$POD_NAME.{sts_service_name}.{namespace}.svc.{cluster_domain}",
         namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
         cluster_domain = cluster_info.cluster_domain
     ))
