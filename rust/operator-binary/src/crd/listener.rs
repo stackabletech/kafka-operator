@@ -359,7 +359,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::crd::authentication::ResolvedAuthenticationClasses;
+    use crate::crd::{authentication::ResolvedAuthenticationClasses, role::KafkaRole};
 
     fn default_cluster_info() -> KubernetesClusterInfo {
         KubernetesClusterInfo {
@@ -369,9 +369,6 @@ mod tests {
 
     #[test]
     fn test_get_kafka_listeners_config() {
-        let object_name = "simple-kafka-broker-default";
-        let cluster_info = default_cluster_info();
-
         let kafka_cluster = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
         kind: KafkaCluster
@@ -405,9 +402,12 @@ mod tests {
             "internalTls".to_string(),
             Some("tls".to_string()),
         );
-
+        let cluster_info = default_cluster_info();
+        // "simple-kafka-broker-default"
+        let rolegroup_ref = kafka.rolegroup_ref(&KafkaRole::Broker, "default");
         let config =
-            get_kafka_listener_config(&kafka, &kafka_security, object_name, &cluster_info).unwrap();
+            get_kafka_listener_config(&kafka, &kafka_security, &rolegroup_ref, &cluster_info)
+                .unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -433,7 +433,12 @@ mod tests {
                     kafka_security.client_port_name()
                 ),
                 internal_name = KafkaListenerName::Internal,
-                internal_host = pod_fqdn(&kafka, object_name, &cluster_info).unwrap(),
+                internal_host = pod_fqdn(
+                    &kafka,
+                    &rolegroup_ref.rolegroup_headless_service_name(),
+                    &cluster_info
+                )
+                .unwrap(),
                 internal_port = kafka_security.internal_port(),
             )
         );
@@ -459,7 +464,8 @@ mod tests {
             Some("tls".to_string()),
         );
         let config =
-            get_kafka_listener_config(&kafka, &kafka_security, object_name, &cluster_info).unwrap();
+            get_kafka_listener_config(&kafka, &kafka_security, &rolegroup_ref, &cluster_info)
+                .unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -485,7 +491,12 @@ mod tests {
                     kafka_security.client_port_name()
                 ),
                 internal_name = KafkaListenerName::Internal,
-                internal_host = pod_fqdn(&kafka, object_name, &cluster_info).unwrap(),
+                internal_host = pod_fqdn(
+                    &kafka,
+                    &rolegroup_ref.rolegroup_headless_service_name(),
+                    &cluster_info
+                )
+                .unwrap(),
                 internal_port = kafka_security.internal_port(),
             )
         );
@@ -510,7 +521,8 @@ mod tests {
         );
 
         let config =
-            get_kafka_listener_config(&kafka, &kafka_security, object_name, &cluster_info).unwrap();
+            get_kafka_listener_config(&kafka, &kafka_security, &rolegroup_ref, &cluster_info)
+                .unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -536,7 +548,12 @@ mod tests {
                     kafka_security.client_port_name()
                 ),
                 internal_name = KafkaListenerName::Internal,
-                internal_host = pod_fqdn(&kafka, object_name, &cluster_info).unwrap(),
+                internal_host = pod_fqdn(
+                    &kafka,
+                    &rolegroup_ref.rolegroup_headless_service_name(),
+                    &cluster_info
+                )
+                .unwrap(),
                 internal_port = kafka_security.internal_port(),
             )
         );
@@ -557,9 +574,6 @@ mod tests {
 
     #[test]
     fn test_get_kafka_kerberos_listeners_config() {
-        let object_name = "simple-kafka-broker-default";
-        let cluster_info = default_cluster_info();
-
         let kafka_cluster = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
         kind: KafkaCluster
@@ -592,9 +606,12 @@ mod tests {
             "tls".to_string(),
             Some("tls".to_string()),
         );
-
+        let cluster_info = default_cluster_info();
+        // "simple-kafka-broker-default"
+        let rolegroup_ref = kafka.rolegroup_ref(&KafkaRole::Broker, "default");
         let config =
-            get_kafka_listener_config(&kafka, &kafka_security, object_name, &cluster_info).unwrap();
+            get_kafka_listener_config(&kafka, &kafka_security, &rolegroup_ref, &cluster_info)
+                .unwrap();
 
         assert_eq!(
             config.listeners(),
@@ -623,7 +640,12 @@ mod tests {
                     kafka_security.client_port_name()
                 ),
                 internal_name = KafkaListenerName::Internal,
-                internal_host = pod_fqdn(&kafka, object_name, &cluster_info).unwrap(),
+                internal_host = pod_fqdn(
+                    &kafka,
+                    &rolegroup_ref.rolegroup_headless_service_name(),
+                    &cluster_info
+                )
+                .unwrap(),
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,
                 bootstrap_host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
