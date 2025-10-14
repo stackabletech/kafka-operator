@@ -137,6 +137,48 @@ fn broker_start_command(
     }
 }
 
+// During a namespace or stacklet delete the Kafka controllers shut down too fast leaving the brokers
+// in a bad state.
+// Brokers try to connect to controllers before gracefully shutting down but by that time, all
+// controllers are already gone.
+// The broker pods are then kept alive until the value of `gracefulShutdownTimeout` is reached.
+// The environment variable `PRE_STOP_CONTROLLER_SLEEP_SECONDS` delays the termination of the
+// controller processes to give the brokers more time to offload data and shutdown gracefully.
+// Kubernetes has a built in `pre-stop` hook feature that is not yet generally available on all platforms
+// supported by the operator.
+const BASH_TRAP_FUNCTIONS: &str = r#"
+prepare_signal_handlers()
+{
+    unset term_child_pid
+    unset term_kill_needed
+    trap 'handle_term_signal' TERM
+}
+
+handle_term_signal()
+{
+    if [ "${term_child_pid}" ]; then
+        [ -n "$PRE_STOP_CONTROLLER_SLEEP_SECONDS" ] && sleep "$PRE_STOP_CONTROLLER_SLEEP_SECONDS"
+        kill -TERM "${term_child_pid}" 2>/dev/null
+    else
+        term_kill_needed="yes"
+    fi
+}
+
+wait_for_termination()
+{
+    set +e
+    term_child_pid=$1
+    if [[ -v term_kill_needed ]]; then
+        [ -n "$PRE_STOP_CONTROLLER_SLEEP_SECONDS" ] && sleep "$PRE_STOP_CONTROLLER_SLEEP_SECONDS"
+        kill -TERM "${term_child_pid}" 2>/dev/null
+    fi
+    wait ${term_child_pid} 2>/dev/null
+    trap - TERM
+    wait ${term_child_pid} 2>/dev/null
+    set -e
+}
+"#;
+
 pub fn controller_kafka_container_command(
     cluster_id: &str,
     controller_descriptors: Vec<KafkaPodDescriptor>,
@@ -152,7 +194,7 @@ pub fn controller_kafka_container_command(
     // - use config-utils for proper replacements?
     // - should we print the adapted properties file at startup?
     formatdoc! {"
-        {COMMON_BASH_TRAP_FUNCTIONS}
+        {BASH_TRAP_FUNCTIONS}
         {remove_vector_shutdown_file_command}
         prepare_signal_handlers
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
