@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 
 - Deprecate support for Kafka `3.7.2` ([#892]).
 - BREAKING: The `<cluster>-<role>-<rolegroup>` rolegroup service was replaced with a `<cluster>-<role>-<rolegroup>-headless` 
-  and `<cluster>-<role>-<rolegroup>-metrics` rolegroup service.
+  and `<cluster>-<role>-<rolegroup>-metrics` rolegroup service ([#897]).
 
 [#889]: https://github.com/stackabletech/kafka-operator/pull/889
 [#890]: https://github.com/stackabletech/kafka-operator/pull/890
