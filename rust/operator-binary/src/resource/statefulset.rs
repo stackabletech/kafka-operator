@@ -23,8 +23,8 @@ use stackable_operator::{
             apps::v1::{StatefulSet, StatefulSetSpec, StatefulSetUpdateStrategy},
             core::v1::{
                 ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource,
-                ExecAction, Lifecycle, LifecycleHandler, ObjectFieldSelector, PodSpec, Probe,
-                ServiceAccount, SleepAction, TCPSocketAction, Volume,
+                ExecAction, ObjectFieldSelector, PodSpec, Probe, ServiceAccount, TCPSocketAction,
+                Volume,
             },
         },
         apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
@@ -658,6 +658,7 @@ pub fn build_controller_rolegroup_statefulset(
             kafka_security,
             &resolved_product_image.product_version,
         )])
+        .add_env_var("PRE_STOP_CONTROLLER_SLEEP_SECONDS", "5")
         .add_env_var(
             "EXTRA_ARGS",
             kafka_role
@@ -756,19 +757,7 @@ pub fn build_controller_rolegroup_statefulset(
         )
         .context(AddVolumesAndVolumeMountsSnafu)?;
 
-    // Currently, Controllers shutdown very fast, too fast in most times (flakyness) for the Brokers
-    // to off load properly. The Brokers then try to connect to any controllers until the
-    // `gracefulShutdownTimeout` is reached and the pod is finally killed.
-    // The `pre-stop` hook will delay the kill signal to the Controllers to provide the Brokers more
-    // time to offload data.
-    let mut kafka_container = cb_kafka.build();
-    kafka_container.lifecycle = Some(Lifecycle {
-        pre_stop: Some(LifecycleHandler {
-            sleep: Some(SleepAction { seconds: 10 }),
-            ..Default::default()
-        }),
-        ..Default::default()
-    });
+    let kafka_container = cb_kafka.build();
 
     pod_builder
         .metadata(metadata)
