@@ -594,6 +594,16 @@ impl KafkaTlsSecurity {
                 KafkaListenerName::Bootstrap.listener_ssl_truststore_type(),
                 "PKCS12".to_string(),
             );
+            config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
+            config.insert(
+                "sasl.kerberos.service.name".to_string(),
+                KafkaRole::Broker.kerberos_service_name().to_string(),
+            );
+            config.insert(
+                "sasl.mechanism.inter.broker.protocol".to_string(),
+                "GSSAPI".to_string(),
+            );
+            tracing::debug!("Kerberos configs added: [{:#?}]", config);
         }
 
         // Internal TLS
@@ -653,20 +663,6 @@ impl KafkaTlsSecurity {
                 KafkaListenerName::Internal.listener_ssl_client_auth(),
                 "required".to_string(),
             );
-        }
-
-        // Kerberos
-        if self.has_kerberos_enabled() {
-            config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
-            config.insert(
-                "sasl.kerberos.service.name".to_string(),
-                KafkaRole::Broker.kerberos_service_name().to_string(),
-            );
-            config.insert(
-                "sasl.mechanism.inter.broker.protocol".to_string(),
-                "GSSAPI".to_string(),
-            );
-            tracing::debug!("Kerberos configs added: [{:#?}]", config);
         }
 
         // common

@@ -16,11 +16,17 @@ All notable changes to this project will be documented in this file.
 - Deprecate support for Kafka `3.7.2` ([#892]).
 - BREAKING: The `<cluster>-<role>-<rolegroup>` rolegroup service was replaced with a `<cluster>-<role>-<rolegroup>-headless`
   and `<cluster>-<role>-<rolegroup>-metrics` rolegroup service ([#897]).
+- Small cleanups and updates ([#900])
+  - remove the metrics port from services that don't need it
+  - use the new `server.yaml` for jmx configuration
+  - update metrics tests
+  - update monitoring doc
 
 [#889]: https://github.com/stackabletech/kafka-operator/pull/889
 [#890]: https://github.com/stackabletech/kafka-operator/pull/890
 [#892]: https://github.com/stackabletech/kafka-operator/pull/892
 [#897]: https://github.com/stackabletech/kafka-operator/pull/897
+[#900]: https://github.com/stackabletech/kafka-operator/pull/900
 
 ## [25.7.0] - 2025-07-23
 

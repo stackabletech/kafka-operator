@@ -1,5 +1,7 @@
 = Monitoring
 :description: The managed Kafka instances are automatically configured to export Prometheus metrics.
 
-The managed Kafka instances are automatically configured to export Prometheus metrics.
+The operator sets up all Kafka server instances with a JMX exporter agent.
+The operator also sets up a dedicated metrics service for each role group.
+The name of this service follows the schema `<stacklet name>-<role name>-<group name>-metrics`.
 See xref:operators:monitoring.adoc[] for more details.
