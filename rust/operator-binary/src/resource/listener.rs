@@ -5,10 +5,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    crd::{
-        METRICS_PORT, METRICS_PORT_NAME, role::broker::BrokerConfig, security::KafkaTlsSecurity,
-        v1alpha1,
-    },
+    crd::{role::broker::BrokerConfig, security::KafkaTlsSecurity, v1alpha1},
     kafka_controller::KAFKA_CONTROLLER_NAME,
     utils::build_recommended_labels,
 };
@@ -53,33 +50,27 @@ pub fn build_broker_rolegroup_bootstrap_listener(
             .build(),
         spec: listener::v1alpha1::ListenerSpec {
             class_name: Some(merged_config.bootstrap_listener_class.clone()),
-            ports: Some(listener_ports(kafka_security)),
+            ports: Some(bootstrap_listener_ports(kafka_security)),
             ..listener::v1alpha1::ListenerSpec::default()
         },
         status: None,
     })
 }
 
-/// We only expose client HTTP / HTTPS and Metrics ports.
-fn listener_ports(kafka_security: &KafkaTlsSecurity) -> Vec<listener::v1alpha1::ListenerPort> {
-    let mut ports = vec![
+fn bootstrap_listener_ports(
+    kafka_security: &KafkaTlsSecurity,
+) -> Vec<listener::v1alpha1::ListenerPort> {
+    vec![if kafka_security.has_kerberos_enabled() {
         listener::v1alpha1::ListenerPort {
-            name: METRICS_PORT_NAME.to_string(),
-            port: METRICS_PORT.into(),
+            name: kafka_security.bootstrap_port_name().to_string(),
+            port: kafka_security.bootstrap_port().into(),
             protocol: Some("TCP".to_string()),
-        },
+        }
+    } else {
         listener::v1alpha1::ListenerPort {
             name: kafka_security.client_port_name().to_string(),
             port: kafka_security.client_port().into(),
             protocol: Some("TCP".to_string()),
-        },
-    ];
-    if kafka_security.has_kerberos_enabled() {
-        ports.push(listener::v1alpha1::ListenerPort {
-            name: kafka_security.bootstrap_port_name().to_string(),
-            port: kafka_security.bootstrap_port().into(),
-            protocol: Some("TCP".to_string()),
-        });
-    }
-    ports
+        }
+    }]
 }
