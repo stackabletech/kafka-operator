@@ -51,7 +51,7 @@ fn construct_jvm_args<ConfigFragment>(
         format!("-Xms{java_heap}"),
         format!("-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE}"),
         format!(
-            "-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/broker.yaml"
+            "-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/server.yaml"
         ),
     ];
 
@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(
             non_heap_jvm_args,
             "-Djava.security.properties=/stackable/config/security.properties \
-            -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9606:/stackable/jmx/broker.yaml"
+            -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9606:/stackable/jmx/server.yaml"
         );
         assert_eq!(heap_jvm_args, "-Xmx1638m -Xms1638m");
     }
@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(
             non_heap_jvm_args,
             "-Djava.security.properties=/stackable/config/security.properties \
-            -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9606:/stackable/jmx/broker.yaml \
+            -javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar=9606:/stackable/jmx/server.yaml \
             -Dhttps.proxyHost=proxy.my.corp \
             -Djava.net.preferIPv4Stack=true \
             -Dhttps.proxyPort=1234"
