@@ -335,6 +335,13 @@ impl KafkaTlsSecurity {
                 Some(Self::SSL_STORE_PASSWORD.to_string()),
             ));
         } else if self.has_kerberos_enabled() {
+            // TODO: to make this configuration file usable out of the box the operator needs to be
+            // refactored to write out Java jaas files instead of passing command line parameters
+            // to the Kafka daemon scripts.
+            // This will simplify the code and the command lines lot.
+            // It will also make the jaas files reusable by the Kafka shell scripts.
+            props.push(("# This is just an example. The sasl.jaas.config property must be updated before use.".to_string(), None));
+
             props.push((
                 "security.protocol".to_string(),
                 Some("SASL_SSL".to_string()),
