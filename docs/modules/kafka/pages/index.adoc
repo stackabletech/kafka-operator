@@ -21,7 +21,7 @@ It is commonly used for real-time data processing, data ingestion, event streami
 
 == Getting started
 
-Follow the xref:kafka:getting_started/index.adoc[] which guides you through installing The Stackable Kafka and ZooKeeper operators, setting up ZooKeeper and Kafka and testing your Kafka using `kcat`.
+Follow the xref:kafka:getting_started/index.adoc[] which guides you through installing The Stackable Kafka and ZooKeeper operators, setting up ZooKeeper and Kafka and testing your Kafka installation.
 
 == Resources
 
