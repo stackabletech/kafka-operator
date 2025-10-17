@@ -93,7 +93,9 @@ sleep 15
 echo "Creating test topic test-data-topic"
 # tag::create-topic[]
 kubectl exec -n default simple-kafka-broker-default-0 -c kafka -t -- /stackable/kafka/bin/kafka-topics.sh \
---list \
+--create \
+--topic test-data-topic \
+--partitions 1 \
 --bootstrap-server localhost:9092
 # end::create-topic[]
 
