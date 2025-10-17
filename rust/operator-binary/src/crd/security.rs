@@ -340,8 +340,6 @@ impl KafkaTlsSecurity {
             // to the Kafka daemon scripts.
             // This will simplify the code and the command lines lot.
             // It will also make the jaas files reusable by the Kafka shell scripts.
-            props.push(("# This is just an example. The sasl.jaas.config property must be updated before use.".to_string(), None));
-
             props.push((
                 "security.protocol".to_string(),
                 Some("SASL_SSL".to_string()),
@@ -410,7 +408,11 @@ impl KafkaTlsSecurity {
                 Some(Self::SSL_STORE_PASSWORD.to_string()),
             ));
         } else {
-            props.push(("# No SSL required to connect to Kafka".to_string(), None));
+            // Empty client.properties.
+            // Unfortunately cannot add comments because the properties writer escapes them
+            // generating garbage.
+            //
+            // props.push(("# No SSL required to connect to Kafka".to_string(), None));
         }
 
         props
