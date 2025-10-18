@@ -2,10 +2,8 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 timeout: 300
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: write-data
-status:
-  succeeded: 1
+commands:
+  - command: >
+      kubectl exec -n $NAMESPACE test-kafka-broker-default-0 -c kafka -t --
+      bash -c "echo message written before upgrade |
+      /stackable/kafka/bin/kafka-console-producer.sh --topic upgrade-test-data --bootstrap-server test-kafka-broker-default-bootstrap:$(cat /stackable/listener-bootstrap/default-address/ports/kafka*) --producer.config /stackable/config/client.properties"

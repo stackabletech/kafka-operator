@@ -66,3 +66,14 @@ spec:
     roleGroups:
       default:
         replicas: 3
+        podOverrides:
+          spec:
+            volumes:
+              - name: test-scripts
+                configMap:
+                  name: test-scripts
+            containers:
+              - name: kafka
+                volumeMounts:
+                  - mountPath: /test-scripts
+                    name: test-scripts
