@@ -650,7 +650,7 @@ pub fn build_controller_rolegroup_statefulset(
             kafka_security,
             &resolved_product_image.product_version,
         )])
-        .add_env_var("PRE_STOP_CONTROLLER_SLEEP_SECONDS", "5")
+        .add_env_var("PRE_STOP_CONTROLLER_SLEEP_SECONDS", "10")
         .add_env_var(
             "EXTRA_ARGS",
             kafka_role
