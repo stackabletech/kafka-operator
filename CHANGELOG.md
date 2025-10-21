@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 - Add `prometheus.io/path|port|scheme` annotations to metrics service ([#897]).
 - Add `client.properties` to the Kafka configuration config map ([#898]).
 
-  Use this file together with the Kafka client shell scripts and not worry about TLS settings.
+  Use this file together with the Kafka client shell scripts and preconfigured TLS settings.
   Unfortunately, when Kerberos is enabled this file is incomplete and must be edited first before it can be used.
 
 ### Changed
