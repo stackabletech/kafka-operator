@@ -22,7 +22,7 @@ use stackable_operator::{
     shared::time::Duration,
 };
 
-use super::listener::node_port_cmd;
+use super::listener::{KafkaListenerProtocol, node_port_cmd};
 use crate::crd::{
     LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_KRB5_PATH,
     STACKABLE_LISTENER_BROKER_DIR,
@@ -305,7 +305,10 @@ impl KafkaTlsSecurity {
         let mut props = vec![];
 
         if self.tls_client_authentication_class().is_some() {
-            props.push(("security.protocol".to_string(), Some("SSL".to_string())));
+            props.push((
+                "security.protocol".to_string(),
+                Some(KafkaListenerProtocol::Ssl.to_string()),
+            ));
             props.push(("ssl.client.auth".to_string(), Some("required".to_string())));
             props.push(("ssl.keystore.type".to_string(), Some("PKCS12".to_string())));
             props.push((
@@ -342,7 +345,7 @@ impl KafkaTlsSecurity {
             // It will also make the jaas files reusable by the Kafka shell scripts.
             props.push((
                 "security.protocol".to_string(),
-                Some("SASL_SSL".to_string()),
+                Some(KafkaListenerProtocol::SaslSsl.to_string()),
             ));
             props.push(("ssl.keystore.type".to_string(), Some("PKCS12".to_string())));
             props.push((
@@ -391,7 +394,10 @@ impl KafkaTlsSecurity {
                     pod="todo",
                     realm="$KERBEROS_REALM"))));
         } else if self.tls_server_secret_class().is_some() {
-            props.push(("security.protocol".to_string(), Some("SSL".to_string())));
+            props.push((
+                "security.protocol".to_string(),
+                Some(KafkaListenerProtocol::Ssl.to_string()),
+            ));
             props.push((
                 "ssl.truststore.type".to_string(),
                 Some("PKCS12".to_string()),
@@ -408,11 +414,10 @@ impl KafkaTlsSecurity {
                 Some(Self::SSL_STORE_PASSWORD.to_string()),
             ));
         } else {
-            // Empty client.properties.
-            // Unfortunately cannot add comments because the properties writer escapes them
-            // generating garbage.
-            //
-            // props.push(("# No SSL required to connect to Kafka".to_string(), None));
+            props.push((
+                "security.protocol".to_string(),
+                Some(KafkaListenerProtocol::Plaintext.to_string()),
+            ));
         }
 
         props
