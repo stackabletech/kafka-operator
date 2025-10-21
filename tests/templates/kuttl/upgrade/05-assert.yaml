@@ -2,10 +2,8 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 timeout: 300
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: read-data
-status:
-  succeeded: 1
+commands:
+  - command: >
+      kubectl exec -n $NAMESPACE test-kafka-broker-default-0 -c kafka -t --
+      bash -c "/stackable/kafka/bin/kafka-console-consumer.sh --topic upgrade-test-data --bootstrap-server test-kafka-broker-default-bootstrap:$(cat /stackable/listener-bootstrap/default-address/ports/kafka*) --offset earliest --partition 0 --timeout-ms 1000 --consumer.config /stackable/config/client.properties"
+      | grep 'message written before upgrade'

@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
 - Add experimental support for Kafka KRaft mode ([#889]).
 - Add experimental support for Kafka `4.1.0` ([#889]).
 - Add `prometheus.io/path|port|scheme` annotations to metrics service ([#897]).
+- Add `client.properties` to the Kafka configuration config map ([#898]).
+
+  Use this file together with the Kafka client shell scripts and preconfigured TLS settings.
+  Unfortunately, when Kerberos is enabled this file is incomplete and must be edited first before it can be used.
 
 ### Changed
 
@@ -21,11 +25,15 @@ All notable changes to this project will be documented in this file.
   - use the new `server.yaml` for jmx configuration
   - update metrics tests
   - update monitoring doc
+- Replace `kcat` with Kafka client scripts wherever possible ([#898]).
+
+  At the moment, `kcat` is still used for liveliness probes and Kerberos tests.
 
 [#889]: https://github.com/stackabletech/kafka-operator/pull/889
 [#890]: https://github.com/stackabletech/kafka-operator/pull/890
 [#892]: https://github.com/stackabletech/kafka-operator/pull/892
 [#897]: https://github.com/stackabletech/kafka-operator/pull/897
+[#898]: https://github.com/stackabletech/kafka-operator/pull/898
 [#900]: https://github.com/stackabletech/kafka-operator/pull/900
 
 ## [25.7.0] - 2025-07-23

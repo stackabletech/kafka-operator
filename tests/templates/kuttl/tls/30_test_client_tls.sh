@@ -5,7 +5,9 @@
 unset TOPIC
 unset BAD_TOPIC
 
-echo "Connecting to boostrap address $KAFKA"
+KAFKA="$(cat /stackable/listener-broker/default-address/address):$(cat /stackable/listener-broker/default-address/ports/kafka-tls)"
+
+echo "Connecting to bootstrap address $KAFKA"
 
 echo "Start client TLS testing..."
 ############################################################################
@@ -15,10 +17,7 @@ echo "Start client TLS testing..."
 TOPIC=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo '')
 BAD_TOPIC=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo '')
 
-# write client config
-echo $'security.protocol=SSL\nssl.truststore.location=/stackable/tls_keystore_server/truststore.p12\nssl.truststore.password=' > /tmp/client.config
-
-if /stackable/kafka/bin/kafka-topics.sh --create --topic "$TOPIC" --bootstrap-server "$KAFKA" --command-config /tmp/client.config
+if /stackable/kafka/bin/kafka-topics.sh --create --topic "$TOPIC" --bootstrap-server "$KAFKA" --command-config /stackable/config/client.properties
 then
   echo "[SUCCESS] Secure client topic created!"
 else
@@ -26,7 +25,7 @@ else
   exit 1
 fi
 
-if /stackable/kafka/bin/kafka-topics.sh --list --topic "$TOPIC" --bootstrap-server "$KAFKA" --command-config /tmp/client.config | grep "$TOPIC"
+if /stackable/kafka/bin/kafka-topics.sh --list --topic "$TOPIC" --bootstrap-server "$KAFKA" --command-config /stackable/config/client.properties | grep "$TOPIC"
 then
   echo "[SUCCESS] Secure client topic read!"
 else
@@ -48,7 +47,7 @@ fi
 ############################################################################
 # Test the connection with bad host name
 ############################################################################
-if /stackable/kafka/bin/kafka-topics.sh --create --topic "$BAD_TOPIC" --bootstrap-server localhost:9093 --command-config /tmp/client.config &> /dev/null
+if /stackable/kafka/bin/kafka-topics.sh --create --topic "$BAD_TOPIC" --bootstrap-server localhost:9093 --command-config /stackable/config/client.properties &> /dev/null
 then
   echo "[ERROR] Secure client topic created with bad host name!"
   exit 1

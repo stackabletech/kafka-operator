@@ -11,7 +11,6 @@ You need:
 * a Kubernetes cluster
 * kubectl
 * optional: Helm
-* https://github.com/edenhill/kcat#install[kcat] for testing
 
 Resource sizing depends on cluster type(s), usage and scope, but as a starting point a minimum of the following resources is recommended for this operator:
 
