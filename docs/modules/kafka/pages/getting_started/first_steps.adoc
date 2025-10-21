@@ -64,7 +64,7 @@ This creates the actual Kafka instance.
 
 == Verify that it works
 
-Next we will use the Kafka client scripts to create a new topic, publish and consume some data.
+Next, use the Kafka client scripts to create a topic and publish and consume data.
 
 The Kafka operator has created a service called `simple-kafka-broker-default-bootstrap`.
 This service represents the endpoint clients should initially connect to in order to publish and consume data.
@@ -104,8 +104,8 @@ Internal Traffic Policy:  Cluster
 Events:                   <none>
 ----
 
-In the output we see that there are three endpoints serviced here.
-There correspond to the three broker pods belonging to the Kafka cluster.
+The output shows that there are three endpoints serviced here.
+They correspond to the three broker pods belonging to the Kafka cluster.
 
 Then, create a port-forward on this service:
 
