@@ -9,6 +9,11 @@ All notable changes to this project will be documented in this file.
 - Helm: Allow Pod `priorityClassName` to be configured ([#890]).
 - Add experimental support for Kafka KRaft mode ([#889]).
 - Add experimental support for Kafka `4.1.0` ([#889]).
+- Add `prometheus.io/path|port|scheme` annotations to metrics service ([#897]).
+- Add `client.properties` to the Kafka configuration config map ([#898]).
+
+  Use this file together with the Kafka client shell scripts and preconfigured TLS settings.
+  Unfortunately, when Kerberos is enabled this file is incomplete and must be edited first before it can be used.
 - Add end-of-support checker ([#895]).
   - `EOS_CHECK_MODE` (`--eos-check-mode`) to set the EoS check mode. Currently, only "offline" is supported.
   - `EOS_INTERVAL` (`--eos-interval`) to set the interval in which the operator checks if it is EoS.
@@ -17,11 +22,24 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Deprecate support for Kafka `3.7.2` ([#892]).
+- BREAKING: The `<cluster>-<role>-<rolegroup>` rolegroup service was replaced with a `<cluster>-<role>-<rolegroup>-headless`
+  and `<cluster>-<role>-<rolegroup>-metrics` rolegroup service ([#897]).
+- Small cleanups and updates ([#900])
+  - remove the metrics port from services that don't need it
+  - use the new `server.yaml` for jmx configuration
+  - update metrics tests
+  - update monitoring doc
+- Replace `kcat` with Kafka client scripts wherever possible ([#898]).
+
+  At the moment, `kcat` is still used for liveliness probes and Kerberos tests.
 
 [#889]: https://github.com/stackabletech/kafka-operator/pull/889
 [#890]: https://github.com/stackabletech/kafka-operator/pull/890
 [#892]: https://github.com/stackabletech/kafka-operator/pull/892
 [#895]: https://github.com/stackabletech/kafka-operator/pull/895
+[#897]: https://github.com/stackabletech/kafka-operator/pull/897
+[#898]: https://github.com/stackabletech/kafka-operator/pull/898
+[#900]: https://github.com/stackabletech/kafka-operator/pull/900
 
 ## [25.7.0] - 2025-07-23
 

@@ -403,7 +403,7 @@ impl AnyConfig {
 
     // Logging config is distinct between each role, due to the different enum types,
     // so provide helpers for containers that are common between all roles.
-    pub fn kafka_logging(&self) -> Cow<ContainerLogConfig> {
+    pub fn kafka_logging(&'_ self) -> Cow<'_, ContainerLogConfig> {
         match self {
             AnyConfig::Broker(node) => node.logging.for_container(&broker::BrokerContainer::Kafka),
             AnyConfig::Controller(node) => node
@@ -412,7 +412,7 @@ impl AnyConfig {
         }
     }
 
-    pub fn vector_logging(&self) -> Cow<ContainerLogConfig> {
+    pub fn vector_logging(&'_ self) -> Cow<'_, ContainerLogConfig> {
         match &self {
             AnyConfig::Broker(broker_config) => broker_config
                 .logging

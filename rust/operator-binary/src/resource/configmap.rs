@@ -124,6 +124,18 @@ pub fn build_rolegroup_config_map(
                     rolegroup: rolegroup.role_group.clone(),
                 }
             })?,
+        )
+        .add_data(
+            "client.properties",
+            to_java_properties_string(
+                kafka_security
+                    .client_properties()
+                    .iter()
+                    .map(|(k, v)| (k, v)),
+            )
+            .with_context(|_| JvmSecurityPopertiesSnafu {
+                rolegroup: rolegroup.role_group.clone(),
+            })?,
         );
 
     tracing::debug!(?kafka_config, "Applied kafka config");

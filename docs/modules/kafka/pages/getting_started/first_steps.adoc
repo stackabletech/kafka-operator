@@ -1,6 +1,5 @@
 = First steps
-:description: Deploy and verify a Kafka cluster on Kubernetes with Stackable Operators, including ZooKeeper setup and data testing using kcat.
-:kcat-install: https://github.com/edenhill/kcat#install
+:description: Deploy and verify a Kafka cluster on Kubernetes with Stackable Operators, including ZooKeeper setup and data testing.
 
 After going through the xref:getting_started/installation.adoc[] section and having installed all the operators, you now deploy a Kafka cluster and the required dependencies.
 Afterward you can <<_verify_that_it_works, verify that it works>> by producing test data into a topic and consuming it.
@@ -65,58 +64,90 @@ This creates the actual Kafka instance.
 
 == Verify that it works
 
-Next you produce data into a topic and read it via {kcat-install}[kcat].
-Depending on your platform you may need to replace `kafkacat` in the commands below with `kcat`.
+Next, use the Kafka client scripts to create a topic and publish and consume data.
 
-First, make sure that all the Pods in the StatefulSets are ready:
+The Kafka operator has created a service called `simple-kafka-broker-default-bootstrap`.
+This service represents the endpoint clients should initially connect to in order to publish and consume data.
+First, make sure that the service exists and it is healthy:
 
 [source,bash]
 ----
-kubectl get statefulset
+kubectl describe svc simple-kafka-broker-default-bootstrap
 ----
 
-The output should show all pods ready:
+The output should look somewhat like this:
 
 ----
-NAME                                 READY   AGE
-simple-kafka-broker-default          3/3     5m
-simple-zk-server-default             3/3     7m
+Name:                     simple-kafka-broker-default-bootstrap
+Namespace:                default
+Labels:                   app.kubernetes.io/component=broker
+                          app.kubernetes.io/instance=simple-kafka-broker-default-bootstrap
+                          app.kubernetes.io/managed-by=listeners.stackable.tech_listener
+                          app.kubernetes.io/name=listener
+                          app.kubernetes.io/role-group=default
+                          app.kubernetes.io/version=3.9.1-stackable0.0.0-dev
+                          stackable.tech/vendor=Stackable
+Annotations:              <none>
+Selector:                 listener.stackable.tech/mnt.9555cbb6f38d4b0ca1771e6d83d28e27=simple-kafka-broker-default-bootstrap
+Type:                     NodePort
+IP Family Policy:         SingleStack
+IP Families:              IPv4
+IP:                       10.105.88.52
+IPs:                      10.105.88.52
+Port:                     kafka  9092/TCP
+TargetPort:               9092/TCP
+NodePort:                 kafka  32608/TCP
+Endpoints:                10.244.4.22:9092,10.244.4.24:9092,10.244.4.23:9092
+Session Affinity:         None
+External Traffic Policy:  Local
+Internal Traffic Policy:  Cluster
+Events:                   <none>
 ----
 
-Then, create a port-forward for the Kafka Broker:
+The output shows that there are three endpoints serviced here.
+They correspond to the three broker pods belonging to the Kafka cluster.
+
+Then, create a port-forward on this service:
 
 ----
 include::example$getting_started/getting_started.sh[tag=port-forwarding]
 ----
 
-Create a file containing some data:
+Now, create a new topic called `test-data-topic`:
 
 ----
-include::example$getting_started/getting_started.sh[tag=kcat-create-data]
+include::example$getting_started/getting_started.sh[tag=create-topic]
 ----
 
-Write that data:
+Use the Kafka performance producer script to send a couple of messages to the topic previously created:
 
 ----
-include::example$getting_started/getting_started.sh[tag=kcat-write-data]
+include::example$getting_started/getting_started.sh[tag=write-data]
 ----
 
-Read that data:
+The output should contain the following line:
 
 ----
-include::example$getting_started/getting_started.sh[tag=kcat-read-data]
+5 records sent, 1.138434 records/sec (0.00 MB/sec), 83.40 ms avg latency, 395.00 ms max latency, 3 ms 50th, 395 ms 95th, 395 ms 99th, 395 ms 99.9th.
 ----
 
-Check the content:
+This confirms that there were five messages sent to the topic and it also displays performance timers.
+We are not interested in any performance indicators but appreciate the fact that there were five unique messages that we consume later.
+
+Now let's consume the messages from above:
 
 ----
-include::example$getting_started/getting_started.sh[tag=kcat-check-data]
+include::example$getting_started/getting_started.sh[tag=read-data]
 ----
 
-And clean up:
+The consumer should print the messages in between logging statements
 
 ----
-include::example$getting_started/getting_started.sh[tag=kcat-cleanup-data]
+0
+1
+2
+3
+4
 ----
 
 You successfully created a Kafka cluster and produced and consumed data.

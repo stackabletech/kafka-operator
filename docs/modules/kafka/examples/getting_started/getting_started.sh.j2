@@ -90,28 +90,33 @@ trap "kill $PORT_FORWARD_PID" EXIT
 
 sleep 15
 
-echo "Creating test data"
-# tag::kcat-create-data[]
-echo "some test data" > data
-# end::kcat-create-data[]
+echo "Creating test topic test-data-topic"
+# tag::create-topic[]
+kubectl exec -n default simple-kafka-broker-default-0 -c kafka -t -- /stackable/kafka/bin/kafka-topics.sh \
+--create \
+--topic test-data-topic \
+--partitions 1 \
+--bootstrap-server localhost:9092
+# end::create-topic[]
 
-echo "Writing test data"
-# tag::kcat-write-data[]
-kcat -b localhost:9092 -t test-data-topic -P data
-# end::kcat-write-data[]
+echo "Publish test data"
+# tag::write-data[]
+kubectl exec -n default simple-kafka-broker-default-0 -c kafka -t -- /stackable/kafka/bin/kafka-producer-perf-test.sh \
+--producer-props bootstrap.servers=localhost:9092 \
+--topic test-data-topic \
+--payload-monotonic \
+--throughput 1 \
+--num-records 5
+# end::write-data[]
 
-echo "Reading test data"
-# tag::kcat-read-data[]
-kcat -b localhost:9092 -t test-data-topic -C -e > read-data.out
-# end::kcat-read-data[]
+echo "Consume test data"
+# tag::read-data[]
+kubectl exec -n default simple-kafka-broker-default-0 -c kafka -t -- /stackable/kafka/bin/kafka-console-consumer.sh \
+--bootstrap-server localhost:9092 \
+--topic test-data-topic \
+--offset earliest \
+--partition 0 \
+--timeout-ms 1000
+# end::read-data[]
 
-echo "Check contents"
-# tag::kcat-check-data[]
-grep "some test data" read-data.out
-# end::kcat-check-data[]
-
-echo "Cleanup"
-# tag::kcat-cleanup-data[]
-rm data
-rm read-data.out
-# end::kcat-cleanup-data[]
+echo "Success!"

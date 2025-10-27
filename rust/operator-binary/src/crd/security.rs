@@ -22,7 +22,7 @@ use stackable_operator::{
     shared::time::Duration,
 };
 
-use super::listener::node_port_cmd;
+use super::listener::{KafkaListenerProtocol, node_port_cmd};
 use crate::crd::{
     LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_KRB5_PATH,
     STACKABLE_LISTENER_BROKER_DIR,
@@ -299,6 +299,130 @@ impl KafkaTlsSecurity {
         args
     }
 
+    /// Returns a configuration file that can be used by Kafka clients running inside the
+    /// Kubernetes cluster to connect to the Kafka servers.
+    pub fn client_properties(&self) -> Vec<(String, Option<String>)> {
+        let mut props = vec![];
+
+        if self.tls_client_authentication_class().is_some() {
+            props.push((
+                "security.protocol".to_string(),
+                Some(KafkaListenerProtocol::Ssl.to_string()),
+            ));
+            props.push(("ssl.client.auth".to_string(), Some("required".to_string())));
+            props.push(("ssl.keystore.type".to_string(), Some("PKCS12".to_string())));
+            props.push((
+                "ssl.keystore.location".to_string(),
+                Some(format!(
+                    "{}/keystore.p12",
+                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR
+                )),
+            ));
+            props.push((
+                "ssl.keystore.password".to_string(),
+                Some(Self::SSL_STORE_PASSWORD.to_string()),
+            ));
+            props.push((
+                "ssl.truststore.type".to_string(),
+                Some("PKCS12".to_string()),
+            ));
+            props.push((
+                "ssl.truststore.location".to_string(),
+                Some(format!(
+                    "{}/truststore.p12",
+                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR
+                )),
+            ));
+            props.push((
+                "ssl.truststore.password".to_string(),
+                Some(Self::SSL_STORE_PASSWORD.to_string()),
+            ));
+        } else if self.has_kerberos_enabled() {
+            // TODO: to make this configuration file usable out of the box the operator needs to be
+            // refactored to write out Java jaas files instead of passing command line parameters
+            // to the Kafka daemon scripts.
+            // This will simplify the code and the command lines lot.
+            // It will also make the jaas files reusable by the Kafka shell scripts.
+            props.push((
+                "security.protocol".to_string(),
+                Some(KafkaListenerProtocol::SaslSsl.to_string()),
+            ));
+            props.push(("ssl.keystore.type".to_string(), Some("PKCS12".to_string())));
+            props.push((
+                "ssl.keystore.location".to_string(),
+                Some(format!(
+                    "{}/keystore.p12",
+                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR
+                )),
+            ));
+            props.push((
+                "ssl.keystore.password".to_string(),
+                Some(Self::SSL_STORE_PASSWORD.to_string()),
+            ));
+            props.push((
+                "ssl.truststore.type".to_string(),
+                Some("PKCS12".to_string()),
+            ));
+            props.push((
+                "ssl.truststore.location".to_string(),
+                Some(format!(
+                    "{}/truststore.p12",
+                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR
+                )),
+            ));
+            props.push((
+                "ssl.truststore.password".to_string(),
+                Some(Self::SSL_STORE_PASSWORD.to_string()),
+            ));
+            props.push((
+                "sasl.enabled.mechanisms".to_string(),
+                Some("GSSAPI".to_string()),
+            ));
+            props.push((
+                "sasl.kerberos.service.name".to_string(),
+                Some(KafkaRole::Broker.kerberos_service_name().to_string()),
+            ));
+            props.push((
+                "sasl.mechanism.inter.broker.protocol".to_string(),
+                Some("GSSAPI".to_string()),
+            ));
+            props.push((
+                "sasl.jaas.config".to_string(),
+                Some(format!("com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true keyTab=\"{keytab}\" principal=\"{service}/{pod}@{realm}\"",
+                    keytab="/stackable/kerberos/keytab",
+                    service=KafkaRole::Broker.kerberos_service_name(),
+                    pod="todo",
+                    realm="$KERBEROS_REALM"))));
+        } else if self.tls_server_secret_class().is_some() {
+            props.push((
+                "security.protocol".to_string(),
+                Some(KafkaListenerProtocol::Ssl.to_string()),
+            ));
+            props.push((
+                "ssl.truststore.type".to_string(),
+                Some("PKCS12".to_string()),
+            ));
+            props.push((
+                "ssl.truststore.location".to_string(),
+                Some(format!(
+                    "{}/truststore.p12",
+                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR
+                )),
+            ));
+            props.push((
+                "ssl.truststore.password".to_string(),
+                Some(Self::SSL_STORE_PASSWORD.to_string()),
+            ));
+        } else {
+            props.push((
+                "security.protocol".to_string(),
+                Some(KafkaListenerProtocol::Plaintext.to_string()),
+            ));
+        }
+
+        props
+    }
+
     /// Adds required volumes and volume mounts to the broker pod and container builders
     /// depending on the tls and authentication settings.
     pub fn add_broker_volume_and_volume_mounts(
@@ -484,6 +608,16 @@ impl KafkaTlsSecurity {
                 KafkaListenerName::Bootstrap.listener_ssl_truststore_type(),
                 "PKCS12".to_string(),
             );
+            config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
+            config.insert(
+                "sasl.kerberos.service.name".to_string(),
+                KafkaRole::Broker.kerberos_service_name().to_string(),
+            );
+            config.insert(
+                "sasl.mechanism.inter.broker.protocol".to_string(),
+                "GSSAPI".to_string(),
+            );
+            tracing::debug!("Kerberos configs added: [{:#?}]", config);
         }
 
         // Internal TLS
@@ -543,20 +677,6 @@ impl KafkaTlsSecurity {
                 KafkaListenerName::Internal.listener_ssl_client_auth(),
                 "required".to_string(),
             );
-        }
-
-        // Kerberos
-        if self.has_kerberos_enabled() {
-            config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
-            config.insert(
-                "sasl.kerberos.service.name".to_string(),
-                KafkaRole::Broker.kerberos_service_name().to_string(),
-            );
-            config.insert(
-                "sasl.mechanism.inter.broker.protocol".to_string(),
-                "GSSAPI".to_string(),
-            );
-            tracing::debug!("Kerberos configs added: [{:#?}]", config);
         }
 
         // common

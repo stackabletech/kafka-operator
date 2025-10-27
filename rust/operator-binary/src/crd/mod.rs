@@ -294,7 +294,9 @@ impl v1alpha1::KafkaCluster {
                     for replica in 0..replicas {
                         pod_descriptors.push(KafkaPodDescriptor {
                             namespace: namespace.clone(),
-                            role_group_service_name: rolegroup_ref.object_name(),
+                            role_group_service_name: rolegroup_ref
+                                .rolegroup_headless_service_name(),
+                            role_group_statefulset_name: rolegroup_ref.object_name(),
                             replica,
                             cluster_domain: cluster_info.cluster_domain.clone(),
                             node_id: node_id_hash_offset + u32::from(replica),
@@ -341,6 +343,7 @@ impl v1alpha1::KafkaCluster {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KafkaPodDescriptor {
     namespace: String,
+    role_group_statefulset_name: String,
     role_group_service_name: String,
     replica: u16,
     cluster_domain: DomainName,
@@ -361,7 +364,7 @@ impl KafkaPodDescriptor {
     }
 
     pub fn pod_name(&self) -> String {
-        format!("{}-{}", self.role_group_service_name, self.replica)
+        format!("{}-{}", self.role_group_statefulset_name, self.replica)
     }
 
     /// Build the Kraft voter String

@@ -3,8 +3,6 @@ import logging
 import requests
 
 if __name__ == "__main__":
-    result = 0
-
     LOG_LEVEL = "DEBUG"  # if args.debug else 'INFO'
     logging.basicConfig(
         level=LOG_LEVEL,
@@ -12,8 +10,12 @@ if __name__ == "__main__":
         stream=sys.stdout,
     )
 
-    http_code = requests.get("http://test-kafka-broker-default:9606").status_code
-    if http_code != 200:
-        result = 1
+    response = requests.get("http://test-kafka-broker-default-metrics:9606/metrics")
 
-    sys.exit(result)
+    assert response.status_code == 200, (
+        f"Expected HTTP return code 200 from the metrics endpoint but got [{response.status_code}]"
+    )
+
+    assert "jmx_scrape_error" in response.text, (
+        "Expected metric [jmx_scrape_error] not found"
+    )
