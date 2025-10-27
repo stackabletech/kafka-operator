@@ -6,7 +6,7 @@
 * 3.9.1 (LTS)
 * 3.7.2 (deprecated)
 
-Apache Kafka 4.x.x support is experimental because it has not been thoroughly tested in production environments yet.
+Support for clusters running in Kraft mode (which includes Apache Kafka 4.x.x) is experimental because it has not been thoroughly tested in production environments yet.
 Migrations from older Kafka version which used Apache Zookeeper for cluster coordination to the new KRaft mode are not supported yet.
 
 Also there are some known issues such as:
