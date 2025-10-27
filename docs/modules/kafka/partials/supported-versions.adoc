@@ -5,3 +5,12 @@
 * 4.1.0 (experimental)
 * 3.9.1 (LTS)
 * 3.7.2 (deprecated)
+
+Apache Kafka 4.1.0 support is experimental because it has not been throughly tested in production environments yet.
+Migrations from older Kafka version which used Apache Zookeeper for cluster coordination to the new KRaft mode are not supported yet.
+
+Also there are some known issues such as:
+
+* Controller scaling is not reliable.
+* Kerberos authentication is not tested yet.
+* Service exposision is not definitive.
