@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
   Use this file together with the Kafka client shell scripts and preconfigured TLS settings.
   Unfortunately, when Kerberos is enabled this file is incomplete and must be edited first before it can be used.
+- Add end-of-support checker ([#895]).
+  - `EOS_CHECK_MODE` (`--eos-check-mode`) to set the EoS check mode. Currently, only "offline" is supported.
+  - `EOS_INTERVAL` (`--eos-interval`) to set the interval in which the operator checks if it is EoS.
+  - `EOS_DISABLED` (`--eos-disabled`) to disable the EoS checker completely.
 
 ### Changed
 
@@ -32,6 +36,7 @@ All notable changes to this project will be documented in this file.
 [#889]: https://github.com/stackabletech/kafka-operator/pull/889
 [#890]: https://github.com/stackabletech/kafka-operator/pull/890
 [#892]: https://github.com/stackabletech/kafka-operator/pull/892
+[#895]: https://github.com/stackabletech/kafka-operator/pull/895
 [#897]: https://github.com/stackabletech/kafka-operator/pull/897
 [#898]: https://github.com/stackabletech/kafka-operator/pull/898
 [#900]: https://github.com/stackabletech/kafka-operator/pull/900
