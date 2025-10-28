@@ -1,0 +1,21 @@
+{% if not test_scenario['values']['kafka-kraft'].startswith("3.7") %}
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 600
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+status:
+  replicas: 0
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-controller-default
+status:
+  readyReplicas: 3
+  replicas: 3
+{% endif %}
