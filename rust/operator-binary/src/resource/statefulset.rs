@@ -693,8 +693,9 @@ pub fn build_controller_rolegroup_statefulset(
                 port: IntOrString::Int(kafka_security.client_port().into()),
                 ..Default::default()
             }),
-            timeout_seconds: Some(5),
-            period_seconds: Some(5),
+            timeout_seconds: Some(10),
+            period_seconds: Some(10),
+            failure_threshold: Some(6),
             ..Probe::default()
         })
         .readiness_probe(Probe {
@@ -702,8 +703,9 @@ pub fn build_controller_rolegroup_statefulset(
                 port: IntOrString::Int(kafka_security.client_port().into()),
                 ..Default::default()
             }),
-            timeout_seconds: Some(5),
-            period_seconds: Some(5),
+            timeout_seconds: Some(10),
+            period_seconds: Some(10),
+            failure_threshold: Some(6),
             ..Probe::default()
         });
 
