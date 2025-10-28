@@ -30,8 +30,8 @@ All notable changes to this project will be documented in this file.
   - update metrics tests
   - update monitoring doc
 - Replace `kcat` with Kafka client scripts wherever possible ([#898]).
-
   At the moment, `kcat` is still used for liveliness probes and Kerberos tests.
+- Bump stackable-operator to `0.100.1` ([#906]).
 
 [#889]: https://github.com/stackabletech/kafka-operator/pull/889
 [#890]: https://github.com/stackabletech/kafka-operator/pull/890
@@ -40,6 +40,7 @@ All notable changes to this project will be documented in this file.
 [#897]: https://github.com/stackabletech/kafka-operator/pull/897
 [#898]: https://github.com/stackabletech/kafka-operator/pull/898
 [#900]: https://github.com/stackabletech/kafka-operator/pull/900
+[#906]: https://github.com/stackabletech/kafka-operator/pull/906
 
 ## [25.7.0] - 2025-07-23
 
