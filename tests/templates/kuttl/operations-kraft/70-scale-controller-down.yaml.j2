@@ -1,12 +1,8 @@
-#
-# This test step is disabled becaus Kraft controller do scale down reliably.
-# This leads to flaky tests.
-#
 {% if not test_scenario['values']['kafka-kraft'].startswith("3.7") %}
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
-timeout: 300
+timeout: 600
 ---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster

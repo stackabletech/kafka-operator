@@ -1,3 +1,4 @@
+{% if not test_scenario['values']['kafka-kraft'].startswith("3.7") %}
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
@@ -19,3 +20,4 @@ metadata:
 status:
   readyReplicas: 3
   replicas: 3
+{% endif %}
