@@ -52,7 +52,6 @@ use crate::{
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
         STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
         STACKABLE_LISTENER_BROKER_DIR,
-        listener::get_kafka_listener_config,
         role::{
             AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
@@ -169,7 +168,6 @@ pub fn build_broker_rolegroup_statefulset(
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
     broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
-    opa_connect_string: Option<&str>,
     kafka_security: &KafkaTlsSecurity,
     merged_config: &AnyConfig,
     service_account: &ServiceAccount,
@@ -285,10 +283,6 @@ pub fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let kafka_listeners =
-        get_kafka_listener_config(kafka, kafka_security, rolegroup_ref, cluster_info)
-            .context(InvalidKafkaListenersSnafu)?;
-
     let cluster_id = kafka.cluster_id().context(ClusterIdMissingSnafu)?;
 
     cb_kafka
@@ -305,10 +299,8 @@ pub fn build_broker_rolegroup_statefulset(
             cluster_id,
             // we need controller pods
             kafka
-                .pod_descriptors(&KafkaRole::Controller, cluster_info)
+                .pod_descriptors(Some(&KafkaRole::Controller), cluster_info)
                 .context(BuildPodDescriptorsSnafu)?,
-            &kafka_listeners,
-            opa_connect_string,
             kafka_security,
             &resolved_product_image.product_version,
         )])
@@ -336,6 +328,10 @@ pub fn build_broker_rolegroup_statefulset(
         .add_env_var(
             KAFKA_NODE_ID_OFFSET,
             node_id_hash32_offset(rolegroup_ref).to_string(),
+        )
+        .add_env_var(
+            "KAFKA_CLIENT_PORT".to_string(),
+            kafka_security.client_port().to_string(),
         )
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
@@ -628,9 +624,11 @@ pub fn build_controller_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let kafka_listeners =
-        get_kafka_listener_config(kafka, kafka_security, rolegroup_ref, cluster_info)
-            .context(InvalidKafkaListenersSnafu)?;
+    env.push(EnvVar {
+        name: "KAFKA_CLIENT_PORT".to_string(),
+        value: Some(kafka_security.client_port().to_string()),
+        ..EnvVar::default()
+    });
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -644,9 +642,8 @@ pub fn build_controller_rolegroup_statefulset(
         .args(vec![controller_kafka_container_command(
             kafka.cluster_id().context(ClusterIdMissingSnafu)?,
             kafka
-                .pod_descriptors(kafka_role, cluster_info)
+                .pod_descriptors(Some(kafka_role), cluster_info)
                 .context(BuildPodDescriptorsSnafu)?,
-            &kafka_listeners,
             kafka_security,
             &resolved_product_image.product_version,
         )])

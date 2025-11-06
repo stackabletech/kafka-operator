@@ -254,13 +254,14 @@ impl v1alpha1::KafkaCluster {
         })
     }
 
-    /// List all pod descriptors of a provided role expected to form the cluster.
+    /// List pod descriptors for a given role.
+    /// If no role is provided, pod descriptors for all roles are listed.
     ///
     /// We try to predict the pods here rather than looking at the current cluster state in order to
     /// avoid instance churn.
     pub fn pod_descriptors(
         &self,
-        requested_kafka_role: &KafkaRole,
+        requested_kafka_role: Option<&KafkaRole>,
         cluster_info: &KubernetesClusterInfo,
     ) -> Result<Vec<KafkaPodDescriptor>, Error> {
         let namespace = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
@@ -290,10 +291,12 @@ impl v1alpha1::KafkaCluster {
                 };
 
                 // only return descriptors for selected role
-                if current_role == *requested_kafka_role {
+                if requested_kafka_role.is_none() || &current_role == requested_kafka_role.unwrap()
+                {
                     for replica in 0..replicas {
                         pod_descriptors.push(KafkaPodDescriptor {
                             namespace: namespace.clone(),
+                            role: current_role.to_string(),
                             role_group_service_name: rolegroup_ref
                                 .rolegroup_headless_service_name(),
                             role_group_statefulset_name: rolegroup_ref.object_name(),
@@ -348,6 +351,7 @@ pub struct KafkaPodDescriptor {
     replica: u16,
     cluster_domain: DomainName,
     node_id: u32,
+    pub role: String,
 }
 
 impl KafkaPodDescriptor {

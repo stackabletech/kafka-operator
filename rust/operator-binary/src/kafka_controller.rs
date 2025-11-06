@@ -37,6 +37,7 @@ use crate::{
     crd::{
         self, APP_NAME, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KafkaClusterStatus,
         OPERATOR_NAME,
+        listener::get_kafka_listener_config,
         role::{
             AnyConfig, KafkaRole, broker::BROKER_PROPERTIES_FILE,
             controller::CONTROLLER_PROPERTIES_FILE,
@@ -66,6 +67,14 @@ pub struct Ctx {
 #[strum_discriminants(derive(IntoStaticStr))]
 #[allow(clippy::enum_variant_names)]
 pub enum Error {
+    #[snafu(display("failed to build pod descriptors"))]
+    BuildPodDescriptors { source: crate::crd::Error },
+
+    #[snafu(display("invalid kafka listeners"))]
+    InvalidKafkaListeners {
+        source: crate::crd::listener::KafkaListenerError,
+    },
+
     #[snafu(display("cluster object defines no '{role}' role"))]
     MissingKafkaRole {
         source: crate::crd::Error,
@@ -242,6 +251,8 @@ impl ReconcilerError for Error {
             Error::BuildConfigMap { .. } => None,
             Error::BuildService { .. } => None,
             Error::BuildListener { .. } => None,
+            Error::InvalidKafkaListeners { .. } => None,
+            Error::BuildPodDescriptors { .. } => None,
         }
     }
 }
@@ -359,6 +370,18 @@ pub async fn reconcile_kafka(
                 build_rolegroup_metrics_service(kafka, &resolved_product_image, &rolegroup_ref)
                     .context(BuildServiceSnafu)?;
 
+            let kafka_listeners = get_kafka_listener_config(
+                kafka,
+                &kafka_security,
+                &rolegroup_ref,
+                &client.kubernetes_cluster_info,
+            )
+            .context(InvalidKafkaListenersSnafu)?;
+
+            let pod_descriptors = kafka
+                .pod_descriptors(None, &client.kubernetes_cluster_info)
+                .context(BuildPodDescriptorsSnafu)?;
+
             let rg_configmap = build_rolegroup_config_map(
                 kafka,
                 &resolved_product_image,
@@ -366,6 +389,9 @@ pub async fn reconcile_kafka(
                 &rolegroup_ref,
                 rolegroup_config,
                 &merged_config,
+                &kafka_listeners,
+                &pod_descriptors,
+                opa_connect.as_deref(),
             )
             .context(BuildConfigMapSnafu)?;
 
@@ -376,7 +402,6 @@ pub async fn reconcile_kafka(
                     &resolved_product_image,
                     &rolegroup_ref,
                     rolegroup_config,
-                    opa_connect.as_deref(),
                     &kafka_security,
                     &merged_config,
                     &rbac_sa,

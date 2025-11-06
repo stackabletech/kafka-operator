@@ -15,11 +15,7 @@ use stackable_operator::{
 use strum::{Display, EnumIter};
 
 use crate::crd::{
-    listener::KafkaListenerName,
-    role::{
-        KAFKA_LOG_DIRS, KAFKA_PROCESS_ROLES, KafkaRole,
-        commons::{CommonConfig, Storage, StorageFragment},
-    },
+    role::commons::{CommonConfig, Storage, StorageFragment},
     v1alpha1,
 };
 
@@ -121,29 +117,9 @@ impl Configuration for ControllerConfigFragment {
         &self,
         _resource: &Self::Configurable,
         _role_name: &str,
-        file: &str,
+        _file: &str,
     ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
     {
-        let mut config = BTreeMap::new();
-
-        if file == CONTROLLER_PROPERTIES_FILE {
-            config.insert(
-                KAFKA_LOG_DIRS.to_string(),
-                Some("/stackable/data/kraft".to_string()),
-            );
-
-            // KRAFT
-            config.insert(
-                KAFKA_PROCESS_ROLES.to_string(),
-                Some(KafkaRole::Controller.to_string()),
-            );
-
-            config.insert(
-                "controller.listener.names".to_string(),
-                Some(KafkaListenerName::Controller.to_string()),
-            );
-        }
-
-        Ok(config)
+        Ok(BTreeMap::new())
     }
 }

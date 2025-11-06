@@ -331,11 +331,11 @@ pub fn get_kafka_listener_config(
 }
 
 pub fn node_address_cmd(directory: &str) -> String {
-    format!("$(cat {directory}/default-address/address)")
+    format!("${{file:UTF-8:{directory}/default-address/address}}")
 }
 
 pub fn node_port_cmd(directory: &str, port_name: &str) -> String {
-    format!("$(cat {directory}/default-address/ports/{port_name})")
+    format!("${{file:UTF-8:{directory}/default-address/ports/{port_name}}}")
 }
 
 pub fn pod_fqdn(
@@ -344,7 +344,7 @@ pub fn pod_fqdn(
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<String, KafkaListenerError> {
     Ok(format!(
-        "$POD_NAME.{sts_service_name}.{namespace}.svc.{cluster_domain}",
+        "${{env:POD_NAME}}.{sts_service_name}.{namespace}.svc.{cluster_domain}",
         namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
         cluster_domain = cluster_info.cluster_domain
     ))
