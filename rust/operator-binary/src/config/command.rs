@@ -71,8 +71,6 @@ fn broker_start_command(
         false => "".to_string(),
     };
 
-    let client_port = kafka_security.client_port();
-
     // This should be improved:
     // - mount emptyDir as readWriteConfig
     if kafka.is_controller_configured() {
@@ -89,7 +87,7 @@ fn broker_start_command(
         ",
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = BROKER_PROPERTIES_FILE,
-        initial_controller_command = initial_controllers_command(&controller_descriptors, product_version, client_port),
+        initial_controller_command = initial_controllers_command(&controller_descriptors, product_version),
         }
     } else {
         formatdoc! {"
@@ -151,11 +149,8 @@ wait_for_termination()
 pub fn controller_kafka_container_command(
     cluster_id: &str,
     controller_descriptors: Vec<KafkaPodDescriptor>,
-    kafka_security: &KafkaTlsSecurity,
     product_version: &str,
 ) -> String {
-    let client_port = kafka_security.client_port();
-
     // TODO: The properties file from the configmap is copied to the /tmp folder and appended with dynamic properties
     // This should be improved:
     // - mount emptyDir as readWriteConfig
@@ -183,15 +178,15 @@ pub fn controller_kafka_container_command(
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = CONTROLLER_PROPERTIES_FILE,
-        initial_controller_command = initial_controllers_command(&controller_descriptors, product_version, client_port),
+        initial_controller_command = initial_controllers_command(&controller_descriptors, product_version),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
     }
 }
 
-fn to_initial_controllers(controller_descriptors: &[KafkaPodDescriptor], port: u16) -> String {
+fn to_initial_controllers(controller_descriptors: &[KafkaPodDescriptor]) -> String {
     controller_descriptors
         .iter()
-        .map(|desc| desc.as_voter(port))
+        .map(|desc| desc.as_voter())
         .collect::<Vec<String>>()
         .join(",")
 }
@@ -199,13 +194,12 @@ fn to_initial_controllers(controller_descriptors: &[KafkaPodDescriptor], port: u
 fn initial_controllers_command(
     controller_descriptors: &[KafkaPodDescriptor],
     product_version: &str,
-    client_port: u16,
 ) -> String {
     match product_version.starts_with("3.7") {
         true => "".to_string(),
         false => format!(
             "--initial-controllers {initial_controllers}",
-            initial_controllers = to_initial_controllers(controller_descriptors, client_port),
+            initial_controllers = to_initial_controllers(controller_descriptors),
         ),
     }
 }

@@ -263,6 +263,7 @@ impl v1alpha1::KafkaCluster {
         &self,
         requested_kafka_role: Option<&KafkaRole>,
         cluster_info: &KubernetesClusterInfo,
+        client_port: u16,
     ) -> Result<Vec<KafkaPodDescriptor>, Error> {
         let namespace = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
         let mut pod_descriptors = Vec::new();
@@ -303,6 +304,7 @@ impl v1alpha1::KafkaCluster {
                             replica,
                             cluster_domain: cluster_info.cluster_domain.clone(),
                             node_id: node_id_hash_offset + u32::from(replica),
+                            client_port,
                         });
                     }
                 }
@@ -352,6 +354,7 @@ pub struct KafkaPodDescriptor {
     cluster_domain: DomainName,
     node_id: u32,
     pub role: String,
+    pub client_port: u16,
 }
 
 impl KafkaPodDescriptor {
@@ -380,18 +383,20 @@ impl KafkaPodDescriptor {
     ///   * controller-0 is the replica's host,
     ///   * 1234 is the replica's port.
     // NOTE(@maltesander): Even though the used Uuid states to be type 4 it does not work... 0000000000-00000000000 works...
-    pub fn as_voter(&self, port: u16) -> String {
+    pub fn as_voter(&self) -> String {
         format!(
             "{node_id}@{fqdn}:{port}:0000000000-{node_id:0>11}",
             node_id = self.node_id,
+            port = self.client_port,
             fqdn = self.fqdn(),
         )
     }
 
-    pub fn as_quorum_voter(&self, port: u16) -> String {
+    pub fn as_quorum_voter(&self) -> String {
         format!(
             "{node_id}@{fqdn}:{port}",
             node_id = self.node_id,
+            port = self.client_port,
             fqdn = self.fqdn(),
         )
     }

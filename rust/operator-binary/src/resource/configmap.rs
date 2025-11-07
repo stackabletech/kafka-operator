@@ -18,8 +18,8 @@ use crate::{
         listener::{KafkaListenerConfig, KafkaListenerName},
         role::{
             AnyConfig, KAFKA_ADVERTISED_LISTENERS, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
-            KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS, KAFKA_LOG_DIRS, KAFKA_NODE_ID,
-            KAFKA_PROCESS_ROLES, KafkaRole,
+            KAFKA_CONTROLLER_QUORUM_VOTERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS,
+            KAFKA_LOG_DIRS, KAFKA_NODE_ID, KAFKA_PROCESS_ROLES, KafkaRole,
         },
         security::KafkaTlsSecurity,
         v1alpha1,
@@ -94,6 +94,7 @@ pub fn build_rolegroup_config_map(
         pod_descriptors,
         listener_config,
         opa_connect_string,
+        resolved_product_image.product_version.starts_with("3.7"), // needs_quorum_voters
     )?;
 
     // Need to call this to get configOverrides :(
@@ -198,6 +199,7 @@ fn server_properties_file(
     pod_descriptors: &[KafkaPodDescriptor],
     listener_config: &KafkaListenerConfig,
     opa_connect_string: Option<&str>,
+    needs_quorum_voters: bool,
 ) -> Result<BTreeMap<String, String>, Error> {
     let kraft_controllers = kraft_controllers(pod_descriptors);
 
@@ -209,7 +211,7 @@ fn server_properties_file(
         KafkaRole::Controller => {
             let kraft_controllers = kraft_controllers.context(NoKraftControllersFoundSnafu)?;
 
-            Ok(BTreeMap::from([
+            let mut result = BTreeMap::from([
             (
                 KAFKA_LOG_DIRS.to_string(),
                 "/stackable/data/kraft".to_string(),
@@ -227,10 +229,6 @@ fn server_properties_file(
                 KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS.to_string(),
                 kraft_controllers.clone(),
             ),
-            // TODO: figure this out
-            //(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(),
-            //kraft_controllers,
-            //),
             (
                 KAFKA_LISTENERS.to_string(),
                 "CONTROLLER://${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}:${env:KAFKA_CLIENT_PORT}".to_string(),
@@ -240,7 +238,16 @@ fn server_properties_file(
                 listener_config
                     .listener_security_protocol_map_for_listener(&KafkaListenerName::Controller)
                     .unwrap_or("".to_string())),
-            ]))
+            ]);
+
+            if needs_quorum_voters {
+                let kraft_voters =
+                    kraft_voters(pod_descriptors).context(NoKraftControllersFoundSnafu)?;
+
+                result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
+            }
+
+            Ok(result)
         }
         KafkaRole::Broker => {
             let mut result = BTreeMap::from([
@@ -278,6 +285,13 @@ fn server_properties_file(
                         kraft_controllers.clone(),
                     ),
                 ]);
+
+                if needs_quorum_voters {
+                    let kraft_voters =
+                        kraft_voters(pod_descriptors).context(NoKraftControllersFoundSnafu)?;
+
+                    result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
+                }
             } else {
                 // Running with ZooKeeper enabled
                 result.extend([(
@@ -313,7 +327,28 @@ fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Option<String> {
     let result = pod_descriptors
         .iter()
         .filter(|pd| pd.role == KafkaRole::Controller.to_string())
-        .map(|desc| format!("{fqdn}:${{env:KAFKA_CLIENT_PORT}}", fqdn = desc.fqdn()))
+        .map(|desc| {
+            format!(
+                "{fqdn}:{client_port}",
+                fqdn = desc.fqdn(),
+                client_port = desc.client_port
+            )
+        })
+        .collect::<Vec<String>>()
+        .join(",");
+
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
+}
+
+fn kraft_voters(pod_descriptors: &[KafkaPodDescriptor]) -> Option<String> {
+    let result = pod_descriptors
+        .iter()
+        .filter(|pd| pd.role == KafkaRole::Controller.to_string())
+        .map(|desc| desc.as_quorum_voter())
         .collect::<Vec<String>>()
         .join(",");
 

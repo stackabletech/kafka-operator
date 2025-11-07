@@ -299,7 +299,11 @@ pub fn build_broker_rolegroup_statefulset(
             cluster_id,
             // we need controller pods
             kafka
-                .pod_descriptors(Some(&KafkaRole::Controller), cluster_info)
+                .pod_descriptors(
+                    Some(&KafkaRole::Controller),
+                    cluster_info,
+                    kafka_security.client_port(),
+                )
                 .context(BuildPodDescriptorsSnafu)?,
             kafka_security,
             &resolved_product_image.product_version,
@@ -642,9 +646,8 @@ pub fn build_controller_rolegroup_statefulset(
         .args(vec![controller_kafka_container_command(
             kafka.cluster_id().context(ClusterIdMissingSnafu)?,
             kafka
-                .pod_descriptors(Some(kafka_role), cluster_info)
+                .pod_descriptors(Some(kafka_role), cluster_info, kafka_security.client_port())
                 .context(BuildPodDescriptorsSnafu)?,
-            kafka_security,
             &resolved_product_image.product_version,
         )])
         .add_env_var("PRE_STOP_CONTROLLER_SLEEP_SECONDS", "10")

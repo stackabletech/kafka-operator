@@ -68,8 +68,7 @@ pub const KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS: &str = "controller.quorum.b
 
 /// Map of id/endpoint information for the set of voters in a comma-separated list of {id}@{host}:{port} entries.
 /// For example: 1@localhost:9092,2@localhost:9093,3@localhost:9094
-/// TODO: maybe re-enable
-// pub const KAFKA_CONTROLLER_QUORUM_VOTERS: &str = "controller.quorum.voters";
+pub const KAFKA_CONTROLLER_QUORUM_VOTERS: &str = "controller.quorum.voters";
 
 #[derive(Snafu, Debug)]
 pub enum Error {

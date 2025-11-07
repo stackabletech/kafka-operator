@@ -379,7 +379,11 @@ pub async fn reconcile_kafka(
             .context(InvalidKafkaListenersSnafu)?;
 
             let pod_descriptors = kafka
-                .pod_descriptors(None, &client.kubernetes_cluster_info)
+                .pod_descriptors(
+                    None,
+                    &client.kubernetes_cluster_info,
+                    kafka_security.client_port(),
+                )
                 .context(BuildPodDescriptorsSnafu)?;
 
             let rg_configmap = build_rolegroup_config_map(
