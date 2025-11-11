@@ -290,8 +290,9 @@ impl v1alpha1::KafkaCluster {
                     }
                 };
 
-                // only return descriptors for selected role
-                if let Some(current_role) = requested_kafka_role {
+                // If no specific role is requested, or the current role matches the requested one, add pod descriptors
+                if requested_kafka_role.is_none() || &current_role == requested_kafka_role.unwrap()
+                {
                     for replica in 0..replicas {
                         pod_descriptors.push(KafkaPodDescriptor {
                             namespace: namespace.clone(),
