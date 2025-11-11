@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Refactor: move server configuration properties from the command line to configuration files. ([#911]).
+
+[#911]: https://github.com/stackabletech/kafka-operator/pull/911
+
 ## [25.11.0] - 2025-11-07
 
 ## [25.11.0-rc1] - 2025-11-06
