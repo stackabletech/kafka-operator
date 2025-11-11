@@ -254,9 +254,8 @@ impl v1alpha1::KafkaCluster {
         })
     }
 
-    /// List pod descriptors for a given role.
-    /// If no role is provided, pod descriptors for all roles are listed.
-    ///
+    /// List pod descriptors for a given role and all it's groups.
+    /// If no role is provided, pod descriptors for all roles (and all groups) are listed.
     /// We try to predict the pods here rather than looking at the current cluster state in order to
     /// avoid instance churn.
     pub fn pod_descriptors(
@@ -292,8 +291,7 @@ impl v1alpha1::KafkaCluster {
                 };
 
                 // only return descriptors for selected role
-                if requested_kafka_role.is_none() || &current_role == requested_kafka_role.unwrap()
-                {
+                if let Some(current_role) = requested_kafka_role {
                     for replica in 0..replicas {
                         pod_descriptors.push(KafkaPodDescriptor {
                             namespace: namespace.clone(),
