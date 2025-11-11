@@ -403,15 +403,3 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
         },
     }
 }
-/*
-        KafkaClient {{
-            com.sun.security.auth.module.Krb5LoginModule required
-            useKeyTab=true
-            storeKey=true
-            isInitiator=false
-            keyTab=\"/stackable/kerberos/keytab\"
-            principal=\"kafka/{node_address}@${{env:KERBEROS_REALM}}\";
-        }};
-
-        bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
-*/
