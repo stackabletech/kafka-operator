@@ -3,6 +3,7 @@ use std::{
     str::FromStr,
 };
 
+use indoc::formatdoc;
 use product_config::{types::PropertyNameKind, writer::to_java_properties_string};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
@@ -14,8 +15,9 @@ use stackable_operator::{
 
 use crate::{
     crd::{
-        JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor,
-        listener::{KafkaListenerConfig, KafkaListenerName},
+        JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+        STACKABLE_LISTENER_BROKER_DIR,
+        listener::{KafkaListenerConfig, KafkaListenerName, node_address_cmd},
         role::{
             AnyConfig, KAFKA_ADVERTISED_LISTENERS, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
             KAFKA_CONTROLLER_QUORUM_VOTERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS,
@@ -71,6 +73,9 @@ pub enum Error {
         source: strum::ParseError,
         name: String,
     },
+
+    #[snafu(display("failed to build jaas configuration file for {}", rolegroup))]
+    BuildJaasConfig { rolegroup: String },
 }
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
@@ -174,6 +179,14 @@ pub fn build_rolegroup_config_map(
             .with_context(|_| JvmSecurityPopertiesSnafu {
                 rolegroup: rolegroup.role_group.clone(),
             })?,
+        )
+        // This file contains the JAAS configuration for Kerberos authentication
+        // It has the ".properties" extension but is not a Java properties file.
+        // It is processed by `config-utils` to substitute "env:" and "file:" variables
+        // and this tool currently doesn't support the JAAS login configuration format.
+        .add_data(
+            "jaas.properties",
+            jaas_config_file(kafka_security.has_kerberos_enabled()),
         );
 
     tracing::debug!(?kafka_config, "Applied kafka config");
@@ -358,3 +371,47 @@ fn kraft_voters(pod_descriptors: &[KafkaPodDescriptor]) -> Option<String> {
         Some(result)
     }
 }
+
+// Generate JAAS configuration file for Kerberos authentication
+// or an empty string if Kerberos is not enabled.
+// See https://docs.oracle.com/javase/8/docs/technotes/guides/security/jgss/tutorials/LoginConfigFile.html
+fn jaas_config_file(is_kerberos_enabled: bool) -> String {
+    match is_kerberos_enabled {
+        false => String::new(),
+        true => formatdoc! {"
+        bootstrap.KafkaServer {{
+            com.sun.security.auth.module.Krb5LoginModule required
+            useKeyTab=true
+            storeKey=true
+            isInitiator=false
+            keyTab=\"/stackable/kerberos/keytab\"
+            principal=\"kafka/{bootstrap_address}@${{env:KERBEROS_REALM}}\";
+        }};
+
+        client.KafkaServer {{
+            com.sun.security.auth.module.Krb5LoginModule required
+            useKeyTab=true
+            storeKey=true
+            isInitiator=false
+            keyTab=\"/stackable/kerberos/keytab\"
+            principal=\"kafka/{broker_address}@${{env:KERBEROS_REALM}}\";
+        }};
+
+    ",
+        bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
+        broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+        },
+    }
+}
+/*
+        KafkaClient {{
+            com.sun.security.auth.module.Krb5LoginModule required
+            useKeyTab=true
+            storeKey=true
+            isInitiator=false
+            keyTab=\"/stackable/kerberos/keytab\"
+            principal=\"kafka/{node_address}@${{env:KERBEROS_REALM}}\";
+        }};
+
+        bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
+*/

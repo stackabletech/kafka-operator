@@ -100,12 +100,14 @@ impl KafkaListenerName {
         )
     }
 
+    /*
     pub fn listener_gssapi_sasl_jaas_config(&self) -> String {
         format!(
             "listener.name.{listener_name}.gssapi.sasl.jaas.config",
             listener_name = self.to_string().to_lowercase()
         )
     }
+    */
 }
 
 #[derive(Debug)]
@@ -328,6 +330,14 @@ pub fn get_kafka_listener_config(
         advertised_listeners,
         listener_security_protocol_map,
     })
+}
+
+pub fn node_address_cmd_env(directory: &str) -> String {
+    format!("$(cat {directory}/default-address/address)")
+}
+
+pub fn node_port_cmd_env(directory: &str, port_name: &str) -> String {
+    format!("$(cat {directory}/default-address/ports/{port_name})")
 }
 
 pub fn node_address_cmd(directory: &str) -> String {

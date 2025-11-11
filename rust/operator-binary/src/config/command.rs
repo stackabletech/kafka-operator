@@ -9,9 +9,7 @@ use stackable_operator::{
 use crate::{
     crd::{
         KafkaPodDescriptor, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
-        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
-        listener::{KafkaListenerName, node_address_cmd},
-        role::{KafkaRole, broker::BROKER_PROPERTIES_FILE, controller::CONTROLLER_PROPERTIES_FILE},
+        role::{broker::BROKER_PROPERTIES_FILE, controller::CONTROLLER_PROPERTIES_FILE},
         security::KafkaTlsSecurity,
         v1alpha1,
     },
@@ -44,7 +42,7 @@ pub fn broker_kafka_container_commands(
             true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})"),
             false => "".to_string(),
         },
-        broker_start_command = broker_start_command(kafka, cluster_id, controller_descriptors, kafka_security, product_version),
+        broker_start_command = broker_start_command(kafka, cluster_id, controller_descriptors, product_version),
     }
 }
 
@@ -52,38 +50,21 @@ fn broker_start_command(
     kafka: &v1alpha1::KafkaCluster,
     cluster_id: &str,
     controller_descriptors: Vec<KafkaPodDescriptor>,
-    kafka_security: &KafkaTlsSecurity,
     product_version: &str,
 ) -> String {
-    let jaas_config = match kafka_security.has_kerberos_enabled() {
-        true => {
-            formatdoc! {"
-                --override \"{client_jaas_config}=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{broker_address}@$KERBEROS_REALM\\\";\" \
-                --override \"{bootstrap_jaas_config}=com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true isInitiator=false keyTab=\\\"/stackable/kerberos/keytab\\\" principal=\\\"{service_name}/{bootstrap_address}@$KERBEROS_REALM\\\";\"
-            ",
-            client_jaas_config = KafkaListenerName::Client.listener_gssapi_sasl_jaas_config(),
-            bootstrap_jaas_config = KafkaListenerName::Bootstrap.listener_gssapi_sasl_jaas_config(),
-            service_name = KafkaRole::Broker.kerberos_service_name(),
-            broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-            bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
-            }
-        }
-        false => "".to_string(),
-    };
-
-    // This should be improved:
-    // - mount emptyDir as readWriteConfig
     if kafka.is_controller_configured() {
         formatdoc! {"
             POD_INDEX=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
             export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
 
             cp {config_dir}/{properties_file} /tmp/{properties_file}
-
             config-utils template /tmp/{properties_file}
 
+            cp {config_dir}/jaas.properties /tmp/jaas.properties
+            config-utils template /tmp/jaas.properties
+
             bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --ignore-formatted {initial_controller_command}
-            bin/kafka-server-start.sh /tmp/{properties_file} {jaas_config} &
+            bin/kafka-server-start.sh /tmp/{properties_file} &
         ",
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = BROKER_PROPERTIES_FILE,
@@ -92,12 +73,12 @@ fn broker_start_command(
     } else {
         formatdoc! {"
             cp {config_dir}/{properties_file} /tmp/{properties_file}
-
             config-utils template /tmp/{properties_file}
 
-            bin/kafka-server-start.sh /tmp/{properties_file} \
-            {jaas_config} \
-            &",
+            cp {config_dir}/jaas.properties /tmp/jaas.properties
+            config-utils template /tmp/jaas.properties
+
+            bin/kafka-server-start.sh /tmp/{properties_file} &",
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = BROKER_PROPERTIES_FILE,
         }
@@ -112,7 +93,7 @@ fn broker_start_command(
 // The environment variable `PRE_STOP_CONTROLLER_SLEEP_SECONDS` delays the termination of the
 // controller processes to give the brokers more time to offload data and shutdown gracefully.
 // Kubernetes has a built in `pre-stop` hook feature that is not yet generally available on all platforms
-// supported by the operator.
+// supported by the operator.http://app.sl/
 const BASH_TRAP_FUNCTIONS: &str = r#"
 prepare_signal_handlers()
 {
@@ -151,11 +132,6 @@ pub fn controller_kafka_container_command(
     controller_descriptors: Vec<KafkaPodDescriptor>,
     product_version: &str,
 ) -> String {
-    // TODO: The properties file from the configmap is copied to the /tmp folder and appended with dynamic properties
-    // This should be improved:
-    // - mount emptyDir as readWriteConfig
-    // - use config-utils for proper replacements?
-    // - should we print the adapted properties file at startup?
     formatdoc! {"
         {BASH_TRAP_FUNCTIONS}
         {remove_vector_shutdown_file_command}

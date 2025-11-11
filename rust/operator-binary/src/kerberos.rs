@@ -61,7 +61,7 @@ pub fn add_kerberos_pod_config(
             cb.add_env_var("KRB5_CONFIG", STACKABLE_KERBEROS_KRB5_PATH);
             cb.add_env_var(
                 "KAFKA_OPTS",
-                format!("-Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}",),
+                format!("-Djava.security.auth.login.config=/tmp/jaas.properties -Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}",),
             );
         }
     }
