@@ -93,7 +93,7 @@ fn broker_start_command(
 // The environment variable `PRE_STOP_CONTROLLER_SLEEP_SECONDS` delays the termination of the
 // controller processes to give the brokers more time to offload data and shutdown gracefully.
 // Kubernetes has a built in `pre-stop` hook feature that is not yet generally available on all platforms
-// supported by the operator.http://app.sl/
+// supported by the operator.
 const BASH_TRAP_FUNCTIONS: &str = r#"
 prepare_signal_handlers()
 {
