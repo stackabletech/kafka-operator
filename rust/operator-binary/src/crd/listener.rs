@@ -99,15 +99,6 @@ impl KafkaListenerName {
             listener_name = self.to_string().to_lowercase()
         )
     }
-
-    /*
-    pub fn listener_gssapi_sasl_jaas_config(&self) -> String {
-        format!(
-            "listener.name.{listener_name}.gssapi.sasl.jaas.config",
-            listener_name = self.to_string().to_lowercase()
-        )
-    }
-    */
 }
 
 #[derive(Debug)]
