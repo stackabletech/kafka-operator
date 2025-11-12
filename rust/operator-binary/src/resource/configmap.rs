@@ -102,14 +102,6 @@ pub fn build_rolegroup_config_map(
         resolved_product_image.product_version.starts_with("3.7"), // needs_quorum_voters
     )?;
 
-    // Need to call this to get configOverrides :(
-    kafka_config.extend(
-        rolegroup_config
-            .get(&PropertyNameKind::File(kafka_config_file_name.to_string()))
-            .cloned()
-            .unwrap_or_default(),
-    );
-
     match merged_config {
         AnyConfig::Broker(_) => kafka_config.extend(kafka_security.broker_config_settings()),
         AnyConfig::Controller(_) => {
@@ -118,6 +110,14 @@ pub fn build_rolegroup_config_map(
     }
 
     kafka_config.extend(graceful_shutdown_config_properties());
+
+    // Need to call this to get configOverrides :(
+    kafka_config.extend(
+        rolegroup_config
+            .get(&PropertyNameKind::File(kafka_config_file_name.to_string()))
+            .cloned()
+            .unwrap_or_default(),
+    );
 
     let kafka_config = kafka_config
         .into_iter()

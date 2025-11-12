@@ -15,11 +15,7 @@ use stackable_operator::{
 use strum::{Display, EnumIter};
 
 use crate::crd::{
-    listener::KafkaListenerName,
-    role::{
-        KAFKA_LOG_DIRS, KAFKA_PROCESS_ROLES, KafkaRole,
-        commons::{CommonConfig, Storage, StorageFragment},
-    },
+    role::commons::{CommonConfig, Storage, StorageFragment},
     v1alpha1,
 };
 
@@ -129,44 +125,11 @@ impl Configuration for BrokerConfigFragment {
 
     fn compute_files(
         &self,
-        resource: &Self::Configurable,
+        _resource: &Self::Configurable,
         _role_name: &str,
-        file: &str,
+        _file: &str,
     ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
     {
-        let mut config = BTreeMap::new();
-
-        if file == BROKER_PROPERTIES_FILE {
-            config.insert(
-                KAFKA_LOG_DIRS.to_string(),
-                Some("/stackable/data/topicdata".to_string()),
-            );
-
-            // KRAFT
-            if resource.is_controller_configured() {
-                config.insert(
-                    KAFKA_PROCESS_ROLES.to_string(),
-                    Some(KafkaRole::Broker.to_string()),
-                );
-
-                config.insert(
-                    "controller.listener.names".to_string(),
-                    Some(KafkaListenerName::Controller.to_string()),
-                );
-            }
-            // OPA
-            if resource.spec.cluster_config.authorization.opa.is_some() {
-                config.insert(
-                    "authorizer.class.name".to_string(),
-                    Some("org.openpolicyagent.kafka.OpaAuthorizer".to_string()),
-                );
-                config.insert(
-                    "opa.authorizer.metrics.enabled".to_string(),
-                    Some("true".to_string()),
-                );
-            }
-        }
-
-        Ok(config)
+        Ok(BTreeMap::new())
     }
 }
