@@ -99,13 +99,6 @@ impl KafkaListenerName {
             listener_name = self.to_string().to_lowercase()
         )
     }
-
-    pub fn listener_gssapi_sasl_jaas_config(&self) -> String {
-        format!(
-            "listener.name.{listener_name}.gssapi.sasl.jaas.config",
-            listener_name = self.to_string().to_lowercase()
-        )
-    }
 }
 
 #[derive(Debug)]
@@ -330,12 +323,20 @@ pub fn get_kafka_listener_config(
     })
 }
 
-pub fn node_address_cmd(directory: &str) -> String {
+pub fn node_address_cmd_env(directory: &str) -> String {
     format!("$(cat {directory}/default-address/address)")
 }
 
-pub fn node_port_cmd(directory: &str, port_name: &str) -> String {
+pub fn node_port_cmd_env(directory: &str, port_name: &str) -> String {
     format!("$(cat {directory}/default-address/ports/{port_name})")
+}
+
+pub fn node_address_cmd(directory: &str) -> String {
+    format!("${{file:UTF-8:{directory}/default-address/address}}")
+}
+
+pub fn node_port_cmd(directory: &str, port_name: &str) -> String {
+    format!("${{file:UTF-8:{directory}/default-address/ports/{port_name}}}")
 }
 
 pub fn pod_fqdn(
@@ -344,7 +345,7 @@ pub fn pod_fqdn(
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<String, KafkaListenerError> {
     Ok(format!(
-        "$POD_NAME.{sts_service_name}.{namespace}.svc.{cluster_domain}",
+        "${{env:POD_NAME}}.{sts_service_name}.{namespace}.svc.{cluster_domain}",
         namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
         cluster_domain = cluster_info.cluster_domain
     ))

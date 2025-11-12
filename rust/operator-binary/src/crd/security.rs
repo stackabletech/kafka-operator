@@ -22,12 +22,12 @@ use stackable_operator::{
     shared::time::Duration,
 };
 
-use super::listener::{KafkaListenerProtocol, node_port_cmd};
+use super::listener::KafkaListenerProtocol;
 use crate::crd::{
     LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_KRB5_PATH,
     STACKABLE_LISTENER_BROKER_DIR,
     authentication::{self, ResolvedAuthenticationClasses},
-    listener::{self, KafkaListenerName, node_address_cmd},
+    listener::{self, KafkaListenerName, node_address_cmd_env, node_port_cmd_env},
     role::KafkaRole,
     tls, v1alpha1,
 };
@@ -247,7 +247,6 @@ impl KafkaTlsSecurity {
             args.push("-L".to_string());
         } else if self.has_kerberos_enabled() {
             let service_name = KafkaRole::Broker.kerberos_service_name();
-            let broker_port = node_port_cmd(STACKABLE_LISTENER_BROKER_DIR, self.client_port_name());
             // here we need to specify a shell so that variable substitution will work
             // see e.g. https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/V1ExecAction.md
             args.push("/bin/bash".to_string());
@@ -269,13 +268,20 @@ impl KafkaTlsSecurity {
             bash_args.push(
                 format!(
                     "export POD_BROKER_LISTENER_ADDRESS={};",
-                    node_address_cmd(STACKABLE_LISTENER_BROKER_DIR)
+                    node_address_cmd_env(STACKABLE_LISTENER_BROKER_DIR)
+                )
+                .to_string(),
+            );
+            bash_args.push(
+                format!(
+                    "export POD_BROKER_LISTENER_PORT={};",
+                    node_port_cmd_env(STACKABLE_LISTENER_BROKER_DIR, self.client_port_name())
                 )
                 .to_string(),
             );
             bash_args.push("/stackable/kcat".to_string());
             bash_args.push("-b".to_string());
-            bash_args.push(format!("$POD_BROKER_LISTENER_ADDRESS:{broker_port}"));
+            bash_args.push("$POD_BROKER_LISTENER_ADDRESS:$POD_BROKER_LISTENER_PORT".to_string());
             bash_args.extend(Self::kcat_client_sasl_ssl(
                 Self::STACKABLE_TLS_KCAT_DIR,
                 service_name,

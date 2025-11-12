@@ -254,14 +254,15 @@ impl v1alpha1::KafkaCluster {
         })
     }
 
-    /// List all pod descriptors of a provided role expected to form the cluster.
-    ///
+    /// List pod descriptors for a given role and all its rolegroups.
+    /// If no role is provided, pod descriptors for all roles (and all groups) are listed.
     /// We try to predict the pods here rather than looking at the current cluster state in order to
     /// avoid instance churn.
     pub fn pod_descriptors(
         &self,
-        requested_kafka_role: &KafkaRole,
+        requested_kafka_role: Option<&KafkaRole>,
         cluster_info: &KubernetesClusterInfo,
+        client_port: u16,
     ) -> Result<Vec<KafkaPodDescriptor>, Error> {
         let namespace = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
         let mut pod_descriptors = Vec::new();
@@ -289,17 +290,19 @@ impl v1alpha1::KafkaCluster {
                     }
                 };
 
-                // only return descriptors for selected role
-                if current_role == *requested_kafka_role {
+                // If no specific role is requested, or the current role matches the requested one, add pod descriptors
+                if requested_kafka_role.is_none() || Some(&current_role) == requested_kafka_role {
                     for replica in 0..replicas {
                         pod_descriptors.push(KafkaPodDescriptor {
                             namespace: namespace.clone(),
+                            role: current_role.to_string(),
                             role_group_service_name: rolegroup_ref
                                 .rolegroup_headless_service_name(),
                             role_group_statefulset_name: rolegroup_ref.object_name(),
                             replica,
                             cluster_domain: cluster_info.cluster_domain.clone(),
                             node_id: node_id_hash_offset + u32::from(replica),
+                            client_port,
                         });
                     }
                 }
@@ -348,6 +351,8 @@ pub struct KafkaPodDescriptor {
     replica: u16,
     cluster_domain: DomainName,
     node_id: u32,
+    pub role: String,
+    pub client_port: u16,
 }
 
 impl KafkaPodDescriptor {
@@ -376,18 +381,20 @@ impl KafkaPodDescriptor {
     ///   * controller-0 is the replica's host,
     ///   * 1234 is the replica's port.
     // NOTE(@maltesander): Even though the used Uuid states to be type 4 it does not work... 0000000000-00000000000 works...
-    pub fn as_voter(&self, port: u16) -> String {
+    pub fn as_voter(&self) -> String {
         format!(
             "{node_id}@{fqdn}:{port}:0000000000-{node_id:0>11}",
             node_id = self.node_id,
+            port = self.client_port,
             fqdn = self.fqdn(),
         )
     }
 
-    pub fn as_quorum_voter(&self, port: u16) -> String {
+    pub fn as_quorum_voter(&self) -> String {
         format!(
             "{node_id}@{fqdn}:{port}",
             node_id = self.node_id,
+            port = self.client_port,
             fqdn = self.fqdn(),
         )
     }
