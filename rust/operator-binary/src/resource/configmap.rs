@@ -74,7 +74,7 @@ pub enum Error {
         name: String,
     },
 
-    #[snafu(display("failed to build jaas configuration file for {}", rolegroup))]
+    #[snafu(display("failed to build jaas configuration file for {rolegroup}"))]
     BuildJaasConfig { rolegroup: String },
 }
 
@@ -206,7 +206,7 @@ pub fn build_rolegroup_config_map(
         })
 }
 
-// Generate the content of both server.properties and controller.properties files.
+// Generate the content of both broker.properties and controller.properties files.
 fn server_properties_file(
     kraft_mode: bool,
     role: &str,

@@ -254,7 +254,7 @@ impl v1alpha1::KafkaCluster {
         })
     }
 
-    /// List pod descriptors for a given role and all it's groups.
+    /// List pod descriptors for a given role and all its rolegroups.
     /// If no role is provided, pod descriptors for all roles (and all groups) are listed.
     /// We try to predict the pods here rather than looking at the current cluster state in order to
     /// avoid instance churn.
