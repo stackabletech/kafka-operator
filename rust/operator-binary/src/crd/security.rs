@@ -653,6 +653,31 @@ impl KafkaTlsSecurity {
                 KafkaListenerName::Internal.listener_ssl_truststore_type(),
                 "PKCS12".to_string(),
             );
+            // CONTROLLERS
+            config.insert(
+                KafkaListenerName::Controller.listener_ssl_keystore_location(),
+                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
+            );
+            config.insert(
+                KafkaListenerName::Controller.listener_ssl_keystore_password(),
+                Self::SSL_STORE_PASSWORD.to_string(),
+            );
+            config.insert(
+                KafkaListenerName::Controller.listener_ssl_keystore_type(),
+                "PKCS12".to_string(),
+            );
+            config.insert(
+                KafkaListenerName::Controller.listener_ssl_truststore_location(),
+                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
+            );
+            config.insert(
+                KafkaListenerName::Controller.listener_ssl_truststore_password(),
+                Self::SSL_STORE_PASSWORD.to_string(),
+            );
+            config.insert(
+                KafkaListenerName::Controller.listener_ssl_truststore_type(),
+                "PKCS12".to_string(),
+            );
             // client auth required
             config.insert(
                 KafkaListenerName::Internal.listener_ssl_client_auth(),
