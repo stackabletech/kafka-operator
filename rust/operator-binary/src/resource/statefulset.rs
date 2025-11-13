@@ -282,6 +282,11 @@ pub fn build_broker_rolegroup_statefulset(
         }),
         ..EnvVar::default()
     });
+    env.push(EnvVar {
+        name: "ROLEGROUP_HEADLESS_SERVICE_NAME".to_string(),
+        value: Some(rolegroup_ref.rolegroup_headless_service_name()),
+        ..EnvVar::default()
+    });
 
     let cluster_id = kafka.cluster_id().context(ClusterIdMissingSnafu)?;
 
@@ -428,7 +433,7 @@ pub fn build_broker_rolegroup_statefulset(
         .context(MetadataBuildSnafu)?
         .build();
 
-    if let Some(listener_class) = merged_config.listener_class() {
+    if let Some(listener_class) = merged_config.client_listener_class() {
         pod_builder
             .add_listener_volume_by_listener_class(
                 LISTENER_BROKER_VOLUME_NAME,
