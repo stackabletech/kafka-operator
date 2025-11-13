@@ -103,7 +103,9 @@ pub fn build_rolegroup_config_map(
     )?;
 
     match merged_config {
-        AnyConfig::Broker(_) => kafka_config.extend(kafka_security.broker_config_settings()),
+        AnyConfig::Broker(_) => {
+            kafka_config.extend(kafka_security.broker_listener_tls_properties())
+        }
         AnyConfig::Controller(_) => {
             kafka_config.extend(kafka_security.controller_config_settings())
         }

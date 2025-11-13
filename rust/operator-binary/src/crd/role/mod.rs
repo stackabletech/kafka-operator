@@ -432,7 +432,11 @@ impl AnyConfig {
         }
     }
 
-    pub fn listener_class(&self) -> Option<&String> {
+    // This returns the listener class that exposes Kafka to clients.
+    // This corresponds to the CLIENT Kafka listener.
+    // This class is used to build one service per server (broker) pod.
+    // For Kraft controllers, there is no such listener class.
+    pub fn client_listener_class(&self) -> Option<&String> {
         match self {
             AnyConfig::Broker(broker_config) => Some(&broker_config.broker_listener_class),
             AnyConfig::Controller(_) => None,

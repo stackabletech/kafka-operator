@@ -204,6 +204,17 @@ impl KafkaTlsSecurity {
         }
     }
 
+    /// Return the Kafka (secure) client protocol
+    pub fn client_protocol(&self) -> KafkaListenerProtocol {
+        if self.has_kerberos_enabled() {
+            KafkaListenerProtocol::SaslSsl
+        } else if self.tls_enabled() {
+            KafkaListenerProtocol::Ssl
+        } else {
+            KafkaListenerProtocol::Plaintext
+        }
+    }
+
     pub fn bootstrap_port(&self) -> u16 {
         if self.tls_enabled() {
             Self::SECURE_BOOTSTRAP_PORT
@@ -234,73 +245,70 @@ impl KafkaTlsSecurity {
         }
     }
 
+    /// Return the Kafka (secure) internal protocol
+    pub fn internal_protocol(&self) -> KafkaListenerProtocol {
+        if self.tls_internal_secret_class().is_some() {
+            KafkaListenerProtocol::Ssl
+        } else {
+            KafkaListenerProtocol::Plaintext
+        }
+    }
+
     /// Returns the commands for the kcat readiness probe.
+    /// kcat will use the CLIENT listener to connect to the Kafka broker.
     pub fn kcat_prober_container_commands(&self) -> Vec<String> {
-        let mut args = vec![];
-        let port = self.client_port();
+        let mut args = vec![
+            "/bin/bash".to_string(),
+            "-x".to_string(),
+            "-euo".to_string(),
+            "pipefail".to_string(),
+            "-c".to_string(),
+        ];
+        // the entire command needs to be subject to the -c directive
+        // to prevent short-circuiting
+        let mut bash_args = vec![];
+        bash_args.push(
+            format!(
+                "export POD_BROKER_LISTENER_ADDRESS={};",
+                node_address_cmd_env(STACKABLE_LISTENER_BROKER_DIR)
+            )
+            .to_string(),
+        );
+        bash_args.push(
+            format!(
+                "export POD_BROKER_LISTENER_PORT={};",
+                node_port_cmd_env(STACKABLE_LISTENER_BROKER_DIR, self.client_port_name())
+            )
+            .to_string(),
+        );
+        bash_args.push(
+            format!(
+                "export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {});",
+                STACKABLE_KERBEROS_KRB5_PATH
+            )
+            .to_string(),
+        );
+
+        bash_args.push("/stackable/kcat".to_string());
+        bash_args.push("-b".to_string());
+
+        bash_args.push("$POD_BROKER_LISTENER_ADDRESS:$POD_BROKER_LISTENER_PORT".to_string());
 
         if self.tls_client_authentication_class().is_some() {
-            args.push("/stackable/kcat".to_string());
-            args.push("-b".to_string());
-            args.push(format!("localhost:{}", port));
-            args.extend(Self::kcat_client_auth_ssl(Self::STACKABLE_TLS_KCAT_DIR));
-            args.push("-L".to_string());
+            bash_args.extend(Self::kcat_client_auth_ssl(Self::STACKABLE_TLS_KCAT_DIR));
+        } else if self.tls_server_secret_class().is_some() {
+            bash_args.extend(Self::kcat_client_ssl(Self::STACKABLE_TLS_KCAT_DIR));
         } else if self.has_kerberos_enabled() {
             let service_name = KafkaRole::Broker.kerberos_service_name();
-            // here we need to specify a shell so that variable substitution will work
-            // see e.g. https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/V1ExecAction.md
-            args.push("/bin/bash".to_string());
-            args.push("-x".to_string());
-            args.push("-euo".to_string());
-            args.push("pipefail".to_string());
-            args.push("-c".to_string());
-
-            // the entire command needs to be subject to the -c directive
-            // to prevent short-circuiting
-            let mut bash_args = vec![];
-            bash_args.push(
-                format!(
-                    "export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {});",
-                    STACKABLE_KERBEROS_KRB5_PATH
-                )
-                .to_string(),
-            );
-            bash_args.push(
-                format!(
-                    "export POD_BROKER_LISTENER_ADDRESS={};",
-                    node_address_cmd_env(STACKABLE_LISTENER_BROKER_DIR)
-                )
-                .to_string(),
-            );
-            bash_args.push(
-                format!(
-                    "export POD_BROKER_LISTENER_PORT={};",
-                    node_port_cmd_env(STACKABLE_LISTENER_BROKER_DIR, self.client_port_name())
-                )
-                .to_string(),
-            );
-            bash_args.push("/stackable/kcat".to_string());
-            bash_args.push("-b".to_string());
-            bash_args.push("$POD_BROKER_LISTENER_ADDRESS:$POD_BROKER_LISTENER_PORT".to_string());
             bash_args.extend(Self::kcat_client_sasl_ssl(
                 Self::STACKABLE_TLS_KCAT_DIR,
                 service_name,
             ));
-            bash_args.push("-L".to_string());
-
-            args.push(bash_args.join(" "));
-        } else if self.tls_server_secret_class().is_some() {
-            args.push("/stackable/kcat".to_string());
-            args.push("-b".to_string());
-            args.push(format!("localhost:{}", port));
-            args.extend(Self::kcat_client_ssl(Self::STACKABLE_TLS_KCAT_DIR));
-            args.push("-L".to_string());
-        } else {
-            args.push("/stackable/kcat".to_string());
-            args.push("-b".to_string());
-            args.push(format!("localhost:{}", port));
-            args.push("-L".to_string());
         }
+
+        bash_args.push("-L".to_string());
+
+        args.push(bash_args.join(" "));
 
         args
     }
@@ -523,45 +531,17 @@ impl KafkaTlsSecurity {
         Ok(())
     }
 
-    /// Returns required Kafka configuration settings for the `broker.properties` file
-    /// depending on the tls and authentication settings.
-    pub fn broker_config_settings(&self) -> BTreeMap<String, String> {
+    // Builds the listener security properties for the two Kafka listeners: CLIENT and INTERNAL
+    // TODO: This function is tightly coupled with `crd::listener::get_kafka_listener_config()`
+    pub fn broker_listener_tls_properties(&self) -> BTreeMap<String, String> {
         let mut config = BTreeMap::new();
 
         // We set either client tls with authentication or client tls without authentication
         // If authentication is explicitly required we do not want to have any other CAs to
         // be trusted.
-        if self.tls_client_authentication_class().is_some() {
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
-            );
-            // client auth required
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_client_auth(),
-                "required".to_string(),
-            );
-        } else if self.tls_server_secret_class().is_some() {
+        if self.tls_server_secret_class().is_some()
+            || self.tls_client_authentication_class().is_some()
+        {
             config.insert(
                 KafkaListenerName::Client.listener_ssl_keystore_location(),
                 format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
@@ -589,31 +569,6 @@ impl KafkaTlsSecurity {
         }
 
         if self.has_kerberos_enabled() {
-            // Bootstrap
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
-            );
             config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
             config.insert(
                 "sasl.kerberos.service.name".to_string(),
@@ -623,12 +578,10 @@ impl KafkaTlsSecurity {
                 "sasl.mechanism.inter.broker.protocol".to_string(),
                 "GSSAPI".to_string(),
             );
-            tracing::debug!("Kerberos configs added: [{:#?}]", config);
         }
 
         // Internal TLS
         if self.tls_internal_secret_class().is_some() {
-            // BROKERS
             config.insert(
                 KafkaListenerName::Internal.listener_ssl_keystore_location(),
                 format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
@@ -651,31 +604,6 @@ impl KafkaTlsSecurity {
             );
             config.insert(
                 KafkaListenerName::Internal.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
-            );
-            // CONTROLLERS
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_truststore_type(),
                 "PKCS12".to_string(),
             );
             // client auth required

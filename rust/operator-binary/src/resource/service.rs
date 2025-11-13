@@ -133,7 +133,7 @@ fn metrics_ports() -> Vec<ServicePort> {
 fn headless_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ServicePort> {
     vec![ServicePort {
         name: Some(kafka_security.client_port_name().into()),
-        port: kafka_security.client_port().into(),
+        port: kafka_security.internal_port().into(),
         protocol: Some("TCP".to_string()),
         ..ServicePort::default()
     }]
