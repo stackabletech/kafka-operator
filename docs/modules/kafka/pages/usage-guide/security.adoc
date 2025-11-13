@@ -3,7 +3,7 @@
 
 == Encryption
 
-The internal and client communication can be encrypted TLS. This requires the xref:secret-operator:index.adoc[Secret Operator] to be present in order to provide certificates.
+The internal and client communication can be encrypted with TLS. This requires the xref:secret-operator:index.adoc[Secret Operator] to be present in order to provide certificates.
 The utilized certificates can be changed in a top-level config.
 
 [source,yaml]
