@@ -61,8 +61,6 @@ struct Opts {
 
 #[derive(clap::Parser)]
 struct KafkaRun {
-    #[clap(long, env)]
-    kafka_broker_clusterrole: String,
     #[clap(flatten)]
     common: RunArguments,
 }
@@ -196,10 +194,6 @@ async fn main() -> anyhow::Result<()> {
     };
 
     Ok(())
-}
-
-pub struct ControllerConfig {
-    pub broker_clusterrole: String,
 }
 
 fn references_config_map(
