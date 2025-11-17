@@ -8,7 +8,12 @@ All notable changes to this project will be documented in this file.
 
 - Refactor: move server configuration properties from the command line to configuration files. ([#911]).
 
+### Removed
+
+- Refactor: remove unused RBAC cluster role ([#914]).
+
 [#911]: https://github.com/stackabletech/kafka-operator/pull/911
+[#914]: https://github.com/stackabletech/kafka-operator/pull/914
 
 ## [25.11.0] - 2025-11-07
 
