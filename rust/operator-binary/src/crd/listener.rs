@@ -39,13 +39,15 @@ pub enum KafkaListenerName {
     /// The purpose of this listener is to handle client/broker communications.
     /// It can be configured to use the SSL or SASL_SSL (Kerberos) protocols
     /// if the brokers use TLS for communication (and possible authentication).
-    /// The PLAINTEXT protocol is never really used since `spec.clusterConfig.tls`
-    /// uses `tls` as default value.
+    /// The PLAINTEXT protocol is used when `spec.clusterConfig.tls.serverSecretClass: null`
     /// The advertised listener hosts are derived from the pod (broker) listener volume.
     #[strum(serialize = "CLIENT")]
     Client,
     /// The purpose if this listener is to handle broker internal communications.
-    /// The only protocol used here is SSL.
+    /// Unlike the client listener, the only protocol used here is SSL even when
+    /// `spec.clusterConfig.tls.internalSecretClass: null`.
+    /// The advertised listener hosts are the same as the client (broker listener host)
+    /// but with a different port.
     #[strum(serialize = "INTERNAL")]
     Internal,
     /// This is almost identical with the `Client` listener with the following exceptions:
@@ -202,7 +204,7 @@ pub fn get_kafka_listener_config(
 
     // CLIENT
     if kafka_security.has_kerberos_enabled() {
-        // 2) Kerberos and TLS authentication classes are mutually exclusive
+        // 1) Kerberos and TLS authentication classes are mutually exclusive
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -221,7 +223,7 @@ pub fn get_kafka_listener_config(
     } else if kafka_security.tls_client_authentication_class().is_some()
         || kafka_security.tls_server_secret_class().is_some()
     {
-        // 1) Client listener uses TLS (possibly with authentication)
+        // 2) Client listener uses TLS (possibly with authentication)
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -239,7 +241,6 @@ pub fn get_kafka_listener_config(
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::Ssl);
     } else {
         // 3) If no client auth or tls is required we expose CLIENT with PLAINTEXT
-        // This is actually never the case because
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
