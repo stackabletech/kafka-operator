@@ -36,12 +36,38 @@ pub enum KafkaListenerProtocol {
 
 #[derive(strum::Display, Debug, EnumString, Ord, Eq, PartialEq, PartialOrd)]
 pub enum KafkaListenerName {
+    /// The purpose of this listener is to handle client/broker communications.
+    /// It can be configured to use the SSL or SASL_SSL (Kerberos) protocols
+    /// if the brokers use TLS for communication (and possible authentication).
+    /// The PLAINTEXT protocol is never really used since `spec.clusterConfig.tls`
+    /// uses `tls` as default value.
+    /// The advertised listener hosts are derived from the pod (broker) listener volume.
     #[strum(serialize = "CLIENT")]
     Client,
+    /// The purpose if this listener is to handle broker internal communications.
+    /// The only protocol used here is SSL.
     #[strum(serialize = "INTERNAL")]
     Internal,
+    /// This is almost identical with the `Client` listener with the following exceptions:
+    ///
+    /// - it is only defined if Kerberos is enabled
+    /// - it uses a different port
+    /// - the keystore associated with the listener volume uses a different CA
+    ///
+    /// Note: the corresponding K8S service is *always* defined, not just if Kerberos is enabled
+    /// and it is published in the discovery ConfigMap for clients to consume.
     #[strum(serialize = "BOOTSTRAP")]
     Bootstrap,
+    /// This listener is defined when Kraft mode is enabled.
+    /// It is responsible for broker/controller as well as controller/controller communications
+    /// and therefore it is present on *both* brokers and controller properties files.
+    /// The only protocol used is SSL.
+    /// The advertised host names are FQDN pod names of the controllers.
+    ///
+    /// Notes:
+    ///
+    /// - there is no listener for client/controller communication
+    /// - this listener does not support SSL_SASL.
     #[strum(serialize = "CONTROLLER")]
     Controller,
 }
