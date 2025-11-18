@@ -238,8 +238,7 @@ pub fn build_broker_rolegroup_statefulset(
         add_kerberos_pod_config(
             kafka_security,
             kafka_role,
-            &mut cb_kcat_prober,
-            &mut cb_kafka,
+            &mut [&mut cb_kafka, &mut cb_kcat_prober],
             &mut pod_builder,
         )
         .context(AddKerberosConfigSnafu)?;
@@ -750,6 +749,16 @@ pub fn build_controller_rolegroup_statefulset(
             &requested_secret_lifetime,
         )
         .context(AddVolumesAndVolumeMountsSnafu)?;
+
+    if kafka_security.has_kerberos_enabled() {
+        add_kerberos_pod_config(
+            kafka_security,
+            kafka_role,
+            &mut [&mut cb_kafka],
+            &mut pod_builder,
+        )
+        .context(AddKerberosConfigSnafu)?;
+    }
 
     let kafka_container = cb_kafka.build();
 

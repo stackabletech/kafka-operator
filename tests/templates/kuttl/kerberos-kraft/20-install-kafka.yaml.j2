@@ -1,0 +1,66 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      kubectl apply -n $NAMESPACE -f - <<EOF
+      ---
+      apiVersion: zookeeper.stackable.tech/v1alpha1
+      kind: ZookeeperZnode
+      metadata:
+        name: test-kafka-znode
+      spec:
+        clusterRef:
+          name: test-zk
+      ---
+      apiVersion: authentication.stackable.tech/v1alpha1
+      kind: AuthenticationClass
+      metadata:
+        name: kerberos-auth-$NAMESPACE
+      spec:
+        provider:
+          kerberos:
+            kerberosSecretClass: kerberos-$NAMESPACE
+      ---
+      apiVersion: kafka.stackable.tech/v1alpha1
+      kind: KafkaCluster
+      metadata:
+        name: test-kafka
+      spec:
+        image:
+{% if test_scenario['values']['kafka-kraft'].find(",") > 0 %}
+          custom: "{{ test_scenario['values']['kafka-kraft'].split(',')[1] }}"
+          productVersion: "{{ test_scenario['values']['kafka-kraft'].split(',')[0] }}"
+{% else %}
+          productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
+{% endif %}
+          pullPolicy: IfNotPresent
+        clusterConfig:
+          authentication:
+            - authenticationClass: kerberos-auth-$NAMESPACE
+          tls:
+            # Kerberos requires the use of server and internal TLS!
+            serverSecretClass: tls
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
+          vectorAggregatorConfigMapName: vector-aggregator-discovery
+{% endif %}
+        brokers:
+          config:
+            logging:
+              enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+            brokerListenerClass: {{ test_scenario['values']['broker-listener-class'] }}
+            bootstrapListenerClass: {{ test_scenario['values']['bootstrap-listener-class'] }}
+            gracefulShutdownTimeout: 30s # speed up tests
+          roleGroups:
+            default:
+              replicas: 3
+        controllers:
+          config:
+            logging:
+              enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+            gracefulShutdownTimeout: 30s # speed up tests
+          roleGroups:
+            default:
+              replicas: 3
+
+      EOF

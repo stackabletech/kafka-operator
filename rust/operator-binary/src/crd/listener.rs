@@ -178,6 +178,23 @@ pub fn get_kafka_listener_config(
     let mut listener_security_protocol_map: BTreeMap<KafkaListenerName, KafkaListenerProtocol> =
         BTreeMap::new();
 
+    // CONTROLLER
+    // This is an internal listener therefore client authentication is irrelevant.
+    if kafka_security.has_kerberos_enabled() {
+        listener_security_protocol_map.insert(
+            KafkaListenerName::Controller,
+            KafkaListenerProtocol::SaslSsl,
+        );
+    } else if kafka_security.tls_server_secret_class().is_some() {
+        listener_security_protocol_map
+            .insert(KafkaListenerName::Controller, KafkaListenerProtocol::Ssl);
+    } else {
+        listener_security_protocol_map.insert(
+            KafkaListenerName::Controller,
+            KafkaListenerProtocol::Plaintext,
+        );
+    }
+
     // CLIENT
     if kafka_security.tls_client_authentication_class().is_some() {
         // 1) If client authentication required, we expose only CLIENT_AUTH connection with SSL
@@ -217,10 +234,6 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::SaslSsl);
-        listener_security_protocol_map.insert(
-            KafkaListenerName::Controller,
-            KafkaListenerProtocol::SaslSsl,
-        );
     } else if kafka_security.tls_server_secret_class().is_some() {
         // 3) If no client authentication but tls is required we expose CLIENT with SSL
         listeners.push(KafkaListener {
@@ -257,7 +270,7 @@ pub fn get_kafka_listener_config(
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::Plaintext);
     }
 
-    // INTERNAL / CONTROLLER
+    // INTERNAL
     if kafka_security.has_kerberos_enabled() || kafka_security.tls_internal_secret_class().is_some()
     {
         // 5) & 6) Kerberos and TLS authentication classes are mutually exclusive but both require internal tls to be used
@@ -273,8 +286,6 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
-        listener_security_protocol_map
-            .insert(KafkaListenerName::Controller, KafkaListenerProtocol::Ssl);
     } else {
         // 7) If no internal tls is required we expose INTERNAL as PLAINTEXT
         listeners.push(KafkaListener {
@@ -289,10 +300,6 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map.insert(
             KafkaListenerName::Internal,
-            KafkaListenerProtocol::Plaintext,
-        );
-        listener_security_protocol_map.insert(
-            KafkaListenerName::Controller,
             KafkaListenerProtocol::Plaintext,
         );
     }

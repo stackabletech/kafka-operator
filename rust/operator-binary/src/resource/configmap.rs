@@ -15,8 +15,8 @@ use stackable_operator::{
 
 use crate::{
     crd::{
-        JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR,
+        JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, STACKABLE_HEADLESS_LISTENER_DIR,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, KafkaListenerName, node_address_cmd},
         role::{
             AnyConfig, KAFKA_ADVERTISED_LISTENERS, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
@@ -93,9 +93,13 @@ pub fn build_rolegroup_config_map(
 ) -> Result<ConfigMap, Error> {
     let kafka_config_file_name = merged_config.config_file_name();
 
+    let role = KafkaRole::from_str(&rolegroup.role).context(UnknownKafkaRoleSnafu {
+        name: rolegroup.role.to_string(),
+    })?;
+
     let mut kafka_config = server_properties_file(
         kafka.is_controller_configured(),
-        &rolegroup.role,
+        &role,
         pod_descriptors,
         listener_config,
         opa_connect_string,
@@ -186,11 +190,8 @@ pub fn build_rolegroup_config_map(
         // and this tool currently doesn't support the JAAS login configuration format.
         .add_data(
             "jaas.properties",
-            jaas_config_file(kafka_security.has_kerberos_enabled()),
+            jaas_config_file(&role, kafka_security.has_kerberos_enabled()),
         );
-
-    tracing::debug!(?kafka_config, "Applied kafka config");
-    tracing::debug!(?jvm_sec_props, "Applied JVM config");
 
     extend_role_group_config_map(
         &resolved_product_image.product_version,
@@ -209,17 +210,13 @@ pub fn build_rolegroup_config_map(
 // Generate the content of both broker.properties and controller.properties files.
 fn server_properties_file(
     kraft_mode: bool,
-    role: &str,
+    role: &KafkaRole,
     pod_descriptors: &[KafkaPodDescriptor],
     listener_config: &KafkaListenerConfig,
     opa_connect_string: Option<&str>,
     needs_quorum_voters: bool,
 ) -> Result<BTreeMap<String, String>, Error> {
     let kraft_controllers = kraft_controllers(pod_descriptors);
-
-    let role = KafkaRole::from_str(role).context(UnknownKafkaRoleSnafu {
-        name: role.to_string(),
-    })?;
 
     match role {
         KafkaRole::Controller => {
@@ -376,10 +373,10 @@ fn kraft_voters(pod_descriptors: &[KafkaPodDescriptor]) -> Option<String> {
 // Generate JAAS configuration file for Kerberos authentication
 // or an empty string if Kerberos is not enabled.
 // See https://docs.oracle.com/javase/8/docs/technotes/guides/security/jgss/tutorials/LoginConfigFile.html
-fn jaas_config_file(is_kerberos_enabled: bool) -> String {
-    match is_kerberos_enabled {
-        false => String::new(),
-        true => formatdoc! {"
+fn jaas_config_file(role: &KafkaRole, is_kerberos_enabled: bool) -> String {
+    match (is_kerberos_enabled, role) {
+        (false, _) => String::new(),
+        (true, KafkaRole::Broker) => formatdoc! {"
         bootstrap.KafkaServer {{
             com.sun.security.auth.module.Krb5LoginModule required
             useKeyTab=true
@@ -398,9 +395,30 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
             principal=\"kafka/{broker_address}@${{env:KERBEROS_REALM}}\";
         }};
 
+        controller.KafkaServer {{
+            com.sun.security.auth.module.Krb5LoginModule required
+            useKeyTab=true
+            storeKey=true
+            isInitiator=false
+            keyTab=\"/stackable/kerberos/keytab\"
+            principal=\"kafka/${controller_address}:@${{env:KERBEROS_REALM}}\";
+        }};
     ",
-        bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
-        broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+            bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
+            broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+            controller_address = node_address_cmd(STACKABLE_HEADLESS_LISTENER_DIR),
+        },
+        (true, KafkaRole::Controller) => formatdoc! {"
+        controller.KafkaServer {{
+            com.sun.security.auth.module.Krb5LoginModule required
+            useKeyTab=true
+            storeKey=true
+            isInitiator=false
+            keyTab=\"/stackable/kerberos/keytab\"
+            principal=\"kafka/${controller_address}:@${{env:KERBEROS_REALM}}\";
+        }};
+    ",
+        controller_address = node_address_cmd(STACKABLE_HEADLESS_LISTENER_DIR),
         },
     }
 }

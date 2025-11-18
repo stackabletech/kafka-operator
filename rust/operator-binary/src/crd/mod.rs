@@ -56,6 +56,9 @@ pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
 pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
+pub const STACKABLE_HEADLESS_LISTENER_DIR: &str = "/stackable/headless-listener";
+pub const LISTENER_HEADLESS_VOLUME_NAME: &str = "listener-headless";
+
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("The Kafka role [{role}] is missing from spec"))]

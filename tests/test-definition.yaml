@@ -126,6 +126,15 @@ tests:
       - openshift
       - broker-listener-class
       - bootstrap-listener-class
+  - name: kerberos-kraft
+    dimensions:
+      - kafka-kraft
+      - krb5
+      - kerberos-realm
+      - kerberos-backend
+      - openshift
+      - broker-listener-class
+      - bootstrap-listener-class
 
 suites:
   - name: nightly

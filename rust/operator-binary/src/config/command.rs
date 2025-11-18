@@ -142,8 +142,11 @@ pub fn controller_kafka_container_command(
         export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
 
         cp {config_dir}/{properties_file} /tmp/{properties_file}
-
         config-utils template /tmp/{properties_file}
+
+        export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})
+        cp {config_dir}/jaas.properties /tmp/jaas.properties
+        config-utils template /tmp/jaas.properties
 
         bin/kafka-storage.sh format --cluster-id {cluster_id} --config /tmp/{properties_file} --ignore-formatted {initial_controller_command}
         bin/kafka-server-start.sh /tmp/{properties_file} &
