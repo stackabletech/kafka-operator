@@ -11,9 +11,11 @@ All notable changes to this project will be documented in this file.
 ### Removed
 
 - Refactor: remove unused RBAC cluster role ([#914]).
+- Refactor: remove superfluous and partly misconfigured Kafka listeners CLIENT_AUTH and CONTROLLER_AUTH ([#915]).
 
 [#911]: https://github.com/stackabletech/kafka-operator/pull/911
 [#914]: https://github.com/stackabletech/kafka-operator/pull/914
+[#915]: https://github.com/stackabletech/kafka-operator/pull/915
 
 ## [25.11.0] - 2025-11-07
 
