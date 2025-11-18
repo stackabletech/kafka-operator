@@ -531,37 +531,9 @@ impl KafkaTlsSecurity {
         // We set either client tls with authentication or client tls without authentication
         // If authentication is explicitly required we do not want to have any other CAs to
         // be trusted.
-        if self.tls_client_authentication_class().is_some() {
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
-            );
-            // client auth required
-            config.insert(
-                KafkaListenerName::ClientAuth.listener_ssl_client_auth(),
-                "required".to_string(),
-            );
-        } else if self.tls_server_secret_class().is_some() {
+        if self.tls_client_authentication_class().is_some()
+            || self.tls_server_secret_class().is_some()
+        {
             config.insert(
                 KafkaListenerName::Client.listener_ssl_keystore_location(),
                 format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
@@ -586,6 +558,13 @@ impl KafkaTlsSecurity {
                 KafkaListenerName::Client.listener_ssl_truststore_type(),
                 "PKCS12".to_string(),
             );
+            if self.tls_client_authentication_class().is_some() {
+                // client auth required
+                config.insert(
+                    KafkaListenerName::Client.listener_ssl_client_auth(),
+                    "required".to_string(),
+                );
+            }
         }
 
         if self.has_kerberos_enabled() {
