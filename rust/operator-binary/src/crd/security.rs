@@ -678,17 +678,6 @@ impl KafkaTlsSecurity {
     pub fn controller_config_settings(&self) -> BTreeMap<String, String> {
         let mut config = BTreeMap::new();
 
-        // We set either client tls with authentication or client tls without authentication
-        // If authentication is explicitly required we do not want to have any other CAs to
-        // be trusted.
-        if self.tls_client_authentication_class().is_some() {
-            // client auth required
-            config.insert(
-                KafkaListenerName::ControllerAuth.listener_ssl_client_auth(),
-                "required".to_string(),
-            );
-        }
-
         if self.tls_client_authentication_class().is_some()
             || self.tls_internal_secret_class().is_some()
         {
@@ -716,6 +705,16 @@ impl KafkaTlsSecurity {
                 KafkaListenerName::Controller.listener_ssl_truststore_type(),
                 "PKCS12".to_string(),
             );
+            // We set either client tls with authentication or client tls without authentication
+            // If authentication is explicitly required we do not want to have any other CAs to
+            // be trusted.
+            if self.tls_client_authentication_class().is_some() {
+                // client auth required
+                config.insert(
+                    KafkaListenerName::Controller.listener_ssl_client_auth(),
+                    "required".to_string(),
+                );
+            }
         }
 
         // Kerberos

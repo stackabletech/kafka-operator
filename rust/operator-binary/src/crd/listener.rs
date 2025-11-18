@@ -44,8 +44,6 @@ pub enum KafkaListenerName {
     Bootstrap,
     #[strum(serialize = "CONTROLLER")]
     Controller,
-    #[strum(serialize = "CONTROLLER_AUTH")]
-    ControllerAuth,
 }
 
 impl KafkaListenerName {
