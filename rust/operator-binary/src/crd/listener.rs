@@ -36,18 +36,42 @@ pub enum KafkaListenerProtocol {
 
 #[derive(strum::Display, Debug, EnumString, Ord, Eq, PartialEq, PartialOrd)]
 pub enum KafkaListenerName {
+    /// The purpose of this listener is to handle client/broker communications.
+    /// It can be configured to use the SSL or SASL_SSL (Kerberos) protocols
+    /// if the brokers use TLS for communication (and possible authentication).
+    /// The PLAINTEXT protocol is used when `spec.clusterConfig.tls.serverSecretClass: null`
+    /// The advertised listener hosts are derived from the pod (broker) listener volume.
     #[strum(serialize = "CLIENT")]
     Client,
-    #[strum(serialize = "CLIENT_AUTH")]
-    ClientAuth,
+    /// The purpose if this listener is to handle broker internal communications.
+    /// Unlike the client listener, the only protocol used here is SSL even when
+    /// `spec.clusterConfig.tls.internalSecretClass: null`.
+    /// The advertised listener hosts are the same as the client (broker listener host)
+    /// but with a different port.
     #[strum(serialize = "INTERNAL")]
     Internal,
+    /// This is almost identical with the `Client` listener with the following exceptions:
+    ///
+    /// - it is only defined if Kerberos is enabled
+    /// - it uses a different port
+    /// - the keystore associated with the listener volume uses a different CA
+    ///
+    /// Note: the corresponding K8S service is *always* defined, not just if Kerberos is enabled
+    /// and it is published in the discovery ConfigMap for clients to consume.
     #[strum(serialize = "BOOTSTRAP")]
     Bootstrap,
+    /// This listener is defined when Kraft mode is enabled.
+    /// It is responsible for broker/controller as well as controller/controller communications
+    /// and therefore it is present on *both* brokers and controller properties files.
+    /// The only protocol used is SSL.
+    /// The advertised host names are FQDN pod names of the controllers.
+    ///
+    /// Notes:
+    ///
+    /// - there is no listener for client/controller communication
+    /// - this listener does not support SSL_SASL.
     #[strum(serialize = "CONTROLLER")]
     Controller,
-    #[strum(serialize = "CONTROLLER_AUTH")]
-    ControllerAuth,
 }
 
 impl KafkaListenerName {
@@ -179,29 +203,8 @@ pub fn get_kafka_listener_config(
         BTreeMap::new();
 
     // CLIENT
-    if kafka_security.tls_client_authentication_class().is_some() {
-        // 1) If client authentication required, we expose only CLIENT_AUTH connection with SSL
-        listeners.push(KafkaListener {
-            name: KafkaListenerName::ClientAuth,
-            host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: kafka_security.client_port().to_string(),
-        });
-        advertised_listeners.push(KafkaListener {
-            name: KafkaListenerName::ClientAuth,
-            host: node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-            port: node_port_cmd(
-                STACKABLE_LISTENER_BROKER_DIR,
-                kafka_security.client_port_name(),
-            ),
-        });
-        listener_security_protocol_map
-            .insert(KafkaListenerName::ClientAuth, KafkaListenerProtocol::Ssl);
-        listener_security_protocol_map.insert(
-            KafkaListenerName::ControllerAuth,
-            KafkaListenerProtocol::Ssl,
-        );
-    } else if kafka_security.has_kerberos_enabled() {
-        // 2) Kerberos and TLS authentication classes are mutually exclusive
+    if kafka_security.has_kerberos_enabled() {
+        // 1) Kerberos and TLS authentication classes are mutually exclusive
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -217,12 +220,10 @@ pub fn get_kafka_listener_config(
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::SaslSsl);
-        listener_security_protocol_map.insert(
-            KafkaListenerName::Controller,
-            KafkaListenerProtocol::SaslSsl,
-        );
-    } else if kafka_security.tls_server_secret_class().is_some() {
-        // 3) If no client authentication but tls is required we expose CLIENT with SSL
+    } else if kafka_security.tls_client_authentication_class().is_some()
+        || kafka_security.tls_server_secret_class().is_some()
+    {
+        // 2) Client listener uses TLS (possibly with authentication)
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -239,7 +240,7 @@ pub fn get_kafka_listener_config(
         listener_security_protocol_map
             .insert(KafkaListenerName::Client, KafkaListenerProtocol::Ssl);
     } else {
-        // 4) If no client auth or tls is required we expose CLIENT with PLAINTEXT
+        // 3) If no client auth or tls is required we expose CLIENT with PLAINTEXT
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
@@ -414,7 +415,7 @@ mod tests {
             config.listeners(),
             format!(
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
-                name = KafkaListenerName::ClientAuth,
+                name = KafkaListenerName::Client,
                 host = LISTENER_LOCAL_ADDRESS,
                 port = kafka_security.client_port(),
                 internal_name = KafkaListenerName::Internal,
@@ -427,7 +428,7 @@ mod tests {
             config.advertised_listeners(),
             format!(
                 "{name}://{host}:{port},{internal_name}://{internal_host}:{internal_port}",
-                name = KafkaListenerName::ClientAuth,
+                name = KafkaListenerName::Client,
                 host = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
                 port = node_port_cmd(
                     STACKABLE_LISTENER_BROKER_DIR,
@@ -447,15 +448,13 @@ mod tests {
         assert_eq!(
             config.listener_security_protocol_map(),
             format!(
-                "{name}:{protocol},{internal_name}:{internal_protocol},{controller_name}:{controller_protocol},{controller_auth_name}:{controller_auth_protocol}",
-                name = KafkaListenerName::ClientAuth,
+                "{name}:{protocol},{internal_name}:{internal_protocol},{controller_name}:{controller_protocol}",
+                name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::Ssl,
                 internal_name = KafkaListenerName::Internal,
                 internal_protocol = KafkaListenerProtocol::Ssl,
                 controller_name = KafkaListenerName::Controller,
                 controller_protocol = KafkaListenerProtocol::Ssl,
-                controller_auth_name = KafkaListenerName::ControllerAuth,
-                controller_auth_protocol = KafkaListenerProtocol::Ssl,
             )
         );
 
