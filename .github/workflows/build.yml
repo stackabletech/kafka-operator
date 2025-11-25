@@ -44,7 +44,7 @@ jobs:
       - name: Install host dependencies
         uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # v1.6.0
         with:
-          packages: protobuf-compiler krb5-user libkrb5-dev libclang-dev liblzma-dev libssl-dev pkg-config apt-transport-https
+          packages: protobuf-compiler krb5-user libkrb5-dev libclang-dev liblzma-dev libssl-dev pkg-config apt-transport-https jinja2-cli
           version: ubuntu-latest
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
