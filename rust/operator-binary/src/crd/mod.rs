@@ -23,6 +23,7 @@ use stackable_operator::{
     utils::cluster_info::KubernetesClusterInfo,
     versioned::versioned,
 };
+use strum::{Display, EnumIter, EnumString};
 
 use crate::{
     config::node_id_hasher::node_id_hash32_offset,
@@ -158,9 +159,12 @@ pub mod versioned {
         /// Provide the name of the ZooKeeper [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery)
         /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
         /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
-        /// This can only be used up to Kafka version 3.9.x. Since Kafka 4.0.0, ZooKeeper suppport was dropped.
+        /// This can only be used up to Kafka version 3.9.x. Since Kafka 4.0.0, ZooKeeper support was dropped.
         /// Please use the 'controller' role instead.
         pub zookeeper_config_map_name: Option<String>,
+
+        #[serde(default = "default_metadata_manager")]
+        pub metadata_manager: MetadataManager,
     }
 }
 
@@ -172,6 +176,7 @@ impl Default for v1alpha1::KafkaClusterConfig {
             tls: tls::default_kafka_tls(),
             vector_aggregator_config_map_name: None,
             zookeeper_config_map_name: None,
+            metadata_manager: default_metadata_manager(),
         }
     }
 }
@@ -186,25 +191,8 @@ impl HasStatusCondition for v1alpha1::KafkaCluster {
 }
 
 impl v1alpha1::KafkaCluster {
-    /// Supporting Kraft alongside Zookeeper requires a couple of CRD checks
-    /// - If Kafka 4 and higher is used, no zookeeper config map ref has to be provided
-    /// - Configuring the controller role means no zookeeper config map ref has to be provided
-    pub fn check_kraft_vs_zookeeper(&self, product_version: &str) -> Result<(), Error> {
-        if product_version.starts_with("4.") && self.spec.controllers.is_none() {
-            return Err(Error::Kafka4RequiresKraft);
-        }
-
-        if self.spec.controllers.is_some()
-            && self.spec.cluster_config.zookeeper_config_map_name.is_some()
-        {
-            return Err(Error::KraftAndZookeeperConfigured);
-        }
-
-        Ok(())
-    }
-
-    pub fn is_controller_configured(&self) -> bool {
-        self.spec.controllers.is_some()
+    pub fn is_kraft_mode(&self) -> bool {
+        self.spec.cluster_config.metadata_manager == MetadataManager::KRaft
     }
 
     // The cluster-id for Kafka
@@ -405,6 +393,30 @@ impl KafkaPodDescriptor {
 pub struct KafkaClusterStatus {
     #[serde(default)]
     pub conditions: Vec<ClusterCondition>,
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Deserialize,
+    Display,
+    EnumIter,
+    Eq,
+    Hash,
+    JsonSchema,
+    PartialEq,
+    Serialize,
+    EnumString,
+)]
+pub enum MetadataManager {
+    #[strum(serialize = "zookeeper")]
+    ZooKeeper,
+    #[strum(serialize = "kraft")]
+    KRaft,
+}
+
+fn default_metadata_manager() -> MetadataManager {
+    MetadataManager::ZooKeeper
 }
 
 #[cfg(test)]

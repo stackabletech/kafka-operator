@@ -731,6 +731,7 @@ spec:
                     authentication: []
                     authorization:
                       opa: null
+                    metadataManager: ZooKeeper
                     tls:
                       internalSecretClass: tls
                       serverSecretClass: tls
@@ -793,6 +794,12 @@ spec:
                             - configMapName
                           type: object
                       type: object
+                    metadataManager:
+                      default: ZooKeeper
+                      enum:
+                        - ZooKeeper
+                        - KRaft
+                      type: string
                     tls:
                       default:
                         internalSecretClass: tls
@@ -836,7 +843,7 @@ spec:
                         Provide the name of the ZooKeeper [discovery ConfigMap](https://docs.stackable.tech/home/nightly/concepts/service_discovery)
                         here. When using the [Stackable operator for Apache ZooKeeper](https://docs.stackable.tech/home/nightly/zookeeper/)
                         to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
-                        This can only be used up to Kafka version 3.9.x. Since Kafka 4.0.0, ZooKeeper suppport was dropped.
+                        This can only be used up to Kafka version 3.9.x. Since Kafka 4.0.0, ZooKeeper support was dropped.
                         Please use the 'controller' role instead.
                       nullable: true
                       type: string

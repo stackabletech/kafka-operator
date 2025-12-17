@@ -94,7 +94,7 @@ pub fn build_rolegroup_config_map(
     let kafka_config_file_name = merged_config.config_file_name();
 
     let mut kafka_config = server_properties_file(
-        kafka.is_controller_configured(),
+        kafka.is_kraft_mode(),
         &rolegroup.role,
         pod_descriptors,
         listener_config,

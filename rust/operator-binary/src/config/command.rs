@@ -52,7 +52,7 @@ fn broker_start_command(
     controller_descriptors: Vec<KafkaPodDescriptor>,
     product_version: &str,
 ) -> String {
-    if kafka.is_controller_configured() {
+    if kafka.is_kraft_mode() {
         formatdoc! {"
             POD_INDEX=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
             export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
