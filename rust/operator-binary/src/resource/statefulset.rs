@@ -634,6 +634,21 @@ pub fn build_controller_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
+    if let Some(zookeeper_config_map_name) = &kafka.spec.cluster_config.zookeeper_config_map_name {
+        env.push(EnvVar {
+            name: "ZOOKEEPER".to_string(),
+            value_from: Some(EnvVarSource {
+                config_map_key_ref: Some(ConfigMapKeySelector {
+                    name: zookeeper_config_map_name.to_string(),
+                    key: "ZOOKEEPER".to_string(),
+                    ..ConfigMapKeySelector::default()
+                }),
+                ..EnvVarSource::default()
+            }),
+            ..EnvVar::default()
+        })
+    };
+
     cb_kafka
         .image_from_product_image(resolved_product_image)
         .command(vec![

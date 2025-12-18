@@ -261,6 +261,11 @@ fn server_properties_file(
                 result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
             }
 
+            result.extend([(
+                "zookeeper.connect".to_string(),
+                "${env:ZOOKEEPER}".to_string(),
+            )]);
+
             Ok(result)
         }
         KafkaRole::Broker => {
