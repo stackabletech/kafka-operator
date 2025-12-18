@@ -107,11 +107,15 @@ impl Configuration for BrokerConfigFragment {
 
     fn compute_env(
         &self,
-        _resource: &Self::Configurable,
+        resource: &Self::Configurable,
         _role_name: &str,
     ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
     {
-        Ok(BTreeMap::new())
+        let mut result = BTreeMap::new();
+        if let Some(cluster_id) = resource.cluster_id() {
+            result.insert("KAFKA_CLUSTER_ID".to_string(), Some(cluster_id.to_string()));
+        }
+        Ok(result)
     }
 
     fn compute_cli(

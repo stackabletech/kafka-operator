@@ -283,8 +283,6 @@ pub fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let cluster_id = kafka.cluster_id().context(ClusterIdMissingSnafu)?;
-
     cb_kafka
         .image_from_product_image(resolved_product_image)
         .command(vec![
@@ -296,7 +294,6 @@ pub fn build_broker_rolegroup_statefulset(
         ])
         .args(vec![broker_kafka_container_commands(
             kafka,
-            cluster_id,
             // we need controller pods
             kafka
                 .pod_descriptors(
@@ -634,6 +631,7 @@ pub fn build_controller_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
+    // Controllers need the ZooKeeper connection string for migration
     if let Some(zookeeper_config_map_name) = &kafka.spec.cluster_config.zookeeper_config_map_name {
         env.push(EnvVar {
             name: "ZOOKEEPER".to_string(),
@@ -659,7 +657,6 @@ pub fn build_controller_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![controller_kafka_container_command(
-            kafka.cluster_id().context(ClusterIdMissingSnafu)?,
             kafka
                 .pod_descriptors(Some(kafka_role), cluster_info, kafka_security.client_port())
                 .context(BuildPodDescriptorsSnafu)?,
