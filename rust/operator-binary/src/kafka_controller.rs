@@ -557,23 +557,26 @@ fn validated_product_config(
         ),
     );
 
-    roles.insert(
-        KafkaRole::Controller.to_string(),
-        (
-            vec![
-                PropertyNameKind::File(CONTROLLER_PROPERTIES_FILE.to_string()),
-                PropertyNameKind::File(JVM_SECURITY_PROPERTIES_FILE.to_string()),
-                PropertyNameKind::Env,
-            ],
-            kafka
-                .controller_role()
-                .cloned()
-                .context(MissingKafkaRoleSnafu {
-                    role: KafkaRole::Controller,
-                })?
-                .erase(),
-        ),
-    );
+    // TODO: need this if because controller_role() raises an error
+    if kafka.spec.controllers.is_some() {
+        roles.insert(
+            KafkaRole::Controller.to_string(),
+            (
+                vec![
+                    PropertyNameKind::File(CONTROLLER_PROPERTIES_FILE.to_string()),
+                    PropertyNameKind::File(JVM_SECURITY_PROPERTIES_FILE.to_string()),
+                    PropertyNameKind::Env,
+                ],
+                kafka
+                    .controller_role()
+                    .cloned()
+                    .context(MissingKafkaRoleSnafu {
+                        role: KafkaRole::Controller,
+                    })?
+                    .erase(),
+            ),
+        );
+    }
 
     let role_config =
         transform_all_roles_to_config(kafka, roles).context(GenerateProductConfigSnafu)?;
