@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use stackable_operator::schemars::{self, JsonSchema};
 
-const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
-
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaTls {
@@ -14,7 +12,7 @@ pub struct KafkaTls {
     ///
     /// Defaults to `tls`
     #[serde(default = "internal_tls_default")]
-    pub internal_secret_class: String,
+    pub internal_secret_class: Option<String>,
     /// The [SecretClass](DOCS_BASE_URL_PLACEHOLDER/secret-operator/secretclass.html) to use for
     /// client connections. This setting controls:
     /// - If TLS encryption is used at all
@@ -31,18 +29,15 @@ pub struct KafkaTls {
 /// Default TLS settings.
 /// Internal and server communication default to `tls` secret class.
 pub fn default_kafka_tls() -> Option<KafkaTls> {
-    Some(KafkaTls {
-        internal_secret_class: internal_tls_default(),
-        server_secret_class: server_tls_default(),
-    })
+    None
 }
 
 /// Helper methods to provide defaults in the CRDs and tests
-pub fn internal_tls_default() -> String {
-    TLS_DEFAULT_SECRET_CLASS.into()
+pub fn internal_tls_default() -> Option<String> {
+    None
 }
 
 /// Helper methods to provide defaults in the CRDs and tests
 pub fn server_tls_default() -> Option<String> {
-    Some(TLS_DEFAULT_SECRET_CLASS.into())
+    None
 }

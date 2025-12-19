@@ -29,7 +29,7 @@ use crate::crd::{
     authentication::{self, ResolvedAuthenticationClasses},
     listener::{self, KafkaListenerName, node_address_cmd_env, node_port_cmd_env},
     role::KafkaRole,
-    tls, v1alpha1,
+    v1alpha1,
 };
 
 #[derive(Snafu, Debug)]
@@ -57,7 +57,7 @@ pub enum Error {
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
 pub struct KafkaTlsSecurity {
     resolved_authentication_classes: ResolvedAuthenticationClasses,
-    internal_secret_class: String,
+    internal_secret_class: Option<String>,
     server_secret_class: Option<String>,
 }
 
@@ -92,7 +92,7 @@ impl KafkaTlsSecurity {
     #[cfg(test)]
     pub fn new(
         resolved_authentication_classes: ResolvedAuthenticationClasses,
-        internal_secret_class: String,
+        internal_secret_class: Option<String>,
         server_secret_class: Option<String>,
     ) -> Self {
         Self {
@@ -120,8 +120,7 @@ impl KafkaTlsSecurity {
                 .cluster_config
                 .tls
                 .as_ref()
-                .map(|tls| tls.internal_secret_class.clone())
-                .unwrap_or_else(tls::internal_tls_default),
+                .and_then(|tls| tls.internal_secret_class.clone()),
             server_secret_class: kafka
                 .spec
                 .cluster_config
@@ -155,11 +154,7 @@ impl KafkaTlsSecurity {
 
     /// Retrieve the mandatory internal `SecretClass`.
     pub fn tls_internal_secret_class(&self) -> Option<&str> {
-        if !self.internal_secret_class.is_empty() {
-            Some(self.internal_secret_class.as_str())
-        } else {
-            None
-        }
+        self.internal_secret_class.as_deref()
     }
 
     pub fn has_kerberos_enabled(&self) -> bool {

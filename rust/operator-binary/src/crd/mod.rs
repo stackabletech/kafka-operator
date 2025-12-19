@@ -445,15 +445,13 @@ mod tests {
             .and_then(|tls| tls.server_secret_class.clone())
     }
 
-    fn get_internal_secret_class(kafka: &v1alpha1::KafkaCluster) -> String {
+    fn get_internal_secret_class(kafka: &v1alpha1::KafkaCluster) -> Option<String> {
         kafka
             .spec
             .cluster_config
             .tls
             .as_ref()
-            .unwrap()
-            .internal_secret_class
-            .clone()
+            .and_then(|tls| tls.internal_secret_class.clone())
     }
 
     #[test]
@@ -542,7 +540,7 @@ mod tests {
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
-            "simple-kafka-internal-tls".to_string()
+            Some("simple-kafka-internal-tls".to_string())
         );
     }
 
@@ -585,7 +583,7 @@ mod tests {
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
-            "simple-kafka-internal-tls".to_string()
+            Some("simple-kafka-internal-tls".to_string())
         );
 
         let input = r#"
