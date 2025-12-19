@@ -19,9 +19,10 @@ use crate::{
         STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, KafkaListenerName, node_address_cmd},
         role::{
-            AnyConfig, KAFKA_ADVERTISED_LISTENERS, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
-            KAFKA_CONTROLLER_QUORUM_VOTERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS,
-            KAFKA_LOG_DIRS, KAFKA_NODE_ID, KAFKA_PROCESS_ROLES, KafkaRole,
+            AnyConfig, KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID,
+            KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS, KAFKA_CONTROLLER_QUORUM_VOTERS,
+            KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS, KAFKA_LOG_DIRS, KAFKA_NODE_ID,
+            KAFKA_PROCESS_ROLES, KafkaRole,
         },
         security::KafkaTlsSecurity,
         v1alpha1,
@@ -99,7 +100,6 @@ pub fn build_rolegroup_config_map(
         pod_descriptors,
         listener_config,
         opa_connect_string,
-        resolved_product_image.product_version.starts_with("3.7"), // needs_quorum_voters
     )?;
 
     match merged_config {
@@ -213,7 +213,6 @@ fn server_properties_file(
     pod_descriptors: &[KafkaPodDescriptor],
     listener_config: &KafkaListenerConfig,
     opa_connect_string: Option<&str>,
-    needs_quorum_voters: bool,
 ) -> Result<BTreeMap<String, String>, Error> {
     let kraft_controllers = kraft_controllers(pod_descriptors);
 
@@ -254,12 +253,10 @@ fn server_properties_file(
                     .unwrap_or("".to_string())),
             ]);
 
-            if needs_quorum_voters {
-                let kraft_voters =
-                    kraft_voters(pod_descriptors).context(NoKraftControllersFoundSnafu)?;
+            let kraft_voters =
+                kraft_voters(pod_descriptors).context(NoKraftControllersFoundSnafu)?;
 
-                result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
-            }
+            result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
 
             result.extend([(
                 "zookeeper.connect".to_string(),
@@ -283,6 +280,11 @@ fn server_properties_file(
                     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP.to_string(),
                     listener_config.listener_security_protocol_map(),
                 ),
+                (
+                    "broker.id.generation.enable".to_string(),
+                    "false".to_string(),
+                ),
+                (KAFKA_BROKER_ID.to_string(), "${env:REPLICA_ID}".to_string()),
             ]);
 
             if kraft_mode {
@@ -305,12 +307,10 @@ fn server_properties_file(
                     ),
                 ]);
 
-                if needs_quorum_voters {
-                    let kraft_voters =
-                        kraft_voters(pod_descriptors).context(NoKraftControllersFoundSnafu)?;
+                let kraft_voters =
+                    kraft_voters(pod_descriptors).context(NoKraftControllersFoundSnafu)?;
 
-                    result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
-                }
+                result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
             } else {
                 // Running with ZooKeeper enabled
                 result.extend([(

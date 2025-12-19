@@ -33,6 +33,11 @@ use crate::{
 /// Env var
 pub const KAFKA_NODE_ID_OFFSET: &str = "NODE_ID_OFFSET";
 
+/// Past versions of the operator didn't set this explicitly and allowed Kafka to generate random ids.
+/// To support Kraft migration, this must be carried over to `KAFKA_NODE_ID` so the operator needs
+/// to know it's value for each broker Pod.
+pub const KAFKA_BROKER_ID: &str = "broker.id";
+
 // See: https://kafka.apache.org/documentation/#brokerconfigs
 /// The node ID associated with the roles this process is playing when process.roles is non-empty.
 /// This is required configuration when running in KRaft mode.

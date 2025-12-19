@@ -70,6 +70,9 @@ fn broker_start_command(
         }
     } else {
         formatdoc! {"
+            POD_INDEX=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
+            export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
+
             cp {config_dir}/{properties_file} /tmp/{properties_file}
             config-utils template /tmp/{properties_file}
 
