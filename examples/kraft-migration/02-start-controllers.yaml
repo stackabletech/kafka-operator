@@ -1,0 +1,33 @@
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+  namespace: kraft-migration
+spec:
+  image:
+    productVersion: 3.9.1
+    pullPolicy: IfNotPresent
+  clusterConfig:
+    metadataManager: ZooKeeper
+    # authentication:
+    #   - authenticationClass: kafka-client-auth-tls
+    # tls:
+    #   internalSecretClass: kafka-internal-tls
+    #   serverSecretClass: tls
+    zookeeperConfigMapName: simple-kafka-znode
+  brokers:
+    envOverrides:
+      KAFKA_CLUSTER_ID: "lyeJYZ7TQ_SfT4HcU8W3iw"
+    roleGroups:
+      default:
+        replicas: 3
+  controllers:
+    roleGroups:
+      default:
+        replicas: 3
+    envOverrides:
+      KAFKA_CLUSTER_ID: "lyeJYZ7TQ_SfT4HcU8W3iw"
+    configOverrides:
+      controller.properties:
+        zookeeper.metadata.migration.enable: "true" # Enable migration mode so the controller can read metadata from ZooKeeper.
