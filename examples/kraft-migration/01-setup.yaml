@@ -13,12 +13,12 @@ metadata:
   namespace: kraft-migration
 spec:
   image:
-    productVersion: 3.8.3
+    productVersion: 3.9.4
     pullPolicy: IfNotPresent
   servers:
     roleGroups:
       default:
-        replicas: 3
+        replicas: 1
 ---
 apiVersion: zookeeper.stackable.tech/v1alpha1
 kind: ZookeeperZnode
@@ -28,41 +28,41 @@ metadata:
 spec:
   clusterRef:
     name: simple-zk
-# ---
-# apiVersion: secrets.stackable.tech/v1alpha1
-# kind: SecretClass
-# metadata:
-#   name: kafka-internal-tls
-# spec:
-#   backend:
-#     autoTls:
-#       ca:
-#         secret:
-#           name: secret-provisioner-kafka-internal-tls-ca
-#           namespace: kraft-migration
-#         autoGenerate: true
-# ---
-# apiVersion: authentication.stackable.tech/v1alpha1
-# kind: AuthenticationClass
-# metadata:
-#   name: kafka-client-auth-tls
-# spec:
-#   provider:
-#     tls:
-#       clientCertSecretClass: kafka-client-auth-secret
-# ---
-# apiVersion: secrets.stackable.tech/v1alpha1
-# kind: SecretClass
-# metadata:
-#   name: kafka-client-auth-secret
-# spec:
-#   backend:
-#     autoTls:
-#       ca:
-#         secret:
-#           name: secret-provisioner-tls-kafka-client-ca
-#           namespace: kraft-migration
-#         autoGenerate: true
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-internal-tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-kafka-internal-tls-ca
+          namespace: kraft-migration
+        autoGenerate: true
+---
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: kafka-client-auth-tls
+spec:
+  provider:
+    tls:
+      clientCertSecretClass: kafka-client-auth-secret
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-client-auth-secret
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-tls-kafka-client-ca
+          namespace: kraft-migration
+        autoGenerate: true
 ---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
@@ -75,11 +75,11 @@ spec:
     pullPolicy: IfNotPresent
   clusterConfig:
     metadataManager: ZooKeeper
-    # authentication:
-    #   - authenticationClass: kafka-client-auth-tls
-    # tls:
-    #   internalSecretClass: kafka-internal-tls
-    #   serverSecretClass: tls
+    authentication:
+      - authenticationClass: kafka-client-auth-tls
+    tls:
+      internalSecretClass: kafka-internal-tls
+      serverSecretClass: tls
     zookeeperConfigMapName: simple-kafka-znode
   brokers:
     roleGroups:
