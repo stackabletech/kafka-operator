@@ -732,6 +732,9 @@ spec:
                     authorization:
                       opa: null
                     metadataManager: ZooKeeper
+                    tls:
+                      internalSecretClass: tls
+                      serverSecretClass: tls
                     zookeeperConfigMapName: null
                   description: |-
                     Kafka settings that affect all roles and role groups.
@@ -798,10 +801,14 @@ spec:
                         - KRaft
                       type: string
                     tls:
+                      default:
+                        internalSecretClass: tls
+                        serverSecretClass: tls
                       description: TLS encryption settings for Kafka (server, internal).
                       nullable: true
                       properties:
                         internalSecretClass:
+                          default: tls
                           description: |-
                             The [SecretClass](https://docs.stackable.tech/home/nightly/secret-operator/secretclass.html) to use for
                             internal broker communication. Use mutual verification between brokers (mandatory).
@@ -810,9 +817,9 @@ spec:
                             - Which ca.crt to use when validating the other brokers
 
                             Defaults to `tls`
-                          nullable: true
                           type: string
                         serverSecretClass:
+                          default: tls
                           description: |-
                             The [SecretClass](https://docs.stackable.tech/home/nightly/secret-operator/secretclass.html) to use for
                             client connections. This setting controls:
