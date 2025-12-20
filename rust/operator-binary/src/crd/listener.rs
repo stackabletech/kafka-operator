@@ -162,14 +162,17 @@ impl KafkaListenerConfig {
             .join(",")
     }
 
-    /// Returns the `listener.security.protocol.map` for the Kafka `broker.properties` config.
-    pub fn listener_security_protocol_map_for_listener(
-        &self,
-        listener_name: &KafkaListenerName,
-    ) -> Option<String> {
+    /// Returns the `listener.security.protocol.map` for the Kraft controller.
+    /// This map must include the internal broker listener too.
+    pub fn listener_security_protocol_map_for_controller(&self) -> String {
         self.listener_security_protocol_map
-            .get(listener_name)
-            .map(|protocol| format!("{listener_name}:{protocol}"))
+            .iter()
+            .filter(|(name, _)| {
+                *name == &KafkaListenerName::Internal || *name == &KafkaListenerName::Controller
+            })
+            .map(|(name, protocol)| format!("{name}:{protocol}"))
+            .collect::<Vec<String>>()
+            .join(",")
     }
 }
 

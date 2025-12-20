@@ -249,8 +249,7 @@ fn server_properties_file(
             (
                 KAFKA_LISTENER_SECURITY_PROTOCOL_MAP.to_string(),
                 listener_config
-                    .listener_security_protocol_map_for_listener(&KafkaListenerName::Controller)
-                    .unwrap_or("".to_string())),
+                    .listener_security_protocol_map_for_controller()),
             ]);
 
             let kraft_voters =
@@ -258,11 +257,17 @@ fn server_properties_file(
 
             result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
 
-            result.extend([(
-                "zookeeper.connect".to_string(),
-                "${env:ZOOKEEPER}".to_string(),
-            )]);
-
+            // Needed to migrate from ZooKeeper to KRaft mode.
+            result.extend([
+                (
+                    "zookeeper.connect".to_string(),
+                    "${env:ZOOKEEPER}".to_string(),
+                ),
+                (
+                    "inter.broker.listener.name".to_string(),
+                    KafkaListenerName::Internal.to_string(),
+                ),
+            ]);
             Ok(result)
         }
         KafkaRole::Broker => {
@@ -285,6 +290,10 @@ fn server_properties_file(
                     "false".to_string(),
                 ),
                 (KAFKA_BROKER_ID.to_string(), "${env:REPLICA_ID}".to_string()),
+                (
+                    "inter.broker.listener.name".to_string(),
+                    KafkaListenerName::Internal.to_string(),
+                ),
             ]);
 
             if kraft_mode {
