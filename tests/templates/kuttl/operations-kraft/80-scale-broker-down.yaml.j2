@@ -24,6 +24,7 @@ spec:
 {% endif %}
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
   clusterConfig:
+    metadataManager: kraft
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
   controllers:
