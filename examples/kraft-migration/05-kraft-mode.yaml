@@ -9,25 +9,24 @@ spec:
     productVersion: 3.9.1
     pullPolicy: IfNotPresent
   clusterConfig:
-    metadataManager: ZooKeeper
+    metadataManager: KRaft
     authentication:
       - authenticationClass: kafka-client-auth-tls
     tls:
       internalSecretClass: kafka-internal-tls
       serverSecretClass: tls
-    zookeeperConfigMapName: simple-kafka-znode
   brokers:
     envOverrides:
       KAFKA_CLUSTER_ID: "cPh4Fb3pRvyqiiVjaBDaEw"
     roleGroups:
       default:
         replicas: 3
+    configOverrides:
+      broker.properties:
+        controller.listener.names: "CONTROLLER"
   controllers:
     roleGroups:
       default:
         replicas: 3
     envOverrides:
       KAFKA_CLUSTER_ID: "cPh4Fb3pRvyqiiVjaBDaEw"
-    configOverrides:
-      controller.properties:
-        zookeeper.metadata.migration.enable: "true" # Enable migration mode so the controller can read metadata from ZooKeeper.
