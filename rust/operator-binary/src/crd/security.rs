@@ -705,6 +705,33 @@ impl KafkaTlsSecurity {
                 KafkaListenerName::Controller.listener_ssl_truststore_type(),
                 "PKCS12".to_string(),
             );
+
+            // The TLS properties for the internal broker listener are needed by the Kraft controllers
+            // too during metadata migration from ZooKeeper to Kraft mode.
+            config.insert(
+                KafkaListenerName::Internal.listener_ssl_keystore_location(),
+                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
+            );
+            config.insert(
+                KafkaListenerName::Internal.listener_ssl_keystore_password(),
+                Self::SSL_STORE_PASSWORD.to_string(),
+            );
+            config.insert(
+                KafkaListenerName::Internal.listener_ssl_keystore_type(),
+                "PKCS12".to_string(),
+            );
+            config.insert(
+                KafkaListenerName::Internal.listener_ssl_truststore_location(),
+                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
+            );
+            config.insert(
+                KafkaListenerName::Internal.listener_ssl_truststore_password(),
+                Self::SSL_STORE_PASSWORD.to_string(),
+            );
+            config.insert(
+                KafkaListenerName::Internal.listener_ssl_truststore_type(),
+                "PKCS12".to_string(),
+            );
             // We set either client tls with authentication or client tls without authentication
             // If authentication is explicitly required we do not want to have any other CAs to
             // be trusted.

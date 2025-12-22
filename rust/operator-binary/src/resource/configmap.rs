@@ -257,17 +257,19 @@ fn server_properties_file(
 
             result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
 
-            // Needed to migrate from ZooKeeper to KRaft mode.
-            result.extend([
-                (
+            result.insert(
+                "inter.broker.listener.name".to_string(),
+                KafkaListenerName::Internal.to_string(),
+            );
+
+            // The ZooKeeper connection is needed for migration from ZooKeeper to KRaft mode.
+            // It is not needed once the controller is fully running in KRaft mode.
+            if !kraft_mode {
+                result.insert(
                     "zookeeper.connect".to_string(),
                     "${env:ZOOKEEPER}".to_string(),
-                ),
-                (
-                    "inter.broker.listener.name".to_string(),
-                    KafkaListenerName::Internal.to_string(),
-                ),
-            ]);
+                );
+            }
             Ok(result)
         }
         KafkaRole::Broker => {
