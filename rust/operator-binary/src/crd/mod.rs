@@ -421,10 +421,9 @@ pub struct KafkaClusterStatus {
     Serialize,
     EnumString,
 )]
+#[serde(rename_all = "lowercase")]
 pub enum MetadataManager {
-    #[strum(serialize = "zookeeper")]
     ZooKeeper,
-    #[strum(serialize = "kraft")]
     KRaft,
 }
 

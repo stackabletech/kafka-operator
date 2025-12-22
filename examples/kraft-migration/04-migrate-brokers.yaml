@@ -9,7 +9,7 @@ spec:
     productVersion: 3.9.1
     pullPolicy: IfNotPresent
   clusterConfig:
-    metadataManager: ZooKeeper
+    metadataManager: zookeeper
     authentication:
       - authenticationClass: kafka-client-auth-tls
     tls:

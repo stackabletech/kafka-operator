@@ -9,7 +9,7 @@ spec:
     productVersion: 3.9.1
     pullPolicy: IfNotPresent
   clusterConfig:
-    metadataManager: KRaft
+    metadataManager: kraft
     authentication:
       - authenticationClass: kafka-client-auth-tls
     tls:

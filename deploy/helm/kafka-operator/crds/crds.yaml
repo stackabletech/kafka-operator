@@ -731,7 +731,7 @@ spec:
                     authentication: []
                     authorization:
                       opa: null
-                    metadataManager: ZooKeeper
+                    metadataManager: zookeeper
                     tls:
                       internalSecretClass: tls
                       serverSecretClass: tls
@@ -795,10 +795,10 @@ spec:
                           type: object
                       type: object
                     metadataManager:
-                      default: ZooKeeper
+                      default: zookeeper
                       enum:
-                        - ZooKeeper
-                        - KRaft
+                        - zookeeper
+                        - kraft
                       type: string
                     tls:
                       default:
