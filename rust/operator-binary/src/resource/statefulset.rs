@@ -50,8 +50,8 @@ use crate::{
     crd::{
         self, APP_NAME, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
-        STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR,
+        MetadataManager, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         role::{
             AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
@@ -71,6 +71,9 @@ use crate::{
 
 #[derive(Snafu, Debug)]
 pub enum Error {
+    #[snafu(display("invalid metadata manager"))]
+    InvalidMetadataManager { source: crate::crd::Error },
+
     #[snafu(display("failed to add kerberos config"))]
     AddKerberosConfig { source: crate::kerberos::Error },
 
@@ -283,6 +286,10 @@ pub fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
+    let metadata_manager = kafka
+        .effective_metadata_manager()
+        .context(InvalidMetadataManagerSnafu)?;
+
     cb_kafka
         .image_from_product_image(resolved_product_image)
         .command(vec![
@@ -293,7 +300,7 @@ pub fn build_broker_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![broker_kafka_container_commands(
-            kafka,
+            metadata_manager == MetadataManager::KRaft,
             // we need controller pods
             kafka
                 .pod_descriptors(

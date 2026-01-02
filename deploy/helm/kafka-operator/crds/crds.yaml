@@ -731,7 +731,6 @@ spec:
                     authentication: []
                     authorization:
                       opa: null
-                    metadataManager: zookeeper
                     tls:
                       internalSecretClass: tls
                       serverSecretClass: tls
@@ -795,19 +794,18 @@ spec:
                           type: object
                       type: object
                     metadataManager:
-                      default: zookeeper
                       description: |-
                         Metadata manager to use for the Kafka cluster.
 
                         Possible values are `zookeeper` and `kraft`.
-                        For backwards compatibility, it defaults to `zookeeper` for Kafka versions below `4.0.0` and to `kraft` for Kafka versions `4.0.0` and higher.
+                        If not set, defaults to `zookeeper` for Kafka versions below `4.0.0` and to `kraft` for Kafka versions `4.0.0` and higher.
                         Using `zookeeper` for Kafka versions `4.0.0` and higher is not supported.
 
                         When set to `kraft`, the operator will perform the following actions:
 
                         * Generate the Kafka cluster id.
                         * Assign broker roles and configure controller quorum voters in the `broker.properties` files.
-                        * Format storage when before (re)starting Kafka brokers.
+                        * Format storage before (re)starting Kafka brokers.
                         * Remove ZooKeeper related configuration options from the `broker.properties` files.
 
                         These actions are **mandatory** when in Kraft mode and partially exclusive to the ZooKeeper mode.
@@ -818,6 +816,8 @@ spec:
                       enum:
                         - zookeeper
                         - kraft
+                        - null
+                      nullable: true
                       type: string
                     tls:
                       default:

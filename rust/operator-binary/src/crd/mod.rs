@@ -59,6 +59,11 @@ pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
+    #[snafu(display(
+        "The ZooKeeper metadata manager is not supported for Kafka version 4 and higher"
+    ))]
+    Kafka4RequiresKraftMetadataManager,
+
     #[snafu(display("The Kafka role [{role}] is missing from spec"))]
     MissingRole { role: String },
 
@@ -166,14 +171,14 @@ pub mod versioned {
         /// Metadata manager to use for the Kafka cluster.
         ///
         /// Possible values are `zookeeper` and `kraft`.
-        /// For backwards compatibility, it defaults to `zookeeper` for Kafka versions below `4.0.0` and to `kraft` for Kafka versions `4.0.0` and higher.
+        /// If not set, defaults to `zookeeper` for Kafka versions below `4.0.0` and to `kraft` for Kafka versions `4.0.0` and higher.
         /// Using `zookeeper` for Kafka versions `4.0.0` and higher is not supported.
         ///
         /// When set to `kraft`, the operator will perform the following actions:
         ///
         /// * Generate the Kafka cluster id.
         /// * Assign broker roles and configure controller quorum voters in the `broker.properties` files.
-        /// * Format storage when before (re)starting Kafka brokers.
+        /// * Format storage before (re)starting Kafka brokers.
         /// * Remove ZooKeeper related configuration options from the `broker.properties` files.
         ///
         /// These actions are **mandatory** when in Kraft mode and partially exclusive to the ZooKeeper mode.
@@ -181,8 +186,8 @@ pub mod versioned {
         ///
         /// This property is also useful when migrating from ZooKeeper to Kraft mode because it permits the operator
         /// to reconcile controllers while still using ZooKeeper for brokers.
-        #[serde(default = "default_metadata_manager")]
-        pub metadata_manager: MetadataManager,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub metadata_manager: Option<MetadataManager>,
     }
 }
 
@@ -194,7 +199,7 @@ impl Default for v1alpha1::KafkaClusterConfig {
             tls: tls::default_kafka_tls(),
             vector_aggregator_config_map_name: None,
             zookeeper_config_map_name: None,
-            metadata_manager: default_metadata_manager(),
+            metadata_manager: None,
         }
     }
 }
@@ -209,8 +214,26 @@ impl HasStatusCondition for v1alpha1::KafkaCluster {
 }
 
 impl v1alpha1::KafkaCluster {
-    pub fn is_kraft_mode(&self) -> bool {
-        self.spec.cluster_config.metadata_manager == MetadataManager::KRaft
+    pub fn effective_metadata_manager(&self) -> Result<MetadataManager, Error> {
+        match &self.spec.cluster_config.metadata_manager {
+            Some(manager) => match manager.clone() {
+                MetadataManager::ZooKeeper => {
+                    if self.spec.image.product_version().starts_with("4\\.") {
+                        Err(Error::Kafka4RequiresKraftMetadataManager)
+                    } else {
+                        Ok(MetadataManager::ZooKeeper)
+                    }
+                }
+                _ => Ok(MetadataManager::KRaft),
+            },
+            None => {
+                if self.spec.image.product_version().starts_with("4\\.") {
+                    Ok(MetadataManager::KRaft)
+                } else {
+                    Ok(MetadataManager::ZooKeeper)
+                }
+            }
+        }
     }
 
     /// The Kafka cluster id when running in Kraft mode.
@@ -225,10 +248,12 @@ impl v1alpha1::KafkaCluster {
     ///
     /// For freshly installed clusters, users do not need to deal with the cluster id.
     pub fn cluster_id(&self) -> Option<&str> {
-        match self.spec.cluster_config.metadata_manager {
-            MetadataManager::KRaft => self.metadata.name.as_deref(),
-            _ => None,
-        }
+        self.effective_metadata_manager()
+            .ok()
+            .and_then(|manager| match manager {
+                MetadataManager::KRaft => self.metadata.name.as_deref(),
+                _ => None,
+            })
     }
 
     /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
@@ -443,10 +468,6 @@ pub struct KafkaClusterStatus {
 pub enum MetadataManager {
     ZooKeeper,
     KRaft,
-}
-
-fn default_metadata_manager() -> MetadataManager {
-    MetadataManager::ZooKeeper
 }
 
 #[cfg(test)]

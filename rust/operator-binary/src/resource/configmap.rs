@@ -15,8 +15,8 @@ use stackable_operator::{
 
 use crate::{
     crd::{
-        JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR,
+        JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, MetadataManager,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, KafkaListenerName, node_address_cmd},
         role::{
             AnyConfig, KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID,
@@ -35,6 +35,9 @@ use crate::{
 
 #[derive(Snafu, Debug)]
 pub enum Error {
+    #[snafu(display("invalid metadata manager"))]
+    InvalidMetadataManager { source: crate::crd::Error },
+
     #[snafu(display("failed to build ConfigMap for {}", rolegroup))]
     BuildRoleGroupConfig {
         source: stackable_operator::builder::configmap::Error,
@@ -94,8 +97,12 @@ pub fn build_rolegroup_config_map(
 ) -> Result<ConfigMap, Error> {
     let kafka_config_file_name = merged_config.config_file_name();
 
+    let metadata_manager = kafka
+        .effective_metadata_manager()
+        .context(InvalidMetadataManagerSnafu)?;
+
     let mut kafka_config = server_properties_file(
-        kafka.is_kraft_mode(),
+        metadata_manager == MetadataManager::KRaft,
         &rolegroup.role,
         pod_descriptors,
         listener_config,

@@ -11,14 +11,13 @@ use crate::{
         KafkaPodDescriptor, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
         role::{broker::BROKER_PROPERTIES_FILE, controller::CONTROLLER_PROPERTIES_FILE},
         security::KafkaTlsSecurity,
-        v1alpha1,
     },
     product_logging::STACKABLE_LOG_DIR,
 };
 
 /// Returns the commands to start the main Kafka container
 pub fn broker_kafka_container_commands(
-    kafka: &v1alpha1::KafkaCluster,
+    kraft_mode: bool,
     controller_descriptors: Vec<KafkaPodDescriptor>,
     kafka_security: &KafkaTlsSecurity,
     product_version: &str,
@@ -41,16 +40,16 @@ pub fn broker_kafka_container_commands(
             true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})"),
             false => "".to_string(),
         },
-        broker_start_command = broker_start_command(kafka, controller_descriptors, product_version),
+        broker_start_command = broker_start_command(kraft_mode, controller_descriptors, product_version),
     }
 }
 
 fn broker_start_command(
-    kafka: &v1alpha1::KafkaCluster,
+    kraft_mode: bool,
     controller_descriptors: Vec<KafkaPodDescriptor>,
     product_version: &str,
 ) -> String {
-    if kafka.is_kraft_mode() {
+    if kraft_mode {
         formatdoc! {"
             POD_INDEX=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
             export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
