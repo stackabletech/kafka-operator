@@ -110,3 +110,14 @@ The Stackable Kafka operator currently does not support the migration.
 
 The https://developers.redhat.com/articles/2024/11/27/dynamic-kafka-controller-quorum[Dynamic scaling] is only supported from Kafka version 3.9.0.
 If you are using older versions, automatic scaling may not work properly (e.g. adding or removing controller replicas).
+
+== Migration from ZooKeeper to KRaft mode
+
+The operator version `26.3.0` adds support for migrating Kafka clusters from ZooKeeper to KRaft mode.
+
+Requirements:
+
+* Kafka clusters **must** be set up with the Stackable Kafka operator version `26.3.0` or higher. Kafka clusters set up with a previous operator version **cannot be upgraded** without migrating all broker instances first. This is because broker id management must be handed over from Kafka to the operator. The broker ids are not compatible between the two systems.
+* Kafka version **must** be `3.7.2` or `3.9.1`. Starting with version `4.0.0` the Zookeeper support is removed completely.
+
+TODO: describe the migration steps in detail

@@ -163,6 +163,24 @@ pub mod versioned {
         /// Please use the 'controller' role instead.
         pub zookeeper_config_map_name: Option<String>,
 
+        /// Metadata manager to use for the Kafka cluster.
+        ///
+        /// Possible values are `zookeeper` and `kraft`.
+        /// For backwards compatibility, it defaults to `zookeeper` for Kafka versions below `4.0.0` and to `kraft` for Kafka versions `4.0.0` and higher.
+        /// Using `zookeeper` for Kafka versions `4.0.0` and higher is not supported.
+        ///
+        /// When set to `kraft`, the operator will perform the following actions:
+        ///
+        /// * Generate the Kafka cluster id.
+        /// * Assign broker roles and configure controller quorum voters in the `broker.properties` files.
+        /// * Format storage when before (re)starting Kafka brokers.
+        /// * Remove ZooKeeper related configuration options from the `broker.properties` files.
+        ///
+        /// These actions are **mandatory** when in Kraft mode and partially exclusive to the ZooKeeper mode.
+        /// This means they **cannot** be performed in ZooKeeper mode.
+        ///
+        /// This property is also useful when migrating from ZooKeeper to Kraft mode because it permits the operator
+        /// to reconcile controllers while still using ZooKeeper for brokers.
         #[serde(default = "default_metadata_manager")]
         pub metadata_manager: MetadataManager,
     }
