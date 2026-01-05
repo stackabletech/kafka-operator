@@ -797,8 +797,15 @@ spec:
                       description: |-
                         Metadata manager to use for the Kafka cluster.
 
+                        IMPORTANT: This property will be removed as soon as Kafka 3.x support is dropped.
+
                         Possible values are `zookeeper` and `kraft`.
-                        If not set, defaults to `zookeeper` for Kafka versions below `4.0.0` and to `kraft` for Kafka versions `4.0.0` and higher.
+
+                        If not set, defaults to:
+
+                        - `zookeeper` for Kafka versions below `4.0.0`.
+                        - `kraft` for Kafka versions `4.0.0` and higher.
+
                         Using `zookeeper` for Kafka versions `4.0.0` and higher is not supported.
 
                         When set to `kraft`, the operator will perform the following actions:
