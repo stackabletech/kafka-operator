@@ -28,14 +28,6 @@ spec:
         zookeeper.metadata.migration.enable: "true" # - Enable migration mode so the broker can participate in metadata migration.
         controller.listener.names: "CONTROLLER"
         controller.quorum.voters: "2110489703@simple-kafka-controller-default-0.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093,2110489704@simple-kafka-controller-default-1.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093,2110489705@simple-kafka-controller-default-2.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093"
-
-  # listener.security.protocol.map: CONTROLLER:SSL,... - Already defined by the operator
-  # zookeeper.connect=<zk_connection_string> (should already be present) - The ZooKeeper connection string. This property should already be configured.
-  # controller.quorum.voters=<voter_string> (same as controllers) - Specify the same controller quorum voters string as configured in phase 2.
-  # controller.listener.names=CONTROLLER - Define the listener name for the controller.
-  # Add CONTROLLER to listener.security.protocol.map (for example, ...CONTROLLER:PLAINTEXT) - Add the CONTROLLER listener to the security protocol map with the appropriate security protocol.
-  # confluent.cluster.link.metadata.topic.enable=true - This property is used by Cluster Linking during the migration.
-
   controllers:
     roleGroups:
       default:

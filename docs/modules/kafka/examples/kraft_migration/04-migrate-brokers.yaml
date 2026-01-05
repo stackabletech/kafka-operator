@@ -28,13 +28,6 @@ spec:
         controller.quorum.voters: "2110489703@simple-kafka-controller-default-0.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093,2110489704@simple-kafka-controller-default-1.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093,2110489705@simple-kafka-controller-default-2.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093"
         process.roles: "broker"
         node.id: "${env:REPLICA_ID}"
-
-        # Remove or comment out the following properties:
-        # broker.id - This property is replaced by node.id in KRaft mode.
-        # inter.broker.protocol.version
-        # zookeeper.metadata.migration.enable=true
-        # zookeeper.connect
-
   controllers:
     roleGroups:
       default:
