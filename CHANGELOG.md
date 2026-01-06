@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Refactor: move server configuration properties from the command line to configuration files. ([#911]).
+- Bump testing-tools to `0.3.0-stackable0.0.0-dev` ([#925]).
 
 ### Removed
 
@@ -16,6 +17,7 @@ All notable changes to this project will be documented in this file.
 [#911]: https://github.com/stackabletech/kafka-operator/pull/911
 [#914]: https://github.com/stackabletech/kafka-operator/pull/914
 [#915]: https://github.com/stackabletech/kafka-operator/pull/915
+[#925]: https://github.com/stackabletech/kafka-operator/pull/925
 
 ## [25.11.0] - 2025-11-07
 
