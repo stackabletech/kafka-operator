@@ -23,6 +23,7 @@ use stackable_operator::{
     utils::cluster_info::KubernetesClusterInfo,
     versioned::versioned,
 };
+use strum::{Display, EnumIter, EnumString};
 
 use crate::{
     config::node_id_hasher::node_id_hash32_offset,
@@ -58,6 +59,11 @@ pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
+    #[snafu(display(
+        "The ZooKeeper metadata manager is not supported for Kafka version 4 and higher"
+    ))]
+    Kafka4RequiresKraftMetadataManager,
+
     #[snafu(display("The Kafka role [{role}] is missing from spec"))]
     MissingRole { role: String },
 
@@ -158,9 +164,37 @@ pub mod versioned {
         /// Provide the name of the ZooKeeper [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery)
         /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
         /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
-        /// This can only be used up to Kafka version 3.9.x. Since Kafka 4.0.0, ZooKeeper suppport was dropped.
+        /// This can only be used up to Kafka version 3.9.x. Since Kafka 4.0.0, ZooKeeper support was dropped.
         /// Please use the 'controller' role instead.
         pub zookeeper_config_map_name: Option<String>,
+
+        /// Metadata manager to use for the Kafka cluster.
+        ///
+        /// IMPORTANT: This property will be removed as soon as Kafka 3.x support is dropped.
+        ///
+        /// Possible values are `zookeeper` and `kraft`.
+        ///
+        /// If not set, defaults to:
+        ///
+        /// - `zookeeper` for Kafka versions below `4.0.0`.
+        /// - `kraft` for Kafka versions `4.0.0` and higher.
+        ///
+        /// Using `zookeeper` for Kafka versions `4.0.0` and higher is not supported.
+        ///
+        /// When set to `kraft`, the operator will perform the following actions:
+        ///
+        /// * Generate the Kafka cluster id.
+        /// * Assign broker roles and configure controller quorum voters in the `broker.properties` files.
+        /// * Format storage before (re)starting Kafka brokers.
+        /// * Remove ZooKeeper related configuration options from the `broker.properties` files.
+        ///
+        /// These actions are **mandatory** when in Kraft mode and partially exclusive to the ZooKeeper mode.
+        /// This means they **cannot** be performed in ZooKeeper mode.
+        ///
+        /// This property is also useful when migrating from ZooKeeper to Kraft mode because it permits the operator
+        /// to reconcile controllers while still using ZooKeeper for brokers.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub metadata_manager: Option<MetadataManager>,
     }
 }
 
@@ -172,6 +206,7 @@ impl Default for v1alpha1::KafkaClusterConfig {
             tls: tls::default_kafka_tls(),
             vector_aggregator_config_map_name: None,
             zookeeper_config_map_name: None,
+            metadata_manager: None,
         }
     }
 }
@@ -186,30 +221,46 @@ impl HasStatusCondition for v1alpha1::KafkaCluster {
 }
 
 impl v1alpha1::KafkaCluster {
-    /// Supporting Kraft alongside Zookeeper requires a couple of CRD checks
-    /// - If Kafka 4 and higher is used, no zookeeper config map ref has to be provided
-    /// - Configuring the controller role means no zookeeper config map ref has to be provided
-    pub fn check_kraft_vs_zookeeper(&self, product_version: &str) -> Result<(), Error> {
-        if product_version.starts_with("4.") && self.spec.controllers.is_none() {
-            return Err(Error::Kafka4RequiresKraft);
+    pub fn effective_metadata_manager(&self) -> Result<MetadataManager, Error> {
+        match &self.spec.cluster_config.metadata_manager {
+            Some(manager) => match manager.clone() {
+                MetadataManager::ZooKeeper => {
+                    if self.spec.image.product_version().starts_with("4\\.") {
+                        Err(Error::Kafka4RequiresKraftMetadataManager)
+                    } else {
+                        Ok(MetadataManager::ZooKeeper)
+                    }
+                }
+                _ => Ok(MetadataManager::KRaft),
+            },
+            None => {
+                if self.spec.image.product_version().starts_with("4\\.") {
+                    Ok(MetadataManager::KRaft)
+                } else {
+                    Ok(MetadataManager::ZooKeeper)
+                }
+            }
         }
-
-        if self.spec.controllers.is_some()
-            && self.spec.cluster_config.zookeeper_config_map_name.is_some()
-        {
-            return Err(Error::KraftAndZookeeperConfigured);
-        }
-
-        Ok(())
     }
 
-    pub fn is_controller_configured(&self) -> bool {
-        self.spec.controllers.is_some()
-    }
-
-    // The cluster-id for Kafka
+    /// The Kafka cluster id when running in Kraft mode.
+    ///
+    /// In ZooKeeper mode the cluster id is a UUID generated by Kafka its self and users typically
+    /// do not need to deal with it.
+    ///
+    /// When in Kraft mode, the cluster id is passed on an as the environment variable `KAFKA_CLUSTER_ID`.
+    ///
+    /// When migrating to Kraft mode, users *must* set this variable via `envOverrides` to the value
+    /// found in the `cluster/id` ZooKeeper node or in the `meta.properties` file.
+    ///
+    /// For freshly installed clusters, users do not need to deal with the cluster id.
     pub fn cluster_id(&self) -> Option<&str> {
-        self.metadata.name.as_deref()
+        self.effective_metadata_manager()
+            .ok()
+            .and_then(|manager| match manager {
+                MetadataManager::KRaft => self.metadata.name.as_deref(),
+                _ => None,
+            })
     }
 
     /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
@@ -405,6 +456,25 @@ impl KafkaPodDescriptor {
 pub struct KafkaClusterStatus {
     #[serde(default)]
     pub conditions: Vec<ClusterCondition>,
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Deserialize,
+    Display,
+    EnumIter,
+    Eq,
+    Hash,
+    JsonSchema,
+    PartialEq,
+    Serialize,
+    EnumString,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum MetadataManager {
+    ZooKeeper,
+    KRaft,
 }
 
 #[cfg(test)]

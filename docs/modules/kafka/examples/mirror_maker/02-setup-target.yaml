@@ -1,0 +1,63 @@
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: target-internal-tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-target-internal-tls-ca
+          namespace: mm-migration
+        autoGenerate: true
+---
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: target-client-auth
+spec:
+  provider:
+    tls:
+      clientCertSecretClass: target-client-auth-secret
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: target-client-auth-secret
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-tls-target-client-ca
+          namespace: mm-migration
+        autoGenerate: true
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: target
+  namespace: mm-migration
+spec:
+  image:
+    productVersion: 3.9.1
+    pullPolicy: IfNotPresent
+  clusterConfig:
+    metadataManager: kraft
+    authentication:
+      - authenticationClass: target-client-auth
+    tls:
+      internalSecretClass: target-internal-tls
+      serverSecretClass: tls
+  brokers:
+    roleGroups:
+      default:
+        replicas: 1
+    configOverrides:
+      broker.properties:
+        offsets.topic.replication.factor: "1" # https://github.com/stackabletech/kafka-operator/issues/587
+  controllers:
+    roleGroups:
+      default:
+        replicas: 1
