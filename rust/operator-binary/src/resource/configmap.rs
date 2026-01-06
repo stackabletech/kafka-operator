@@ -48,7 +48,7 @@ pub enum Error {
         "failed to serialize [{JVM_SECURITY_PROPERTIES_FILE}] for {}",
         rolegroup
     ))]
-    JvmSecurityPoperties {
+    JvmSecurityProperties {
         source: product_config::writer::PropertiesWriterError,
         rolegroup: String,
     },
@@ -170,7 +170,7 @@ pub fn build_rolegroup_config_map(
         .add_data(
             JVM_SECURITY_PROPERTIES_FILE,
             to_java_properties_string(jvm_sec_props.iter()).with_context(|_| {
-                JvmSecurityPopertiesSnafu {
+                JvmSecurityPropertiesSnafu {
                     rolegroup: rolegroup.role_group.clone(),
                 }
             })?,
@@ -183,7 +183,7 @@ pub fn build_rolegroup_config_map(
                     .iter()
                     .map(|(k, v)| (k, v)),
             )
-            .with_context(|_| JvmSecurityPopertiesSnafu {
+            .with_context(|_| JvmSecurityPropertiesSnafu {
                 rolegroup: rolegroup.role_group.clone(),
             })?,
         )
