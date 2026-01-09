@@ -5,7 +5,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    crd::{role::broker::BrokerConfig, security::KafkaTlsSecurity, v1alpha1},
+    crd::{role::AnyConfig, security::KafkaTlsSecurity, v1alpha1},
     kafka_controller::KAFKA_CONTROLLER_NAME,
     utils::build_recommended_labels,
 };
@@ -25,13 +25,12 @@ pub enum Error {
 
 /// Kafka clients will use the load-balanced bootstrap listener to get a list of broker addresses and will use those to
 /// transmit data to the correct broker.
-// TODO (@NickLarsenNZ): Move shared functionality to stackable-operator
-pub fn build_broker_rolegroup_bootstrap_listener(
+pub fn build_rolegroup_bootstrap_listener(
     kafka: &v1alpha1::KafkaCluster,
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    merged_config: &BrokerConfig,
+    merged_config: &AnyConfig,
 ) -> Result<listener::v1alpha1::Listener, Error> {
     Ok(listener::v1alpha1::Listener {
         metadata: ObjectMetaBuilder::new()
@@ -49,7 +48,7 @@ pub fn build_broker_rolegroup_bootstrap_listener(
             .context(MetadataBuildSnafu)?
             .build(),
         spec: listener::v1alpha1::ListenerSpec {
-            class_name: Some(merged_config.bootstrap_listener_class.clone()),
+            class_name: Some(merged_config.bootstrap_listener_class().clone()),
             ports: Some(bootstrap_listener_ports(kafka_security)),
             ..listener::v1alpha1::ListenerSpec::default()
         },
