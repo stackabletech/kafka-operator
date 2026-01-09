@@ -59,17 +59,9 @@ pub fn build_rolegroup_bootstrap_listener(
 fn bootstrap_listener_ports(
     kafka_security: &KafkaTlsSecurity,
 ) -> Vec<listener::v1alpha1::ListenerPort> {
-    vec![if kafka_security.has_kerberos_enabled() {
-        listener::v1alpha1::ListenerPort {
-            name: kafka_security.bootstrap_port_name().to_string(),
-            port: kafka_security.bootstrap_port().into(),
-            protocol: Some("TCP".to_string()),
-        }
-    } else {
-        listener::v1alpha1::ListenerPort {
-            name: kafka_security.client_port_name().to_string(),
-            port: kafka_security.client_port().into(),
-            protocol: Some("TCP".to_string()),
-        }
+    vec![listener::v1alpha1::ListenerPort {
+        name: kafka_security.bootstrap_port_name().to_string(),
+        port: kafka_security.bootstrap_port().into(),
+        protocol: Some("TCP".to_string()),
     }]
 }

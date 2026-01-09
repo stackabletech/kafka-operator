@@ -431,6 +431,7 @@ impl KafkaTlsSecurity {
 
     /// Adds required volumes and volume mounts to the broker pod and container builders
     /// depending on the tls and authentication settings.
+    /// TODO: there is a lot of code duplication with the controller version of this function.
     pub fn add_broker_volume_and_volume_mounts(
         &self,
         pod_builder: &mut PodBuilder,
@@ -491,6 +492,7 @@ impl KafkaTlsSecurity {
 
     /// Adds required volumes and volume mounts to the controller pod and container builders
     /// depending on the tls and authentication settings.
+    /// TODO: there is a lot of code duplication with the broker version of this function.
     pub fn add_controller_volume_and_volume_mounts(
         &self,
         pod_builder: &mut PodBuilder,
