@@ -520,6 +520,29 @@ impl KafkaTlsSecurity {
                 .context(AddVolumeMountSnafu)?;
         }
 
+        if let Some(tls_secret_secret_class) = self.tls_server_secret_class() {
+            pod_builder
+                .add_volume(
+                    VolumeBuilder::new(Self::STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME)
+                        .ephemeral(
+                            SecretOperatorVolumeSourceBuilder::new(tls_secret_secret_class)
+                                .with_pod_scope()
+                                .with_format(SecretFormat::TlsPkcs12)
+                                .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+                                .build()
+                                .context(SecretVolumeBuildSnafu)?,
+                        )
+                        .build(),
+                )
+                .context(AddVolumeSnafu)?;
+            cb_kafka
+                .add_volume_mount(
+                    Self::STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
+                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR,
+                )
+                .context(AddVolumeMountSnafu)?;
+        }
+
         Ok(())
     }
 
