@@ -572,6 +572,15 @@ pub fn build_controller_rolegroup_statefulset(
         &rolegroup_ref.role,
         &rolegroup_ref.role_group,
     );
+    let unversioned_recommended_labels = Labels::recommended(build_recommended_labels(
+        kafka,
+        KAFKA_CONTROLLER_NAME,
+        // A version value is required, and we do want to use the "recommended" format for the other desired labels
+        "none",
+        &rolegroup_ref.role,
+        &rolegroup_ref.role_group,
+    ))
+    .context(LabelBuildSnafu)?;
 
     let kafka_container_name = ControllerContainer::Kafka.to_string();
     let mut cb_kafka =
@@ -807,6 +816,19 @@ pub fn build_controller_rolegroup_statefulset(
 
     add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
 
+    let mut pvcs = merged_config.resources().storage.build_pvcs();
+
+    // bootstrap listener should be persistent,
+    // main broker listener is an ephemeral PVC instead
+    pvcs.push(
+        ListenerOperatorVolumeSourceBuilder::new(
+            &ListenerReference::ListenerName(kafka.bootstrap_service_name(rolegroup_ref)),
+            &unversioned_recommended_labels,
+        )
+        .build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME)
+        .context(BuildBootstrapListenerPvcSnafu)?,
+    );
+
     let mut pod_template = pod_builder.build_template();
 
     pod_template.merge_from(
@@ -860,7 +882,7 @@ pub fn build_controller_rolegroup_statefulset(
             },
             service_name: Some(rolegroup_ref.rolegroup_headless_service_name()),
             template: pod_template,
-            volume_claim_templates: Some(merged_config.resources().storage.build_pvcs()),
+            volume_claim_templates: Some(pvcs),
             ..StatefulSetSpec::default()
         }),
         status: None,

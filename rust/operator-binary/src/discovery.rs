@@ -52,19 +52,15 @@ pub fn build_discovery_configmap(
     kafka_security: &KafkaTlsSecurity,
     listeners: &[listener::v1alpha1::Listener],
 ) -> Result<ConfigMap, Error> {
-    let port_name = if kafka_security.has_kerberos_enabled() {
-        kafka_security.bootstrap_port_name()
-    } else {
-        kafka_security.client_port_name()
-    };
-
-    // Write a list of bootstrap servers in the format that Kafka clients:
-    // "{host1}:{port1},{host2:port2},..."
-    let bootstrap_servers = listener_hosts(listeners, port_name)?
-        .into_iter()
-        .map(|(host, port)| format!("{}:{}", host, port))
-        .collect::<Vec<_>>()
-        .join(",");
+    // Write a list of *broker* bootstrap hosts for all rolegroups separated by commas:
+    // "{host1}:{port},{host2:port},..."
+    // The port is the same bootstrap port for all services.
+    let bootstrap_servers =
+        listener_hosts_filtered_by_port_name(listeners, kafka_security.bootstrap_port_name())?
+            .into_iter()
+            .map(|(host, port)| format!("{}:{}", host, port))
+            .collect::<Vec<_>>()
+            .join(",");
     ConfigMapBuilder::new()
         .metadata(
             ObjectMetaBuilder::new()
@@ -89,7 +85,7 @@ pub fn build_discovery_configmap(
         .context(BuildConfigMapSnafu)
 }
 
-fn listener_hosts(
+fn listener_hosts_filtered_by_port_name(
     listeners: &[listener::v1alpha1::Listener],
     port_name: &str,
 ) -> Result<impl IntoIterator<Item = (String, u16)>, Error> {
