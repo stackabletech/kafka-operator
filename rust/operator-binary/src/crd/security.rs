@@ -592,32 +592,33 @@ impl KafkaTlsSecurity {
             }
         }
 
+        // Bootstrap
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_keystore_location(),
+            format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
+        );
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_keystore_password(),
+            Self::SSL_STORE_PASSWORD.to_string(),
+        );
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_keystore_type(),
+            "PKCS12".to_string(),
+        );
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_truststore_location(),
+            format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
+        );
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_truststore_password(),
+            Self::SSL_STORE_PASSWORD.to_string(),
+        );
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_truststore_type(),
+            "PKCS12".to_string(),
+        );
+
         if self.has_kerberos_enabled() {
-            // Bootstrap
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
-            );
             config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
             config.insert(
                 "sasl.kerberos.service.name".to_string(),
@@ -627,7 +628,6 @@ impl KafkaTlsSecurity {
                 "sasl.mechanism.inter.broker.protocol".to_string(),
                 "GSSAPI".to_string(),
             );
-            tracing::debug!("Kerberos configs added: [{:#?}]", config);
         }
 
         // Internal TLS
@@ -742,6 +742,32 @@ impl KafkaTlsSecurity {
             }
         }
 
+        // Bootstrap
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_keystore_location(),
+            format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
+        );
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_keystore_password(),
+            Self::SSL_STORE_PASSWORD.to_string(),
+        );
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_keystore_type(),
+            "PKCS12".to_string(),
+        );
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_truststore_location(),
+            format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
+        );
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_truststore_password(),
+            Self::SSL_STORE_PASSWORD.to_string(),
+        );
+        config.insert(
+            KafkaListenerName::Bootstrap.listener_ssl_truststore_type(),
+            "PKCS12".to_string(),
+        );
+
         // Kerberos
         if self.has_kerberos_enabled() {
             config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
@@ -753,7 +779,6 @@ impl KafkaTlsSecurity {
                 "sasl.mechanism.inter.broker.protocol".to_string(),
                 "GSSAPI".to_string(),
             );
-            tracing::debug!("Kerberos configs added: [{:#?}]", config);
         }
 
         config
