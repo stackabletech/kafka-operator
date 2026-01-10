@@ -195,7 +195,7 @@ pub fn get_kafka_listener_config(
     rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<KafkaListenerConfig, KafkaListenerError> {
-    let pod_fqdn = pod_fqdn(
+    let headless_pod_fqdn = pod_fqdn(
         kafka,
         &rolegroup_ref.rolegroup_headless_service_name(),
         cluster_info,
@@ -272,7 +272,7 @@ pub fn get_kafka_listener_config(
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
-            host: pod_fqdn.to_string(),
+            host: headless_pod_fqdn.to_string(),
             port: KafkaTlsSecurity::SECURE_INTERNAL_PORT.to_string(),
         });
         listener_security_protocol_map
@@ -288,7 +288,7 @@ pub fn get_kafka_listener_config(
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
-            host: pod_fqdn.to_string(),
+            host: headless_pod_fqdn.to_string(),
             port: kafka_security.internal_port().to_string(),
         });
         listener_security_protocol_map.insert(
@@ -301,6 +301,12 @@ pub fn get_kafka_listener_config(
         );
     }
 
+    let bootstrap_pod_fqdn = pod_fqdn(
+        kafka,
+        &rolegroup_service_name(rolegroup_ref, KafkaListenerName::Bootstrap),
+        cluster_info,
+    )?;
+
     // BOOTSTRAP
     listeners.push(KafkaListener {
         name: KafkaListenerName::Bootstrap,
@@ -309,7 +315,7 @@ pub fn get_kafka_listener_config(
     });
     advertised_listeners.push(KafkaListener {
         name: KafkaListenerName::Bootstrap,
-        host: node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
+        host: bootstrap_pod_fqdn.to_string(),
         port: node_port_cmd(
             STACKABLE_LISTENER_BOOTSTRAP_DIR,
             kafka_security.bootstrap_port_name(),
@@ -335,6 +341,19 @@ pub fn get_kafka_listener_config(
         advertised_listeners,
         listener_security_protocol_map,
     })
+}
+
+// TODO: This is the more general version to `RoleGroupRef::rolegroup_headless_service_name()`
+// because we need it for the bootstrap service as well, which doesn't exist in op-rs.
+fn rolegroup_service_name(
+    rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
+    listener: KafkaListenerName,
+) -> String {
+    format!(
+        "{name}-{service}",
+        name = rolegroup_ref.object_name(),
+        service = listener.to_string().to_lowercase()
+    )
 }
 
 pub fn node_address_cmd_env(directory: &str) -> String {
@@ -459,7 +478,12 @@ mod tests {
                 .unwrap(),
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
+                bootstrap_host = pod_fqdn(
+                    &kafka,
+                    &rolegroup_service_name(&rolegroup_ref, KafkaListenerName::Bootstrap),
+                    &cluster_info
+                )
+                .unwrap(),
                 bootstrap_port = node_port_cmd(
                     STACKABLE_LISTENER_BOOTSTRAP_DIR,
                     kafka_security.bootstrap_port_name()
@@ -526,7 +550,12 @@ mod tests {
                 .unwrap(),
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
+                bootstrap_host = pod_fqdn(
+                    &kafka,
+                    &rolegroup_service_name(&rolegroup_ref, KafkaListenerName::Bootstrap),
+                    &cluster_info
+                )
+                .unwrap(),
                 bootstrap_port = node_port_cmd(
                     STACKABLE_LISTENER_BOOTSTRAP_DIR,
                     kafka_security.bootstrap_port_name()
@@ -594,7 +623,12 @@ mod tests {
                 .unwrap(),
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
+                bootstrap_host = pod_fqdn(
+                    &kafka,
+                    &rolegroup_service_name(&rolegroup_ref, KafkaListenerName::Bootstrap),
+                    &cluster_info
+                )
+                .unwrap(),
                 bootstrap_port = node_port_cmd(
                     STACKABLE_LISTENER_BOOTSTRAP_DIR,
                     kafka_security.bootstrap_port_name()
@@ -694,7 +728,12 @@ mod tests {
                 .unwrap(),
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
+                bootstrap_host = pod_fqdn(
+                    &kafka,
+                    &rolegroup_service_name(&rolegroup_ref, KafkaListenerName::Bootstrap),
+                    &cluster_info
+                )
+                .unwrap(),
                 bootstrap_port = node_port_cmd(
                     STACKABLE_LISTENER_BOOTSTRAP_DIR,
                     kafka_security.bootstrap_port_name()
