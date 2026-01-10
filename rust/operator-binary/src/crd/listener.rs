@@ -189,6 +189,15 @@ impl Display for KafkaListener {
     }
 }
 
+// Builds a list of listeners for the given Kafka cluster and rolegroup.
+//
+// TODO: Not every listener is necessarily used by every role while some listeners are used by both roles.
+// Yeah, this is confusing and needs refactoring.
+//
+// For example, the INTERNAL and CLIENT listener are only configured on brokers.
+// On the other hand, the BOOTSTRAP listener is configured on both roles.
+// Note that actual the bootstrap services are different between brokers and controllers but from the
+// Kafka perspective they are both called BOOTSTRAP.
 pub fn get_kafka_listener_config(
     kafka: &v1alpha1::KafkaCluster,
     kafka_security: &KafkaTlsSecurity,
@@ -301,7 +310,7 @@ pub fn get_kafka_listener_config(
         );
     }
 
-    let bootstrap_pod_fqdn = pod_fqdn(
+    let bootstrap_service_fqdn = service_fqdn(
         kafka,
         &rolegroup_service_name(rolegroup_ref, KafkaListenerName::Bootstrap),
         cluster_info,
@@ -315,7 +324,7 @@ pub fn get_kafka_listener_config(
     });
     advertised_listeners.push(KafkaListener {
         name: KafkaListenerName::Bootstrap,
-        host: bootstrap_pod_fqdn.to_string(),
+        host: bootstrap_service_fqdn.to_string(),
         port: node_port_cmd(
             STACKABLE_LISTENER_BOOTSTRAP_DIR,
             kafka_security.bootstrap_port_name(),
@@ -343,19 +352,6 @@ pub fn get_kafka_listener_config(
     })
 }
 
-// TODO: This is the more general version to `RoleGroupRef::rolegroup_headless_service_name()`
-// because we need it for the bootstrap service as well, which doesn't exist in op-rs.
-fn rolegroup_service_name(
-    rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    listener: KafkaListenerName,
-) -> String {
-    format!(
-        "{name}-{service}",
-        name = rolegroup_ref.object_name(),
-        service = listener.to_string().to_lowercase()
-    )
-}
-
 pub fn node_address_cmd_env(directory: &str) -> String {
     format!("$(cat {directory}/default-address/address)")
 }
@@ -379,6 +375,31 @@ pub fn pod_fqdn(
 ) -> Result<String, KafkaListenerError> {
     Ok(format!(
         "${{env:POD_NAME}}.{sts_service_name}.{namespace}.svc.{cluster_domain}",
+        namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
+        cluster_domain = cluster_info.cluster_domain
+    ))
+}
+
+// TODO: This is the more general version to `RoleGroupRef::rolegroup_headless_service_name()`
+// because we need it for the bootstrap service as well, which doesn't exist in op-rs.
+fn rolegroup_service_name(
+    rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
+    listener: KafkaListenerName,
+) -> String {
+    format!(
+        "{name}-{service}",
+        name = rolegroup_ref.object_name(),
+        service = listener.to_string().to_lowercase()
+    )
+}
+
+pub fn service_fqdn(
+    kafka: &v1alpha1::KafkaCluster,
+    sts_service_name: &str,
+    cluster_info: &KubernetesClusterInfo,
+) -> Result<String, KafkaListenerError> {
+    Ok(format!(
+        "{sts_service_name}.{namespace}.svc.{cluster_domain}",
         namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?,
         cluster_domain = cluster_info.cluster_domain
     ))
@@ -478,7 +499,7 @@ mod tests {
                 .unwrap(),
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = pod_fqdn(
+                bootstrap_host = service_fqdn(
                     &kafka,
                     &rolegroup_service_name(&rolegroup_ref, KafkaListenerName::Bootstrap),
                     &cluster_info
@@ -550,7 +571,7 @@ mod tests {
                 .unwrap(),
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = pod_fqdn(
+                bootstrap_host = service_fqdn(
                     &kafka,
                     &rolegroup_service_name(&rolegroup_ref, KafkaListenerName::Bootstrap),
                     &cluster_info
@@ -623,7 +644,7 @@ mod tests {
                 .unwrap(),
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = pod_fqdn(
+                bootstrap_host = service_fqdn(
                     &kafka,
                     &rolegroup_service_name(&rolegroup_ref, KafkaListenerName::Bootstrap),
                     &cluster_info
@@ -728,7 +749,7 @@ mod tests {
                 .unwrap(),
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,
-                bootstrap_host = pod_fqdn(
+                bootstrap_host = service_fqdn(
                     &kafka,
                     &rolegroup_service_name(&rolegroup_ref, KafkaListenerName::Bootstrap),
                     &cluster_info
