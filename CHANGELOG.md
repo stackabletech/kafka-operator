@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Support objectOverrides using `.spec.objectOverrides`.
-  See [objectOverrides concepts page](https://docs.stackable.tech/home/nightly/concepts/overrides/#object-overrides) for details ([#XXX]).
+  See [objectOverrides concepts page](https://docs.stackable.tech/home/nightly/concepts/overrides/#object-overrides) for details ([#927]).
 
 ### Changed
 
@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file.
 [#914]: https://github.com/stackabletech/kafka-operator/pull/914
 [#915]: https://github.com/stackabletech/kafka-operator/pull/915
 [#925]: https://github.com/stackabletech/kafka-operator/pull/925
-[#XXX]: https://github.com/stackabletech/kafka-operator/pull/XXX
+[#927]: https://github.com/stackabletech/kafka-operator/pull/927
 
 ## [25.11.0] - 2025-11-07
 
