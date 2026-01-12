@@ -16,6 +16,7 @@ use stackable_operator::{
         cluster_operation::ClusterOperation, networking::DomainName,
         product_image_selection::ProductImage,
     },
+    deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
     role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroupRef},
     schemars::{self, JsonSchema},
@@ -128,6 +129,10 @@ pub mod versioned {
         // no doc - docs in ClusterOperation struct.
         #[serde(default)]
         pub cluster_operation: ClusterOperation,
+
+        // no doc - docs in ObjectOverrides struct.
+        #[serde(default)]
+        pub object_overrides: ObjectOverrides,
     }
 
     #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
