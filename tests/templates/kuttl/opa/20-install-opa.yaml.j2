@@ -1,0 +1,56 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      kubectl apply -n $NAMESPACE -f - <<EOF
+      ---
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: test-rego-kafka
+        labels:
+          opa.stackable.tech/bundle: "true"
+      data:
+        kafka.rego: |
+          package authz
+
+          allow if {
+              true
+          }
+      ---
+      apiVersion: opa.stackable.tech/v1alpha1
+      kind: OpaCluster
+      metadata:
+        name: test-opa
+      spec:
+        image:
+{% if test_scenario['values']['opa-latest'].find(",") > 0 %}
+          custom: "{{ test_scenario['values']['opa-latest'].split(',')[1] }}"
+          productVersion: "{{ test_scenario['values']['opa-latest'].split(',')[0] }}"
+{% else %}
+          productVersion: "{{ test_scenario['values']['opa-latest'] }}"
+{% endif %}
+          pullPolicy: IfNotPresent
+        clusterConfig:
+{% if test_scenario['values']['use-opa-tls'] == "true" %}
+          tls:
+            serverSecretClass: opa-tls-$NAMESPACE
+{% endif %}
+          vectorAggregatorConfigMapName: vector-aggregator-discovery
+        servers:
+          config:
+            logging:
+              enableVectorAgent: true
+              containers:
+                opa:
+                  console:
+                    level: INFO
+                  file:
+                    level: INFO
+                  loggers:
+                    decision:
+                      level: INFO
+          roleGroups:
+            default: {}
+      EOF

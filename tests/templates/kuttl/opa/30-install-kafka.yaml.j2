@@ -1,0 +1,46 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 300
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+spec:
+  image:
+{% if test_scenario['values']['kafka-latest'].find(",") > 0 %}
+    custom: "{{ test_scenario['values']['kafka-latest'].split(',')[1] }}"
+    productVersion: "{{ test_scenario['values']['kafka-latest'].split(',')[0] }}"
+{% else %}
+    productVersion: "{{ test_scenario['values']['kafka-latest'] }}"
+{% endif %}
+    pullPolicy: IfNotPresent
+  clusterConfig:
+    authorization:
+      opa:
+        configMapName: test-opa
+        package: authz
+    tls:
+      serverSecretClass: tls
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
+    zookeeperConfigMapName: test-zk
+  brokers:
+    config:
+      logging:
+        enableVectorAgent: true
+      #requestedSecretLifetime: 7d
+    roleGroups:
+      default:
+        replicas: 1
+        podOverrides:
+          spec:
+            volumes:
+              - name: test-scripts
+                configMap:
+                  name: test-scripts
+            containers:
+              - name: kafka
+                volumeMounts:
+                  - mountPath: /test-scripts
+                    name: test-scripts

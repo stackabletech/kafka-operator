@@ -29,6 +29,9 @@ dimensions:
   - name: zookeeper-latest
     values:
       - 3.9.4
+  - name: opa-latest
+    values:
+      - 1.8.0
   - name: upgrade_old
     values:
       - 3.7.2
@@ -42,6 +45,10 @@ dimensions:
   - name: use-client-auth-tls
     values:
       - "true"
+      - "false"
+  - name: use-opa-tls
+    values:
+      # - "true"
       - "false"
   - name: openshift
     values:
@@ -82,6 +89,13 @@ tests:
       - zookeeper
       - use-client-tls
       - openshift
+  - name: opa
+    dimensions:
+      - kafka-latest
+      - zookeeper-latest
+      - openshift
+      - use-opa-tls
+      - opa-latest
   - name: configuration
     dimensions:
       - kafka-latest
