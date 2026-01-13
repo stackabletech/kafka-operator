@@ -63,8 +63,8 @@ use crate::{
     kerberos::add_kerberos_pod_config,
     operations::graceful_shutdown::add_graceful_shutdown_config,
     product_logging::{
-        MAX_KAFKA_LOG_FILES_SIZE, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR, kafka_log_opts,
-        kafka_log_opts_env_var,
+        BROKER_ID_POD_MAP_DIR, MAX_KAFKA_LOG_FILES_SIZE, STACKABLE_LOG_CONFIG_DIR,
+        STACKABLE_LOG_DIR, kafka_log_opts, kafka_log_opts_env_var,
     },
     utils::build_recommended_labels,
 };
@@ -441,6 +441,22 @@ pub fn build_broker_rolegroup_statefulset(
             )
             .context(AddListenerVolumeSnafu)?;
     }
+
+    if let Some(broker_id_config_map_name) =
+        &kafka.spec.cluster_config.broker_id_pod_config_map_name
+    {
+        pod_builder
+            .add_volume(
+                VolumeBuilder::new("broker-id-pod-map-dir")
+                    .with_config_map(broker_id_config_map_name)
+                    .build(),
+            )
+            .context(AddVolumeSnafu)?;
+        cb_kafka
+            .add_volume_mount("broker-id-pod-map-dir", BROKER_ID_POD_MAP_DIR)
+            .context(AddVolumeMountSnafu)?;
+    }
+
     pod_builder
         .metadata(metadata)
         .image_pull_secrets_from_product_image(resolved_product_image)

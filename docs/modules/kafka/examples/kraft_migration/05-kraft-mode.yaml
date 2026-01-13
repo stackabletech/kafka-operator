@@ -15,9 +15,10 @@ spec:
     tls:
       internalSecretClass: kafka-internal-tls
       serverSecretClass: tls
+    brokerIdPodConfigMapName: broker-ids
   brokers:
     envOverrides:
-      KAFKA_CLUSTER_ID: "cPh4Fb3pRvyqiiVjaBDaEw"
+      KAFKA_CLUSTER_ID: "aC1zl524Svm_uIjcvUGWSw"
     roleGroups:
       default:
         replicas: 3
@@ -29,4 +30,4 @@ spec:
       default:
         replicas: 3
     envOverrides:
-      KAFKA_CLUSTER_ID: "cPh4Fb3pRvyqiiVjaBDaEw"
+      KAFKA_CLUSTER_ID: "aC1zl524Svm_uIjcvUGWSw"

@@ -64,6 +64,17 @@ spec:
           namespace: kraft-migration
         autoGenerate: true
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: broker-ids
+  namespace: kraft-migration
+data:
+  map.csv: |
+    2000,simple-kafka-broker-default-0
+    2001,simple-kafka-broker-default-1
+    2002,simple-kafka-broker-default-2
+---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
@@ -75,6 +86,7 @@ spec:
     pullPolicy: IfNotPresent
   clusterConfig:
     metadataManager: zookeeper
+    brokerIdPodConfigMapName: broker-ids
     authentication:
       - authenticationClass: kafka-client-auth-tls
     tls:
