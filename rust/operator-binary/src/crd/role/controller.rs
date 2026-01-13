@@ -64,6 +64,9 @@ pub struct ControllerConfig {
 
     #[fragment_attrs(serde(default))]
     pub resources: Resources<Storage, NoRuntimeLimits>,
+
+    /// The ListenerClass used for bootstrapping new clients.
+    pub bootstrap_listener_class: String,
 }
 
 impl ControllerConfig {
@@ -88,6 +91,7 @@ impl ControllerConfig {
                     },
                 },
             },
+            bootstrap_listener_class: Some("cluster-internal".to_string()),
         }
     }
 }

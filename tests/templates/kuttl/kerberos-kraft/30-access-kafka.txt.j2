@@ -1,0 +1,105 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: access-kafka
+spec:
+  template:
+    spec:
+      serviceAccountName: test-sa
+      containers:
+        - name: access-kafka
+          image: oci.stackable.tech/sdp/kafka:{{ test_scenario['values']['kafka-kraft'] }}-stackable0.0.0-dev
+          command:
+            - /bin/bash
+            - /tmp/script/script.sh
+          env:
+            - name: KAFKA_OPTS
+              value: -Djava.security.krb5.conf=/stackable/kerberos/krb5.conf
+            - name: KAFKA_HEAP_OPTS
+              value: -Xmx1638m -Xms1638m
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: 250m
+              memory: 2Gi
+          volumeMounts:
+            - name: script
+              mountPath: /tmp/script
+            - mountPath: /stackable/tls-ca-cert-mount
+              name: tls-ca-cert-mount
+            - name: kerberos
+              mountPath: /stackable/kerberos
+      volumes:
+        - name: script
+          configMap:
+            name: access-kafka-script
+        - name: kerberos
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: kerberos-$NAMESPACE
+                  secrets.stackable.tech/scope: service=access-kafka
+                  secrets.stackable.tech/kerberos.service.names: developer
+              spec:
+                storageClassName: secrets.stackable.tech
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: "1"
+        - name: tls-ca-cert-mount
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: tls
+                  secrets.stackable.tech/scope: pod
+                  secrets.stackable.tech/format: tls-pkcs12
+              spec:
+                accessModes:
+                - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: "1"
+                storageClassName: secrets.stackable.tech
+                volumeMode: Filesystem
+      securityContext:
+        fsGroup: 1000
+      restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: access-kafka-script
+data:
+  script.sh: |
+    set -euxo pipefail
+
+    CLIENT_PROPERTIES=/stackable/client.properties
+
+    echo -e -n "\
+    security.protocol=SASL_SSL
+    ssl.keystore.location=/stackable/tls-ca-cert-mount/keystore.p12
+    ssl.keystore.password=
+    ssl.keystore.type=PKCS12
+    ssl.truststore.location=/stackable/tls-ca-cert-mount/truststore.p12
+    ssl.truststore.password=
+    ssl.truststore.type=PKCS12
+    sasl.enabled.mechanisms=GSSAPI
+    sasl.kerberos.service.name=kafka
+    sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule\ required\ useKeyTab\=true\ storeKey\=true\ keyTab\=\"/stackable/kerberos/keytab\"\ principal\=\"developer/access-kafka.$NAMESPACE.svc.cluster.local@{{ test_scenario['values']['kerberos-realm'] }}\";
+    " > "$CLIENT_PROPERTIES"
+
+    # Listing topics alone is a test that we can connect with kerberos.
+    # ISSUES:
+    # - cannot use the KAFKA address from the discovery config map for bootstrapping since it can be just an IP address
+    # which the certificate does not cover.
+    # - cannot use the bootstrap service either (`kafka--broker-default-bootstrap`) even after adding it to the
+    # `tls-ca-cert-mount` scope because it's not supported with `cluster-external` classes.
+    /stackable/kafka/bin/kafka-topics.sh --list \
+    --bootstrap-server kafka-broker-default-0-listener-broker.$NAMESPACE.svc.cluster.local:9093 \
+    --command-config "$CLIENT_PROPERTIES"

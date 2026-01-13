@@ -439,6 +439,13 @@ impl AnyConfig {
         }
     }
 
+    pub fn bootstrap_listener_class(&self) -> &String {
+        match self {
+            AnyConfig::Broker(broker_config) => &broker_config.bootstrap_listener_class,
+            AnyConfig::Controller(controller_config) => &controller_config.bootstrap_listener_class,
+        }
+    }
+
     pub fn config_file_name(&self) -> &str {
         match self {
             AnyConfig::Broker(_) => BROKER_PROPERTIES_FILE,

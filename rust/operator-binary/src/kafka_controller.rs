@@ -49,7 +49,7 @@ use crate::{
     operations::pdb::add_pdbs,
     resource::{
         configmap::build_rolegroup_config_map,
-        listener::build_broker_rolegroup_bootstrap_listener,
+        listener::build_rolegroup_bootstrap_listener,
         service::{build_rolegroup_headless_service, build_rolegroup_metrics_service},
         statefulset::{build_broker_rolegroup_statefulset, build_controller_rolegroup_statefulset},
     },
@@ -427,21 +427,24 @@ pub async fn reconcile_kafka(
                 .context(BuildStatefulsetSnafu)?,
             };
 
-            if let AnyConfig::Broker(broker_config) = merged_config {
-                let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
-                    kafka,
-                    &resolved_product_image,
-                    &kafka_security,
-                    &rolegroup_ref,
-                    &broker_config,
-                )
-                .context(BuildListenerSnafu)?;
-                bootstrap_listeners.push(
-                    cluster_resources
-                        .add(client, rg_bootstrap_listener)
-                        .await
-                        .context(ApplyRoleServiceSnafu)?,
-                );
+            let rg_bootstrap_listener = build_rolegroup_bootstrap_listener(
+                kafka,
+                &resolved_product_image,
+                &kafka_security,
+                &rolegroup_ref,
+                &merged_config,
+            )
+            .context(BuildListenerSnafu)?;
+
+            let rg_bootstrap_listener = cluster_resources
+                .add(client, rg_bootstrap_listener)
+                .await
+                .context(ApplyRoleServiceSnafu)?;
+
+            // TODO: for backwards compatibility we only add the broker bootstrap listener
+            // to this list in order to not break the discovery configmap even more than it already is.
+            if let AnyConfig::Broker(_) = &merged_config {
+                bootstrap_listeners.push(rg_bootstrap_listener);
             }
 
             cluster_resources

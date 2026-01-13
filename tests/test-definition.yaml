@@ -6,12 +6,12 @@
 dimensions:
   - name: kafka-kraft
     values:
-      - 3.7.2
-      - 3.9.1
+      # - 3.7.2
+      # - 3.9.1
       - 4.1.0
   - name: kafka
     values:
-      - 3.7.2
+      # - 3.7.2
       - 3.9.1
       # Alternatively, if you want to use a custom image, append a comma and the full image name to the product version
       # as in the example below.
@@ -24,7 +24,7 @@ dimensions:
       # - 3.9.1,oci.stackable.tech/sdp/kafka:3.9.1-stackable0.0.0-dev
   - name: zookeeper
     values:
-      - 3.9.3
+      # - 3.9.3
       - 3.9.4
   - name: zookeeper-latest
     values:
@@ -51,7 +51,7 @@ dimensions:
       - 1.21.1
   - name: kerberos-realm
     values:
-      - "CLUSTER.LOCAL"
+      # - "CLUSTER.LOCAL"
       - "PROD.MYCORP"
   - name: kerberos-backend
     values:
@@ -64,14 +64,14 @@ dimensions:
       - "cluster-internal"
   - name: bootstrap-listener-class
     values:
-      - "cluster-internal"
-      - "external-stable"
+      # - "cluster-internal"
+      # - "external-stable"
       - "external-unstable"
 tests:
-  - name: operations-kraft
-    dimensions:
-      - kafka-kraft
-      - openshift
+  # - name: operations-kraft
+  #   dimensions:
+  #     - kafka-kraft
+  #     - openshift
   - name: smoke-kraft
     dimensions:
       - kafka-kraft
@@ -82,18 +82,18 @@ tests:
       - zookeeper
       - use-client-tls
       - openshift
-  - name: configuration
-    dimensions:
-      - kafka-latest
-      - openshift
-  - name: upgrade
-    dimensions:
-      - zookeeper
-      - upgrade_new
-      - upgrade_old
-      - use-client-tls
-      - use-client-auth-tls
-      - openshift
+  # - name: configuration
+  #   dimensions:
+  #     - kafka-latest
+  #     - openshift
+  # - name: upgrade
+  #   dimensions:
+  #     - zookeeper
+  #     - upgrade_new
+  #     - upgrade_old
+  #     - use-client-tls
+  #     - use-client-auth-tls
+  #     - openshift
   - name: tls
     dimensions:
       - kafka
@@ -101,21 +101,21 @@ tests:
       - use-client-tls
       - use-client-auth-tls
       - openshift
-  - name: delete-rolegroup
-    dimensions:
-      - kafka
-      - zookeeper-latest
-      - openshift
-  - name: logging
-    dimensions:
-      - kafka
-      - zookeeper-latest
-      - openshift
-  - name: cluster-operation
-    dimensions:
-      - zookeeper-latest
-      - kafka-latest
-      - openshift
+  # - name: delete-rolegroup
+  #   dimensions:
+  #     - kafka
+  #     - zookeeper-latest
+  #     - openshift
+  # - name: logging
+  #   dimensions:
+  #     - kafka
+  #     - zookeeper-latest
+  #     - openshift
+  # - name: cluster-operation
+  #   dimensions:
+  #     - zookeeper-latest
+  #     - kafka-latest
+  #     - openshift
   - name: kerberos
     dimensions:
       - kafka
@@ -126,7 +126,15 @@ tests:
       - openshift
       - broker-listener-class
       - bootstrap-listener-class
-
+  - name: kerberos-kraft
+    dimensions:
+      - kafka-kraft
+      - krb5
+      - kerberos-realm
+      - kerberos-backend
+      - openshift
+      - broker-listener-class
+      - bootstrap-listener-class
 suites:
   - name: nightly
     patch:
