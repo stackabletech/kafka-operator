@@ -283,6 +283,7 @@ pub async fn reconcile_kafka(
         KAFKA_CONTROLLER_NAME,
         &kafka.object_ref(&()),
         ClusterResourceApplyStrategy::from(&kafka.spec.cluster_operation),
+        &kafka.spec.object_overrides,
     )
     .context(CreateClusterResourcesSnafu)?;
 
