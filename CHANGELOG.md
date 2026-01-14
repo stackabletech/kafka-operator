@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Support objectOverrides using `.spec.objectOverrides`.
   See [objectOverrides concepts page](https://docs.stackable.tech/home/nightly/concepts/overrides/#object-overrides) for details ([#927]).
+- Added experimental support for `4.1.1` ([#929])
 
 ### Changed
 
@@ -18,12 +19,14 @@ All notable changes to this project will be documented in this file.
 
 - Refactor: remove unused RBAC cluster role ([#914]).
 - Refactor: remove superfluous and partly misconfigured Kafka listeners CLIENT_AUTH and CONTROLLER_AUTH ([#915]).
+- Remove support for `3.7.2` and `4.1.0` ([#929])
 
 [#911]: https://github.com/stackabletech/kafka-operator/pull/911
 [#914]: https://github.com/stackabletech/kafka-operator/pull/914
 [#915]: https://github.com/stackabletech/kafka-operator/pull/915
 [#925]: https://github.com/stackabletech/kafka-operator/pull/925
 [#927]: https://github.com/stackabletech/kafka-operator/pull/927
+[#929]: https://github.com/stackabletech/kafka-operator/pull/929
 
 ## [25.11.0] - 2025-11-07
 
