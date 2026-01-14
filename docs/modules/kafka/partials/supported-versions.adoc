@@ -2,9 +2,8 @@
 // This is a separate file, since it is used by both the direct Kafka documentation, and the overarching
 // Stackable Platform documentation.
 
-* 4.1.0 (experimental)
+* 4.1.1 (experimental)
 * 3.9.1 (LTS)
-* 3.7.2 (deprecated)
 
 Support for clusters running in Kraft mode (which includes Apache Kafka 4.x.x) is experimental because it has not been thoroughly tested in production environments yet.
 Migrations from older Kafka version which used Apache Zookeeper for cluster coordination to the new KRaft mode are not supported yet.
@@ -13,4 +12,4 @@ Also there are some known issues such as:
 
 * Controller scaling is not reliable.
 * Kerberos authentication is not tested yet.
-* Service exposision is not definitive.
+* Service exposition is not definitive.

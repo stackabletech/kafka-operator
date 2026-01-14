@@ -6,12 +6,10 @@
 dimensions:
   - name: kafka-kraft
     values:
-      - 3.7.2
       - 3.9.1
-      - 4.1.0
+      - 4.1.1
   - name: kafka
     values:
-      - 3.7.2
       - 3.9.1
       # Alternatively, if you want to use a custom image, append a comma and the full image name to the product version
       # as in the example below.
@@ -24,17 +22,16 @@ dimensions:
       # - 3.9.1,oci.stackable.tech/sdp/kafka:3.9.1-stackable0.0.0-dev
   - name: zookeeper
     values:
-      - 3.9.3
       - 3.9.4
   - name: zookeeper-latest
     values:
       - 3.9.4
   - name: upgrade_old
     values:
-      - 3.7.2
+      - 3.9.1
   - name: upgrade_new
     values:
-      - 3.9.1
+      - 4.1.1
   - name: use-client-tls
     values:
       - "true"
@@ -86,9 +83,9 @@ tests:
     dimensions:
       - kafka-latest
       - openshift
+  # This tests upgrading kraft clusters only
   - name: upgrade
     dimensions:
-      - zookeeper
       - upgrade_new
       - upgrade_old
       - use-client-tls
