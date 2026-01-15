@@ -14,3 +14,15 @@ status:
   replicas: 1
   currentReplicas: 1
   updatedReplicas: 1
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-controller-default
+  labels:
+    app.kubernetes.io/version: "{{ test_scenario['values']['upgrade_new'] }}-stackable0.0.0-dev"
+status:
+  readyReplicas: 1
+  replicas: 1
+  currentReplicas: 1
+  updatedReplicas: 1
