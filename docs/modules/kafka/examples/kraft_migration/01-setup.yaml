@@ -70,10 +70,9 @@ metadata:
   name: broker-ids
   namespace: kraft-migration
 data:
-  map.csv: |
-    2000,simple-kafka-broker-default-0
-    2001,simple-kafka-broker-default-1
-    2002,simple-kafka-broker-default-2
+  simple-kafka-broker-default-0: "2000"
+  simple-kafka-broker-default-1: "2001"
+  simple-kafka-broker-default-2: "2002"
 ---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster

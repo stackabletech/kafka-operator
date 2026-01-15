@@ -215,7 +215,7 @@ pub mod versioned {
         /// metadata:
         ///   name: brokeridmapping
         /// data:
-        ///   simple-kafka-broker-default-0: "2001"
+        ///   simple-kafka-broker-default-0: "2000"
         ///   simple-kafka-broker-default-1: "2001"
         ///   simple-kafka-broker-default-2: "2002"
         /// ```

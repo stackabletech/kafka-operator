@@ -54,9 +54,8 @@ fn broker_start_command(
             export POD_INDEX=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
             export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
 
-            if [ -f \"{broker_id_pod_map_dir}/map.csv\" ]; then
-                echo \"Using broker ID mapping file to determine REPLICA_ID\"
-                REPLICA_ID=$(grep \"$POD_NAME\" {broker_id_pod_map_dir}/map.csv | cut -d',' -f1)
+            if [ -f \"{broker_id_pod_map_dir}/$POD_NAME\" ]; then
+                REPLICA_ID=$(cat \"{broker_id_pod_map_dir}/$POD_NAME\")
             fi
 
             cp {config_dir}/{properties_file} /tmp/{properties_file}
