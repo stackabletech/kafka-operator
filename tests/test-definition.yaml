@@ -48,7 +48,7 @@ dimensions:
       - "false"
   - name: use-opa-tls
     values:
-      # - "true"
+      - "true"
       - "false"
   - name: openshift
     values:

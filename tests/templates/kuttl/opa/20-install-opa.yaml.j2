@@ -15,6 +15,23 @@ commands:
         kafka.rego: |
           package authz
 
+          # A very simple rule:
+          # If set to false this will prevent the kafka cluster from deploying.
+          # If set to true the topc can be created and read with e.g. the
+          # following in the decision log:
+          # "input": {
+          #     "action": {
+          #         ...
+          #         "operation": "CREATE",
+          #         ...
+          #         }
+          #     },
+          #     ...
+          # },
+          # "msg": "Decision Log",
+          # "path": "authz/allow",
+          # "result": true,
+
           allow if {
               true
           }

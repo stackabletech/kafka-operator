@@ -52,6 +52,11 @@ pub enum Error {
 
     #[snafu(display("kerberos enablement requires TLS activation"))]
     KerberosRequiresTls,
+
+    #[snafu(display("failed to build OPA TLS certificate volume"))]
+    OpaTlsCertSecretClassVolumeBuild {
+        source: stackable_operator::builder::pod::volume::SecretOperatorVolumeSourceBuilderError,
+    },
 }
 
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
@@ -59,6 +64,7 @@ pub struct KafkaTlsSecurity {
     resolved_authentication_classes: ResolvedAuthenticationClasses,
     internal_secret_class: String,
     server_secret_class: Option<String>,
+    opa_secret_class: Option<String>,
 }
 
 impl KafkaTlsSecurity {
@@ -75,6 +81,9 @@ impl KafkaTlsSecurity {
     pub const INTERNAL_PORT: u16 = 19092;
     // - TLS internal
     const INTER_BROKER_LISTENER_NAME: &'static str = "inter.broker.listener.name";
+    const OPA_TLS_MOUNT_PATH: &str = "/stackable/tls-opa";
+    // opa
+    const OPA_TLS_VOLUME_NAME: &str = "tls-opa";
     pub const SECURE_BOOTSTRAP_PORT: u16 = 9095;
     pub const SECURE_CLIENT_PORT: u16 = 9093;
     pub const SECURE_CLIENT_PORT_NAME: &'static str = "kafka-tls";
@@ -94,11 +103,13 @@ impl KafkaTlsSecurity {
         resolved_authentication_classes: ResolvedAuthenticationClasses,
         internal_secret_class: String,
         server_secret_class: Option<String>,
+        opa_secret_class: Option<String>,
     ) -> Self {
         Self {
             resolved_authentication_classes,
             internal_secret_class,
             server_secret_class,
+            opa_secret_class,
         }
     }
 
@@ -107,6 +118,7 @@ impl KafkaTlsSecurity {
     pub async fn new_from_kafka_cluster(
         client: &Client,
         kafka: &v1alpha1::KafkaCluster,
+        opa_secret_class: Option<String>,
     ) -> Result<Self, Error> {
         Ok(KafkaTlsSecurity {
             resolved_authentication_classes: ResolvedAuthenticationClasses::from_references(
@@ -128,6 +140,7 @@ impl KafkaTlsSecurity {
                 .tls
                 .as_ref()
                 .and_then(|tls| tls.server_secret_class.clone()),
+            opa_secret_class,
         })
     }
 
@@ -164,6 +177,22 @@ impl KafkaTlsSecurity {
 
     pub fn has_kerberos_enabled(&self) -> bool {
         self.kerberos_secret_class().is_some()
+    }
+
+    fn has_opa_tls_enabled(&self) -> bool {
+        self.opa_secret_class.is_some()
+    }
+
+    pub fn copy_opa_tls_cert_command(&self) -> String {
+        match self.has_opa_tls_enabled() {
+            true => format!(
+                "keytool -importcert -file {opa_mount_path}/ca.crt -keystore {tls_dir}/truststore.p12 -storepass '{tls_password}' -alias opa-ca -noprompt",
+                opa_mount_path = Self::OPA_TLS_MOUNT_PATH,
+                tls_dir = Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+                tls_password = Self::SSL_STORE_PASSWORD,
+            ),
+            false => "".to_string(),
+        }
     }
 
     pub fn kerberos_secret_class(&self) -> Option<String> {
@@ -486,6 +515,24 @@ impl KafkaTlsSecurity {
                 .context(AddVolumeMountSnafu)?;
         }
 
+        if let Some(secret_class) = &self.opa_secret_class {
+            cb_kafka
+                .add_volume_mount(Self::OPA_TLS_VOLUME_NAME, Self::OPA_TLS_MOUNT_PATH)
+                .context(AddVolumeMountSnafu)?;
+
+            pod_builder
+                .add_volume(
+                    VolumeBuilder::new(Self::OPA_TLS_VOLUME_NAME)
+                        .ephemeral(
+                            SecretOperatorVolumeSourceBuilder::new(secret_class)
+                                .build()
+                                .context(OpaTlsCertSecretClassVolumeBuildSnafu)?,
+                        )
+                        .build(),
+                )
+                .context(AddVolumeSnafu)?;
+        }
+
         Ok(())
     }
 
@@ -663,6 +710,22 @@ impl KafkaTlsSecurity {
                 "required".to_string(),
             );
         }
+
+        //OPA Tls
+        if self.opa_secret_class.is_some() {
+            config.insert(
+                "opa.authorizer.truststore.path".to_string(),
+                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
+            );
+            config.insert(
+                "opa.authorizer.truststore.password".to_string(),
+                Self::SSL_STORE_PASSWORD.to_string(),
+            );
+        }
+        config.insert(
+            "opa.authorizer.truststore.type".to_string(),
+            "PKCS12".to_string(),
+        );
 
         // common
         config.insert(
