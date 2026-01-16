@@ -7,6 +7,9 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: test-kafka-broker-default
+  generation: 1 # There should be no unneeded Pod restarts
+  labels:
+    restarter.stackable.tech/enabled: "true"
 status:
   readyReplicas: 1
   replicas: 1
@@ -15,6 +18,9 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: test-kafka-broker-automatic-log-config
+  generation: 1 # There should be no unneeded Pod restarts
+  labels:
+    restarter.stackable.tech/enabled: "true"
 status:
   readyReplicas: 1
   replicas: 1
@@ -23,6 +29,9 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: test-kafka-broker-custom-log-config
+  generation: 1 # There should be no unneeded Pod restarts
+  labels:
+    restarter.stackable.tech/enabled: "true"
 status:
   readyReplicas: 1
   replicas: 1
@@ -31,6 +40,9 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: test-kafka-controller-automatic-log-config
+  generation: 1 # There should be no unneeded Pod restarts
+  labels:
+    restarter.stackable.tech/enabled: "true"
 status:
   readyReplicas: 1
   replicas: 1
@@ -39,6 +51,9 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: test-kafka-controller-custom-log-config
+  generation: 1 # There should be no unneeded Pod restarts
+  labels:
+    restarter.stackable.tech/enabled: "true"
 status:
   readyReplicas: 1
   replicas: 1
