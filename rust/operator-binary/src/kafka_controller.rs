@@ -468,6 +468,9 @@ pub async fn reconcile_kafka(
                     rolegroup: rolegroup_ref.clone(),
                 })?;
 
+            // Note: The StatefulSet needs to be applied after all ConfigMaps and Secrets it mounts
+            // to prevent unnecessary Pod restarts.
+            // See https://github.com/stackabletech/commons-operator/issues/111 for details.
             ss_cond_builder.add(
                 cluster_resources
                     .add(client, rg_statefulset)
