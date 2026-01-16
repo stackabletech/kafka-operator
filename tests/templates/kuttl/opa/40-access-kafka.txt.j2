@@ -1,0 +1,118 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: access-kafka
+spec:
+  template:
+    spec:
+      serviceAccountName: test-sa
+      containers:
+        - name: access-kafka
+          image: oci.stackable.tech/sdp/kafka:{{ test_scenario['values']['kafka-latest'] }}-stackable0.0.0-dev
+          command:
+            - /bin/bash
+            - /tmp/script/script.sh
+          env:
+            - name: KRB5_CONFIG
+              value: /stackable/kerberos/krb5.conf
+            - name: KAFKA_OPTS
+              value: -Djava.security.krb5.conf=/stackable/kerberos/krb5.conf
+            - name: KAFKA
+              valueFrom:
+                configMapKeyRef:
+                  name: test-kafka
+                  key: KAFKA
+          volumeMounts:
+            - name: script
+              mountPath: /tmp/script
+            - mountPath: /stackable/tls-ca-cert-mount
+              name: tls-ca-cert-mount
+            - name: kerberos
+              mountPath: /stackable/kerberos
+      volumes:
+        - name: script
+          configMap:
+            name: access-kafka-script
+        - name: kerberos
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: kerberos-$NAMESPACE
+                  secrets.stackable.tech/scope: service=access-kafka
+                  secrets.stackable.tech/kerberos.service.names: developer
+              spec:
+                storageClassName: secrets.stackable.tech
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: "1"
+        - name: tls-ca-cert-mount
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/class: tls
+                  secrets.stackable.tech/scope: pod
+              spec:
+                accessModes:
+                - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: "1"
+                storageClassName: secrets.stackable.tech
+                volumeMode: Filesystem
+      securityContext:
+        fsGroup: 1000
+      restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: access-kafka-script
+data:
+  script.sh: |
+    set -euxo pipefail
+
+    export KCAT_CONFIG=/stackable/kcat.conf
+    TOPIC=test-topic
+    CONSUMER_GROUP=test-consumer-group
+
+    echo -e -n "\
+    metadata.broker.list=$KAFKA\n\
+    auto.offset.reset=beginning\n\
+    security.protocol=SASL_SSL\n\
+    ssl.ca.location=/stackable/tls-ca-cert-mount/ca.crt\n\
+    sasl.kerberos.keytab=/stackable/kerberos/keytab\n\
+    sasl.kerberos.service.name=kafka\n\
+    sasl.kerberos.principal=developer/access-kafka.$NAMESPACE.svc.cluster.local@CLUSTER.LOCAL\n\
+    sasl.mechanism=GSSAPI\n\
+    " > $KCAT_CONFIG
+
+    cat $KCAT_CONFIG
+
+    sent_message="Hello Stackable!"
+
+    echo $sent_message | kcat \
+      -t $TOPIC \
+      -P
+
+    echo Sent message: \"$sent_message\"
+
+    received_message=$(kcat \
+      -G $CONSUMER_GROUP \
+      -o stored \
+      -e \
+      $TOPIC)
+
+    echo Received message: \"$received_message\"
+
+    if [ "$received_message" = "$sent_message" ]; then
+      echo "Test passed"
+      exit 0
+    else
+      echo "Test failed"
+      exit 1
+    fi

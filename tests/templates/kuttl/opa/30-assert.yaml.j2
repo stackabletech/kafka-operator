@@ -1,0 +1,32 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+status:
+  readyReplicas: 3
+  replicas: 3
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: log-dirs-test-kafka-broker-default-0
+spec:
+  resources:
+    requests:
+      storage: 2Gi
+status:
+  phase: Bound
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: test-kafka-broker
+status:
+  expectedPods: 3
+  currentHealthy: 3
+  disruptionsAllowed: 1

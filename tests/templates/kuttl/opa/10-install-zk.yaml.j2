@@ -1,0 +1,18 @@
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperCluster
+metadata:
+  name: test-zk
+spec:
+  image:
+    productVersion: "{{ test_scenario['values']['zookeeper-latest'] }}"
+    pullPolicy: IfNotPresent
+  clusterConfig:
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
+  servers:
+    config:
+      logging:
+        enableVectorAgent: true
+    roleGroups:
+      default:
+        replicas: 1
