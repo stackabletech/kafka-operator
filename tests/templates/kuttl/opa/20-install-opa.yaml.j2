@@ -15,25 +15,50 @@ commands:
         kafka.rego: |
           package authz
 
-          # A very simple rule:
-          # If set to false this will prevent the kafka cluster from deploying.
-          # If set to true the topc can be created and read with e.g. the
-          # following in the decision log:
-          # "input": {
-          #     "action": {
-          #         ...
-          #         "operation": "CREATE",
-          #         ...
-          #         }
-          #     },
-          #     ...
-          # },
-          # "msg": "Decision Log",
-          # "path": "authz/allow",
-          # "result": true,
+          default allow := false
 
           allow if {
-              true
+            input.requestContext.principal.name == "kafka"
+          }
+
+          allow if {
+            input.requestContext.principal.name == "CN=generated certificate for pod"
+          }
+
+          allow if {
+            input.requestContext.principal.name == "developer"
+            resource_is_allowed
+          }
+
+          resource_is_allowed if {
+            input.action.resourcePattern.resourceType == "TOPIC"
+            action_is_allowed
+          }
+
+          resource_is_allowed if {
+            input.action.resourcePattern.resourceType == "GROUP"
+            input.action.operation == "DESCRIBE"
+          }
+
+          resource_is_allowed if {
+            input.action.resourcePattern.resourceType == "GROUP"
+            input.action.operation == "READ"
+          }
+
+          action_is_allowed if {
+            input.action.operation == "CREATE"
+          }
+
+          action_is_allowed if {
+            input.action.operation == "DESCRIBE"
+          }
+
+          action_is_allowed if {
+            input.action.operation == "READ"
+          }
+
+          action_is_allowed if {
+            input.action.operation == "WRITE"
           }
       ---
       apiVersion: opa.stackable.tech/v1alpha1
