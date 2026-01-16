@@ -1,8 +1,0 @@
----
-apiVersion: kuttl.dev/v1beta1
-kind: TestStep
-commands:
-  - script: |
-      kubectl create configmap test-scripts \
-        --namespace $NAMESPACE \
-        --from-file=test_client_tls.sh=25_test_client_tls.sh

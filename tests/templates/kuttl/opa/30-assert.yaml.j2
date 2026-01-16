@@ -9,7 +9,7 @@ metadata:
   name: test-kafka-broker-default
 status:
   readyReplicas: 1
-  replicas: 1
+  replicas: 3
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -21,12 +21,12 @@ spec:
       storage: 2Gi
 status:
   phase: Bound
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: test-kafka-broker
-status:
-  expectedPods: 1
-  currentHealthy: 1
-  disruptionsAllowed: 1
+#---
+#apiVersion: policy/v1
+#kind: PodDisruptionBudget
+#metadata:
+#  name: test-kafka-broker
+#status:
+#  expectedPods: 1
+#  currentHealthy: 1
+#  disruptionsAllowed: 1

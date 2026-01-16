@@ -96,6 +96,7 @@ tests:
       - openshift
       - use-opa-tls
       - opa-latest
+      - krb5
   - name: configuration
     dimensions:
       - kafka-latest
