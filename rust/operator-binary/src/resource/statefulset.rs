@@ -427,7 +427,6 @@ pub fn build_broker_rolegroup_statefulset(
     let metadata = ObjectMetaBuilder::new()
         .with_recommended_labels(recommended_object_labels)
         .context(MetadataBuildSnafu)?
-        .with_label(RESTART_CONTROLLER_ENABLED_LABEL.to_owned())
         .build();
 
     if let Some(listener_class) = merged_config.listener_class() {
@@ -525,6 +524,7 @@ pub fn build_broker_rolegroup_statefulset(
                 &rolegroup_ref.role_group,
             ))
             .context(MetadataBuildSnafu)?
+            .with_label(RESTART_CONTROLLER_ENABLED_LABEL.to_owned())
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
@@ -836,6 +836,7 @@ pub fn build_controller_rolegroup_statefulset(
                 &rolegroup_ref.role_group,
             ))
             .context(MetadataBuildSnafu)?
+            .with_label(RESTART_CONTROLLER_ENABLED_LABEL.to_owned())
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
