@@ -69,6 +69,7 @@ spec:
 {% endif %}
     pullPolicy: IfNotPresent
   clusterConfig:
+    metadataManager: kraft
     authentication:
       - authenticationClass: test-kafka-client-auth-tls
     tls:

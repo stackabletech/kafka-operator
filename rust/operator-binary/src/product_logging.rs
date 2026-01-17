@@ -15,6 +15,7 @@ use crate::crd::{
     v1alpha1,
 };
 
+pub const BROKER_ID_POD_MAP_DIR: &str = "/stackable/broker-id-pod-map";
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
 pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
 // log4j

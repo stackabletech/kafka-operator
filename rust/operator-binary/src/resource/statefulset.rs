@@ -51,8 +51,8 @@ use crate::{
     crd::{
         self, APP_NAME, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
-        STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR,
+        MetadataManager, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         role::{
             AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
@@ -64,14 +64,17 @@ use crate::{
     kerberos::add_kerberos_pod_config,
     operations::graceful_shutdown::add_graceful_shutdown_config,
     product_logging::{
-        MAX_KAFKA_LOG_FILES_SIZE, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR, kafka_log_opts,
-        kafka_log_opts_env_var,
+        BROKER_ID_POD_MAP_DIR, MAX_KAFKA_LOG_FILES_SIZE, STACKABLE_LOG_CONFIG_DIR,
+        STACKABLE_LOG_DIR, kafka_log_opts, kafka_log_opts_env_var,
     },
     utils::build_recommended_labels,
 };
 
 #[derive(Snafu, Debug)]
 pub enum Error {
+    #[snafu(display("invalid metadata manager"))]
+    InvalidMetadataManager { source: crate::crd::Error },
+
     #[snafu(display("failed to add kerberos config"))]
     AddKerberosConfig { source: crate::kerberos::Error },
 
@@ -284,7 +287,9 @@ pub fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let cluster_id = kafka.cluster_id().context(ClusterIdMissingSnafu)?;
+    let metadata_manager = kafka
+        .effective_metadata_manager()
+        .context(InvalidMetadataManagerSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -296,8 +301,7 @@ pub fn build_broker_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![broker_kafka_container_commands(
-            kafka,
-            cluster_id,
+            metadata_manager == MetadataManager::KRaft,
             // we need controller pods
             kafka
                 .pod_descriptors(
@@ -438,6 +442,22 @@ pub fn build_broker_rolegroup_statefulset(
             )
             .context(AddListenerVolumeSnafu)?;
     }
+
+    if let Some(broker_id_config_map_name) =
+        &kafka.spec.cluster_config.broker_id_pod_config_map_name
+    {
+        pod_builder
+            .add_volume(
+                VolumeBuilder::new("broker-id-pod-map-dir")
+                    .with_config_map(broker_id_config_map_name)
+                    .build(),
+            )
+            .context(AddVolumeSnafu)?;
+        cb_kafka
+            .add_volume_mount("broker-id-pod-map-dir", BROKER_ID_POD_MAP_DIR)
+            .context(AddVolumeMountSnafu)?;
+    }
+
     pod_builder
         .metadata(metadata)
         .image_pull_secrets_from_product_image(resolved_product_image)
@@ -636,6 +656,22 @@ pub fn build_controller_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
+    // Controllers need the ZooKeeper connection string for migration
+    if let Some(zookeeper_config_map_name) = &kafka.spec.cluster_config.zookeeper_config_map_name {
+        env.push(EnvVar {
+            name: "ZOOKEEPER".to_string(),
+            value_from: Some(EnvVarSource {
+                config_map_key_ref: Some(ConfigMapKeySelector {
+                    name: zookeeper_config_map_name.to_string(),
+                    key: "ZOOKEEPER".to_string(),
+                    ..ConfigMapKeySelector::default()
+                }),
+                ..EnvVarSource::default()
+            }),
+            ..EnvVar::default()
+        })
+    };
+
     cb_kafka
         .image_from_product_image(resolved_product_image)
         .command(vec![
@@ -646,7 +682,6 @@ pub fn build_controller_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![controller_kafka_container_command(
-            kafka.cluster_id().context(ClusterIdMissingSnafu)?,
             kafka
                 .pod_descriptors(Some(kafka_role), cluster_info, kafka_security.client_port())
                 .context(BuildPodDescriptorsSnafu)?,
