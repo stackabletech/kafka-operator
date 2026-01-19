@@ -721,11 +721,11 @@ impl KafkaTlsSecurity {
                 "opa.authorizer.truststore.password".to_string(),
                 Self::SSL_STORE_PASSWORD.to_string(),
             );
+            config.insert(
+                "opa.authorizer.truststore.type".to_string(),
+                "PKCS12".to_string(),
+            );
         }
-        config.insert(
-            "opa.authorizer.truststore.type".to_string(),
-            "PKCS12".to_string(),
-        );
 
         // common
         config.insert(
