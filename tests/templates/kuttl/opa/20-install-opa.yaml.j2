@@ -1,0 +1,83 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      kubectl apply -n $NAMESPACE -f - <<EOF
+      ---
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: test-rego-kafka
+        labels:
+          opa.stackable.tech/bundle: "true"
+      data:
+        kafka.rego: |
+          package authz
+
+          default allow := false
+
+          allow if {
+            input.requestContext.principal.name == "kafka"
+          }
+
+          allow if {
+            input.requestContext.principal.name == "CN=generated certificate for pod"
+          }
+
+          allow if {
+            input.requestContext.principal.name == "developer"
+            resource_is_allowed
+          }
+
+          # only allow access to a specific topic
+          resource_is_allowed if {
+            input.action.resourcePattern.resourceType == "TOPIC"
+            input.action.resourcePattern.name == "test-topic"
+            action_is_allowed
+          }
+
+          resource_is_allowed if {
+            input.action.resourcePattern.resourceType == "GROUP"
+            input.action.operation in ["DESCRIBE", "READ"]
+          }
+
+          action_is_allowed if {
+            input.action.operation in ["CREATE", "DESCRIBE", "READ", "WRITE"]
+          }
+      ---
+      apiVersion: opa.stackable.tech/v1alpha1
+      kind: OpaCluster
+      metadata:
+        name: test-opa
+      spec:
+        image:
+{% if test_scenario['values']['opa-latest'].find(",") > 0 %}
+          custom: "{{ test_scenario['values']['opa-latest'].split(',')[1] }}"
+          productVersion: "{{ test_scenario['values']['opa-latest'].split(',')[0] }}"
+{% else %}
+          productVersion: "{{ test_scenario['values']['opa-latest'] }}"
+{% endif %}
+          pullPolicy: IfNotPresent
+        clusterConfig:
+{% if test_scenario['values']['use-opa-tls'] == "true" %}
+          tls:
+            serverSecretClass: opa-tls-$NAMESPACE
+{% endif %}
+          vectorAggregatorConfigMapName: vector-aggregator-discovery
+        servers:
+          config:
+            logging:
+              enableVectorAgent: true
+              containers:
+                opa:
+                  console:
+                    level: INFO
+                  file:
+                    level: INFO
+                  loggers:
+                    decision:
+                      level: INFO
+          roleGroups:
+            default: {}
+      EOF
