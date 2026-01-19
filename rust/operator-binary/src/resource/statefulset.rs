@@ -17,6 +17,7 @@ use stackable_operator::{
         },
     },
     commons::product_image_selection::ResolvedProductImage,
+    constants::RESTART_CONTROLLER_ENABLED_LABEL,
     k8s_openapi::{
         DeepMerge,
         api::{
@@ -543,6 +544,7 @@ pub fn build_broker_rolegroup_statefulset(
                 &rolegroup_ref.role_group,
             ))
             .context(MetadataBuildSnafu)?
+            .with_label(RESTART_CONTROLLER_ENABLED_LABEL.to_owned())
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
@@ -869,6 +871,7 @@ pub fn build_controller_rolegroup_statefulset(
                 &rolegroup_ref.role_group,
             ))
             .context(MetadataBuildSnafu)?
+            .with_label(RESTART_CONTROLLER_ENABLED_LABEL.to_owned())
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
