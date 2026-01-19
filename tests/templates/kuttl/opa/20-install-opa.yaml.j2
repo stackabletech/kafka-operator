@@ -30,8 +30,10 @@ commands:
             resource_is_allowed
           }
 
+          # only allow access to a specific topic
           resource_is_allowed if {
             input.action.resourcePattern.resourceType == "TOPIC"
+            input.action.resourcePattern.name == "test-topic"
             action_is_allowed
           }
 

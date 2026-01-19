@@ -78,6 +78,7 @@ data:
 
     export KCAT_CONFIG=/stackable/kcat.conf
     TOPIC=test-topic
+    DISALLOWED_TOPIC=disallowed-topic
     CONSUMER_GROUP=test-consumer-group
 
     echo -e -n "\
@@ -111,8 +112,24 @@ data:
 
     if [ "$received_message" = "$sent_message" ]; then
       echo "Test passed"
-      exit 0
     else
       echo "Test failed"
       exit 1
+    fi
+
+    # Temporarily disable exit-on-error
+    set +e
+
+    # This should fail as the rego rule filters topic access
+    output=$(echo "$sent_message" | kcat -t $DISALLOWED_TOPIC -P 2>&1)
+    exit_code=$?
+
+    set -e
+
+    if [ $exit_code -ne 0 ] || echo "$output" | grep -q "Delivery failed"; then
+        echo "Test passed"
+        exit 0
+    else
+        echo "Test failed"
+        exit 1
     fi
