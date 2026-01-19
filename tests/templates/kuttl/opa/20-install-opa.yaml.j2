@@ -39,28 +39,11 @@ commands:
 
           resource_is_allowed if {
             input.action.resourcePattern.resourceType == "GROUP"
-            input.action.operation == "DESCRIBE"
-          }
-
-          resource_is_allowed if {
-            input.action.resourcePattern.resourceType == "GROUP"
-            input.action.operation == "READ"
+            input.action.operation in ["DESCRIBE", "READ"]
           }
 
           action_is_allowed if {
-            input.action.operation == "CREATE"
-          }
-
-          action_is_allowed if {
-            input.action.operation == "DESCRIBE"
-          }
-
-          action_is_allowed if {
-            input.action.operation == "READ"
-          }
-
-          action_is_allowed if {
-            input.action.operation == "WRITE"
+            input.action.operation in ["CREATE", "DESCRIBE", "READ", "WRITE"]
           }
       ---
       apiVersion: opa.stackable.tech/v1alpha1
