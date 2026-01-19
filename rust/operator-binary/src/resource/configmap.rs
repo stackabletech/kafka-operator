@@ -107,6 +107,11 @@ pub fn build_rolegroup_config_map(
         pod_descriptors,
         listener_config,
         opa_connect_string,
+        kafka
+            .spec
+            .cluster_config
+            .broker_id_pod_config_map_name
+            .is_some(),
     )?;
 
     match merged_config {
@@ -220,6 +225,7 @@ fn server_properties_file(
     pod_descriptors: &[KafkaPodDescriptor],
     listener_config: &KafkaListenerConfig,
     opa_connect_string: Option<&str>,
+    disable_broker_id_generation: bool,
 ) -> Result<BTreeMap<String, String>, Error> {
     let kraft_controllers = kraft_controllers(pod_descriptors);
 
@@ -295,11 +301,6 @@ fn server_properties_file(
                     listener_config.listener_security_protocol_map(),
                 ),
                 (
-                    "broker.id.generation.enable".to_string(),
-                    "false".to_string(),
-                ),
-                (KAFKA_BROKER_ID.to_string(), "${env:REPLICA_ID}".to_string()),
-                (
                     "inter.broker.listener.name".to_string(),
                     KafkaListenerName::Internal.to_string(),
                 ),
@@ -310,6 +311,10 @@ fn server_properties_file(
 
                 // Running in KRaft mode
                 result.extend([
+                    (
+                        "broker.id.generation.enable".to_string(),
+                        "false".to_string(),
+                    ),
                     (KAFKA_NODE_ID.to_string(), "${env:REPLICA_ID}".to_string()),
                     (
                         KAFKA_PROCESS_ROLES.to_string(),
@@ -335,6 +340,16 @@ fn server_properties_file(
                     "zookeeper.connect".to_string(),
                     "${env:ZOOKEEPER}".to_string(),
                 )]);
+                // We are in zookeeper mode and the user has defined a broker id mapping
+                if disable_broker_id_generation {
+                    result.extend([
+                        (
+                            "broker.id.generation.enable".to_string(),
+                            "false".to_string(),
+                        ),
+                        (KAFKA_BROKER_ID.to_string(), "${env:REPLICA_ID}".to_string()),
+                    ]);
+                }
             }
 
             // Enable OPA authorization

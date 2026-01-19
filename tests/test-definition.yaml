@@ -55,7 +55,7 @@ dimensions:
       - mit
       # Requires manual setup, see create-kerberos-secretclass.yaml
       # This will *not* respect the kerberos-realm test attribute, but instead use a hard-coded realm
-      # - activeDirectory
+      # - activeDirectory(
   - name: broker-listener-class
     values:
       - "cluster-internal"
