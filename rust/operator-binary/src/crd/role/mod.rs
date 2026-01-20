@@ -71,10 +71,6 @@ pub const KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: &str = "listener.security.protoc
 /// For example: localhost:9092,localhost:9093,localhost:9094.
 pub const KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS: &str = "controller.quorum.bootstrap.servers";
 
-/// Map of id/endpoint information for the set of voters in a comma-separated list of {id}@{host}:{port} entries.
-/// For example: 1@localhost:9092,2@localhost:9093,3@localhost:9094
-pub const KAFKA_CONTROLLER_QUORUM_VOTERS: &str = "controller.quorum.voters";
-
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("fragment validation failure"))]

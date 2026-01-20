@@ -32,6 +32,9 @@ spec:
     productVersion: "{{ test_scenario['values']['upgrade_old'] }}"
     pullPolicy: IfNotPresent
   clusterConfig:
+    # Need to set this explicitly because the default would be zookeeper for 3.9.1
+    # but we don't want to test zookeeper -> kraft migration here
+    metadataManager: kraft
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
     authentication:
       - authenticationClass: test-kafka-client-auth-tls
