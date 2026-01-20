@@ -341,6 +341,9 @@ fn server_properties_file(
                     "${env:ZOOKEEPER}".to_string(),
                 )]);
                 // We are in zookeeper mode and the user has defined a broker id mapping
+                // so we disable automatic id generation.
+                // This check ensures that existing clusters running in ZooKeeper mode do not
+                // suddenly break after the introduction of this change.
                 if disable_broker_id_generation {
                     result.extend([
                         (

@@ -53,7 +53,6 @@ fn broker_start_command(
     product_version: &str,
 ) -> String {
     let common_command = formatdoc! {"
-            set -x
             export POD_INDEX=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
             export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
 
