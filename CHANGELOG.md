@@ -26,6 +26,7 @@ All notable changes to this project will be documented in this file.
 [#911]: https://github.com/stackabletech/kafka-operator/pull/911
 [#914]: https://github.com/stackabletech/kafka-operator/pull/914
 [#915]: https://github.com/stackabletech/kafka-operator/pull/915
+[#923]: https://github.com/stackabletech/kafka-operator/pull/923
 [#925]: https://github.com/stackabletech/kafka-operator/pull/925
 [#927]: https://github.com/stackabletech/kafka-operator/pull/927
 [#929]: https://github.com/stackabletech/kafka-operator/pull/929
