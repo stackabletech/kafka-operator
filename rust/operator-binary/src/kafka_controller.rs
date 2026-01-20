@@ -8,7 +8,6 @@ use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::{
-        opa::OpaApiVersion,
         product_image_selection::{self},
         rbac::build_rbac_resources,
     },
@@ -36,7 +35,7 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 use crate::{
     crd::{
         self, APP_NAME, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KafkaClusterStatus,
-        OPERATOR_NAME,
+        OPERATOR_NAME, authorization,
         listener::get_kafka_listener_config,
         role::{
             AnyConfig, KafkaRole, broker::BROKER_PROPERTIES_FILE,
@@ -120,11 +119,6 @@ pub enum Error {
     #[snafu(display("failed to apply discovery ConfigMap"))]
     ApplyDiscoveryConfig {
         source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("invalid OpaConfig"))]
-    InvalidOpaConfig {
-        source: stackable_operator::commons::opa::Error,
     },
 
     #[snafu(display("failed to delete orphaned resources"))]
@@ -212,6 +206,9 @@ pub enum Error {
     BuildListener {
         source: crate::resource::listener::Error,
     },
+
+    #[snafu(display("object defines no namespace"))]
+    GetOpaConfig { source: authorization::Error },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -231,7 +228,6 @@ impl ReconcilerError for Error {
             Error::InvalidProductConfig { .. } => None,
             Error::BuildDiscoveryConfig { .. } => None,
             Error::ApplyDiscoveryConfig { .. } => None,
-            Error::InvalidOpaConfig { .. } => None,
             Error::DeleteOrphans { .. } => None,
             Error::FailedToInitializeSecurityContext { .. } => None,
             Error::CreateClusterResources { .. } => None,
@@ -253,6 +249,7 @@ impl ReconcilerError for Error {
             Error::BuildListener { .. } => None,
             Error::InvalidKafkaListeners { .. } => None,
             Error::BuildPodDescriptors { .. } => None,
+            Error::GetOpaConfig { .. } => None,
         }
     }
 }
@@ -293,7 +290,28 @@ pub async fn reconcile_kafka(
         &ctx.product_config,
     )?;
 
-    let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, kafka)
+    // Assemble the OPA connection string from the discovery and the given path if provided
+    // Will be passed as --override parameter in the cli in the stateful set
+    let opa_config = &kafka
+        .spec
+        .cluster_config
+        .authorization
+        .clone()
+        .get_opa_config(client, kafka)
+        .await
+        .context(GetOpaConfigSnafu)?;
+
+    let opa_connect = opa_config
+        .as_ref()
+        .map(|auth_config| auth_config.opa_connect.clone());
+
+    let opa_secret_class = if let Some(opa_config) = opa_config.as_ref() {
+        opa_config.secret_class.to_owned()
+    } else {
+        None
+    };
+
+    let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, kafka, opa_secret_class)
         .await
         .context(FailedToInitializeSecurityContextSnafu)?;
 
@@ -308,19 +326,6 @@ pub async fn reconcile_kafka(
     kafka_security
         .validate_authentication_methods()
         .context(FailedToValidateAuthenticationMethodSnafu)?;
-
-    // Assemble the OPA connection string from the discovery and the given path if provided
-    // Will be passed as --override parameter in the cli in the state ful set
-    let opa_connect = if let Some(opa_spec) = &kafka.spec.cluster_config.authorization.opa {
-        Some(
-            opa_spec
-                .full_document_url_from_config_map(client, kafka, Some("allow"), OpaApiVersion::V1)
-                .await
-                .context(InvalidOpaConfigSnafu)?,
-        )
-    } else {
-        None
-    };
 
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
 

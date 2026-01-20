@@ -29,6 +29,8 @@ pub fn broker_kafka_container_commands(
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
         {set_realm_env}
 
+        {import_opa_tls_cert}
+
         {broker_start_command}
 
         wait_for_termination $!
@@ -40,6 +42,7 @@ pub fn broker_kafka_container_commands(
             true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})"),
             false => "".to_string(),
         },
+        import_opa_tls_cert = kafka_security.copy_opa_tls_cert_command(),
         broker_start_command = broker_start_command(kraft_mode, controller_descriptors, product_version),
     }
 }

@@ -1,0 +1,47 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      kubectl apply -n $NAMESPACE -f - <<EOF
+      ---
+      apiVersion: authentication.stackable.tech/v1alpha1
+      kind: AuthenticationClass
+      metadata:
+        name: kerberos-auth-$NAMESPACE
+      spec:
+        provider:
+          kerberos:
+            kerberosSecretClass: kerberos-$NAMESPACE
+      ---
+      apiVersion: kafka.stackable.tech/v1alpha1
+      kind: KafkaCluster
+      metadata:
+        name: test-kafka
+      spec:
+        image:
+      {% if test_scenario['values']['kafka-latest'].find(",") > 0 %}
+          custom: "{{ test_scenario['values']['kafka-latest'].split(',')[1] }}"
+          productVersion: "{{ test_scenario['values']['kafka-latest'].split(',')[0] }}"
+      {% else %}
+          productVersion: "{{ test_scenario['values']['kafka-latest'] }}"
+      {% endif %}
+          pullPolicy: IfNotPresent
+        clusterConfig:
+          authentication:
+            - authenticationClass: kerberos-auth-$NAMESPACE
+          authorization:
+            opa:
+              configMapName: test-opa
+              package: authz
+          tls:
+            serverSecretClass: tls
+          vectorAggregatorConfigMapName: vector-aggregator-discovery
+          zookeeperConfigMapName: test-zk
+        brokers:
+          config:
+            logging:
+              enableVectorAgent: true
+          roleGroups:
+            default:
+              replicas: 3

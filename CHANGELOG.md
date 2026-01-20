@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Support objectOverrides using `.spec.objectOverrides`.
   See [objectOverrides concepts page](https://docs.stackable.tech/home/nightly/concepts/overrides/#object-overrides) for details ([#927]).
+- Added support for OPA/TLS ([#928]).
 - Added experimental support for `4.1.1` ([#929])
 - Enable the [restart-controller](https://docs.stackable.tech/home/nightly/commons-operator/restarter/), so that the Pods are automatically restarted on config changes ([#930], [#932]).
 
@@ -29,6 +30,7 @@ All notable changes to this project will be documented in this file.
 [#923]: https://github.com/stackabletech/kafka-operator/pull/923
 [#925]: https://github.com/stackabletech/kafka-operator/pull/925
 [#927]: https://github.com/stackabletech/kafka-operator/pull/927
+[#928]: https://github.com/stackabletech/kafka-operator/pull/928
 [#929]: https://github.com/stackabletech/kafka-operator/pull/929
 [#930]: https://github.com/stackabletech/kafka-operator/pull/930
 [#932]: https://github.com/stackabletech/kafka-operator/pull/932

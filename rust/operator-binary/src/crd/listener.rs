@@ -406,6 +406,7 @@ mod tests {
             }]),
             "internalTls".to_string(),
             Some("tls".to_string()),
+            None,
         );
         let cluster_info = default_cluster_info();
         // "simple-kafka-broker-default"
@@ -465,6 +466,7 @@ mod tests {
             ResolvedAuthenticationClasses::new(vec![]),
             "tls".to_string(),
             Some("tls".to_string()),
+            None,
         );
         let config =
             get_kafka_listener_config(&kafka, &kafka_security, &rolegroup_ref, &cluster_info)
@@ -520,6 +522,7 @@ mod tests {
         let kafka_security = KafkaTlsSecurity::new(
             ResolvedAuthenticationClasses::new(vec![]),
             "".to_string(),
+            None,
             None,
         );
 
@@ -608,6 +611,7 @@ mod tests {
             }]),
             "tls".to_string(),
             Some("tls".to_string()),
+            None,
         );
         let cluster_info = default_cluster_info();
         // "simple-kafka-broker-default"
