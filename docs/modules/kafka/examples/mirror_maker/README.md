@@ -1,16 +1,20 @@
+## Description
+
+This is an internal protocol of what I've done to get MM2 running to help any future efforts.
+There is no user facing documentation for it.
 
 ### Setup
 
-k create --save-config -f docs/modules/kafka/examples/mirror_maker/01-setup-source.yaml
-k create --save-config -f docs/modules/kafka/examples/mirror_maker/02-setup-target.yaml
+kubectl create --save-config -f docs/modules/kafka/examples/mirror_maker/01-setup-source.yaml
+kubectl create --save-config -f docs/modules/kafka/examples/mirror_maker/02-setup-target.yaml
 
-k cp -n mm-migration -c kafka target-broker-default-0:/stackable/tls-kafka-server/keystore.p12 docs/modules/kafka/examples/mirror_maker/keystore.p12
-k cp -n mm-migration -c kafka target-broker-default-0:/stackable/tls-kafka-server/truststore.p12 docs/modules/kafka/examples/mirror_maker/truststore.p12
+kubectl cp -n mm-migration -c kafka target-broker-default-0:/stackable/tls-kafka-server/keystore.p12 docs/modules/kafka/examples/mirror_maker/keystore.p12
+kubectl cp -n mm-migration -c kafka target-broker-default-0:/stackable/tls-kafka-server/truststore.p12 docs/modules/kafka/examples/mirror_maker/truststore.p12
 
-k cp -n mm-migration -c kafka docs/modules/kafka/examples/mirror_maker/truststore.p12 source-broker-default-0:/stackable/truststore.p12
-k cp -n mm-migration -c kafka docs/modules/kafka/examples/mirror_maker/keystore.p12 source-broker-default-0:/stackable/keystore.p12
+kubectl cp -n mm-migration -c kafka docs/modules/kafka/examples/mirror_maker/truststore.p12 source-broker-default-0:/stackable/truststore.p12
+kubectl cp -n mm-migration -c kafka docs/modules/kafka/examples/mirror_maker/keystore.p12 source-broker-default-0:/stackable/keystore.p12
 
-k cp -n mm-migration -c kafka docs/modules/kafka/examples/mirror_maker/mm.properties source-broker-default-0:/stackable/mm.properties
+kubectl cp -n mm-migration -c kafka docs/modules/kafka/examples/mirror_maker/mm.properties source-broker-default-0:/stackable/mm.properties
 
 ### Create a topic and publish some data
 
@@ -32,15 +36,15 @@ EXTRA_ARGS="" /stackable/kafka/bin/connect-mirror-maker.sh /stackable/mm.propert
 
 ### Cleanup
 
-k delete -n mm-migration kafkaclusters source
-k delete -n mm-migration kafkaclusters target
-k delete -n mm-migration zookeeperznodes source-znode
-k delete -n mm-migration zookeeperclusters zookeeper
-k delete -n mm-migration secretclasses source-internal-tls
-k delete -n mm-migration secretclasses source-client-auth-secret
-k delete -n mm-migration secretclasses target-internal-tls
-k delete -n mm-migration secretclasses target-client-auth-secret
-k delete -n mm-migration authenticationclasses target-client-auth
-k delete -n mm-migration authenticationclasses source-client-auth
-k delete -n mm-migration persistentvolumeclaims --all
-k delete ns mm-migration
+kubectl delete -n mm-migration kafkaclusters source
+kubectl delete -n mm-migration kafkaclusters target
+kubectl delete -n mm-migration zookeeperznodes source-znode
+kubectl delete -n mm-migration zookeeperclusters zookeeper
+kubectl delete -n mm-migration secretclasses source-internal-tls
+kubectl delete -n mm-migration secretclasses source-client-auth-secret
+kubectl delete -n mm-migration secretclasses target-internal-tls
+kubectl delete -n mm-migration secretclasses target-client-auth-secret
+kubectl delete -n mm-migration authenticationclasses target-client-auth
+kubectl delete -n mm-migration authenticationclasses source-client-auth
+kubectl delete -n mm-migration persistentvolumeclaims --all
+kubectl delete ns mm-migration
