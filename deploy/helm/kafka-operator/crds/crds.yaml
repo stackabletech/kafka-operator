@@ -833,7 +833,7 @@ spec:
                         * Format storage before (re)starting Kafka brokers.
                         * Remove ZooKeeper related configuration options from the `broker.properties` files.
 
-                        Some of them **cannot** are incompatible with the ZooKeeper mode.
+                        Some of them cannot be performed with the ZooKeeper mode.
 
                         This property is also useful when migrating from ZooKeeper to Kraft mode because it permits the operator
                         to reconcile controllers while still using ZooKeeper for brokers.
