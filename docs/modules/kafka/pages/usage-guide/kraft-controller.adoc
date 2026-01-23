@@ -134,7 +134,7 @@ We start by creating a dedicated namespace to work in and deploy the Kafka clust
 include::example$kraft_migration/01-setup.yaml[]
 ----
 
-Next, we will create a topic called `kraft-migration-topic` with 3 partitions to verify the migration later.
+Next, from one of the broker pods, we will create a topic called `kraft-migration-topic` with 3 partitions to verify the migration later.
 
 [source,bash]
 ----
@@ -146,7 +146,7 @@ $ /stackable/kafka/bin/kafka-topics.sh \
 --topic kraft-migration-topic
 ----
 
-And publish some test messages to it:
+And - also from one of the broker pods - publish some test messages to it:
 
 [source,bash]
 ----
