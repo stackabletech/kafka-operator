@@ -274,11 +274,6 @@ pub async fn reconcile_kafka(
         .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION)
         .context(ResolveProductImageSnafu)?;
 
-    // check Kraft vs ZooKeeper and fail if misconfigured
-    kafka
-        .check_kraft_vs_zookeeper(&resolved_product_image.product_version)
-        .context(MisconfiguredKafkaClusterSnafu)?;
-
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
         OPERATOR_NAME,
@@ -571,7 +566,8 @@ fn validated_product_config(
         ),
     );
 
-    if kafka.is_controller_configured() {
+    // TODO: need this if because controller_role() raises an error
+    if kafka.spec.controllers.is_some() {
         roles.insert(
             KafkaRole::Controller.to_string(),
             (

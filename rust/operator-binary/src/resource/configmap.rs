@@ -15,13 +15,13 @@ use stackable_operator::{
 
 use crate::{
     crd::{
-        JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR,
+        JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, MetadataManager,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, KafkaListenerName, node_address_cmd},
         role::{
-            AnyConfig, KAFKA_ADVERTISED_LISTENERS, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
-            KAFKA_CONTROLLER_QUORUM_VOTERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS,
-            KAFKA_LOG_DIRS, KAFKA_NODE_ID, KAFKA_PROCESS_ROLES, KafkaRole,
+            AnyConfig, KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID,
+            KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP,
+            KAFKA_LISTENERS, KAFKA_LOG_DIRS, KAFKA_NODE_ID, KAFKA_PROCESS_ROLES, KafkaRole,
         },
         security::KafkaTlsSecurity,
         v1alpha1,
@@ -34,6 +34,9 @@ use crate::{
 
 #[derive(Snafu, Debug)]
 pub enum Error {
+    #[snafu(display("invalid metadata manager"))]
+    InvalidMetadataManager { source: crate::crd::Error },
+
     #[snafu(display("failed to build ConfigMap for {}", rolegroup))]
     BuildRoleGroupConfig {
         source: stackable_operator::builder::configmap::Error,
@@ -44,7 +47,7 @@ pub enum Error {
         "failed to serialize [{JVM_SECURITY_PROPERTIES_FILE}] for {}",
         rolegroup
     ))]
-    JvmSecurityPoperties {
+    JvmSecurityProperties {
         source: product_config::writer::PropertiesWriterError,
         rolegroup: String,
     },
@@ -93,13 +96,21 @@ pub fn build_rolegroup_config_map(
 ) -> Result<ConfigMap, Error> {
     let kafka_config_file_name = merged_config.config_file_name();
 
+    let metadata_manager = kafka
+        .effective_metadata_manager()
+        .context(InvalidMetadataManagerSnafu)?;
+
     let mut kafka_config = server_properties_file(
-        kafka.is_controller_configured(),
+        metadata_manager == MetadataManager::KRaft,
         &rolegroup.role,
         pod_descriptors,
         listener_config,
         opa_connect_string,
-        resolved_product_image.product_version.starts_with("3.7"), // needs_quorum_voters
+        kafka
+            .spec
+            .cluster_config
+            .broker_id_pod_config_map_name
+            .is_some(),
     )?;
 
     match merged_config {
@@ -163,7 +174,7 @@ pub fn build_rolegroup_config_map(
         .add_data(
             JVM_SECURITY_PROPERTIES_FILE,
             to_java_properties_string(jvm_sec_props.iter()).with_context(|_| {
-                JvmSecurityPopertiesSnafu {
+                JvmSecurityPropertiesSnafu {
                     rolegroup: rolegroup.role_group.clone(),
                 }
             })?,
@@ -176,7 +187,7 @@ pub fn build_rolegroup_config_map(
                     .iter()
                     .map(|(k, v)| (k, v)),
             )
-            .with_context(|_| JvmSecurityPopertiesSnafu {
+            .with_context(|_| JvmSecurityPropertiesSnafu {
                 rolegroup: rolegroup.role_group.clone(),
             })?,
         )
@@ -213,7 +224,7 @@ fn server_properties_file(
     pod_descriptors: &[KafkaPodDescriptor],
     listener_config: &KafkaListenerConfig,
     opa_connect_string: Option<&str>,
-    needs_quorum_voters: bool,
+    disable_broker_id_generation: bool,
 ) -> Result<BTreeMap<String, String>, Error> {
     let kraft_controllers = kraft_controllers(pod_descriptors);
 
@@ -250,17 +261,22 @@ fn server_properties_file(
             (
                 KAFKA_LISTENER_SECURITY_PROTOCOL_MAP.to_string(),
                 listener_config
-                    .listener_security_protocol_map_for_listener(&KafkaListenerName::Controller)
-                    .unwrap_or("".to_string())),
+                    .listener_security_protocol_map_for_controller()),
             ]);
 
-            if needs_quorum_voters {
-                let kraft_voters =
-                    kraft_voters(pod_descriptors).context(NoKraftControllersFoundSnafu)?;
+            result.insert(
+                "inter.broker.listener.name".to_string(),
+                KafkaListenerName::Internal.to_string(),
+            );
 
-                result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
+            // The ZooKeeper connection is needed for migration from ZooKeeper to KRaft mode.
+            // It is not needed once the controller is fully running in KRaft mode.
+            if !kraft_mode {
+                result.insert(
+                    "zookeeper.connect".to_string(),
+                    "${env:ZOOKEEPER}".to_string(),
+                );
             }
-
             Ok(result)
         }
         KafkaRole::Broker => {
@@ -278,6 +294,10 @@ fn server_properties_file(
                     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP.to_string(),
                     listener_config.listener_security_protocol_map(),
                 ),
+                (
+                    "inter.broker.listener.name".to_string(),
+                    KafkaListenerName::Internal.to_string(),
+                ),
             ]);
 
             if kraft_mode {
@@ -285,6 +305,10 @@ fn server_properties_file(
 
                 // Running in KRaft mode
                 result.extend([
+                    (
+                        "broker.id.generation.enable".to_string(),
+                        "false".to_string(),
+                    ),
                     (KAFKA_NODE_ID.to_string(), "${env:REPLICA_ID}".to_string()),
                     (
                         KAFKA_PROCESS_ROLES.to_string(),
@@ -299,19 +323,25 @@ fn server_properties_file(
                         kraft_controllers.clone(),
                     ),
                 ]);
-
-                if needs_quorum_voters {
-                    let kraft_voters =
-                        kraft_voters(pod_descriptors).context(NoKraftControllersFoundSnafu)?;
-
-                    result.extend([(KAFKA_CONTROLLER_QUORUM_VOTERS.to_string(), kraft_voters)]);
-                }
             } else {
                 // Running with ZooKeeper enabled
                 result.extend([(
                     "zookeeper.connect".to_string(),
                     "${env:ZOOKEEPER}".to_string(),
                 )]);
+                // We are in zookeeper mode and the user has defined a broker id mapping
+                // so we disable automatic id generation.
+                // This check ensures that existing clusters running in ZooKeeper mode do not
+                // suddenly break after the introduction of this change.
+                if disable_broker_id_generation {
+                    result.extend([
+                        (
+                            "broker.id.generation.enable".to_string(),
+                            "false".to_string(),
+                        ),
+                        (KAFKA_BROKER_ID.to_string(), "${env:REPLICA_ID}".to_string()),
+                    ]);
+                }
             }
 
             // Enable OPA authorization
@@ -348,21 +378,6 @@ fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Option<String> {
                 client_port = desc.client_port
             )
         })
-        .collect::<Vec<String>>()
-        .join(",");
-
-    if result.is_empty() {
-        None
-    } else {
-        Some(result)
-    }
-}
-
-fn kraft_voters(pod_descriptors: &[KafkaPodDescriptor]) -> Option<String> {
-    let result = pod_descriptors
-        .iter()
-        .filter(|pd| pd.role == KafkaRole::Controller.to_string())
-        .map(|desc| desc.as_quorum_voter())
         .collect::<Vec<String>>()
         .join(",");
 

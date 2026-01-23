@@ -1,0 +1,98 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    stackable.tech/vendor: Stackable
+  name: kraft-migration
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperCluster
+metadata:
+  name: simple-zk
+  namespace: kraft-migration
+spec:
+  image:
+    productVersion: 3.9.4
+    pullPolicy: IfNotPresent
+  servers:
+    roleGroups:
+      default:
+        replicas: 1
+---
+apiVersion: zookeeper.stackable.tech/v1alpha1
+kind: ZookeeperZnode
+metadata:
+  name: simple-kafka-znode
+  namespace: kraft-migration
+spec:
+  clusterRef:
+    name: simple-zk
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-internal-tls
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-kafka-internal-tls-ca
+          namespace: kraft-migration
+        autoGenerate: true
+---
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: kafka-client-auth-tls
+spec:
+  provider:
+    tls:
+      clientCertSecretClass: kafka-client-auth-secret
+---
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: kafka-client-auth-secret
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: secret-provisioner-tls-kafka-client-ca
+          namespace: kraft-migration
+        autoGenerate: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: broker-ids
+  namespace: kraft-migration
+data:
+  simple-kafka-broker-default-0: "2000"
+  simple-kafka-broker-default-1: "2001"
+  simple-kafka-broker-default-2: "2002"
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+  namespace: kraft-migration
+spec:
+  image:
+    productVersion: 3.9.1
+    pullPolicy: IfNotPresent
+  clusterConfig:
+    metadataManager: zookeeper
+    brokerIdPodConfigMapName: broker-ids
+    authentication:
+      - authenticationClass: kafka-client-auth-tls
+    tls:
+      internalSecretClass: kafka-internal-tls
+      serverSecretClass: tls
+    zookeeperConfigMapName: simple-kafka-znode
+  brokers:
+    roleGroups:
+      default:
+        replicas: 3

@@ -33,6 +33,11 @@ use crate::{
 /// Env var
 pub const KAFKA_NODE_ID_OFFSET: &str = "NODE_ID_OFFSET";
 
+/// Past versions of the operator didn't set this explicitly and allowed Kafka to generate random ids.
+/// To support Kraft migration, this must be carried over to `KAFKA_NODE_ID` so the operator needs
+/// to know it's value for each broker Pod.
+pub const KAFKA_BROKER_ID: &str = "broker.id";
+
 // See: https://kafka.apache.org/documentation/#brokerconfigs
 /// The node ID associated with the roles this process is playing when process.roles is non-empty.
 /// This is required configuration when running in KRaft mode.
@@ -65,10 +70,6 @@ pub const KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: &str = "listener.security.protoc
 /// List of endpoints to use for bootstrapping the cluster metadata. The endpoints are specified in comma-separated list of {host}:{port} entries.
 /// For example: localhost:9092,localhost:9093,localhost:9094.
 pub const KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS: &str = "controller.quorum.bootstrap.servers";
-
-/// Map of id/endpoint information for the set of voters in a comma-separated list of {id}@{host}:{port} entries.
-/// For example: 1@localhost:9092,2@localhost:9093,3@localhost:9094
-pub const KAFKA_CONTROLLER_QUORUM_VOTERS: &str = "controller.quorum.voters";
 
 #[derive(Snafu, Debug)]
 pub enum Error {

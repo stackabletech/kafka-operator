@@ -16,8 +16,9 @@ spec:
     productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
 {% endif %}
     pullPolicy: IfNotPresent
-{% if lookup('env', 'VECTOR_AGGREGATOR') %}
   clusterConfig:
+    metadataManager: kraft
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
   brokers:
