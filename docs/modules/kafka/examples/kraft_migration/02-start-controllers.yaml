@@ -19,7 +19,7 @@ spec:
     brokerIdPodConfigMapName: broker-ids
   brokers:
     envOverrides:
-      KAFKA_CLUSTER_ID: "aC1zl524Svm_uIjcvUGWSw"
+      KAFKA_CLUSTER_ID: "MyCya7hbTD-Hay8PgCsCYA"
     roleGroups:
       default:
         replicas: 3
@@ -28,7 +28,7 @@ spec:
       default:
         replicas: 3
     envOverrides:
-      KAFKA_CLUSTER_ID: "aC1zl524Svm_uIjcvUGWSw"
+      KAFKA_CLUSTER_ID: "MyCya7hbTD-Hay8PgCsCYA"
     configOverrides:
       controller.properties:
         zookeeper.metadata.migration.enable: "true" # Enable migration mode so the controller can read metadata from ZooKeeper.

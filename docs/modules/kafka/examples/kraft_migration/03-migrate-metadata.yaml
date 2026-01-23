@@ -19,7 +19,7 @@ spec:
     brokerIdPodConfigMapName: broker-ids
   brokers:
     envOverrides:
-      KAFKA_CLUSTER_ID: "aC1zl524Svm_uIjcvUGWSw"
+      KAFKA_CLUSTER_ID: "MyCya7hbTD-Hay8PgCsCYA"
     roleGroups:
       default:
         replicas: 3
@@ -28,13 +28,13 @@ spec:
         inter.broker.protocol.version: "3.9" # - Latest value known to Kafka 3.9.1
         zookeeper.metadata.migration.enable: "true" # - Enable migration mode so the broker can participate in metadata migration.
         controller.listener.names: "CONTROLLER"
-        controller.quorum.voters: "2110489703@simple-kafka-controller-default-0.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093,2110489704@simple-kafka-controller-default-1.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093,2110489705@simple-kafka-controller-default-2.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093"
+        controller.quorum.bootstrap.servers: "simple-kafka-controller-default-0.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093,simple-kafka-controller-default-1.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093,simple-kafka-controller-default-2.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093"
   controllers:
     roleGroups:
       default:
         replicas: 3
     envOverrides:
-      KAFKA_CLUSTER_ID: "aC1zl524Svm_uIjcvUGWSw"
+      KAFKA_CLUSTER_ID: "MyCya7hbTD-Hay8PgCsCYA"
     configOverrides:
       controller.properties:
         zookeeper.metadata.migration.enable: "true" # Enable migration mode so the controller can read metadata from ZooKeeper.
