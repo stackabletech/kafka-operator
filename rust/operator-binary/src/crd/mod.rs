@@ -254,7 +254,7 @@ impl v1alpha1::KafkaCluster {
         match &self.spec.cluster_config.metadata_manager {
             Some(manager) => match manager.clone() {
                 MetadataManager::ZooKeeper => {
-                    if self.spec.image.product_version().starts_with("4\\.") {
+                    if !self.spec.image.product_version().starts_with("3.") {
                         Err(Error::Kafka4RequiresKraftMetadataManager)
                     } else {
                         Ok(MetadataManager::ZooKeeper)
@@ -263,10 +263,10 @@ impl v1alpha1::KafkaCluster {
                 _ => Ok(MetadataManager::KRaft),
             },
             None => {
-                if self.spec.image.product_version().starts_with("4\\.") {
-                    Ok(MetadataManager::KRaft)
-                } else {
+                if self.spec.image.product_version().starts_with("3.") {
                     Ok(MetadataManager::ZooKeeper)
+                } else {
+                    Ok(MetadataManager::KRaft)
                 }
             }
         }
@@ -508,6 +508,8 @@ pub enum MetadataManager {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     fn get_server_secret_class(kafka: &v1alpha1::KafkaCluster) -> Option<String> {
@@ -685,5 +687,67 @@ mod tests {
             get_internal_secret_class(&kafka),
             tls::internal_tls_default()
         );
+    }
+
+    #[rstest]
+    #[case("3.9.1", None, Ok(MetadataManager::ZooKeeper))]
+    #[case(
+        "3.9.1",
+        Some(MetadataManager::ZooKeeper),
+        Ok(MetadataManager::ZooKeeper)
+    )]
+    #[case("3.9.1", Some(MetadataManager::KRaft), Ok(MetadataManager::KRaft))]
+    #[case("4.1.1", None, Ok(MetadataManager::KRaft))]
+    #[case(
+        "4.1.1",
+        Some(MetadataManager::ZooKeeper),
+        Err(Error::Kafka4RequiresKraftMetadataManager)
+    )]
+    #[case("4.1.1", Some(MetadataManager::KRaft), Ok(MetadataManager::KRaft))]
+    fn test_effective_metadata_manager(
+        #[case] product_version: &str,
+        #[case] metadata_manager: Option<MetadataManager>,
+        #[case] expected: Result<MetadataManager, Error>,
+    ) {
+        let input = format!(
+            r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+            name: kafka
+        spec:
+            image:
+                productVersion: {product_version}
+            controllers:
+                roleGroups:
+                default:
+                    replicas: 1
+            brokers:
+                roleGroups:
+                default:
+                    replicas: 1
+        "#
+        );
+        let mut kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(&input).expect("illegal test input");
+
+        if metadata_manager.is_some() {
+            kafka.spec.cluster_config.metadata_manager = metadata_manager;
+        }
+
+        match kafka.effective_metadata_manager() {
+            Ok(manager) => match expected {
+                Ok(expected_manager) => assert_eq!(manager, expected_manager),
+                Err(_) => {
+                    panic!("expected error but got metadata manager : {}", manager)
+                }
+            },
+            Err(err) => match expected {
+                Ok(_) => panic!("expected Ok but got error: {}", err),
+                Err(expected_err) => {
+                    assert_eq!(format!("{}", err), format!("{}", expected_err))
+                }
+            },
+        };
     }
 }
