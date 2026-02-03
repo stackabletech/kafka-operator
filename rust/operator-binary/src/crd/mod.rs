@@ -263,7 +263,7 @@ impl v1alpha1::KafkaCluster {
                 _ => Ok(MetadataManager::KRaft),
             },
             None => {
-                if self.spec.image.product_version().starts_with("4\\.") {
+                if self.spec.image.product_version().starts_with("4.") {
                     Ok(MetadataManager::KRaft)
                 } else {
                     Ok(MetadataManager::ZooKeeper)
@@ -684,6 +684,33 @@ mod tests {
         assert_eq!(
             get_internal_secret_class(&kafka),
             tls::internal_tls_default()
+        );
+    }
+
+    #[test]
+    fn test_effective_metadata_manager() {
+        let input = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+            name: kafka
+        spec:
+            image:
+                productVersion: 4.1.1
+            controllers:
+                roleGroups:
+                default:
+                    replicas: 1
+            brokers:
+                roleGroups:
+                default:
+                    replicas: 1
+        "#;
+        let kafka: v1alpha1::KafkaCluster =
+            serde_yaml::from_str(input).expect("illegal test input");
+        assert_eq!(
+            kafka.effective_metadata_manager().unwrap(),
+            MetadataManager::KRaft
         );
     }
 }
