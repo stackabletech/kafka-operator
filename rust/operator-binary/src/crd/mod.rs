@@ -697,14 +697,14 @@ mod tests {
         Ok(MetadataManager::ZooKeeper)
     )]
     #[case("3.9.1", Some(MetadataManager::KRaft), Ok(MetadataManager::KRaft))]
-    #[case("4,1,1", None, Ok(MetadataManager::KRaft))]
+    #[case("4.1.1", None, Ok(MetadataManager::KRaft))]
     #[case(
-        "4,1,1",
+        "4.1.1",
         Some(MetadataManager::ZooKeeper),
         Err(Error::Kafka4RequiresKraftMetadataManager)
     )]
     #[case("4.1.1", Some(MetadataManager::KRaft), Ok(MetadataManager::KRaft))]
-    fn test_effective_metadata_manager_kraft(
+    fn test_effective_metadata_manager(
         #[case] product_version: &str,
         #[case] metadata_manager: Option<MetadataManager>,
         #[case] expected: Result<MetadataManager, Error>,
