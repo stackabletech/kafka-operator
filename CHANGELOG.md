@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Refactor: move server configuration properties from the command line to configuration files. ([#911]).
-- Add support for ZooKeeper to KRaft migration ([#923]).
+- Add support for ZooKeeper to KRaft migration ([#923]), ([#933]).
 - Bump testing-tools to `0.3.0-stackable0.0.0-dev` ([#925]).
 
 ### Removed
@@ -34,6 +34,7 @@ All notable changes to this project will be documented in this file.
 [#929]: https://github.com/stackabletech/kafka-operator/pull/929
 [#930]: https://github.com/stackabletech/kafka-operator/pull/930
 [#932]: https://github.com/stackabletech/kafka-operator/pull/932
+[#933]: https://github.com/stackabletech/kafka-operator/pull/933
 
 ## [25.11.0] - 2025-11-07
 
