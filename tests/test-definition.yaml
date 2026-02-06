@@ -28,7 +28,7 @@ dimensions:
       - 3.9.4
   - name: opa-latest
     values:
-      - 1.8.0
+      - 1.12.3
   - name: upgrade_old
     values:
       - 3.9.1
