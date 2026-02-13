@@ -4,8 +4,9 @@
 
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use clap::Parser;
-use futures::{FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, TryFutureExt};
 use stackable_operator::{
     YamlSchema,
     cli::{Command, RunArguments},
@@ -36,6 +37,7 @@ use stackable_operator::{
 use crate::{
     crd::{KafkaCluster, KafkaClusterVersion, OPERATOR_NAME, v1alpha1},
     kafka_controller::KAFKA_FULL_CONTROLLER_NAME,
+    webhooks::conversion::create_webhook_server,
 };
 
 mod config;
@@ -47,6 +49,7 @@ mod operations;
 mod product_logging;
 mod resource;
 mod utils;
+mod webhooks;
 
 mod built_info {
     // The file has been placed there by the build script.
@@ -75,9 +78,9 @@ async fn main() -> anyhow::Result<()> {
         Command::Run(KafkaRun {
             common:
                 RunArguments {
-                    product_config,
+                    operator_environment,
                     watch_namespace,
-                    operator_environment: _,
+                    product_config,
                     maintenance,
                     common,
                 },
@@ -109,13 +112,25 @@ async fn main() -> anyhow::Result<()> {
                     .run(sigterm_watcher.handle())
                     .map(anyhow::Ok);
 
+            let client =
+                client::initialize_operator(Some(OPERATOR_NAME.to_string()), &common.cluster_info)
+                    .await?;
+
+            let webhook_server = create_webhook_server(
+                &operator_environment,
+                maintenance.disable_crd_maintenance,
+                client.as_kube_client(),
+            )
+            .await?;
+
+            let webhook_server = webhook_server
+                .run(sigterm_watcher.handle())
+                .map_err(|err| anyhow!(err).context("failed to run webhook server"));
+
             let product_config = product_config.load(&[
                 "deploy/config-spec/properties.yaml",
                 "/etc/stackable/kafka-operator/config-spec/properties.yaml",
             ])?;
-            let client =
-                client::initialize_operator(Some(OPERATOR_NAME.to_string()), &common.cluster_info)
-                    .await?;
 
             let event_recorder = Arc::new(Recorder::new(
                 client.as_kube_client(),
@@ -194,7 +209,7 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .map(anyhow::Ok);
 
-            futures::try_join!(kafka_controller, eos_checker)?;
+            futures::try_join!(kafka_controller, eos_checker, webhook_server)?;
         }
     };
 

@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add conversion webhook ([#937]).
 - Support objectOverrides using `.spec.objectOverrides`.
   See [objectOverrides concepts page](https://docs.stackable.tech/home/nightly/concepts/overrides/#object-overrides) for details ([#927]).
 - Added support for OPA/TLS ([#928]).
@@ -37,6 +38,7 @@ All notable changes to this project will be documented in this file.
 [#932]: https://github.com/stackabletech/kafka-operator/pull/932
 [#933]: https://github.com/stackabletech/kafka-operator/pull/933
 [#934]: https://github.com/stackabletech/kafka-operator/pull/934
+[#937]: https://github.com/stackabletech/kafka-operator/pull/937
 
 ## [25.11.0] - 2025-11-07
 
