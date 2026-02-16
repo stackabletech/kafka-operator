@@ -38,6 +38,7 @@ use crate::{
 pub const DOCKER_IMAGE_BASE_NAME: &str = "kafka";
 pub const APP_NAME: &str = "kafka";
 pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
+pub const FIELD_MANAGER: &str = "kafka-operator";
 // metrics
 pub const METRICS_PORT_NAME: &str = "metrics";
 pub const METRICS_PORT: u16 = 9606;
