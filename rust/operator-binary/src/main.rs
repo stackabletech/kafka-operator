@@ -19,7 +19,7 @@ use stackable_operator::{
         rbac::v1::RoleBinding,
     },
     kube::{
-        ResourceExt,
+        CustomResourceExt, ResourceExt,
         core::DeserializeGuard,
         runtime::{
             Controller,
@@ -31,7 +31,7 @@ use stackable_operator::{
     logging::controller::report_controller_reconciled,
     shared::yaml::SerializeOptions,
     telemetry::Tracing,
-    utils::signal::SignalWatcher,
+    utils::signal::{self, SignalWatcher},
 };
 
 use crate::{
@@ -209,7 +209,12 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .map(anyhow::Ok);
 
-            futures::try_join!(kafka_controller, eos_checker, webhook_server)?;
+            let delayed_kafka_controller = async {
+                signal::crd_established(&client, v1alpha1::KafkaCluster::crd_name(), None).await?;
+                kafka_controller.await
+            };
+
+            futures::try_join!(delayed_kafka_controller, eos_checker, webhook_server)?;
         }
     };
 
