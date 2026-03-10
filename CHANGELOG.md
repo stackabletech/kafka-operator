@@ -15,11 +15,15 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Bump stackable-operator to 0.106.2 and strum to 0.28 ([#943]).
+- Bump stackable-operator to 0.108.0 and strum to 0.28 ([#943], [#945]).
 - Gracefully shutdown all concurrent tasks by forwarding the SIGTERM signal ([#934]).
 - Refactor: move server configuration properties from the command line to configuration files. ([#911]).
 - Add support for ZooKeeper to KRaft migration ([#923]), ([#933]).
 - Bump testing-tools to `0.3.0-stackable0.0.0-dev` ([#925]).
+
+### Fixed
+
+- Fix "404 page not found" error for the initial object list ([#945]).
 
 ### Removed
 
@@ -41,6 +45,7 @@ All notable changes to this project will be documented in this file.
 [#934]: https://github.com/stackabletech/kafka-operator/pull/934
 [#937]: https://github.com/stackabletech/kafka-operator/pull/937
 [#943]: https://github.com/stackabletech/kafka-operator/pull/943
+[#945]: https://github.com/stackabletech/kafka-operator/pull/945
 
 ## [25.11.0] - 2025-11-07
 
