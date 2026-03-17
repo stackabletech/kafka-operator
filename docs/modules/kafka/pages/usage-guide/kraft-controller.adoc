@@ -28,6 +28,8 @@ kind: KafkaCluster
 metadata:
   name: kafka
 spec:
+  clusterConfig:
+    metadataManager: kraft
   image:
     productVersion: "3.9.1"
   brokers:
