@@ -6,14 +6,6 @@ metadata:
   labels:
   {{- include "operator.labels" . | nindent 4 }}
 rules:
-  # For automatic cluster domain detection (list nodes to infer the cluster DNS domain)
-  - apiGroups:
-      - ""
-    resources:
-      - nodes
-    verbs:
-      - list
-      - watch
   # For automatic cluster domain detection (probe node proxy to read DNS config)
   - apiGroups:
       - ""
