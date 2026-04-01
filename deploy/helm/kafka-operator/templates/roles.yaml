@@ -153,18 +153,6 @@ metadata:
   labels:
   {{- include "operator.labels" . | nindent 4 }}
 rules:
-  # The Kafka broker and KRaft controller pods need to read their own ConfigMaps,
-  # Secrets, ServiceAccounts, and Services at runtime (e.g. via the Stackable secret
-  # operator or init containers that inspect cluster configuration).
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-      - secrets
-      - serviceaccounts
-      - services
-    verbs:
-      - get
   # Kafka pods may emit Kubernetes events (e.g. via the Stackable commons init container)
   - apiGroups:
       - events.k8s.io
