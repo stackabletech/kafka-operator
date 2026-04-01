@@ -73,6 +73,7 @@ rules:
       - get
       - list
       - patch
+  # Maintain the CRD to support conversion webhook certificate updates and track startup conditions.
   - apiGroups:
       - apiextensions.k8s.io
     resources:
