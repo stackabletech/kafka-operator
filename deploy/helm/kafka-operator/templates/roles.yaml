@@ -6,7 +6,7 @@ metadata:
   labels:
   {{- include "operator.labels" . | nindent 4 }}
 rules:
-  # For automatic cluster domain detection (probe node proxy to read DNS config)
+  # For automatic cluster domain detection
   - apiGroups:
       - ""
     resources:
@@ -14,13 +14,7 @@ rules:
     verbs:
       - get
   # Manage core namespaced resources created per KafkaCluster.
-  # All resources are applied via Server-Side Apply (create + patch) and tracked for
-  # orphan cleanup (list + delete). The ReconciliationPaused strategy calls get instead
-  # of apply_patch, so get is also needed. All three are watched by the controller via
-  # .owns(), so watch is required.
-  # - configmaps: per-rolegroup configuration, and the discovery ConfigMap
-  # - services: per-rolegroup headless and metrics services
-  # - serviceaccounts: one per KafkaCluster, created by build_rbac_resources()
+  # Applied via SSA and tracked for orphan cleanup.
   - apiGroups:
       - ""
     resources:
@@ -34,8 +28,8 @@ rules:
       - list
       - patch
       - watch
-  # RoleBindings bind the product ClusterRole to the per-cluster ServiceAccount.
-  # Applied via SSA, tracked for orphan cleanup, and watched via .owns().
+  # RoleBinding created per KafkaCluster to bind the product ClusterRole to the workload
+  # ServiceAccount. Applied via SSA and tracked for orphan cleanup.
   - apiGroups:
       - rbac.authorization.k8s.io
     resources:
@@ -47,8 +41,8 @@ rules:
       - list
       - patch
       - watch
-  # StatefulSets run the broker and (KRaft) controller role groups.
-  # Applied via SSA, tracked for orphan cleanup, and watched via .owns().
+  # StatefulSet created per role group (broker, KRaft controller). Applied via
+  # SSA, tracked for orphan cleanup, and owned by the controller.
   - apiGroups:
       - apps
     resources:
@@ -60,9 +54,7 @@ rules:
       - list
       - patch
       - watch
-  # PodDisruptionBudgets protect broker and controller role groups during voluntary disruptions.
-  # Applied via SSA and tracked for orphan cleanup. PDBs are not watched by the controller
-  # (no .owns() / .watches()), so watch is not needed.
+  # PodDisruptionBudget created per role group. Applied via SSA and tracked for orphan cleanup.
   - apiGroups:
       - policy
     resources:
@@ -73,7 +65,8 @@ rules:
       - get
       - list
       - patch
-  # Maintain the CRD to support conversion webhook certificate updates and track startup conditions.
+  # Required for maintaining the CRDs within the operator (including the conversion webhook info).
+  # Also for the startup condition check before the controller can run.
   - apiGroups:
       - apiextensions.k8s.io
     resources:
@@ -88,7 +81,7 @@ rules:
       # Required for startup condition
       - list
       - watch
-  # Record Kubernetes events for reconciliation outcomes
+  # Required to report reconciliation results and warnings back to the KafkaCluster object.
   - apiGroups:
       - events.k8s.io
     resources:
@@ -96,7 +89,7 @@ rules:
     verbs:
       - create
       - patch
-  # Watch and reconcile KafkaCluster resources (the primary resource for this controller)
+  # Primary CRD: watched by the controller and read during reconciliation.
   - apiGroups:
       - {{ include "operator.name" . }}.stackable.tech
     resources:
@@ -105,24 +98,21 @@ rules:
       - get
       - list
       - watch
-  # Write status conditions back to the KafkaCluster object
+  # Status subresource: updated at the end of every reconciliation.
   - apiGroups:
       - {{ include "operator.name" . }}.stackable.tech
     resources:
       - {{ include "operator.name" . }}clusters/status
     verbs:
       - patch
-  # Read AuthenticationClasses to resolve TLS and Kerberos authentication configuration.
-  # Only get is needed: the operator resolves classes via a direct client.get() call
-  # during reconciliation; there is no controller watch on AuthenticationClass.
+  # Read authentication class configuration referenced in the KafkaCluster spec.
   - apiGroups:
       - authentication.stackable.tech
     resources:
       - authenticationclasses
     verbs:
       - get
-  # Manage Listener resources for broker bootstrap and per-rolegroup exposure.
-  # Applied via SSA, tracked for orphan cleanup, and watched via .owns().
+  # Listener created per role group. Applied via SSA and tracked for orphan cleanup.
   - apiGroups:
       - listeners.stackable.tech
     resources:
@@ -134,9 +124,7 @@ rules:
       - list
       - patch
       - watch
-  # Bind the product ClusterRole to per-cluster ServiceAccounts (via RoleBindings above).
-  # The operator creates RoleBindings that reference this ClusterRole, so it must have
-  # permission to bind it.
+  # Required to bind the product ClusterRole to the per-cluster ServiceAccount.
   - apiGroups:
       - rbac.authorization.k8s.io
     resources:
@@ -146,6 +134,8 @@ rules:
     resourceNames:
       - {{ include "operator.name" . }}-clusterrole
 ---
+# Product ClusterRole: bound (via per KafkaCluster RoleBinding) to the ServiceAccount that Kafka
+# workload pods (brokers, KRaft controllers) run as.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -153,7 +143,7 @@ metadata:
   labels:
   {{- include "operator.labels" . | nindent 4 }}
 rules:
-  # Kafka pods may emit Kubernetes events (e.g. via the Stackable commons init container)
+  # Allows Kafka pods to emit Kubernetes events.
   - apiGroups:
       - events.k8s.io
     resources:
