@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Helm deployed RBAC permissions documented, with unnecessary permissions removed ([#953]).
+- Document Helm deployed RBAC permissions and remove unnecessary permissions ([#953]).
 
 [#953]: https://github.com/stackabletech/kafka-operator/pull/953
 
