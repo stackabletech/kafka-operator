@@ -1,14 +1,17 @@
 use snafu::{ResultExt, Snafu};
-use stackable_operator::builder::{
-    self,
-    pod::{
-        PodBuilder,
-        container::ContainerBuilder,
-        volume::{
-            SecretOperatorVolumeSourceBuilder, SecretOperatorVolumeSourceBuilderError,
-            VolumeBuilder,
+use stackable_operator::{
+    builder::{
+        self,
+        pod::{
+            PodBuilder,
+            container::ContainerBuilder,
+            volume::{
+                SecretOperatorVolumeSourceBuilder, SecretOperatorVolumeSourceBuilderError,
+                VolumeBuilder,
+            },
         },
     },
+    commons::secret_class::SecretClassVolumeProvisionParts,
 };
 
 use crate::crd::{
@@ -41,13 +44,15 @@ pub fn add_kerberos_pod_config(
 ) -> Result<(), Error> {
     if let Some(kerberos_secret_class) = kafka_security.kerberos_secret_class() {
         // Mount keytab
-        let kerberos_secret_operator_volume =
-            SecretOperatorVolumeSourceBuilder::new(kerberos_secret_class)
-                .with_listener_volume_scope(LISTENER_BROKER_VOLUME_NAME)
-                .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
-                .with_kerberos_service_name(role.kerberos_service_name())
-                .build()
-                .context(KerberosSecretVolumeSnafu)?;
+        let kerberos_secret_operator_volume = SecretOperatorVolumeSourceBuilder::new(
+            kerberos_secret_class,
+            SecretClassVolumeProvisionParts::PublicPrivate,
+        )
+        .with_listener_volume_scope(LISTENER_BROKER_VOLUME_NAME)
+        .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
+        .with_kerberos_service_name(role.kerberos_service_name())
+        .build()
+        .context(KerberosSecretVolumeSnafu)?;
         pb.add_volume(
             VolumeBuilder::new("kerberos")
                 .ephemeral(kerberos_secret_operator_volume)

@@ -588,7 +588,7 @@ fn validated_product_config(
     }
 
     let role_config =
-        transform_all_roles_to_config(kafka, roles).context(GenerateProductConfigSnafu)?;
+        transform_all_roles_to_config(kafka, &roles).context(GenerateProductConfigSnafu)?;
 
     validate_all_roles_and_groups_config(
         product_version,

@@ -74,7 +74,7 @@ pub fn build_discovery_configmap(
                 .with_context(|_| ObjectMissingMetadataForOwnerRefSnafu {
                     kafka: ObjectRef::from_obj(kafka),
                 })?
-                .with_recommended_labels(build_recommended_labels(
+                .with_recommended_labels(&build_recommended_labels(
                     kafka,
                     KAFKA_CONTROLLER_NAME,
                     &resolved_product_image.product_version,
