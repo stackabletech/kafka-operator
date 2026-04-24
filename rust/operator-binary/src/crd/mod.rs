@@ -60,8 +60,10 @@ pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
 pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
-pub type BrokerRole = Role<BrokerConfigFragment, KafkaConfigOverrides, GenericRoleConfig, JavaCommonConfig>;
-pub type ControllerRole = Role<ControllerConfigFragment, KafkaConfigOverrides, GenericRoleConfig, JavaCommonConfig>;
+pub type BrokerRole =
+    Role<BrokerConfigFragment, KafkaConfigOverrides, GenericRoleConfig, JavaCommonConfig>;
+pub type ControllerRole =
+    Role<ControllerConfigFragment, KafkaConfigOverrides, GenericRoleConfig, JavaCommonConfig>;
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -361,17 +363,13 @@ impl v1alpha1::KafkaCluster {
         }
     }
 
-    pub fn broker_role(
-        &self,
-    ) -> Result<&BrokerRole, Error> {
+    pub fn broker_role(&self) -> Result<&BrokerRole, Error> {
         self.spec.brokers.as_ref().context(MissingRoleSnafu {
             role: KafkaRole::Broker.to_string(),
         })
     }
 
-    pub fn controller_role(
-        &self,
-    ) -> Result<&ControllerRole, Error> {
+    pub fn controller_role(&self) -> Result<&ControllerRole, Error> {
         self.spec.controllers.as_ref().context(MissingRoleSnafu {
             role: KafkaRole::Controller.to_string(),
         })

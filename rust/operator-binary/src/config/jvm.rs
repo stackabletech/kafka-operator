@@ -108,11 +108,7 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{
-        BrokerRole,
-        role::KafkaRole,
-        v1alpha1,
-    };
+    use crate::crd::{BrokerRole, role::KafkaRole, v1alpha1};
 
     #[test]
     fn test_construct_jvm_arguments_defaults() {
@@ -194,13 +190,7 @@ mod tests {
         assert_eq!(heap_jvm_args, "-Xms34406m -Xmx40000m");
     }
 
-    fn construct_boilerplate(
-        kafka_cluster: &str,
-    ) -> (
-        AnyConfig,
-        BrokerRole,
-        String,
-    ) {
+    fn construct_boilerplate(kafka_cluster: &str) -> (AnyConfig, BrokerRole, String) {
         let kafka: v1alpha1::KafkaCluster =
             serde_yaml::from_str(kafka_cluster).expect("illegal test input");
 
