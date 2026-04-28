@@ -549,16 +549,6 @@ spec:
                           used by `HashMap<String, String>`.
                         nullable: true
                         type: object
-                      controller.properties:
-                        additionalProperties:
-                          type: string
-                        description: |-
-                          Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                          This is backwards-compatible with the existing flat key-value YAML format
-                          used by `HashMap<String, String>`.
-                        nullable: true
-                        type: object
                       security.properties:
                         additionalProperties:
                           type: string
@@ -1167,16 +1157,6 @@ spec:
                             available config files and settings for the specific product.
                           properties:
                             broker.properties:
-                              additionalProperties:
-                                type: string
-                              description: |-
-                                Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                                This is backwards-compatible with the existing flat key-value YAML format
-                                used by `HashMap<String, String>`.
-                              nullable: true
-                              type: object
-                            controller.properties:
                               additionalProperties:
                                 type: string
                               description: |-
@@ -1804,16 +1784,6 @@ spec:
                       and consult the operator specific usage guide documentation for details on the
                       available config files and settings for the specific product.
                     properties:
-                      broker.properties:
-                        additionalProperties:
-                          type: string
-                        description: |-
-                          Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                          This is backwards-compatible with the existing flat key-value YAML format
-                          used by `HashMap<String, String>`.
-                        nullable: true
-                        type: object
                       controller.properties:
                         additionalProperties:
                           type: string
@@ -2263,16 +2233,6 @@ spec:
                             and consult the operator specific usage guide documentation for details on the
                             available config files and settings for the specific product.
                           properties:
-                            broker.properties:
-                              additionalProperties:
-                                type: string
-                              description: |-
-                                Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                                This is backwards-compatible with the existing flat key-value YAML format
-                                used by `HashMap<String, String>`.
-                              nullable: true
-                              type: object
                             controller.properties:
                               additionalProperties:
                                 type: string

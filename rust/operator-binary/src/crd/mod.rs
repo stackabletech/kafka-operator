@@ -60,50 +60,6 @@ pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
 pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 
-pub type BrokerRole =
-    Role<BrokerConfigFragment, KafkaConfigOverrides, GenericRoleConfig, JavaCommonConfig>;
-pub type ControllerRole =
-    Role<ControllerConfigFragment, KafkaConfigOverrides, GenericRoleConfig, JavaCommonConfig>;
-
-#[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct KafkaConfigOverrides {
-    #[serde(
-        default,
-        rename = "broker.properties",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub broker_properties: Option<KeyValueConfigOverrides>,
-
-    #[serde(
-        default,
-        rename = "controller.properties",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub controller_properties: Option<KeyValueConfigOverrides>,
-
-    #[serde(
-        default,
-        rename = "security.properties",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub security_properties: Option<KeyValueConfigOverrides>,
-}
-
-impl KeyValueOverridesProvider for KafkaConfigOverrides {
-    fn get_key_value_overrides(&self, file: &str) -> BTreeMap<String, Option<String>> {
-        let field = match file {
-            role::broker::BROKER_PROPERTIES_FILE => self.broker_properties.as_ref(),
-            role::controller::CONTROLLER_PROPERTIES_FILE => self.controller_properties.as_ref(),
-            JVM_SECURITY_PROPERTIES_FILE => self.security_properties.as_ref(),
-            _ => None,
-        };
-        field
-            .map(KeyValueConfigOverrides::as_product_config_overrides)
-            .unwrap_or_default()
-    }
-}
-
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display(
@@ -137,6 +93,20 @@ pub enum Error {
         colliding_rolegroup: String,
     },
 }
+
+pub type BrokerRole = Role<
+    BrokerConfigFragment,
+    v1alpha1::KafkaBrokerConfigOverrides,
+    GenericRoleConfig,
+    JavaCommonConfig,
+>;
+
+pub type ControllerRole = Role<
+    ControllerConfigFragment,
+    v1alpha1::KafkaControllerConfigOverrides,
+    GenericRoleConfig,
+    JavaCommonConfig,
+>;
 
 #[versioned(
     version(name = "v1alpha1"),
@@ -269,6 +239,42 @@ pub mod versioned {
         #[serde(skip_serializing_if = "Option::is_none")]
         pub broker_id_pod_config_map_name: Option<String>,
     }
+
+    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaBrokerConfigOverrides {
+        #[serde(
+            default,
+            rename = "broker.properties",
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub broker_properties: Option<KeyValueConfigOverrides>,
+
+        #[serde(
+            default,
+            rename = "security.properties",
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub security_properties: Option<KeyValueConfigOverrides>,
+    }
+
+    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaControllerConfigOverrides {
+        #[serde(
+            default,
+            rename = "controller.properties",
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub controller_properties: Option<KeyValueConfigOverrides>,
+
+        #[serde(
+            default,
+            rename = "security.properties",
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub security_properties: Option<KeyValueConfigOverrides>,
+    }
 }
 
 impl Default for v1alpha1::KafkaClusterConfig {
@@ -282,6 +288,32 @@ impl Default for v1alpha1::KafkaClusterConfig {
             metadata_manager: None,
             broker_id_pod_config_map_name: None,
         }
+    }
+}
+
+impl KeyValueOverridesProvider for v1alpha1::KafkaBrokerConfigOverrides {
+    fn get_key_value_overrides(&self, file: &str) -> BTreeMap<String, Option<String>> {
+        let field = match file {
+            role::broker::BROKER_PROPERTIES_FILE => self.broker_properties.as_ref(),
+            JVM_SECURITY_PROPERTIES_FILE => self.security_properties.as_ref(),
+            _ => None,
+        };
+        field
+            .map(KeyValueConfigOverrides::as_product_config_overrides)
+            .unwrap_or_default()
+    }
+}
+
+impl KeyValueOverridesProvider for v1alpha1::KafkaControllerConfigOverrides {
+    fn get_key_value_overrides(&self, file: &str) -> BTreeMap<String, Option<String>> {
+        let field = match file {
+            role::controller::CONTROLLER_PROPERTIES_FILE => self.controller_properties.as_ref(),
+            JVM_SECURITY_PROPERTIES_FILE => self.security_properties.as_ref(),
+            _ => None,
+        };
+        field
+            .map(KeyValueConfigOverrides::as_product_config_overrides)
+            .unwrap_or_default()
     }
 }
 

@@ -22,13 +22,10 @@ use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
-    crd::{
-        KafkaConfigOverrides,
-        role::{
-            broker::{BROKER_PROPERTIES_FILE, BrokerConfig, BrokerConfigFragment},
-            commons::{CommonConfig, Storage},
-            controller::{CONTROLLER_PROPERTIES_FILE, ControllerConfig},
-        },
+    crd::role::{
+        broker::{BROKER_PROPERTIES_FILE, BrokerConfig, BrokerConfigFragment},
+        commons::{CommonConfig, Storage},
+        controller::{CONTROLLER_PROPERTIES_FILE, ControllerConfig},
     },
     v1alpha1,
 };
@@ -229,16 +226,17 @@ impl KafkaRole {
         rolegroup: &str,
     ) -> Result<String, Error> {
         match self {
-            Self::Broker => {
-                construct_non_heap_jvm_args::<BrokerConfigFragment, KafkaConfigOverrides>(
-                    merged_config,
-                    kafka.broker_role().with_context(|_| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?,
-                    rolegroup,
-                )
-                .context(ConstructJvmArgumentsSnafu)
-            }
+            Self::Broker => construct_non_heap_jvm_args::<
+                BrokerConfigFragment,
+                v1alpha1::KafkaBrokerConfigOverrides,
+            >(
+                merged_config,
+                kafka.broker_role().with_context(|_| MissingRoleSnafu {
+                    role: self.to_string(),
+                })?,
+                rolegroup,
+            )
+            .context(ConstructJvmArgumentsSnafu),
             Self::Controller => construct_non_heap_jvm_args(
                 merged_config,
                 kafka.controller_role().with_context(|_| MissingRoleSnafu {
@@ -257,7 +255,10 @@ impl KafkaRole {
         rolegroup: &str,
     ) -> Result<String, Error> {
         match self {
-            Self::Broker => construct_heap_jvm_args::<BrokerConfigFragment, KafkaConfigOverrides>(
+            Self::Broker => construct_heap_jvm_args::<
+                BrokerConfigFragment,
+                v1alpha1::KafkaBrokerConfigOverrides,
+            >(
                 merged_config,
                 kafka.broker_role().with_context(|_| MissingRoleSnafu {
                     role: self.to_string(),
