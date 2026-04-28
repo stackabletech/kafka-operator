@@ -23,7 +23,7 @@ use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::role::{
-        broker::{BROKER_PROPERTIES_FILE, BrokerConfig, BrokerConfigFragment},
+        broker::{BROKER_PROPERTIES_FILE, BrokerConfig},
         commons::{CommonConfig, Storage},
         controller::{CONTROLLER_PROPERTIES_FILE, ControllerConfig},
     },
@@ -226,10 +226,7 @@ impl KafkaRole {
         rolegroup: &str,
     ) -> Result<String, Error> {
         match self {
-            Self::Broker => construct_non_heap_jvm_args::<
-                BrokerConfigFragment,
-                v1alpha1::KafkaBrokerConfigOverrides,
-            >(
+            Self::Broker => construct_non_heap_jvm_args(
                 merged_config,
                 kafka.broker_role().with_context(|_| MissingRoleSnafu {
                     role: self.to_string(),
@@ -255,10 +252,7 @@ impl KafkaRole {
         rolegroup: &str,
     ) -> Result<String, Error> {
         match self {
-            Self::Broker => construct_heap_jvm_args::<
-                BrokerConfigFragment,
-                v1alpha1::KafkaBrokerConfigOverrides,
-            >(
+            Self::Broker => construct_heap_jvm_args(
                 merged_config,
                 kafka.broker_role().with_context(|_| MissingRoleSnafu {
                     role: self.to_string(),

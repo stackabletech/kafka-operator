@@ -527,6 +527,7 @@ impl KafkaTlsSecurity {
                         .ephemeral(
                             SecretOperatorVolumeSourceBuilder::new(
                                 secret_class,
+                                // Only the truststore is required to connect to OPA.
                                 SecretClassVolumeProvisionParts::Public,
                             )
                             .build()
@@ -555,6 +556,8 @@ impl KafkaTlsSecurity {
                         .ephemeral(
                             SecretOperatorVolumeSourceBuilder::new(
                                 tls_internal_secret_class,
+                                // Kafka needs both the public certificate and the private key for
+                                // the internal communication.
                                 SecretClassVolumeProvisionParts::PublicPrivate,
                             )
                             .with_pod_scope()
@@ -854,6 +857,8 @@ impl KafkaTlsSecurity {
             .ephemeral(
                 SecretOperatorVolumeSourceBuilder::new(
                     secret_class_name,
+                    // Both the public certificate and the private key are required for the kcat
+                    // client authentication.
                     SecretClassVolumeProvisionParts::PublicPrivate,
                 )
                 .with_pod_scope()
@@ -875,6 +880,7 @@ impl KafkaTlsSecurity {
             .ephemeral(
                 SecretOperatorVolumeSourceBuilder::new(
                     secret_class_name,
+                    // Both the keystore and truststore are required for keystore volume.
                     SecretClassVolumeProvisionParts::PublicPrivate,
                 )
                 .with_pod_scope()

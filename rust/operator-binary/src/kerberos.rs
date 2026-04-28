@@ -46,6 +46,7 @@ pub fn add_kerberos_pod_config(
         // Mount keytab
         let kerberos_secret_operator_volume = SecretOperatorVolumeSourceBuilder::new(
             kerberos_secret_class,
+            // We need both public (krb5.conf) and private (keytab) parts.
             SecretClassVolumeProvisionParts::PublicPrivate,
         )
         .with_listener_volume_scope(LISTENER_BROKER_VOLUME_NAME)
