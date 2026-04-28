@@ -88,14 +88,14 @@ where
 
 /// Arguments that go into `KAFKA_HEAP_OPTS`.
 /// You can get the normal JVM arguments using [`construct_non_heap_jvm_args`].
-pub fn construct_heap_jvm_args<
-    ConfigFragment,
-    ConfigOverrides: Default + JsonSchema + Serialize,
->(
+pub fn construct_heap_jvm_args<ConfigFragment, ConfigOverrides>(
     merged_config: &AnyConfig,
     role: &Role<ConfigFragment, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
-) -> Result<String, Error> {
+) -> Result<String, Error>
+where
+    ConfigOverrides: Default + JsonSchema + Serialize,
+{
     let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
     jvm_args.retain(|arg| is_heap_jvm_argument(arg));
 
