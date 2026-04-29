@@ -62,7 +62,7 @@ impl KafkaAuthorization {
                 .data
                 .and_then(|mut data| data.remove("OPA_SECRET_CLASS"));
             let opa_connect = opa
-                .full_document_url_from_config_map(client, kafka, Some("allow"), OpaApiVersion::V1)
+                .full_document_url_from_config_map(client, kafka, Some("allow"), &OpaApiVersion::V1)
                 .await
                 .context(InvalidOpaConfigSnafu)?;
             Some(KafkaAuthorizationConfig {

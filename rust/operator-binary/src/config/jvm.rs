@@ -1,7 +1,9 @@
+use serde::Serialize;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     memory::{BinaryMultiple, MemoryQuantity},
     role_utils::{self, GenericRoleConfig, JavaCommonConfig, JvmArgumentOverrides, Role},
+    schemars::JsonSchema,
 };
 
 use crate::crd::{
@@ -25,11 +27,14 @@ pub enum Error {
 }
 
 /// All JVM arguments.
-fn construct_jvm_args<ConfigFragment>(
+fn construct_jvm_args<ConfigFragment, ConfigOverrides>(
     merged_config: &AnyConfig,
-    role: &Role<ConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+    role: &Role<ConfigFragment, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
-) -> Result<Vec<String>, Error> {
+) -> Result<Vec<String>, Error>
+where
+    ConfigOverrides: Default + JsonSchema + Serialize,
+{
     let heap_size = MemoryQuantity::try_from(
         merged_config
             .resources()
@@ -67,11 +72,14 @@ fn construct_jvm_args<ConfigFragment>(
 
 /// Arguments that go into `EXTRA_ARGS`, so *not* the heap settings (which you can get using
 /// [`construct_heap_jvm_args`]).
-pub fn construct_non_heap_jvm_args<ConfigFragment>(
+pub fn construct_non_heap_jvm_args<ConfigFragment, ConfigOverrides>(
     merged_config: &AnyConfig,
-    role: &Role<ConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+    role: &Role<ConfigFragment, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
-) -> Result<String, Error> {
+) -> Result<String, Error>
+where
+    ConfigOverrides: Default + JsonSchema + Serialize,
+{
     let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
     jvm_args.retain(|arg| !is_heap_jvm_argument(arg));
 
@@ -80,11 +88,14 @@ pub fn construct_non_heap_jvm_args<ConfigFragment>(
 
 /// Arguments that go into `KAFKA_HEAP_OPTS`.
 /// You can get the normal JVM arguments using [`construct_non_heap_jvm_args`].
-pub fn construct_heap_jvm_args<ConfigFragment>(
+pub fn construct_heap_jvm_args<ConfigFragment, ConfigOverrides>(
     merged_config: &AnyConfig,
-    role: &Role<ConfigFragment, GenericRoleConfig, JavaCommonConfig>,
+    role: &Role<ConfigFragment, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
     role_group: &str,
-) -> Result<String, Error> {
+) -> Result<String, Error>
+where
+    ConfigOverrides: Default + JsonSchema + Serialize,
+{
     let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
     jvm_args.retain(|arg| is_heap_jvm_argument(arg));
 
@@ -100,10 +111,7 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{
-        role::{KafkaRole, broker::BrokerConfigFragment},
-        v1alpha1,
-    };
+    use crate::crd::{BrokerRole, role::KafkaRole, v1alpha1};
 
     #[test]
     fn test_construct_jvm_arguments_defaults() {
@@ -185,13 +193,7 @@ mod tests {
         assert_eq!(heap_jvm_args, "-Xms34406m -Xmx40000m");
     }
 
-    fn construct_boilerplate(
-        kafka_cluster: &str,
-    ) -> (
-        AnyConfig,
-        Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>,
-        String,
-    ) {
+    fn construct_boilerplate(kafka_cluster: &str) -> (AnyConfig, BrokerRole, String) {
         let kafka: v1alpha1::KafkaCluster =
             serde_yaml::from_str(kafka_cluster).expect("illegal test input");
 

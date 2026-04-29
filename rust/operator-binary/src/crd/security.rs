@@ -17,6 +17,7 @@ use stackable_operator::{
         },
     },
     client::Client,
+    commons::secret_class::SecretClassVolumeProvisionParts,
     crd::authentication::core,
     k8s_openapi::api::core::v1::Volume,
     shared::time::Duration,
@@ -524,9 +525,13 @@ impl KafkaTlsSecurity {
                 .add_volume(
                     VolumeBuilder::new(Self::OPA_TLS_VOLUME_NAME)
                         .ephemeral(
-                            SecretOperatorVolumeSourceBuilder::new(secret_class)
-                                .build()
-                                .context(OpaTlsCertSecretClassVolumeBuildSnafu)?,
+                            SecretOperatorVolumeSourceBuilder::new(
+                                secret_class,
+                                // Only the truststore is required to connect to OPA.
+                                SecretClassVolumeProvisionParts::Public,
+                            )
+                            .build()
+                            .context(OpaTlsCertSecretClassVolumeBuildSnafu)?,
                         )
                         .build(),
                 )
@@ -549,12 +554,17 @@ impl KafkaTlsSecurity {
                 .add_volume(
                     VolumeBuilder::new(Self::STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME)
                         .ephemeral(
-                            SecretOperatorVolumeSourceBuilder::new(tls_internal_secret_class)
-                                .with_pod_scope()
-                                .with_format(SecretFormat::TlsPkcs12)
-                                .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
-                                .build()
-                                .context(SecretVolumeBuildSnafu)?,
+                            SecretOperatorVolumeSourceBuilder::new(
+                                tls_internal_secret_class,
+                                // Kafka needs both the public certificate and the private key for
+                                // the internal communication.
+                                SecretClassVolumeProvisionParts::PublicPrivate,
+                            )
+                            .with_pod_scope()
+                            .with_format(SecretFormat::TlsPkcs12)
+                            .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+                            .build()
+                            .context(SecretVolumeBuildSnafu)?,
                         )
                         .build(),
                 )
@@ -845,12 +855,17 @@ impl KafkaTlsSecurity {
     ) -> Result<Volume, Error> {
         Ok(VolumeBuilder::new(volume_name)
             .ephemeral(
-                SecretOperatorVolumeSourceBuilder::new(secret_class_name)
-                    .with_pod_scope()
-                    .with_format(SecretFormat::TlsPem)
-                    .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
-                    .build()
-                    .context(SecretVolumeBuildSnafu)?,
+                SecretOperatorVolumeSourceBuilder::new(
+                    secret_class_name,
+                    // Both the public certificate and the private key are required for the kcat
+                    // client authentication.
+                    SecretClassVolumeProvisionParts::PublicPrivate,
+                )
+                .with_pod_scope()
+                .with_format(SecretFormat::TlsPem)
+                .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+                .build()
+                .context(SecretVolumeBuildSnafu)?,
             )
             .build())
     }
@@ -863,14 +878,18 @@ impl KafkaTlsSecurity {
     ) -> Result<Volume, Error> {
         Ok(VolumeBuilder::new(volume_name)
             .ephemeral(
-                SecretOperatorVolumeSourceBuilder::new(secret_class_name)
-                    .with_pod_scope()
-                    .with_listener_volume_scope(LISTENER_BROKER_VOLUME_NAME)
-                    .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
-                    .with_format(SecretFormat::TlsPkcs12)
-                    .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
-                    .build()
-                    .context(SecretVolumeBuildSnafu)?,
+                SecretOperatorVolumeSourceBuilder::new(
+                    secret_class_name,
+                    // Both the keystore and truststore are required for keystore volume.
+                    SecretClassVolumeProvisionParts::PublicPrivate,
+                )
+                .with_pod_scope()
+                .with_listener_volume_scope(LISTENER_BROKER_VOLUME_NAME)
+                .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
+                .with_format(SecretFormat::TlsPkcs12)
+                .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+                .build()
+                .context(SecretVolumeBuildSnafu)?,
             )
             .build())
     }

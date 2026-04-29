@@ -546,9 +546,9 @@ fn validated_product_config(
     product_version: &str,
     product_config: &ProductConfigManager,
 ) -> Result<ValidatedRoleConfigByPropertyKind, Error> {
-    let mut roles = HashMap::new();
+    let mut role_config = HashMap::new();
 
-    roles.insert(
+    let broker_role = [(
         KafkaRole::Broker.to_string(),
         (
             vec![
@@ -564,11 +564,17 @@ fn validated_product_config(
                 })?
                 .erase(),
         ),
-    );
+    )]
+    .into();
+
+    let broker_role_config =
+        transform_all_roles_to_config(kafka, &broker_role).context(GenerateProductConfigSnafu)?;
+
+    role_config.extend(broker_role_config);
 
     // TODO: need this if because controller_role() raises an error
     if kafka.spec.controllers.is_some() {
-        roles.insert(
+        let controller_role = [(
             KafkaRole::Controller.to_string(),
             (
                 vec![
@@ -584,11 +590,14 @@ fn validated_product_config(
                     })?
                     .erase(),
             ),
-        );
-    }
+        )]
+        .into();
 
-    let role_config =
-        transform_all_roles_to_config(kafka, roles).context(GenerateProductConfigSnafu)?;
+        let controller_role_config = transform_all_roles_to_config(kafka, &controller_role)
+            .context(GenerateProductConfigSnafu)?;
+
+        role_config.extend(controller_role_config);
+    }
 
     validate_all_roles_and_groups_config(
         product_version,

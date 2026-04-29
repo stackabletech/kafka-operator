@@ -16,6 +16,7 @@ use stackable_operator::{
         cluster_operation::ClusterOperation, networking::DomainName,
         product_image_selection::ProductImage,
     },
+    config_overrides::{KeyValueConfigOverrides, KeyValueOverridesProvider},
     deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
     role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroupRef},
@@ -93,6 +94,20 @@ pub enum Error {
     },
 }
 
+pub type BrokerRole = Role<
+    BrokerConfigFragment,
+    v1alpha1::KafkaBrokerConfigOverrides,
+    GenericRoleConfig,
+    JavaCommonConfig,
+>;
+
+pub type ControllerRole = Role<
+    ControllerConfigFragment,
+    v1alpha1::KafkaControllerConfigOverrides,
+    GenericRoleConfig,
+    JavaCommonConfig,
+>;
+
 #[versioned(
     version(name = "v1alpha1"),
     crates(
@@ -121,11 +136,10 @@ pub mod versioned {
         pub image: ProductImage,
 
         // no doc - docs in Role struct.
-        pub brokers: Option<Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
+        pub brokers: Option<BrokerRole>,
 
         // no doc - docs in Role struct.
-        pub controllers:
-            Option<Role<ControllerConfigFragment, GenericRoleConfig, JavaCommonConfig>>,
+        pub controllers: Option<ControllerRole>,
 
         /// Kafka settings that affect all roles and role groups.
         ///
@@ -225,6 +239,42 @@ pub mod versioned {
         #[serde(skip_serializing_if = "Option::is_none")]
         pub broker_id_pod_config_map_name: Option<String>,
     }
+
+    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaBrokerConfigOverrides {
+        #[serde(
+            default,
+            rename = "broker.properties",
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub broker_properties: Option<KeyValueConfigOverrides>,
+
+        #[serde(
+            default,
+            rename = "security.properties",
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub security_properties: Option<KeyValueConfigOverrides>,
+    }
+
+    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaControllerConfigOverrides {
+        #[serde(
+            default,
+            rename = "controller.properties",
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub controller_properties: Option<KeyValueConfigOverrides>,
+
+        #[serde(
+            default,
+            rename = "security.properties",
+            skip_serializing_if = "Option::is_none"
+        )]
+        pub security_properties: Option<KeyValueConfigOverrides>,
+    }
 }
 
 impl Default for v1alpha1::KafkaClusterConfig {
@@ -238,6 +288,32 @@ impl Default for v1alpha1::KafkaClusterConfig {
             metadata_manager: None,
             broker_id_pod_config_map_name: None,
         }
+    }
+}
+
+impl KeyValueOverridesProvider for v1alpha1::KafkaBrokerConfigOverrides {
+    fn get_key_value_overrides(&self, file: &str) -> BTreeMap<String, Option<String>> {
+        let field = match file {
+            role::broker::BROKER_PROPERTIES_FILE => self.broker_properties.as_ref(),
+            JVM_SECURITY_PROPERTIES_FILE => self.security_properties.as_ref(),
+            _ => None,
+        };
+        field
+            .map(KeyValueConfigOverrides::as_product_config_overrides)
+            .unwrap_or_default()
+    }
+}
+
+impl KeyValueOverridesProvider for v1alpha1::KafkaControllerConfigOverrides {
+    fn get_key_value_overrides(&self, file: &str) -> BTreeMap<String, Option<String>> {
+        let field = match file {
+            role::controller::CONTROLLER_PROPERTIES_FILE => self.controller_properties.as_ref(),
+            JVM_SECURITY_PROPERTIES_FILE => self.security_properties.as_ref(),
+            _ => None,
+        };
+        field
+            .map(KeyValueConfigOverrides::as_product_config_overrides)
+            .unwrap_or_default()
     }
 }
 
@@ -319,17 +395,13 @@ impl v1alpha1::KafkaCluster {
         }
     }
 
-    pub fn broker_role(
-        &self,
-    ) -> Result<&Role<BrokerConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
+    pub fn broker_role(&self) -> Result<&BrokerRole, Error> {
         self.spec.brokers.as_ref().context(MissingRoleSnafu {
             role: KafkaRole::Broker.to_string(),
         })
     }
 
-    pub fn controller_role(
-        &self,
-    ) -> Result<&Role<ControllerConfigFragment, GenericRoleConfig, JavaCommonConfig>, Error> {
+    pub fn controller_role(&self) -> Result<&ControllerRole, Error> {
         self.spec.controllers.as_ref().context(MissingRoleSnafu {
             role: KafkaRole::Controller.to_string(),
         })
