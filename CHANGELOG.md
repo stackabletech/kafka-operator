@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- BREAKING: Add required CLI argument and env var to set the image repository used to construct final product image names: `IMAGE_REPOSITORY` (`--image-repository`), eg. `oci.example.org/my/namespace` ([#961]).
+
 ### Changed
 
 - Document Helm deployed RBAC permissions and remove unnecessary permissions ([#953]).
@@ -15,6 +19,7 @@ All notable changes to this project will be documented in this file.
 
 [#953]: https://github.com/stackabletech/kafka-operator/pull/953
 [#960]: https://github.com/stackabletech/kafka-operator/pull/960
+[#961]: https://github.com/stackabletech/kafka-operator/pull/961
 
 ## [26.3.0] - 2026-03-16
 
