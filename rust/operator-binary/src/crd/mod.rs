@@ -36,7 +36,7 @@ use crate::{
     },
 };
 
-pub const DOCKER_IMAGE_BASE_NAME: &str = "kafka";
+pub const CONTAINER_IMAGE_BASE_NAME: &str = "kafka";
 pub const APP_NAME: &str = "kafka";
 pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
 pub const FIELD_MANAGER: &str = "kafka-operator";
@@ -582,6 +582,7 @@ pub enum MetadataManager {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use stackable_operator::versioned::test_utils::RoundtripTestData;
 
     use super::*;
 
@@ -822,5 +823,11 @@ mod tests {
                 }
             },
         };
+    }
+
+    impl RoundtripTestData for v1alpha1::KafkaClusterSpec {
+        fn roundtrip_test_data() -> Vec<Self> {
+            vec![]
+        }
     }
 }
