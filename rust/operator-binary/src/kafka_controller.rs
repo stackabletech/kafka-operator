@@ -6,6 +6,7 @@ use const_format::concatcp;
 use product_config::{ProductConfigManager, types::PropertyNameKind};
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
+    cli::OperatorEnvironmentOptions,
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::{
         product_image_selection::{self},
@@ -34,8 +35,8 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     crd::{
-        self, APP_NAME, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KafkaClusterStatus,
-        OPERATOR_NAME, authorization,
+        self, APP_NAME, CONTAINER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE,
+        KafkaClusterStatus, OPERATOR_NAME, authorization,
         listener::get_kafka_listener_config,
         role::{
             AnyConfig, KafkaRole, broker::BROKER_PROPERTIES_FILE,
@@ -60,6 +61,7 @@ pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
     pub product_config: ProductConfigManager,
+    pub operator_environment: OperatorEnvironmentOptions,
 }
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
@@ -271,7 +273,11 @@ pub async fn reconcile_kafka(
     let resolved_product_image = kafka
         .spec
         .image
-        .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION)
+        .resolve(
+            CONTAINER_IMAGE_BASE_NAME,
+            &ctx.operator_environment.image_repository,
+            crate::built_info::PKG_VERSION,
+        )
         .context(ResolveProductImageSnafu)?;
 
     let mut cluster_resources = ClusterResources::new(

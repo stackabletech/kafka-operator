@@ -36,7 +36,7 @@ use crate::{
     },
 };
 
-pub const DOCKER_IMAGE_BASE_NAME: &str = "kafka";
+pub const CONTAINER_IMAGE_BASE_NAME: &str = "kafka";
 pub const APP_NAME: &str = "kafka";
 pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
 pub const FIELD_MANAGER: &str = "kafka-operator";
@@ -582,6 +582,7 @@ pub enum MetadataManager {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use stackable_operator::versioned::test_utils::RoundtripTestData;
 
     use super::*;
 
@@ -822,5 +823,86 @@ mod tests {
                 }
             },
         };
+    }
+
+    impl RoundtripTestData for v1alpha1::KafkaClusterSpec {
+        fn roundtrip_test_data() -> Vec<Self> {
+            stackable_operator::utils::yaml_from_str_singleton_map(indoc::indoc! {r#"
+              - image:
+                  productVersion: 1.2.3
+                  pullPolicy: IfNotPresent
+                clusterOperation:
+                  reconciliationPaused: false
+                  stopped: true
+                clusterConfig:
+                  metadataManager: kraft
+                  authentication:
+                    - authenticationClass: my-kerberos
+                  authorization:
+                    opa:
+                      configMapName: opa
+                      package: kafka
+                  tls:
+                    internalSecretClass: null
+                    serverSecretClass: tls
+                  vectorAggregatorConfigMapName: vector-aggregator-discovery
+                controllers:
+                  envOverrides:
+                    COMMON_VAR: role-value
+                    ROLE_VAR: role-value
+                  config:
+                    logging:
+                      enableVectorAgent: true
+                    requestedSecretLifetime: 7d
+                    gracefulShutdownTimeout: 30s
+                  configOverrides:
+                    controller.properties:
+                      log.cleaner.threads: "5"
+                  podOverrides:
+                    spec:
+                      containers:
+                        - name: vector
+                          volumeMounts:
+                            - name: prepared-logs
+                              mountPath: /stackable/log/prepared-logs
+                      volumes:
+                        - name: prepared-logs
+                          configMap:
+                            name: prepared-logs
+                  roleGroups:
+                    default:
+                      replicas: 1
+                      configOverrides:
+                        controller.properties:
+                          log.cleaner.threads: "10"
+                      envOverrides:
+                        COMMON_VAR: group-value
+                        GROUP_VAR: group-value
+                brokers:
+                  configOverrides:
+                    broker.properties:
+                      compression.type: uncompressed
+                  envOverrides:
+                    COMMON_VAR: role-value
+                    ROLE_VAR: role-value
+                  config:
+                    logging:
+                      enableVectorAgent: true
+                    requestedSecretLifetime: 7d
+                    gracefulShutdownTimeout: 30s
+                    bootstrapListenerClass: cluster-internal
+                    brokerListenerClass: cluster-internal
+                  roleGroups:
+                    default:
+                      replicas: 1
+                      configOverrides:
+                        broker.properties:
+                          compression.type: snappy
+                      envOverrides:
+                        COMMON_VAR: group-value
+                        GROUP_VAR: group-value
+        "#})
+            .expect("Failed to parse KafkaClusterSpec YAML")
+        }
     }
 }

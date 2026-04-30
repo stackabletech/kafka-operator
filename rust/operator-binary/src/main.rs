@@ -187,6 +187,7 @@ async fn main() -> anyhow::Result<()> {
                     kafka_controller::error_policy,
                     Arc::new(kafka_controller::Ctx {
                         client: client.clone(),
+                        operator_environment,
                         product_config,
                     }),
                 )
