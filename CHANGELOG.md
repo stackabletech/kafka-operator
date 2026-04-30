@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
   `security.properties` for brokers and `controller.properties` and `security.properties` for
   controllers).
   Previously, arbitrary file names were silently accepted and ignored ([#960]).
-- Bump `stackable-operator` to 0.110.1 and snafu to 0.9 ([#960]).
+- Bump `stackable-operator` to 0.111.1 and snafu to 0.9 ([#960], [#961]).
 
 [#953]: https://github.com/stackabletech/kafka-operator/pull/953
 [#960]: https://github.com/stackabletech/kafka-operator/pull/960
