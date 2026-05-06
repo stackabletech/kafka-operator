@@ -4,11 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- BREAKING: Add required CLI argument and env var to set the image repository used to construct final product image names: `IMAGE_REPOSITORY` (`--image-repository`), eg. `oci.example.org/my/namespace` ([#961]).
+
 ### Changed
 
 - Document Helm deployed RBAC permissions and remove unnecessary permissions ([#953]).
+- BREAKING: `configOverrides` now only accepts the known config files (`broker.properties` and
+  `security.properties` for brokers and `controller.properties` and `security.properties` for
+  controllers).
+  Previously, arbitrary file names were silently accepted and ignored ([#960]).
+- Bump `stackable-operator` to 0.111.1 and snafu to 0.9 ([#960], [#961]).
 
 [#953]: https://github.com/stackabletech/kafka-operator/pull/953
+[#960]: https://github.com/stackabletech/kafka-operator/pull/960
+[#961]: https://github.com/stackabletech/kafka-operator/pull/961
 
 ## [26.3.0] - 2026-03-16
 

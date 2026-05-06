@@ -127,7 +127,7 @@ spec:
                                         type: string
                                     type: object
                                   custom:
-                                    description: Custom log configuration provided in a ConfigMap
+                                    description: Log configuration provided in a ConfigMap
                                     properties:
                                       configMap:
                                         description: ConfigMap containing the log configuration files
@@ -207,7 +207,7 @@ spec:
                                         type: string
                                     type: object
                                   custom:
-                                    description: Custom log configuration provided in a ConfigMap
+                                    description: Log configuration provided in a ConfigMap
                                     properties:
                                       configMap:
                                         description: ConfigMap containing the log configuration files
@@ -287,7 +287,7 @@ spec:
                                         type: string
                                     type: object
                                   custom:
-                                    description: Custom log configuration provided in a ConfigMap
+                                    description: Log configuration provided in a ConfigMap
                                     properties:
                                       configMap:
                                         description: ConfigMap containing the log configuration files
@@ -367,7 +367,7 @@ spec:
                                         type: string
                                     type: object
                                   custom:
-                                    description: Custom log configuration provided in a ConfigMap
+                                    description: Log configuration provided in a ConfigMap
                                     properties:
                                       configMap:
                                         description: ConfigMap containing the log configuration files
@@ -420,7 +420,7 @@ spec:
                                 type: object
                             type: object
                           enableVectorAgent:
-                            description: Wether or not to deploy a container with the Vector log agent.
+                            description: Whether or not to deploy a container with the Vector log agent.
                             nullable: true
                             type: boolean
                         type: object
@@ -532,17 +532,33 @@ spec:
                         type: object
                     type: object
                   configOverrides:
-                    additionalProperties:
-                      additionalProperties:
-                        type: string
-                      type: object
-                    default: {}
                     description: |-
                       The `configOverrides` can be used to configure properties in product config files
                       that are not exposed in the CRD. Read the
                       [config overrides documentation](https://docs.stackable.tech/home/nightly/concepts/overrides#config-overrides)
                       and consult the operator specific usage guide documentation for details on the
                       available config files and settings for the specific product.
+                    properties:
+                      broker.properties:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Flat key-value overrides for `*.properties`, Hadoop XML, etc.
+
+                          This is backwards-compatible with the existing flat key-value YAML format
+                          used by `HashMap<String, String>`.
+                        nullable: true
+                        type: object
+                      security.properties:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Flat key-value overrides for `*.properties`, Hadoop XML, etc.
+
+                          This is backwards-compatible with the existing flat key-value YAML format
+                          used by `HashMap<String, String>`.
+                        nullable: true
+                        type: object
                     type: object
                   envOverrides:
                     additionalProperties:
@@ -728,7 +744,7 @@ spec:
                                               type: string
                                           type: object
                                         custom:
-                                          description: Custom log configuration provided in a ConfigMap
+                                          description: Log configuration provided in a ConfigMap
                                           properties:
                                             configMap:
                                               description: ConfigMap containing the log configuration files
@@ -808,7 +824,7 @@ spec:
                                               type: string
                                           type: object
                                         custom:
-                                          description: Custom log configuration provided in a ConfigMap
+                                          description: Log configuration provided in a ConfigMap
                                           properties:
                                             configMap:
                                               description: ConfigMap containing the log configuration files
@@ -888,7 +904,7 @@ spec:
                                               type: string
                                           type: object
                                         custom:
-                                          description: Custom log configuration provided in a ConfigMap
+                                          description: Log configuration provided in a ConfigMap
                                           properties:
                                             configMap:
                                               description: ConfigMap containing the log configuration files
@@ -968,7 +984,7 @@ spec:
                                               type: string
                                           type: object
                                         custom:
-                                          description: Custom log configuration provided in a ConfigMap
+                                          description: Log configuration provided in a ConfigMap
                                           properties:
                                             configMap:
                                               description: ConfigMap containing the log configuration files
@@ -1021,7 +1037,7 @@ spec:
                                       type: object
                                   type: object
                                 enableVectorAgent:
-                                  description: Wether or not to deploy a container with the Vector log agent.
+                                  description: Whether or not to deploy a container with the Vector log agent.
                                   nullable: true
                                   type: boolean
                               type: object
@@ -1133,17 +1149,33 @@ spec:
                               type: object
                           type: object
                         configOverrides:
-                          additionalProperties:
-                            additionalProperties:
-                              type: string
-                            type: object
-                          default: {}
                           description: |-
                             The `configOverrides` can be used to configure properties in product config files
                             that are not exposed in the CRD. Read the
                             [config overrides documentation](https://docs.stackable.tech/home/nightly/concepts/overrides#config-overrides)
                             and consult the operator specific usage guide documentation for details on the
                             available config files and settings for the specific product.
+                          properties:
+                            broker.properties:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                Flat key-value overrides for `*.properties`, Hadoop XML, etc.
+
+                                This is backwards-compatible with the existing flat key-value YAML format
+                                used by `HashMap<String, String>`.
+                              nullable: true
+                              type: object
+                            security.properties:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                Flat key-value overrides for `*.properties`, Hadoop XML, etc.
+
+                                This is backwards-compatible with the existing flat key-value YAML format
+                                used by `HashMap<String, String>`.
+                              nullable: true
+                              type: object
                           type: object
                         envOverrides:
                           additionalProperties:
@@ -1500,7 +1532,7 @@ spec:
                                         type: string
                                     type: object
                                   custom:
-                                    description: Custom log configuration provided in a ConfigMap
+                                    description: Log configuration provided in a ConfigMap
                                     properties:
                                       configMap:
                                         description: ConfigMap containing the log configuration files
@@ -1580,7 +1612,7 @@ spec:
                                         type: string
                                     type: object
                                   custom:
-                                    description: Custom log configuration provided in a ConfigMap
+                                    description: Log configuration provided in a ConfigMap
                                     properties:
                                       configMap:
                                         description: ConfigMap containing the log configuration files
@@ -1633,7 +1665,7 @@ spec:
                                 type: object
                             type: object
                           enableVectorAgent:
-                            description: Wether or not to deploy a container with the Vector log agent.
+                            description: Whether or not to deploy a container with the Vector log agent.
                             nullable: true
                             type: boolean
                         type: object
@@ -1745,17 +1777,33 @@ spec:
                         type: object
                     type: object
                   configOverrides:
-                    additionalProperties:
-                      additionalProperties:
-                        type: string
-                      type: object
-                    default: {}
                     description: |-
                       The `configOverrides` can be used to configure properties in product config files
                       that are not exposed in the CRD. Read the
                       [config overrides documentation](https://docs.stackable.tech/home/nightly/concepts/overrides#config-overrides)
                       and consult the operator specific usage guide documentation for details on the
                       available config files and settings for the specific product.
+                    properties:
+                      controller.properties:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Flat key-value overrides for `*.properties`, Hadoop XML, etc.
+
+                          This is backwards-compatible with the existing flat key-value YAML format
+                          used by `HashMap<String, String>`.
+                        nullable: true
+                        type: object
+                      security.properties:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Flat key-value overrides for `*.properties`, Hadoop XML, etc.
+
+                          This is backwards-compatible with the existing flat key-value YAML format
+                          used by `HashMap<String, String>`.
+                        nullable: true
+                        type: object
                     type: object
                   envOverrides:
                     additionalProperties:
@@ -1933,7 +1981,7 @@ spec:
                                               type: string
                                           type: object
                                         custom:
-                                          description: Custom log configuration provided in a ConfigMap
+                                          description: Log configuration provided in a ConfigMap
                                           properties:
                                             configMap:
                                               description: ConfigMap containing the log configuration files
@@ -2013,7 +2061,7 @@ spec:
                                               type: string
                                           type: object
                                         custom:
-                                          description: Custom log configuration provided in a ConfigMap
+                                          description: Log configuration provided in a ConfigMap
                                           properties:
                                             configMap:
                                               description: ConfigMap containing the log configuration files
@@ -2066,7 +2114,7 @@ spec:
                                       type: object
                                   type: object
                                 enableVectorAgent:
-                                  description: Wether or not to deploy a container with the Vector log agent.
+                                  description: Whether or not to deploy a container with the Vector log agent.
                                   nullable: true
                                   type: boolean
                               type: object
@@ -2178,17 +2226,33 @@ spec:
                               type: object
                           type: object
                         configOverrides:
-                          additionalProperties:
-                            additionalProperties:
-                              type: string
-                            type: object
-                          default: {}
                           description: |-
                             The `configOverrides` can be used to configure properties in product config files
                             that are not exposed in the CRD. Read the
                             [config overrides documentation](https://docs.stackable.tech/home/nightly/concepts/overrides#config-overrides)
                             and consult the operator specific usage guide documentation for details on the
                             available config files and settings for the specific product.
+                          properties:
+                            controller.properties:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                Flat key-value overrides for `*.properties`, Hadoop XML, etc.
+
+                                This is backwards-compatible with the existing flat key-value YAML format
+                                used by `HashMap<String, String>`.
+                              nullable: true
+                              type: object
+                            security.properties:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                Flat key-value overrides for `*.properties`, Hadoop XML, etc.
+
+                                This is backwards-compatible with the existing flat key-value YAML format
+                                used by `HashMap<String, String>`.
+                              nullable: true
+                              type: object
                           type: object
                         envOverrides:
                           additionalProperties:
@@ -2270,8 +2334,9 @@ spec:
                 properties:
                   custom:
                     description: |-
-                      Overwrite the docker image.
-                      Specify the full docker image name, e.g. `oci.stackable.tech/sdp/superset:1.4.1-stackable2.1.0`
+                      Provide a custom container image.
+
+                      Specify the full container image name, e.g. `oci.example.tech/namespace/superset:1.4.1-my-tag`
                     type: string
                   productVersion:
                     description: Version of the product, e.g. `1.4.1`.
@@ -2298,14 +2363,20 @@ spec:
                     nullable: true
                     type: array
                   repo:
-                    description: Name of the docker repo, e.g. `oci.stackable.tech/sdp`
+                    description: |-
+                      The repository on the container image registry where the container image is located, e.g.
+                      `oci.example.com/namespace`.
+
+                      If not specified, the operator will use the image registry provided via the operator
+                      environment options.
                     nullable: true
                     type: string
                   stackableVersion:
                     description: |-
                       Stackable version of the product, e.g. `23.4`, `23.4.1` or `0.0.0-dev`.
-                      If not specified, the operator will use its own version, e.g. `23.4.1`.
-                      When using a nightly operator or a pr version, it will use the nightly `0.0.0-dev` image.
+
+                      If not specified, the operator will use its own version, e.g. `23.4.1`. When using a nightly
+                      operator or a PR version, it will use the nightly `0.0.0-dev` image.
                     nullable: true
                     type: string
                 type: object

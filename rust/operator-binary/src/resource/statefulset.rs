@@ -185,9 +185,9 @@ pub fn build_broker_rolegroup_statefulset(
         &rolegroup_ref.role_group,
     );
     let recommended_labels =
-        Labels::recommended(recommended_object_labels.clone()).context(LabelBuildSnafu)?;
+        Labels::recommended(&recommended_object_labels).context(LabelBuildSnafu)?;
     // Used for PVC templates that cannot be modified once they are deployed
-    let unversioned_recommended_labels = Labels::recommended(build_recommended_labels(
+    let unversioned_recommended_labels = Labels::recommended(&build_recommended_labels(
         kafka,
         KAFKA_CONTROLLER_NAME,
         // A version value is required, and we do want to use the "recommended" format for the other desired labels
@@ -429,7 +429,7 @@ pub fn build_broker_rolegroup_statefulset(
     }
 
     let metadata = ObjectMetaBuilder::new()
-        .with_recommended_labels(recommended_object_labels)
+        .with_recommended_labels(&recommended_object_labels)
         .context(MetadataBuildSnafu)?
         .build();
 
@@ -536,7 +536,7 @@ pub fn build_broker_rolegroup_statefulset(
             .name(rolegroup_ref.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(build_recommended_labels(
+            .with_recommended_labels(&build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
                 &resolved_product_image.app_version_label_value,
@@ -771,7 +771,7 @@ pub fn build_controller_rolegroup_statefulset(
     }
 
     let metadata = ObjectMetaBuilder::new()
-        .with_recommended_labels(recommended_object_labels)
+        .with_recommended_labels(&recommended_object_labels)
         .context(MetadataBuildSnafu)?
         .build();
 
@@ -863,7 +863,7 @@ pub fn build_controller_rolegroup_statefulset(
             .name(rolegroup_ref.object_name())
             .ownerreference_from_resource(kafka, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(build_recommended_labels(
+            .with_recommended_labels(&build_recommended_labels(
                 kafka,
                 KAFKA_CONTROLLER_NAME,
                 &resolved_product_image.app_version_label_value,

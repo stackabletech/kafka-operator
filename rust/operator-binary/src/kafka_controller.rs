@@ -6,6 +6,7 @@ use const_format::concatcp;
 use product_config::{ProductConfigManager, types::PropertyNameKind};
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
+    cli::OperatorEnvironmentOptions,
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::{
         product_image_selection::{self},
@@ -34,8 +35,8 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     crd::{
-        self, APP_NAME, DOCKER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE, KafkaClusterStatus,
-        OPERATOR_NAME, authorization,
+        self, APP_NAME, CONTAINER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE,
+        KafkaClusterStatus, OPERATOR_NAME, authorization,
         listener::get_kafka_listener_config,
         role::{
             AnyConfig, KafkaRole, broker::BROKER_PROPERTIES_FILE,
@@ -60,6 +61,7 @@ pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
     pub product_config: ProductConfigManager,
+    pub operator_environment: OperatorEnvironmentOptions,
 }
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
@@ -271,7 +273,11 @@ pub async fn reconcile_kafka(
     let resolved_product_image = kafka
         .spec
         .image
-        .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION)
+        .resolve(
+            CONTAINER_IMAGE_BASE_NAME,
+            &ctx.operator_environment.image_repository,
+            crate::built_info::PKG_VERSION,
+        )
         .context(ResolveProductImageSnafu)?;
 
     let mut cluster_resources = ClusterResources::new(
@@ -546,9 +552,9 @@ fn validated_product_config(
     product_version: &str,
     product_config: &ProductConfigManager,
 ) -> Result<ValidatedRoleConfigByPropertyKind, Error> {
-    let mut roles = HashMap::new();
+    let mut role_config = HashMap::new();
 
-    roles.insert(
+    let broker_role = [(
         KafkaRole::Broker.to_string(),
         (
             vec![
@@ -564,11 +570,17 @@ fn validated_product_config(
                 })?
                 .erase(),
         ),
-    );
+    )]
+    .into();
+
+    let broker_role_config =
+        transform_all_roles_to_config(kafka, &broker_role).context(GenerateProductConfigSnafu)?;
+
+    role_config.extend(broker_role_config);
 
     // TODO: need this if because controller_role() raises an error
     if kafka.spec.controllers.is_some() {
-        roles.insert(
+        let controller_role = [(
             KafkaRole::Controller.to_string(),
             (
                 vec![
@@ -584,11 +596,14 @@ fn validated_product_config(
                     })?
                     .erase(),
             ),
-        );
-    }
+        )]
+        .into();
 
-    let role_config =
-        transform_all_roles_to_config(kafka, roles).context(GenerateProductConfigSnafu)?;
+        let controller_role_config = transform_all_roles_to_config(kafka, &controller_role)
+            .context(GenerateProductConfigSnafu)?;
+
+        role_config.extend(controller_role_config);
+    }
 
     validate_all_roles_and_groups_config(
         product_version,

@@ -1,7 +1,6 @@
 # Default values for kafka-operator.
 ---
 image:
-  repository: oci.stackable.tech/sdp/kafka-operator
   pullPolicy: IfNotPresent
   pullSecrets: []
 
