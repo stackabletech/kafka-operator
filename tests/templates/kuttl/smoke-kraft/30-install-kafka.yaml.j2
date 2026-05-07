@@ -80,6 +80,7 @@ spec:
       COMMON_VAR: role-value # overridden by role group below
       ROLE_VAR: role-value   # only defined here at role level
     config:
+      gracefulShutdownTimeout: 60s
       logging:
         enableVectorAgent: true
       requestedSecretLifetime: 7d
@@ -135,6 +136,7 @@ spec:
       COMMON_VAR: role-value # overridden by role group below
       ROLE_VAR: role-value   # only defined here at role level
     config:
+      gracefulShutdownTimeout: 60s
       logging:
         enableVectorAgent: true
       requestedSecretLifetime: 7d
