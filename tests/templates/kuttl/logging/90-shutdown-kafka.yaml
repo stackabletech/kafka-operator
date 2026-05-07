@@ -1,0 +1,11 @@
+---
+# Scale Kafka down before kuttl deletes the namespace.
+# Without this, ZooKeeper and Kafka are terminated simultaneously,
+# and Kafka hangs on controlled-shutdown ZooKeeper timeouts.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      kubectl patch kafkacluster test-kafka -n $NAMESPACE --type merge -p '{"spec":{"brokers":{"roleGroups":{"automatic-log-config":{"replicas":0}}}}}'
+  - script: |
+      kubectl wait --for=delete pod -l app.kubernetes.io/instance=test-kafka -n $NAMESPACE --timeout=300s
