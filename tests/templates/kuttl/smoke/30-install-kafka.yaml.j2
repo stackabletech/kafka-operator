@@ -28,6 +28,8 @@ spec:
 {% endif %}
     zookeeperConfigMapName: test-zk
   brokers:
+    config:
+      gracefulShutdownTimeout: 60s
     configOverrides:
       broker.properties:
         compression.type: uncompressed # overridden by role group below

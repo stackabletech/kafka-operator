@@ -1,0 +1,18 @@
+---
+# Scale Kafka down before kuttl deletes the namespace.
+# Without this, ZooKeeper and Kafka are terminated simultaneously during
+# namespace deletion. Kafka's controlled-shutdown retries ZK connections
+# indefinitely, keeping the process alive for the full grace period
+# and blocking namespace deletion well past kuttl's 300s timeout.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 600
+commands:
+  - script: |
+      kubectl patch kafkacluster test-kafka -n $NAMESPACE --type merge -p '{"spec":{"brokers":{"roleGroups":{"default":{"replicas":0}}}}}'
+  - script: |
+      if kubectl wait --for=delete pod -l app.kubernetes.io/instance=test-kafka -n $NAMESPACE --timeout=120s 2>/dev/null; then
+        exit 0
+      fi
+      kubectl delete pods -l app.kubernetes.io/instance=test-kafka -n $NAMESPACE --grace-period=0 --force 2>/dev/null || true
+      kubectl wait --for=delete pod -l app.kubernetes.io/instance=test-kafka -n $NAMESPACE --timeout=300s
