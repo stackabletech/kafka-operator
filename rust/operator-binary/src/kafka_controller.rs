@@ -4,7 +4,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use const_format::concatcp;
 use product_config::{ProductConfigManager, types::PropertyNameKind};
-use snafu::{ResultExt, Snafu};
+use snafu::{OptionExt as _, ResultExt as _, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
@@ -13,12 +13,14 @@ use stackable_operator::{
         rbac::build_rbac_resources,
     },
     crd::listener,
+    k8s_openapi::api::apps::v1::StatefulSet,
     kube::{
-        Resource,
+        Resource, ResourceExt as _,
         api::DynamicObject,
         core::{DeserializeGuard, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
     },
+    kvp::consts::{K8S_APP_COMPONENT_KEY, K8S_APP_INSTANCE_KEY, K8S_APP_NAME_KEY},
     logging::controller::ReconcilerError,
     product_config_utils::{
         ValidatedRoleConfigByPropertyKind, transform_all_roles_to_config,
@@ -57,6 +59,10 @@ use crate::{
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
 pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.', OPERATOR_NAME);
+
+/// How long to wait between reconciliation attempts while waiting for broker pods
+/// to terminate during a sequenced shutdown (brokers before controllers).
+const SEQUENCED_SHUTDOWN_REQUEUE: Duration = Duration::from_secs(10);
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -211,6 +217,14 @@ pub enum Error {
 
     #[snafu(display("object defines no namespace"))]
     GetOpaConfig { source: authorization::Error },
+
+    #[snafu(display("object has no namespace"))]
+    ObjectHasNoNamespace,
+
+    #[snafu(display("failed to check broker shutdown status"))]
+    CheckBrokerShutdownStatus {
+        source: stackable_operator::client::Error,
+    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -252,8 +266,35 @@ impl ReconcilerError for Error {
             Error::InvalidKafkaListeners { .. } => None,
             Error::BuildPodDescriptors { .. } => None,
             Error::GetOpaConfig { .. } => None,
+            Error::ObjectHasNoNamespace => None,
+            Error::CheckBrokerShutdownStatus { .. } => None,
         }
     }
+}
+
+/// Returns `true` if all broker StatefulSets have been fully scaled down (0 running replicas).
+async fn broker_pods_stopped(
+    client: &stackable_operator::client::Client,
+    kafka: &v1alpha1::KafkaCluster,
+) -> Result<bool> {
+    let namespace = kafka.namespace().context(ObjectHasNoNamespaceSnafu)?;
+    let label_selector = format!(
+        "{K8S_APP_NAME_KEY}={APP_NAME},{K8S_APP_INSTANCE_KEY}={},{K8S_APP_COMPONENT_KEY}={}",
+        kafka.name_any(),
+        KafkaRole::Broker,
+    );
+    let list_params = stackable_operator::kube::api::ListParams {
+        label_selector: Some(label_selector),
+        ..Default::default()
+    };
+    let broker_statefulsets: Vec<StatefulSet> = client
+        .list(namespace.as_str(), &list_params)
+        .await
+        .context(CheckBrokerShutdownStatusSnafu)?;
+
+    Ok(broker_statefulsets
+        .iter()
+        .all(|sts| sts.status.as_ref().is_none_or(|s| s.replicas == 0)))
 }
 
 pub async fn reconcile_kafka(
@@ -280,12 +321,36 @@ pub async fn reconcile_kafka(
         )
         .context(ResolveProductImageSnafu)?;
 
+    // When the cluster is being stopped and has KRaft controllers, we need to sequence
+    // the shutdown: brokers must stop before controllers, because brokers depend on
+    // controllers for the controlled shutdown protocol. Without this, brokers hang
+    // waiting for controller responses until terminationGracePeriodSeconds expires.
+    let stopped = kafka.spec.cluster_operation.stopped;
+    let has_controllers = kafka.spec.controllers.is_some();
+    let sequenced_shutdown = stopped && has_controllers;
+
+    // Use Default instead of ClusterStopped because ClusterStopped zeroes all
+    // StatefulSet replicas unconditionally via maybe_mutate(). We need to control
+    // replica counts per role to sequence the shutdown (brokers before controllers),
+    // so we set replicas to 0 ourselves on each StatefulSet as needed.
+    let apply_strategy = if sequenced_shutdown {
+        ClusterResourceApplyStrategy::Default
+    } else {
+        ClusterResourceApplyStrategy::from(&kafka.spec.cluster_operation)
+    };
+
+    let brokers_stopped = if sequenced_shutdown {
+        broker_pods_stopped(client, kafka).await?
+    } else {
+        false
+    };
+
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
         OPERATOR_NAME,
         KAFKA_CONTROLLER_NAME,
         &kafka.object_ref(&()),
-        ClusterResourceApplyStrategy::from(&kafka.spec.cluster_operation),
+        apply_strategy,
         &kafka.spec.object_overrides,
     )
     .context(CreateClusterResourcesSnafu)?;
@@ -406,7 +471,7 @@ pub async fn reconcile_kafka(
             )
             .context(BuildConfigMapSnafu)?;
 
-            let rg_statefulset = match kafka_role {
+            let mut rg_statefulset = match kafka_role {
                 KafkaRole::Broker => build_broker_rolegroup_statefulset(
                     kafka,
                     &kafka_role,
@@ -432,6 +497,20 @@ pub async fn reconcile_kafka(
                 )
                 .context(BuildStatefulsetSnafu)?,
             };
+
+            if sequenced_shutdown {
+                let should_stop = match kafka_role {
+                    // Always stop brokers first.
+                    KafkaRole::Broker => true,
+                    // Only stop controllers after all brokers are gone.
+                    KafkaRole::Controller => brokers_stopped,
+                };
+                if should_stop {
+                    if let Some(spec) = rg_statefulset.spec.as_mut() {
+                        spec.replicas = Some(0);
+                    }
+                }
+            }
 
             if let AnyConfig::Broker(broker_config) = merged_config {
                 let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
@@ -524,7 +603,13 @@ pub async fn reconcile_kafka(
         .await
         .context(ApplyStatusSnafu)?;
 
-    Ok(Action::await_change())
+    // During sequenced shutdown, requeue until brokers are fully stopped so we can
+    // proceed to stop controllers on the next reconciliation.
+    if sequenced_shutdown && !brokers_stopped {
+        Ok(Action::requeue(*SEQUENCED_SHUTDOWN_REQUEUE))
+    } else {
+        Ok(Action::await_change())
+    }
 }
 
 pub fn error_policy(
