@@ -5,6 +5,7 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
+  # Note: By the time this script runs, the secondary RoleGroup has already been deleted, therefore we don't scale it down.
   - script: |
       kubectl patch kafkacluster test-kafka -n $NAMESPACE --type merge -p '{"spec":{"brokers":{"roleGroups":{"default":{"replicas":0}}}}}'
   - script: |
