@@ -426,6 +426,21 @@ pub async fn reconcile_kafka(
         for (rolegroup_name, rolegroup_config) in role_config.iter() {
             let rolegroup_ref = kafka.rolegroup_ref(&kafka_role, rolegroup_name);
 
+            // Skip rolegroups with 0 replicas. There are no pods to configure, and
+            // building configmaps would fail when all controller replicas are 0
+            // (no quorum voters to reference).
+            // NOTE: This also means the rolegroup's resources (services, configmaps,
+            // statefulsets) won't be added to cluster_resources, so they will be
+            // deleted as orphans by delete_orphaned_resources(). They get recreated
+            // when replicas go back above 0.
+            let replicas = kafka_role
+                .replicas(kafka, &rolegroup_ref.role_group)
+                .context(FailedToResolveConfigSnafu)?
+                .unwrap_or(0);
+            if replicas == 0 {
+                continue;
+            }
+
             let merged_config = kafka_role
                 .merged_config(kafka, &rolegroup_ref.role_group)
                 .context(FailedToResolveConfigSnafu)?;
