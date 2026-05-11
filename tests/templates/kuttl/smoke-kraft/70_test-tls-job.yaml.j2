@@ -42,7 +42,7 @@ spec:
             volumeClaimTemplate:
               metadata:
                 annotations:
-                  secrets.stackable.tech/class: test-kafka-client-auth-tls
+                  secrets.stackable.tech/class: test-kafka-client-auth-tls-{{ NAMESPACE }}
                   secrets.stackable.tech/format: tls-pkcs12
                   secrets.stackable.tech/scope: pod,node
               spec:

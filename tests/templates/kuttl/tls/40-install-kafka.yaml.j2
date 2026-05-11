@@ -11,16 +11,16 @@ spec:
 apiVersion: authentication.stackable.tech/v1alpha1
 kind: AuthenticationClass
 metadata:
-  name: test-kafka-client-auth-tls
+  name: test-kafka-client-auth-tls-{{ NAMESPACE }}
 spec:
   provider:
     tls:
-      clientCertSecretClass: test-kafka-client-auth-tls
+      clientCertSecretClass: test-kafka-client-auth-tls-{{ NAMESPACE }}
 ---
 apiVersion: secrets.stackable.tech/v1alpha1
 kind: SecretClass
 metadata:
-  name: test-kafka-client-auth-tls
+  name: test-kafka-client-auth-tls-{{ NAMESPACE }}
 spec:
   backend:
     autoTls:
@@ -47,7 +47,7 @@ spec:
   clusterConfig:
 {% if test_scenario['values']['use-client-auth-tls'] == 'true' %}
     authentication:
-      - authenticationClass: test-kafka-client-auth-tls
+      - authenticationClass: test-kafka-client-auth-tls-{{ NAMESPACE }}
 {% endif %}
     tls:
 {% if test_scenario['values']['use-client-tls'] == 'true' %}

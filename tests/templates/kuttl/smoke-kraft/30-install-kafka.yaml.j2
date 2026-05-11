@@ -36,16 +36,16 @@ data:
 apiVersion: authentication.stackable.tech/v1alpha1
 kind: AuthenticationClass
 metadata:
-  name: test-kafka-client-auth-tls
+  name: test-kafka-client-auth-tls-{{ NAMESPACE }}
 spec:
   provider:
     tls:
-      clientCertSecretClass: test-kafka-client-auth-tls
+      clientCertSecretClass: test-kafka-client-auth-tls-{{ NAMESPACE }}
 ---
 apiVersion: secrets.stackable.tech/v1alpha1
 kind: SecretClass
 metadata:
-  name: test-kafka-client-auth-tls
+  name: test-kafka-client-auth-tls-{{ NAMESPACE }}
 spec:
   backend:
     autoTls:
@@ -71,7 +71,7 @@ spec:
   clusterConfig:
     metadataManager: kraft
     authentication:
-      - authenticationClass: test-kafka-client-auth-tls
+      - authenticationClass: test-kafka-client-auth-tls-{{ NAMESPACE }}
     tls:
       serverSecretClass: tls
     vectorAggregatorConfigMapName: vector-aggregator-discovery
