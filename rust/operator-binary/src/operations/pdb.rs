@@ -5,8 +5,8 @@ use stackable_operator::{
 };
 
 use crate::{
+    controller::KAFKA_CONTROLLER_NAME,
     crd::{APP_NAME, OPERATOR_NAME, role::KafkaRole, v1alpha1},
-    kafka_controller::KAFKA_CONTROLLER_NAME,
 };
 
 #[derive(Snafu, Debug)]
