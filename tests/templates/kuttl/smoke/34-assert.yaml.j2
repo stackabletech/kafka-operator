@@ -1,0 +1,109 @@
+{# Templating flag used throughout this file. #}
+{% set use_client_tls = test_scenario['values']['use-client-tls'] == 'true' %}
+---
+# Snapshot the full `.data` of each operator-managed ConfigMap.
+# Any code change that alters rendered config values will fail these diffs.
+#
+# Runs as its own step (after 30-33) so kuttl does not re-evaluate the heavy
+# heredocs on every 1-second readiness retry of the install step. By this point
+# the cluster is in steady state, so each script runs once.
+#
+# The heredoc is quoted (`<<'YAMLEOF'`) so shell substitution is disabled and
+# property-file escapes like `${env\:POD_NAME}` survive verbatim. Only
+# `__NAMESPACE__` is substituted afterwards via `sed`, because kuttl tests run
+# in a randomized namespace per invocation. Both sides are normalized to
+# canonical JSON via `yq -o=json`; keys are already alphabetical on both sides
+# (operator stores BTreeMap; kubectl serializes maps sorted; the heredoc is
+# hand-sorted).
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+commands:
+  - script: |
+      expected=$(cat <<'YAMLEOF' | sed "s|__NAMESPACE__|$NAMESPACE|g" | yq -o=json
+      KAFKA: test-kafka-broker-default-bootstrap.__NAMESPACE__.svc.cluster.local:{% if use_client_tls %}9093{% else %}9092{% endif %}
+
+      YAMLEOF
+      )
+      actual=$(kubectl -n $NAMESPACE get cm test-kafka -o yaml | yq -o=json '.data')
+      if [ "$expected" != "$actual" ]; then
+        echo "ERROR: ConfigMap test-kafka data drifted from snapshot."
+        echo "=== expected ==="
+        printf '%s\n' "$expected"
+        echo "=== actual ==="
+        printf '%s\n' "$actual"
+        exit 1
+      fi
+  - script: |
+      expected=$(cat <<'YAMLEOF' | sed "s|__NAMESPACE__|$NAMESPACE|g" | yq -o=json
+      broker.properties: |
+        advertised.listeners=CLIENT\://${file\:UTF-8\:/stackable/listener-broker/default-address/address}\:${file\:UTF-8\:/stackable/listener-broker/default-address/ports/{% if use_client_tls %}kafka-tls{% else %}kafka{% endif %}},INTERNAL\://${env\:POD_NAME}.test-kafka-broker-default-headless.__NAMESPACE__.svc.cluster.local\:19093
+        compression.type=snappy
+        controlled.shutdown.enable=true
+        controller.quorum.election.backoff.max.ms=2000
+        controller.quorum.fetch.timeout.ms=3000
+        inter.broker.listener.name=INTERNAL
+{% if use_client_tls %}
+        listener.name.client.ssl.keystore.location=/stackable/tls-kafka-server/keystore.p12
+        listener.name.client.ssl.keystore.password=
+        listener.name.client.ssl.keystore.type=PKCS12
+        listener.name.client.ssl.truststore.location=/stackable/tls-kafka-server/truststore.p12
+        listener.name.client.ssl.truststore.password=
+        listener.name.client.ssl.truststore.type=PKCS12
+{% endif %}
+        listener.name.controller.ssl.keystore.location=/stackable/tls-kafka-internal/keystore.p12
+        listener.name.controller.ssl.keystore.password=
+        listener.name.controller.ssl.keystore.type=PKCS12
+        listener.name.controller.ssl.truststore.location=/stackable/tls-kafka-internal/truststore.p12
+        listener.name.controller.ssl.truststore.password=
+        listener.name.controller.ssl.truststore.type=PKCS12
+        listener.name.internal.ssl.client.auth=required
+        listener.name.internal.ssl.keystore.location=/stackable/tls-kafka-internal/keystore.p12
+        listener.name.internal.ssl.keystore.password=
+        listener.name.internal.ssl.keystore.type=PKCS12
+        listener.name.internal.ssl.truststore.location=/stackable/tls-kafka-internal/truststore.p12
+        listener.name.internal.ssl.truststore.password=
+        listener.name.internal.ssl.truststore.type=PKCS12
+        listener.security.protocol.map=CLIENT\:{% if use_client_tls %}SSL{% else %}PLAINTEXT{% endif %},INTERNAL\:SSL,CONTROLLER\:SSL
+        listeners=CLIENT\://0.0.0.0\:{% if use_client_tls %}9093{% else %}9092{% endif %},INTERNAL\://0.0.0.0\:19093
+        log.dirs=/stackable/data/topicdata
+        zookeeper.connect=${env\:ZOOKEEPER}
+      client.properties: |
+{% if use_client_tls %}
+        security.protocol=SSL
+        ssl.truststore.type=PKCS12
+        ssl.truststore.location=/stackable/tls-kafka-server/truststore.p12
+        ssl.truststore.password=
+{% else %}
+        security.protocol=PLAINTEXT
+{% endif %}
+      jaas.properties: ""
+      log4j.properties: |+
+        log4j.rootLogger=INFO, CONSOLE, FILE
+
+        log4j.appender.CONSOLE=org.apache.log4j.ConsoleAppender
+        log4j.appender.CONSOLE.Threshold=INFO
+        log4j.appender.CONSOLE.layout=org.apache.log4j.PatternLayout
+        log4j.appender.CONSOLE.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+        log4j.appender.FILE=org.apache.log4j.RollingFileAppender
+        log4j.appender.FILE.Threshold=INFO
+        log4j.appender.FILE.File=/stackable/log/kafka/kafka.log4j.xml
+        log4j.appender.FILE.MaxFileSize=5MB
+        log4j.appender.FILE.MaxBackupIndex=1
+        log4j.appender.FILE.layout=org.apache.log4j.xml.XMLLayout
+
+      security.properties: |
+        networkaddress.cache.negative.ttl=0
+        networkaddress.cache.ttl=30
+      YAMLEOF
+      )
+      actual=$(kubectl -n $NAMESPACE get cm test-kafka-broker-default -o yaml | yq -o=json '.data')
+      if [ "$expected" != "$actual" ]; then
+        echo "ERROR: ConfigMap test-kafka-broker-default data drifted from snapshot."
+        echo "=== expected ==="
+        printf '%s\n' "$expected"
+        echo "=== actual ==="
+        printf '%s\n' "$actual"
+        exit 1
+      fi
