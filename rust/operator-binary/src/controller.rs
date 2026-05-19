@@ -1,17 +1,14 @@
 //! Ensures that `Pod`s are configured and running for each [`v1alpha1::KafkaCluster`].
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc};
 
 use const_format::concatcp;
-use product_config::{ProductConfigManager, types::PropertyNameKind};
+use product_config::ProductConfigManager;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
-    commons::{
-        product_image_selection::{self},
-        rbac::build_rbac_resources,
-    },
+    commons::rbac::build_rbac_resources,
     crd::listener,
     kube::{
         Resource,
@@ -20,10 +17,6 @@ use stackable_operator::{
         runtime::{controller::Action, reflector::ObjectRef},
     },
     logging::controller::ReconcilerError,
-    product_config_utils::{
-        ValidatedRoleConfigByPropertyKind, transform_all_roles_to_config,
-        validate_all_roles_and_groups_config,
-    },
     role_utils::{GenericRoleConfig, RoleGroupRef},
     shared::time::Duration,
     status::condition::{
@@ -33,16 +26,14 @@ use stackable_operator::{
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
+mod dereference;
+mod validate;
+
 use crate::{
     crd::{
-        self, APP_NAME, CONTAINER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE,
-        KafkaClusterStatus, OPERATOR_NAME, authorization,
+        self, APP_NAME, KafkaClusterStatus, OPERATOR_NAME,
         listener::get_kafka_listener_config,
-        role::{
-            AnyConfig, KafkaRole, broker::BROKER_PROPERTIES_FILE,
-            controller::CONTROLLER_PROPERTIES_FILE,
-        },
-        security::KafkaTlsSecurity,
+        role::{AnyConfig, KafkaRole},
         v1alpha1,
     },
     discovery::{self, build_discovery_configmap},
@@ -68,18 +59,18 @@ pub struct Ctx {
 #[strum_discriminants(derive(IntoStaticStr))]
 #[allow(clippy::enum_variant_names)]
 pub enum Error {
+    #[snafu(display("failed to dereference resources"))]
+    Dereference { source: dereference::Error },
+
+    #[snafu(display("failed to validate cluster"))]
+    ValidateCluster { source: validate::Error },
+
     #[snafu(display("failed to build pod descriptors"))]
     BuildPodDescriptors { source: crate::crd::Error },
 
     #[snafu(display("invalid kafka listeners"))]
     InvalidKafkaListeners {
         source: crate::crd::listener::KafkaListenerError,
-    },
-
-    #[snafu(display("cluster object defines no '{role}' role"))]
-    MissingKafkaRole {
-        source: crate::crd::Error,
-        role: KafkaRole,
     },
 
     #[snafu(display("failed to apply role Service"))]
@@ -105,16 +96,6 @@ pub enum Error {
         rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
-    #[snafu(display("failed to generate product config"))]
-    GenerateProductConfig {
-        source: stackable_operator::product_config_utils::Error,
-    },
-
-    #[snafu(display("invalid product config"))]
-    InvalidProductConfig {
-        source: stackable_operator::product_config_utils::Error,
-    },
-
     #[snafu(display("failed to build discovery ConfigMap"))]
     BuildDiscoveryConfig { source: discovery::Error },
 
@@ -127,9 +108,6 @@ pub enum Error {
     DeleteOrphans {
         source: stackable_operator::cluster_resources::Error,
     },
-
-    #[snafu(display("failed to initialize security context"))]
-    FailedToInitializeSecurityContext { source: crate::crd::security::Error },
 
     #[snafu(display("failed to create cluster resources"))]
     CreateClusterResources {
@@ -170,9 +148,6 @@ pub enum Error {
             stackable_operator::kvp::KeyValuePairError<stackable_operator::kvp::LabelValueError>,
     },
 
-    #[snafu(display("failed to validate authentication method"))]
-    FailedToValidateAuthenticationMethod { source: crate::crd::security::Error },
-
     #[snafu(display("KafkaCluster object is invalid"))]
     InvalidKafkaCluster {
         source: error_boundary::InvalidObject,
@@ -180,11 +155,6 @@ pub enum Error {
 
     #[snafu(display("KafkaCluster object is misconfigured"))]
     MisconfiguredKafkaCluster { source: crd::Error },
-
-    #[snafu(display("failed to resolve product image"))]
-    ResolveProductImage {
-        source: product_image_selection::Error,
-    },
 
     #[snafu(display("failed to parse role: {source}"))]
     ParseRole { source: strum::ParseError },
@@ -208,9 +178,6 @@ pub enum Error {
     BuildListener {
         source: crate::resource::listener::Error,
     },
-
-    #[snafu(display("object defines no namespace"))]
-    GetOpaConfig { source: authorization::Error },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -221,17 +188,15 @@ impl ReconcilerError for Error {
 
     fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
         match self {
-            Error::MissingKafkaRole { .. } => None,
+            Error::Dereference { .. } => None,
+            Error::ValidateCluster { .. } => None,
             Error::ApplyRoleService { .. } => None,
             Error::ApplyRoleGroupService { .. } => None,
             Error::ApplyRoleGroupConfig { .. } => None,
             Error::ApplyRoleGroupStatefulSet { .. } => None,
-            Error::GenerateProductConfig { .. } => None,
-            Error::InvalidProductConfig { .. } => None,
             Error::BuildDiscoveryConfig { .. } => None,
             Error::ApplyDiscoveryConfig { .. } => None,
             Error::DeleteOrphans { .. } => None,
-            Error::FailedToInitializeSecurityContext { .. } => None,
             Error::CreateClusterResources { .. } => None,
             Error::FailedToResolveConfig { .. } => None,
             Error::ApplyServiceAccount { .. } => None,
@@ -240,10 +205,8 @@ impl ReconcilerError for Error {
             Error::BuildRbacResources { .. } => None,
             Error::FailedToCreatePdb { .. } => None,
             Error::GetRequiredLabels { .. } => None,
-            Error::FailedToValidateAuthenticationMethod { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
             Error::MisconfiguredKafkaCluster { .. } => None,
-            Error::ResolveProductImage { .. } => None,
             Error::ParseRole { .. } => None,
             Error::BuildStatefulset { .. } => None,
             Error::BuildConfigMap { .. } => None,
@@ -251,7 +214,6 @@ impl ReconcilerError for Error {
             Error::BuildListener { .. } => None,
             Error::InvalidKafkaListeners { .. } => None,
             Error::BuildPodDescriptors { .. } => None,
-            Error::GetOpaConfig { .. } => None,
         }
     }
 }
@@ -270,15 +232,28 @@ pub async fn reconcile_kafka(
 
     let client = &ctx.client;
 
-    let resolved_product_image = kafka
-        .spec
-        .image
-        .resolve(
-            CONTAINER_IMAGE_BASE_NAME,
-            &ctx.operator_environment.image_repository,
-            crate::built_info::PKG_VERSION,
-        )
-        .context(ResolveProductImageSnafu)?;
+    // dereference (client required)
+    let dereferenced_objects = dereference::dereference(client, kafka)
+        .await
+        .context(DereferenceSnafu)?;
+
+    // validate (no client required)
+    let validate::ValidatedInputs {
+        resolved_product_image,
+        kafka_security,
+        validated_role_config: validated_config,
+    } = validate::validate(
+        kafka,
+        &dereferenced_objects,
+        &ctx.operator_environment,
+        &ctx.product_config,
+    )
+    .context(ValidateClusterSnafu)?;
+
+    let opa_connect = dereferenced_objects
+        .resolved_authorization_config
+        .as_ref()
+        .map(|auth_config| auth_config.opa_connect.clone());
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
@@ -290,37 +265,6 @@ pub async fn reconcile_kafka(
     )
     .context(CreateClusterResourcesSnafu)?;
 
-    let validated_config = validated_product_config(
-        kafka,
-        &resolved_product_image.product_version,
-        &ctx.product_config,
-    )?;
-
-    // Assemble the OPA connection string from the discovery and the given path if provided
-    // Will be passed as --override parameter in the cli in the stateful set
-    let opa_config = &kafka
-        .spec
-        .cluster_config
-        .authorization
-        .clone()
-        .get_opa_config(client, kafka)
-        .await
-        .context(GetOpaConfigSnafu)?;
-
-    let opa_connect = opa_config
-        .as_ref()
-        .map(|auth_config| auth_config.opa_connect.clone());
-
-    let opa_secret_class = if let Some(opa_config) = opa_config.as_ref() {
-        opa_config.secret_class.to_owned()
-    } else {
-        None
-    };
-
-    let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(client, kafka, opa_secret_class)
-        .await
-        .context(FailedToInitializeSecurityContextSnafu)?;
-
     tracing::debug!(
         kerberos_enabled = kafka_security.has_kerberos_enabled(),
         kerberos_secret_class = ?kafka_security.kerberos_secret_class(),
@@ -328,10 +272,6 @@ pub async fn reconcile_kafka(
         tls_client_authentication_class = ?kafka_security.tls_client_authentication_class(),
         "The following security settings are used"
     );
-
-    kafka_security
-        .validate_authentication_methods()
-        .context(FailedToValidateAuthenticationMethodSnafu)?;
 
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
 
@@ -536,81 +476,4 @@ pub fn error_policy(
         Error::InvalidKafkaCluster { .. } => Action::await_change(),
         _ => Action::requeue(*Duration::from_secs(5)),
     }
-}
-
-/// Defines all required roles and their required configuration.
-///
-/// The roles and their configs are then validated and complemented by the product config.
-///
-/// # Arguments
-/// * `resource`        - The TrinoCluster containing the role definitions.
-/// * `version`         - The TrinoCluster version.
-/// * `product_config`  - The product config to validate and complement the user config.
-///
-fn validated_product_config(
-    kafka: &v1alpha1::KafkaCluster,
-    product_version: &str,
-    product_config: &ProductConfigManager,
-) -> Result<ValidatedRoleConfigByPropertyKind, Error> {
-    let mut role_config = HashMap::new();
-
-    let broker_role = [(
-        KafkaRole::Broker.to_string(),
-        (
-            vec![
-                PropertyNameKind::File(BROKER_PROPERTIES_FILE.to_string()),
-                PropertyNameKind::File(JVM_SECURITY_PROPERTIES_FILE.to_string()),
-                PropertyNameKind::Env,
-            ],
-            kafka
-                .broker_role()
-                .cloned()
-                .context(MissingKafkaRoleSnafu {
-                    role: KafkaRole::Broker,
-                })?
-                .erase(),
-        ),
-    )]
-    .into();
-
-    let broker_role_config =
-        transform_all_roles_to_config(kafka, &broker_role).context(GenerateProductConfigSnafu)?;
-
-    role_config.extend(broker_role_config);
-
-    // TODO: need this if because controller_role() raises an error
-    if kafka.spec.controllers.is_some() {
-        let controller_role = [(
-            KafkaRole::Controller.to_string(),
-            (
-                vec![
-                    PropertyNameKind::File(CONTROLLER_PROPERTIES_FILE.to_string()),
-                    PropertyNameKind::File(JVM_SECURITY_PROPERTIES_FILE.to_string()),
-                    PropertyNameKind::Env,
-                ],
-                kafka
-                    .controller_role()
-                    .cloned()
-                    .context(MissingKafkaRoleSnafu {
-                        role: KafkaRole::Controller,
-                    })?
-                    .erase(),
-            ),
-        )]
-        .into();
-
-        let controller_role_config = transform_all_roles_to_config(kafka, &controller_role)
-            .context(GenerateProductConfigSnafu)?;
-
-        role_config.extend(controller_role_config);
-    }
-
-    validate_all_roles_and_groups_config(
-        product_version,
-        &role_config,
-        product_config,
-        false,
-        false,
-    )
-    .context(InvalidProductConfigSnafu)
 }
