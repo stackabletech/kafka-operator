@@ -239,19 +239,19 @@ pub async fn reconcile_kafka(
 
     // validate (no client required)
     let validate::ValidatedInputs {
+        authorization_config,
         image,
         kafka_security,
         role_config: validated_config,
     } = validate::validate(
         kafka,
-        &dereferenced_objects,
+        dereferenced_objects,
         &ctx.operator_environment,
         &ctx.product_config,
     )
     .context(ValidateClusterSnafu)?;
 
-    let opa_connect = dereferenced_objects
-        .authorization_config
+    let opa_connect = authorization_config
         .as_ref()
         .map(|auth_config| auth_config.opa_connect.clone());
 

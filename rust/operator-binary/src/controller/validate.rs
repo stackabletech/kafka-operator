@@ -21,6 +21,7 @@ use crate::{
     crd::{
         self, CONTAINER_IMAGE_BASE_NAME, JVM_SECURITY_PROPERTIES_FILE,
         authentication::{self},
+        authorization::KafkaAuthorizationConfig,
         role::{KafkaRole, broker::BROKER_PROPERTIES_FILE, controller::CONTROLLER_PROPERTIES_FILE},
         security::{self, KafkaTlsSecurity},
         v1alpha1,
@@ -58,6 +59,7 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Synchronous inputs the rest of `reconcile_kafka` needs after dereferencing.
 pub struct ValidatedInputs {
+    pub authorization_config: Option<KafkaAuthorizationConfig>,
     pub image: ResolvedProductImage,
     pub kafka_security: KafkaTlsSecurity,
     pub role_config: ValidatedRoleConfigByPropertyKind,
@@ -66,7 +68,7 @@ pub struct ValidatedInputs {
 /// Validates the cluster spec and the dereferenced inputs.
 pub fn validate(
     kafka: &v1alpha1::KafkaCluster,
-    dereferenced_objects: &DereferencedObjects,
+    dereferenced_objects: DereferencedObjects,
     operator_environment: &OperatorEnvironmentOptions,
     product_config: &ProductConfigManager,
 ) -> Result<ValidatedInputs> {
@@ -100,6 +102,7 @@ pub fn validate(
     let role_config = validated_product_config(kafka, &image.product_version, product_config)?;
 
     Ok(ValidatedInputs {
+        authorization_config: dereferenced_objects.authorization_config,
         image,
         kafka_security,
         role_config,
