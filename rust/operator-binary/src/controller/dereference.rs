@@ -31,8 +31,8 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 /// Kubernetes objects referenced from the [`v1alpha1::KafkaCluster`] spec, already fetched but
 /// not yet validated.
 pub struct DereferencedObjects {
-    pub resolved_authentication_classes: ResolvedAuthenticationClasses,
-    pub resolved_authorization_config: Option<KafkaAuthorizationConfig>,
+    pub authentication_classes: ResolvedAuthenticationClasses,
+    pub authorization_config: Option<KafkaAuthorizationConfig>,
 }
 
 /// Fetches all Kubernetes objects referenced from the [`v1alpha1::KafkaCluster`] spec.
@@ -40,14 +40,14 @@ pub async fn dereference(
     client: &Client,
     kafka: &v1alpha1::KafkaCluster,
 ) -> Result<DereferencedObjects> {
-    let resolved_authentication_classes = ResolvedAuthenticationClasses::fetch_references(
+    let authentication_classes = ResolvedAuthenticationClasses::fetch_references(
         client,
         &kafka.spec.cluster_config.authentication,
     )
     .await
     .context(FetchAuthenticationClassesSnafu)?;
 
-    let resolved_authorization_config = kafka
+    let authorization_config = kafka
         .spec
         .cluster_config
         .authorization
@@ -57,7 +57,7 @@ pub async fn dereference(
         .context(GetOpaConfigSnafu)?;
 
     Ok(DereferencedObjects {
-        resolved_authentication_classes,
-        resolved_authorization_config,
+        authentication_classes,
+        authorization_config,
     })
 }

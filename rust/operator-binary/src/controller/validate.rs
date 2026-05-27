@@ -58,9 +58,9 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Synchronous inputs the rest of `reconcile_kafka` needs after dereferencing.
 pub struct ValidatedInputs {
-    pub resolved_product_image: ResolvedProductImage,
+    pub image: ResolvedProductImage,
     pub kafka_security: KafkaTlsSecurity,
-    pub validated_role_config: ValidatedRoleConfigByPropertyKind,
+    pub role_config: ValidatedRoleConfigByPropertyKind,
 }
 
 /// Validates the cluster spec and the dereferenced inputs.
@@ -70,7 +70,7 @@ pub fn validate(
     operator_environment: &OperatorEnvironmentOptions,
     product_config: &ProductConfigManager,
 ) -> Result<ValidatedInputs> {
-    let resolved_product_image = kafka
+    let image = kafka
         .spec
         .image
         .resolve(
@@ -80,36 +80,29 @@ pub fn validate(
         )
         .context(ResolveProductImageSnafu)?;
 
-    let resolved_authentication_classes = dereferenced_objects
-        .resolved_authentication_classes
+    let authentication_classes = dereferenced_objects
+        .authentication_classes
         .validate()
         .context(InvalidAuthenticationClassConfigurationSnafu)?;
 
     let opa_secret_class = dereferenced_objects
-        .resolved_authorization_config
+        .authorization_config
         .as_ref()
         .and_then(|cfg| cfg.secret_class.clone());
 
-    let kafka_security = KafkaTlsSecurity::new_from_kafka_cluster(
-        kafka,
-        resolved_authentication_classes,
-        opa_secret_class,
-    );
+    let kafka_security =
+        KafkaTlsSecurity::new_from_kafka_cluster(kafka, authentication_classes, opa_secret_class);
 
     kafka_security
         .validate_authentication_methods()
         .context(FailedToValidateAuthenticationMethodSnafu)?;
 
-    let validated_role_config = validated_product_config(
-        kafka,
-        &resolved_product_image.product_version,
-        product_config,
-    )?;
+    let role_config = validated_product_config(kafka, &image.product_version, product_config)?;
 
     Ok(ValidatedInputs {
-        resolved_product_image,
+        image,
         kafka_security,
-        validated_role_config,
+        role_config,
     })
 }
 

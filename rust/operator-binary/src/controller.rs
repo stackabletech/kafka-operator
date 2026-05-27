@@ -239,9 +239,9 @@ pub async fn reconcile_kafka(
 
     // validate (no client required)
     let validate::ValidatedInputs {
-        resolved_product_image,
+        image,
         kafka_security,
-        validated_role_config: validated_config,
+        role_config: validated_config,
     } = validate::validate(
         kafka,
         &dereferenced_objects,
@@ -251,7 +251,7 @@ pub async fn reconcile_kafka(
     .context(ValidateClusterSnafu)?;
 
     let opa_connect = dereferenced_objects
-        .resolved_authorization_config
+        .authorization_config
         .as_ref()
         .map(|auth_config| auth_config.opa_connect.clone());
 
@@ -305,17 +305,12 @@ pub async fn reconcile_kafka(
                 .merged_config(kafka, &rolegroup_ref.role_group)
                 .context(FailedToResolveConfigSnafu)?;
 
-            let rg_headless_service = build_rolegroup_headless_service(
-                kafka,
-                &resolved_product_image,
-                &rolegroup_ref,
-                &kafka_security,
-            )
-            .context(BuildServiceSnafu)?;
-
-            let rg_metrics_service =
-                build_rolegroup_metrics_service(kafka, &resolved_product_image, &rolegroup_ref)
+            let rg_headless_service =
+                build_rolegroup_headless_service(kafka, &image, &rolegroup_ref, &kafka_security)
                     .context(BuildServiceSnafu)?;
+
+            let rg_metrics_service = build_rolegroup_metrics_service(kafka, &image, &rolegroup_ref)
+                .context(BuildServiceSnafu)?;
 
             let kafka_listeners = get_kafka_listener_config(
                 kafka,
@@ -335,7 +330,7 @@ pub async fn reconcile_kafka(
 
             let rg_configmap = build_rolegroup_config_map(
                 kafka,
-                &resolved_product_image,
+                &image,
                 &kafka_security,
                 &rolegroup_ref,
                 rolegroup_config,
@@ -350,7 +345,7 @@ pub async fn reconcile_kafka(
                 KafkaRole::Broker => build_broker_rolegroup_statefulset(
                     kafka,
                     &kafka_role,
-                    &resolved_product_image,
+                    &image,
                     &rolegroup_ref,
                     rolegroup_config,
                     &kafka_security,
@@ -362,7 +357,7 @@ pub async fn reconcile_kafka(
                 KafkaRole::Controller => build_controller_rolegroup_statefulset(
                     kafka,
                     &kafka_role,
-                    &resolved_product_image,
+                    &image,
                     &rolegroup_ref,
                     rolegroup_config,
                     &kafka_security,
@@ -376,7 +371,7 @@ pub async fn reconcile_kafka(
             if let AnyConfig::Broker(broker_config) = merged_config {
                 let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
                     kafka,
-                    &resolved_product_image,
+                    &image,
                     &kafka_security,
                     &rolegroup_ref,
                     &broker_config,
@@ -433,14 +428,9 @@ pub async fn reconcile_kafka(
         }
     }
 
-    let discovery_cm = build_discovery_configmap(
-        kafka,
-        kafka,
-        &resolved_product_image,
-        &kafka_security,
-        &bootstrap_listeners,
-    )
-    .context(BuildDiscoveryConfigSnafu)?;
+    let discovery_cm =
+        build_discovery_configmap(kafka, kafka, &image, &kafka_security, &bootstrap_listeners)
+            .context(BuildDiscoveryConfigSnafu)?;
 
     cluster_resources
         .add(client, discovery_cm)
