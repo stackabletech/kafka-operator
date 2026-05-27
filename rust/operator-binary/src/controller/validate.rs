@@ -140,7 +140,8 @@ fn validated_product_config(
 
     role_config.extend(broker_role_config);
 
-    // TODO: need this if because controller_role() raises an error
+    // We need this if because controller_role() raises an error if not existing,
+    // which would stop reconciliation.
     if kafka.spec.controllers.is_some() {
         let controller_role = [(
             KafkaRole::Controller.to_string(),
