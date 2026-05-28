@@ -563,6 +563,7 @@ impl KafkaTlsSecurity {
                             .with_pod_scope()
                             .with_format(SecretFormat::TlsPkcs12)
                             .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+                            .with_auto_tls_cert_domain_components_in_subject_dn(true)
                             .build()
                             .context(SecretVolumeBuildSnafu)?,
                         )
@@ -864,6 +865,7 @@ impl KafkaTlsSecurity {
                 .with_pod_scope()
                 .with_format(SecretFormat::TlsPem)
                 .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+                .with_auto_tls_cert_domain_components_in_subject_dn(true)
                 .build()
                 .context(SecretVolumeBuildSnafu)?,
             )
@@ -888,6 +890,7 @@ impl KafkaTlsSecurity {
                 .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
                 .with_format(SecretFormat::TlsPkcs12)
                 .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+                .with_auto_tls_cert_domain_components_in_subject_dn(true)
                 .build()
                 .context(SecretVolumeBuildSnafu)?,
             )

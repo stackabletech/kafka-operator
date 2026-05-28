@@ -16,10 +16,12 @@ All notable changes to this project will be documented in this file.
   controllers).
   Previously, arbitrary file names were silently accepted and ignored ([#960]).
 - Bump `stackable-operator` to 0.111.1 and snafu to 0.9 ([#960], [#961]).
+- BREAKING: Extend the subject DNs of TLS certificates with the FQDNs of the Kafka pods ([#972]).
 
 [#953]: https://github.com/stackabletech/kafka-operator/pull/953
 [#960]: https://github.com/stackabletech/kafka-operator/pull/960
 [#961]: https://github.com/stackabletech/kafka-operator/pull/961
+[#972]: https://github.com/stackabletech/kafka-operator/pull/972
 
 ## [26.3.0] - 2026-03-16
 
