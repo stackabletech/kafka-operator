@@ -9,12 +9,12 @@ releases:
       commons:
         operatorVersion: 0.0.0-dev
       secret:
-        operatorVersion: 0.0.0-dev
+        operatorVersion: 0.0.0-pr708
       listener:
         operatorVersion: 0.0.0-dev
       zookeeper:
         operatorVersion: 0.0.0-dev
       kafka:
-        operatorVersion: 0.0.0-dev
+        operatorVersion: 0.0.0-pr972
       opa:
         operatorVersion: 0.0.0-dev

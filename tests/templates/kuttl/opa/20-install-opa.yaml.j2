@@ -18,17 +18,26 @@ commands:
           default allow := false
 
           allow if {
+            is_internal_request
+            startswith(
+              input.requestContext.principal.name,
+              "DC=local,DC=cluster,DC=svc,DC=$NAMESPACE,DC=test-kafka-broker-default-headless,DC=test-kafka-broker-default-",
+            )
+          }
+
+          allow if {
+            is_external_request
             input.requestContext.principal.name == "kafka"
           }
 
           allow if {
-            input.requestContext.principal.name == "CN=generated certificate for pod"
-          }
-
-          allow if {
+            is_external_request
             input.requestContext.principal.name == "developer"
             resource_is_allowed
           }
+
+          is_internal_request if input.requestContext.listenerName == "INTERNAL"
+          is_external_request if not is_internal_request
 
           # only allow access to a specific topic
           resource_is_allowed if {
