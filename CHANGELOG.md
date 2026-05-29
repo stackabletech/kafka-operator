@@ -16,10 +16,12 @@ All notable changes to this project will be documented in this file.
   controllers).
   Previously, arbitrary file names were silently accepted and ignored ([#960]).
 - Bump `stackable-operator` to 0.111.1 and snafu to 0.9 ([#960], [#961]).
+- test: Bump vector-aggregator to 0.55.0, replace /graphql call with gRPC call ([#971]).
 
 [#953]: https://github.com/stackabletech/kafka-operator/pull/953
 [#960]: https://github.com/stackabletech/kafka-operator/pull/960
 [#961]: https://github.com/stackabletech/kafka-operator/pull/961
+[#971]: https://github.com/stackabletech/kafka-operator/pull/971
 
 ## [26.3.0] - 2026-03-16
 
