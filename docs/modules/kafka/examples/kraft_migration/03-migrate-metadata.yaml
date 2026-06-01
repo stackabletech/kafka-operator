@@ -6,7 +6,7 @@ metadata:
   namespace: kraft-migration
 spec:
   image:
-    productVersion: 3.9.1
+    productVersion: 3.9.2
     pullPolicy: IfNotPresent
   clusterConfig:
     metadataManager: zookeeper
@@ -25,7 +25,7 @@ spec:
         replicas: 3
     configOverrides:
       broker.properties:
-        inter.broker.protocol.version: "3.9" # - Latest value known to Kafka 3.9.1
+        inter.broker.protocol.version: "3.9" # - Latest value known to Kafka 3.9.2
         zookeeper.metadata.migration.enable: "true" # - Enable migration mode so the broker can participate in metadata migration.
         controller.listener.names: "CONTROLLER"
         controller.quorum.bootstrap.servers: "simple-kafka-controller-default-0.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093,simple-kafka-controller-default-1.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093,simple-kafka-controller-default-2.simple-kafka-controller-default-headless.kraft-migration.svc.cluster.local:9093"

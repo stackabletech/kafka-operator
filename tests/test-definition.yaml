@@ -6,20 +6,21 @@
 dimensions:
   - name: kafka-kraft
     values:
-      - 3.9.1
-      - 4.1.1
+      - 3.9.2
+      - 4.2.1
   - name: kafka
     values:
       - 3.9.1
+      - 3.9.2
       # Alternatively, if you want to use a custom image, append a comma and the full image name to the product version
       # as in the example below.
-      # - 3.9.1,oci.stackable.tech/sdp/kafka:3.9.1-stackable0.0.0-dev
+      # - 3.9.2,oci.stackable.tech/sdp/kafka:3.9.2-stackable0.0.0-dev
   - name: kafka-latest
     values:
-      - 3.9.1 # Using LTS version here
+      - 3.9.2 # Using LTS version here
       # Alternatively, if you want to use a custom image, append a comma and the full image name to the product version
       # as in the example below.
-      # - 3.9.1,oci.stackable.tech/sdp/kafka:3.9.1-stackable0.0.0-dev
+      # - 3.9.2,oci.stackable.tech/sdp/kafka:3.9.2-stackable0.0.0-dev
   - name: zookeeper
     values:
       - 3.9.4
@@ -31,10 +32,10 @@ dimensions:
       - 1.16.2
   - name: upgrade_old
     values:
-      - 3.9.1
+      - 3.9.2
   - name: upgrade_new
     values:
-      - 4.1.1
+      - 4.2.1
   - name: use-client-tls
     values:
       - "true"

@@ -615,7 +615,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.9.1
+            productVersion: 3.9.2
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -634,7 +634,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.9.1
+            productVersion: 3.9.2
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
@@ -659,7 +659,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.9.1
+            productVersion: 3.9.2
           clusterConfig:
             tls:
               serverSecretClass: null
@@ -680,7 +680,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.9.1
+            productVersion: 3.9.2
           zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
@@ -705,7 +705,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.9.1
+            productVersion: 3.9.2
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -724,7 +724,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.9.1
+            productVersion: 3.9.2
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls
@@ -745,7 +745,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.9.1
+            productVersion: 3.9.2
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
@@ -764,13 +764,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case("3.9.1", None, Ok(MetadataManager::ZooKeeper))]
+    #[case("3.9.2", None, Ok(MetadataManager::ZooKeeper))]
     #[case(
-        "3.9.1",
+        "3.9.2",
         Some(MetadataManager::ZooKeeper),
         Ok(MetadataManager::ZooKeeper)
     )]
-    #[case("3.9.1", Some(MetadataManager::KRaft), Ok(MetadataManager::KRaft))]
+    #[case("3.9.2", Some(MetadataManager::KRaft), Ok(MetadataManager::KRaft))]
     #[case("4.1.1", None, Ok(MetadataManager::KRaft))]
     #[case(
         "4.1.1",
