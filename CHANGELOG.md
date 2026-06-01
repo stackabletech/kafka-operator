@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - BREAKING: Add required CLI argument and env var to set the image repository used to construct final product image names: `IMAGE_REPOSITORY` (`--image-repository`), eg. `oci.example.org/my/namespace` ([#961]).
+- Add Kafka 3.9.2 and 4.2.1 in tests, docs, getting started guide, etc. ([#973]).
 
 ### Changed
 
@@ -22,6 +23,7 @@ All notable changes to this project will be documented in this file.
 [#960]: https://github.com/stackabletech/kafka-operator/pull/960
 [#961]: https://github.com/stackabletech/kafka-operator/pull/961
 [#971]: https://github.com/stackabletech/kafka-operator/pull/971
+[#973]: https://github.com/stackabletech/kafka-operator/pull/973
 
 ## [26.3.0] - 2026-03-16
 

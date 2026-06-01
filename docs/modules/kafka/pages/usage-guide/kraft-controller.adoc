@@ -31,7 +31,7 @@ spec:
   clusterConfig:
     metadataManager: kraft
   image:
-    productVersion: "3.9.1"
+    productVersion: "3.9.2"
   brokers:
     roleGroups:
       default:
@@ -124,7 +124,7 @@ NOTE: Before starting the migration we recommend to reduce producer/consumer ope
 To make the migration step as clear as possible, we'll use a complete working example throughout this guide.
 The example cluster will be kept minimal without any additional configuration.
 
-We'll use Kafka version `3.9.1` for this purpose. This is because this is the last version from the 3.x Kafka series that runs on ZooKeeper mode and is supported by the SDP.
+We'll use Kafka version `3.9.2` for this purpose. This is because this is the last version from the 3.x Kafka series that runs on ZooKeeper mode and is supported by the SDP.
 
 We'll also assign broker ids manually from the beginning to simplify this guide. In a real-workd scenario, you do not have this option at this step because your cluster is already running.
 In a real world-scenario you'll have to collect these ids and configure manual assignment at the second step of the migration.
