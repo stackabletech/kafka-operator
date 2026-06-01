@@ -6,14 +6,11 @@ commands:
   #
   # Test envOverrides
   #
+  # configOverrides are covered by the ConfigMap data snapshot in 34-assert.yaml.j2;
+  # env overrides cannot be snapshotted there because the operator emits a random
+  # NODE_ID_OFFSET into the StatefulSet env array (kuttl matches arrays positionally),
+  # so we keep these targeted yq checks here.
   - script: |
       kubectl -n $NAMESPACE get sts test-kafka-broker-default -o yaml | yq -e '.spec.template.spec.containers[] | select (.name == "kafka") | .env[] | select (.name == "COMMON_VAR" and .value == "group-value")'
       kubectl -n $NAMESPACE get sts test-kafka-broker-default -o yaml | yq -e '.spec.template.spec.containers[] | select (.name == "kafka") | .env[] | select (.name == "GROUP_VAR" and .value == "group-value")'
       kubectl -n $NAMESPACE get sts test-kafka-broker-default -o yaml | yq -e '.spec.template.spec.containers[] | select (.name == "kafka") | .env[] | select (.name == "ROLE_VAR" and .value == "role-value")'
-  #
-  # Test configOverrides
-  #
-  - script: |
-      kubectl -n $NAMESPACE get cm test-kafka-broker-default -o yaml | yq -e '.data."broker.properties"' | grep "compression.type=snappy"
-      kubectl -n $NAMESPACE get cm test-kafka-broker-default -o yaml | yq -e '.data."broker.properties"' | grep "controller.quorum.election.backoff.max.ms=2000"
-      kubectl -n $NAMESPACE get cm test-kafka-broker-default -o yaml | yq -e '.data."broker.properties"' | grep "controller.quorum.fetch.timeout.ms=3000"

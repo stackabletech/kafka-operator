@@ -66,11 +66,10 @@ impl ResolvedAuthenticationClasses {
         }
     }
 
-    /// Resolve provided AuthenticationClasses via API calls and validate the contents.
-    /// Currently errors out if:
-    /// - AuthenticationClass could not be resolved
-    /// - Validation failed
-    pub async fn from_references(
+    /// Fetch the referenced AuthenticationClasses from the Kubernetes API without validating them.
+    ///
+    /// Call [`Self::validate`] on the result to enforce the constraints documented there.
+    pub async fn fetch_references(
         client: &Client,
         auth_classes: &Vec<KafkaAuthentication>,
     ) -> Result<ResolvedAuthenticationClasses, Error> {
@@ -91,7 +90,9 @@ impl ResolvedAuthenticationClasses {
             );
         }
 
-        ResolvedAuthenticationClasses::new(resolved_authentication_classes).validate()
+        Ok(ResolvedAuthenticationClasses::new(
+            resolved_authentication_classes,
+        ))
     }
 
     /// Return the (first) TLS `AuthenticationClass` if available
