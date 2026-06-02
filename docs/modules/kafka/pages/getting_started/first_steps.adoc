@@ -85,7 +85,7 @@ Labels:                   app.kubernetes.io/component=broker
                           app.kubernetes.io/managed-by=listeners.stackable.tech_listener
                           app.kubernetes.io/name=listener
                           app.kubernetes.io/role-group=default
-                          app.kubernetes.io/version=3.9.1-stackable0.0.0-dev
+                          app.kubernetes.io/version=3.9.2-stackable0.0.0-dev
                           stackable.tech/vendor=Stackable
 Annotations:              <none>
 Selector:                 listener.stackable.tech/mnt.9555cbb6f38d4b0ca1771e6d83d28e27=simple-kafka-broker-default-bootstrap

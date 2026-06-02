@@ -44,7 +44,7 @@ mod tests {
           name: simple-kafka
         spec:
           image:
-            productVersion: 3.9.1
+            productVersion: 3.9.2
           clusterConfig:
             zookeeperConfigMapName: xyz
           brokers:
