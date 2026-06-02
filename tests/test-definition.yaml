@@ -7,6 +7,7 @@ dimensions:
   - name: kafka-kraft
     values:
       - 3.9.2
+      - 4.1.1
       - 4.2.1
   - name: kafka
     values:
