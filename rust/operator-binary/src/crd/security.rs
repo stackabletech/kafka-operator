@@ -16,7 +16,6 @@ use stackable_operator::{
             volume::{SecretFormat, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
         },
     },
-    client::Client,
     commons::secret_class::SecretClassVolumeProvisionParts,
     crd::authentication::core,
     k8s_openapi::api::core::v1::Volume,
@@ -27,7 +26,7 @@ use super::listener::KafkaListenerProtocol;
 use crate::crd::{
     LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_KRB5_PATH,
     STACKABLE_LISTENER_BROKER_DIR,
-    authentication::{self, ResolvedAuthenticationClasses},
+    authentication::ResolvedAuthenticationClasses,
     listener::{self, KafkaListenerName, node_address_cmd_env, node_port_cmd_env},
     role::KafkaRole,
     tls, v1alpha1,
@@ -35,9 +34,6 @@ use crate::crd::{
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("failed to process authentication class"))]
-    InvalidAuthenticationClassConfiguration { source: authentication::Error },
-
     #[snafu(display("failed to build the secret operator Volume"))]
     SecretVolumeBuild {
         source: stackable_operator::builder::pod::volume::SecretOperatorVolumeSourceBuilderError,
@@ -114,20 +110,17 @@ impl KafkaTlsSecurity {
         }
     }
 
-    /// Create a `KafkaSecurity` struct from the Kafka custom resource and resolve
-    /// all provided `AuthenticationClass` references.
-    pub async fn new_from_kafka_cluster(
-        client: &Client,
+    /// Build a [`KafkaTlsSecurity`] from already-resolved authentication classes.
+    ///
+    /// The async retrieval of [`ResolvedAuthenticationClasses`] now happens in the dereference
+    /// step of the controller; this constructor only reads TLS settings from the spec.
+    pub fn new_from_kafka_cluster(
         kafka: &v1alpha1::KafkaCluster,
+        resolved_authentication_classes: ResolvedAuthenticationClasses,
         opa_secret_class: Option<String>,
-    ) -> Result<Self, Error> {
-        Ok(KafkaTlsSecurity {
-            resolved_authentication_classes: ResolvedAuthenticationClasses::from_references(
-                client,
-                &kafka.spec.cluster_config.authentication,
-            )
-            .await
-            .context(InvalidAuthenticationClassConfigurationSnafu)?,
+    ) -> Self {
+        KafkaTlsSecurity {
+            resolved_authentication_classes,
             internal_secret_class: kafka
                 .spec
                 .cluster_config
@@ -142,7 +135,7 @@ impl KafkaTlsSecurity {
                 .as_ref()
                 .and_then(|tls| tls.server_secret_class.clone()),
             opa_secret_class,
-        })
+        }
     }
 
     /// Check if TLS encryption is enabled. This could be due to:

@@ -8,8 +8,8 @@ use stackable_operator::{
 };
 
 use crate::{
+    controller::KAFKA_CONTROLLER_NAME,
     crd::{APP_NAME, METRICS_PORT, METRICS_PORT_NAME, security::KafkaTlsSecurity, v1alpha1},
-    kafka_controller::KAFKA_CONTROLLER_NAME,
     utils::build_recommended_labels,
 };
 

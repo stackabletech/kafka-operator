@@ -35,15 +35,15 @@ use stackable_operator::{
 };
 
 use crate::{
+    controller::KAFKA_FULL_CONTROLLER_NAME,
     crd::{KafkaCluster, KafkaClusterVersion, OPERATOR_NAME, v1alpha1},
-    kafka_controller::KAFKA_FULL_CONTROLLER_NAME,
     webhooks::conversion::create_webhook_server,
 };
 
 mod config;
+mod controller;
 mod crd;
 mod discovery;
-mod kafka_controller;
 mod kerberos;
 mod operations;
 mod product_logging;
@@ -183,9 +183,9 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .graceful_shutdown_on(sigterm_watcher.handle())
                 .run(
-                    kafka_controller::reconcile_kafka,
-                    kafka_controller::error_policy,
-                    Arc::new(kafka_controller::Ctx {
+                    controller::reconcile_kafka,
+                    controller::error_policy,
+                    Arc::new(controller::Ctx {
                         client: client.clone(),
                         operator_environment,
                         product_config,

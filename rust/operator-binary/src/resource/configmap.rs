@@ -14,6 +14,7 @@ use stackable_operator::{
 };
 
 use crate::{
+    controller::KAFKA_CONTROLLER_NAME,
     crd::{
         JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, MetadataManager,
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
@@ -26,7 +27,6 @@ use crate::{
         security::KafkaTlsSecurity,
         v1alpha1,
     },
-    kafka_controller::KAFKA_CONTROLLER_NAME,
     operations::graceful_shutdown::graceful_shutdown_config_properties,
     product_logging::extend_role_group_config_map,
     utils::build_recommended_labels,
