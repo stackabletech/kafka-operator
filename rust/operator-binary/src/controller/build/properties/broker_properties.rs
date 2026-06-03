@@ -2,21 +2,20 @@ use std::collections::BTreeMap;
 
 use snafu::OptionExt;
 
+use super::{Error, NoKraftControllersFoundSnafu, kraft_controllers};
 use crate::{
     crd::{
         KafkaPodDescriptor,
         listener::{KafkaListenerConfig, KafkaListenerName},
         role::{
-            KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID,
-            KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP,
-            KAFKA_LISTENERS, KAFKA_LOG_DIRS, KAFKA_NODE_ID, KAFKA_PROCESS_ROLES, KafkaRole,
+            KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
+            KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS, KAFKA_LOG_DIRS, KAFKA_NODE_ID,
+            KAFKA_PROCESS_ROLES, KafkaRole,
         },
         security::KafkaTlsSecurity,
     },
     operations::graceful_shutdown::graceful_shutdown_config_properties,
 };
-
-use super::{Error, NoKraftControllersFoundSnafu, kraft_controllers};
 
 pub fn build(
     kafka_security: &KafkaTlsSecurity,

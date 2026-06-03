@@ -96,21 +96,19 @@ pub fn build_rolegroup_config_map(
         .unwrap_or_default();
 
     let kafka_config = match merged_config {
-        AnyConfig::Broker(_) => {
-            crate::controller::build::properties::broker_properties::build(
-                kafka_security,
-                listener_config,
-                pod_descriptors,
-                opa_connect_string,
-                metadata_manager == MetadataManager::KRaft,
-                kafka
-                    .spec
-                    .cluster_config
-                    .broker_id_pod_config_map_name
-                    .is_some(),
-                overrides,
-            )
-        }
+        AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
+            kafka_security,
+            listener_config,
+            pod_descriptors,
+            opa_connect_string,
+            metadata_manager == MetadataManager::KRaft,
+            kafka
+                .spec
+                .cluster_config
+                .broker_id_pod_config_map_name
+                .is_some(),
+            overrides,
+        ),
         AnyConfig::Controller(_) => {
             crate::controller::build::properties::controller_properties::build(
                 kafka_security,
