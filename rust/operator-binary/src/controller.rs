@@ -26,6 +26,7 @@ use stackable_operator::{
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
+pub(crate) mod build;
 mod dereference;
 mod validate;
 

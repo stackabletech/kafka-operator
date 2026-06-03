@@ -1,11 +1,8 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    str::FromStr,
-};
+use std::collections::{BTreeMap, HashMap};
 
 use indoc::formatdoc;
 use product_config::types::PropertyNameKind;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
     commons::product_image_selection::ResolvedProductImage,
@@ -19,16 +16,11 @@ use crate::{
     crd::{
         JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, MetadataManager,
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
-        listener::{KafkaListenerConfig, KafkaListenerName, node_address_cmd},
-        role::{
-            AnyConfig, KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID,
-            KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP,
-            KAFKA_LISTENERS, KAFKA_LOG_DIRS, KAFKA_NODE_ID, KAFKA_PROCESS_ROLES, KafkaRole,
-        },
+        listener::{KafkaListenerConfig, node_address_cmd},
+        role::AnyConfig,
         security::KafkaTlsSecurity,
         v1alpha1,
     },
-    operations::graceful_shutdown::graceful_shutdown_config_properties,
     product_logging::extend_role_group_config_map,
     utils::build_recommended_labels,
 };
@@ -69,13 +61,10 @@ pub enum Error {
         rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
-    #[snafu(display("no Kraft controllers found to build"))]
-    NoKraftControllersFound,
-
-    #[snafu(display("unknown Kafka role [{name}]"))]
-    UnknownKafkaRole {
-        source: strum::ParseError,
-        name: String,
+    #[snafu(display("failed to build properties for {rolegroup}"))]
+    BuildProperties {
+        source: crate::controller::build::properties::Error,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
     #[snafu(display("failed to build jaas configuration file for {rolegroup}"))]
@@ -101,35 +90,40 @@ pub fn build_rolegroup_config_map(
         .effective_metadata_manager()
         .context(InvalidMetadataManagerSnafu)?;
 
-    let mut kafka_config = server_properties_file(
-        metadata_manager == MetadataManager::KRaft,
-        &rolegroup.role,
-        pod_descriptors,
-        listener_config,
-        opa_connect_string,
-        kafka
-            .spec
-            .cluster_config
-            .broker_id_pod_config_map_name
-            .is_some(),
-    )?;
+    let overrides = rolegroup_config
+        .get(&PropertyNameKind::File(kafka_config_file_name.to_string()))
+        .cloned()
+        .unwrap_or_default();
 
-    match merged_config {
-        AnyConfig::Broker(_) => kafka_config.extend(kafka_security.broker_config_settings()),
+    let kafka_config = match merged_config {
+        AnyConfig::Broker(_) => {
+            crate::controller::build::properties::broker_properties::build(
+                kafka_security,
+                listener_config,
+                pod_descriptors,
+                opa_connect_string,
+                metadata_manager == MetadataManager::KRaft,
+                kafka
+                    .spec
+                    .cluster_config
+                    .broker_id_pod_config_map_name
+                    .is_some(),
+                overrides,
+            )
+        }
         AnyConfig::Controller(_) => {
-            kafka_config.extend(kafka_security.controller_config_settings())
+            crate::controller::build::properties::controller_properties::build(
+                kafka_security,
+                listener_config,
+                pod_descriptors,
+                metadata_manager == MetadataManager::KRaft,
+                overrides,
+            )
         }
     }
-
-    kafka_config.extend(graceful_shutdown_config_properties());
-
-    // Need to call this to get configOverrides :(
-    kafka_config.extend(
-        rolegroup_config
-            .get(&PropertyNameKind::File(kafka_config_file_name.to_string()))
-            .cloned()
-            .unwrap_or_default(),
-    );
+    .with_context(|_| BuildPropertiesSnafu {
+        rolegroup: rolegroup.clone(),
+    })?;
 
     let kafka_config = kafka_config
         .into_iter()
@@ -216,177 +210,6 @@ pub fn build_rolegroup_config_map(
         .with_context(|_| BuildRoleGroupConfigSnafu {
             rolegroup: rolegroup.clone(),
         })
-}
-
-// Generate the content of both broker.properties and controller.properties files.
-fn server_properties_file(
-    kraft_mode: bool,
-    role: &str,
-    pod_descriptors: &[KafkaPodDescriptor],
-    listener_config: &KafkaListenerConfig,
-    opa_connect_string: Option<&str>,
-    disable_broker_id_generation: bool,
-) -> Result<BTreeMap<String, String>, Error> {
-    let kraft_controllers = kraft_controllers(pod_descriptors);
-
-    let role = KafkaRole::from_str(role).context(UnknownKafkaRoleSnafu {
-        name: role.to_string(),
-    })?;
-
-    match role {
-        KafkaRole::Controller => {
-            let kraft_controllers = kraft_controllers.context(NoKraftControllersFoundSnafu)?;
-
-            let mut result = BTreeMap::from([
-            (
-                KAFKA_LOG_DIRS.to_string(),
-                "/stackable/data/kraft".to_string(),
-            ),
-            (KAFKA_PROCESS_ROLES.to_string(), role.to_string()),
-            (
-                "controller.listener.names".to_string(),
-                KafkaListenerName::Controller.to_string(),
-            ),
-            (
-                KAFKA_NODE_ID.to_string(),
-                "${env:REPLICA_ID}".to_string(),
-            ),
-            (
-                KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS.to_string(),
-                kraft_controllers.clone(),
-            ),
-            (
-                KAFKA_LISTENERS.to_string(),
-                "CONTROLLER://${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}:${env:KAFKA_CLIENT_PORT}".to_string(),
-            ),
-            (
-                KAFKA_LISTENER_SECURITY_PROTOCOL_MAP.to_string(),
-                listener_config
-                    .listener_security_protocol_map_for_controller()),
-            ]);
-
-            result.insert(
-                "inter.broker.listener.name".to_string(),
-                KafkaListenerName::Internal.to_string(),
-            );
-
-            // The ZooKeeper connection is needed for migration from ZooKeeper to KRaft mode.
-            // It is not needed once the controller is fully running in KRaft mode.
-            if !kraft_mode {
-                result.insert(
-                    "zookeeper.connect".to_string(),
-                    "${env:ZOOKEEPER}".to_string(),
-                );
-            }
-            Ok(result)
-        }
-        KafkaRole::Broker => {
-            let mut result = BTreeMap::from([
-                (
-                    KAFKA_LOG_DIRS.to_string(),
-                    "/stackable/data/topicdata".to_string(),
-                ),
-                (KAFKA_LISTENERS.to_string(), listener_config.listeners()),
-                (
-                    KAFKA_ADVERTISED_LISTENERS.to_string(),
-                    listener_config.advertised_listeners(),
-                ),
-                (
-                    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP.to_string(),
-                    listener_config.listener_security_protocol_map(),
-                ),
-                (
-                    "inter.broker.listener.name".to_string(),
-                    KafkaListenerName::Internal.to_string(),
-                ),
-            ]);
-
-            if kraft_mode {
-                let kraft_controllers = kraft_controllers.context(NoKraftControllersFoundSnafu)?;
-
-                // Running in KRaft mode
-                result.extend([
-                    (
-                        "broker.id.generation.enable".to_string(),
-                        "false".to_string(),
-                    ),
-                    (KAFKA_NODE_ID.to_string(), "${env:REPLICA_ID}".to_string()),
-                    (
-                        KAFKA_PROCESS_ROLES.to_string(),
-                        KafkaRole::Broker.to_string(),
-                    ),
-                    (
-                        "controller.listener.names".to_string(),
-                        KafkaListenerName::Controller.to_string(),
-                    ),
-                    (
-                        KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS.to_string(),
-                        kraft_controllers.clone(),
-                    ),
-                ]);
-            } else {
-                // Running with ZooKeeper enabled
-                result.extend([(
-                    "zookeeper.connect".to_string(),
-                    "${env:ZOOKEEPER}".to_string(),
-                )]);
-                // We are in zookeeper mode and the user has defined a broker id mapping
-                // so we disable automatic id generation.
-                // This check ensures that existing clusters running in ZooKeeper mode do not
-                // suddenly break after the introduction of this change.
-                if disable_broker_id_generation {
-                    result.extend([
-                        (
-                            "broker.id.generation.enable".to_string(),
-                            "false".to_string(),
-                        ),
-                        (KAFKA_BROKER_ID.to_string(), "${env:REPLICA_ID}".to_string()),
-                    ]);
-                }
-            }
-
-            // Enable OPA authorization
-            if opa_connect_string.is_some() {
-                result.extend([
-                    (
-                        "authorizer.class.name".to_string(),
-                        "org.openpolicyagent.kafka.OpaAuthorizer".to_string(),
-                    ),
-                    (
-                        "opa.authorizer.metrics.enabled".to_string(),
-                        "true".to_string(),
-                    ),
-                    (
-                        "opa.authorizer.url".to_string(),
-                        opa_connect_string.unwrap_or_default().to_string(),
-                    ),
-                ]);
-            }
-
-            Ok(result)
-        }
-    }
-}
-
-fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Option<String> {
-    let result = pod_descriptors
-        .iter()
-        .filter(|pd| pd.role == KafkaRole::Controller.to_string())
-        .map(|desc| {
-            format!(
-                "{fqdn}:{client_port}",
-                fqdn = desc.fqdn(),
-                client_port = desc.client_port
-            )
-        })
-        .collect::<Vec<String>>()
-        .join(",");
-
-    if result.is_empty() {
-        None
-    } else {
-        Some(result)
-    }
 }
 
 // Generate JAAS configuration file for Kerberos authentication
