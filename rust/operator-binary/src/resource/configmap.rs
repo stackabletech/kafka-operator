@@ -4,7 +4,7 @@ use std::{
 };
 
 use indoc::formatdoc;
-use product_config::{types::PropertyNameKind, writer::to_java_properties_string};
+use product_config::types::PropertyNameKind;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
@@ -14,6 +14,7 @@ use stackable_operator::{
 };
 
 use crate::{
+    config::writer::to_java_properties_string,
     controller::KAFKA_CONTROLLER_NAME,
     crd::{
         JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, MetadataManager,
@@ -48,7 +49,7 @@ pub enum Error {
         rolegroup
     ))]
     JvmSecurityProperties {
-        source: product_config::writer::PropertiesWriterError,
+        source: crate::config::writer::PropertiesWriterError,
         rolegroup: String,
     },
 
@@ -64,7 +65,7 @@ pub enum Error {
 
     #[snafu(display("failed to serialize config for {rolegroup}"))]
     SerializeConfig {
-        source: product_config::writer::PropertiesWriterError,
+        source: crate::config::writer::PropertiesWriterError,
         rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 

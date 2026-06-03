@@ -13,6 +13,7 @@ product-config.workspace = true
 stackable-operator.workspace = true
 
 indoc.workspace = true
+java-properties.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 const_format.workspace = true
