@@ -1,7 +1,6 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use indoc::formatdoc;
-use product_config::types::PropertyNameKind;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
@@ -78,7 +77,8 @@ pub fn build_rolegroup_config_map(
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &KafkaTlsSecurity,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    rolegroup_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
+    config_file_overrides: BTreeMap<String, String>,
+    jvm_security_overrides: BTreeMap<String, String>,
     merged_config: &AnyConfig,
     listener_config: &KafkaListenerConfig,
     pod_descriptors: &[KafkaPodDescriptor],
@@ -89,11 +89,6 @@ pub fn build_rolegroup_config_map(
     let metadata_manager = kafka
         .effective_metadata_manager()
         .context(InvalidMetadataManagerSnafu)?;
-
-    let overrides = rolegroup_config
-        .get(&PropertyNameKind::File(kafka_config_file_name.to_string()))
-        .cloned()
-        .unwrap_or_default();
 
     let kafka_config = match merged_config {
         AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
@@ -107,7 +102,7 @@ pub fn build_rolegroup_config_map(
                 .cluster_config
                 .broker_id_pod_config_map_name
                 .is_some(),
-            overrides,
+            config_file_overrides,
         ),
         AnyConfig::Controller(_) => {
             crate::controller::build::properties::controller_properties::build(
@@ -115,7 +110,7 @@ pub fn build_rolegroup_config_map(
                 listener_config,
                 pod_descriptors,
                 metadata_manager == MetadataManager::KRaft,
-                overrides,
+                config_file_overrides,
             )
         }
     }
@@ -128,12 +123,7 @@ pub fn build_rolegroup_config_map(
         .map(|(k, v)| (k, Some(v)))
         .collect::<Vec<_>>();
 
-    let jvm_sec_props: BTreeMap<String, Option<String>> = rolegroup_config
-        .get(&PropertyNameKind::File(
-            JVM_SECURITY_PROPERTIES_FILE.to_string(),
-        ))
-        .cloned()
-        .unwrap_or_default()
+    let jvm_sec_props: BTreeMap<String, Option<String>> = jvm_security_overrides
         .into_iter()
         .map(|(k, v)| (k, Some(v)))
         .collect();

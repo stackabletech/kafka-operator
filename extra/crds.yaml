@@ -541,6 +541,7 @@ spec:
                     properties:
                       broker.properties:
                         additionalProperties:
+                          nullable: true
                           type: string
                         description: |-
                           Flat key-value overrides for `*.properties`, Hadoop XML, etc.
@@ -551,6 +552,7 @@ spec:
                         type: object
                       security.properties:
                         additionalProperties:
+                          nullable: true
                           type: string
                         description: |-
                           Flat key-value overrides for `*.properties`, Hadoop XML, etc.
@@ -1158,6 +1160,7 @@ spec:
                           properties:
                             broker.properties:
                               additionalProperties:
+                                nullable: true
                                 type: string
                               description: |-
                                 Flat key-value overrides for `*.properties`, Hadoop XML, etc.
@@ -1168,6 +1171,7 @@ spec:
                               type: object
                             security.properties:
                               additionalProperties:
+                                nullable: true
                                 type: string
                               description: |-
                                 Flat key-value overrides for `*.properties`, Hadoop XML, etc.
@@ -1786,6 +1790,7 @@ spec:
                     properties:
                       controller.properties:
                         additionalProperties:
+                          nullable: true
                           type: string
                         description: |-
                           Flat key-value overrides for `*.properties`, Hadoop XML, etc.
@@ -1796,6 +1801,7 @@ spec:
                         type: object
                       security.properties:
                         additionalProperties:
+                          nullable: true
                           type: string
                         description: |-
                           Flat key-value overrides for `*.properties`, Hadoop XML, etc.
@@ -2235,6 +2241,7 @@ spec:
                           properties:
                             controller.properties:
                               additionalProperties:
+                                nullable: true
                                 type: string
                               description: |-
                                 Flat key-value overrides for `*.properties`, Hadoop XML, etc.
@@ -2245,6 +2252,7 @@ spec:
                               type: object
                             security.properties:
                               additionalProperties:
+                                nullable: true
                                 type: string
                               description: |-
                                 Flat key-value overrides for `*.properties`, Hadoop XML, etc.

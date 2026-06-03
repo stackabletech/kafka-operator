@@ -2922,7 +2922,6 @@ dependencies = [
  "futures",
  "indoc",
  "java-properties",
- "product-config",
  "rstest",
  "serde",
  "serde_json",

@@ -1,9 +1,8 @@
 //! Ensures that `Pod`s are configured and running for each [`v1alpha1::KafkaCluster`].
 
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use const_format::concatcp;
-use product_config::ProductConfigManager;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
@@ -51,7 +50,6 @@ pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
-    pub product_config: ProductConfigManager,
     pub operator_environment: OperatorEnvironmentOptions,
 }
 
@@ -114,9 +112,6 @@ pub enum Error {
         source: stackable_operator::cluster_resources::Error,
     },
 
-    #[snafu(display("failed to resolve and merge config for role and role group"))]
-    FailedToResolveConfig { source: crate::crd::role::Error },
-
     #[snafu(display("failed to patch service account"))]
     ApplyServiceAccount {
         source: stackable_operator::cluster_resources::Error,
@@ -155,9 +150,6 @@ pub enum Error {
 
     #[snafu(display("KafkaCluster object is misconfigured"))]
     MisconfiguredKafkaCluster { source: crd::Error },
-
-    #[snafu(display("failed to parse role: {source}"))]
-    ParseRole { source: strum::ParseError },
 
     #[snafu(display("failed to build statefulset"))]
     BuildStatefulset {
@@ -198,7 +190,6 @@ impl ReconcilerError for Error {
             Error::ApplyDiscoveryConfig { .. } => None,
             Error::DeleteOrphans { .. } => None,
             Error::CreateClusterResources { .. } => None,
-            Error::FailedToResolveConfig { .. } => None,
             Error::ApplyServiceAccount { .. } => None,
             Error::ApplyRoleBinding { .. } => None,
             Error::ApplyStatus { .. } => None,
@@ -207,7 +198,6 @@ impl ReconcilerError for Error {
             Error::GetRequiredLabels { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
             Error::MisconfiguredKafkaCluster { .. } => None,
-            Error::ParseRole { .. } => None,
             Error::BuildStatefulset { .. } => None,
             Error::BuildConfigMap { .. } => None,
             Error::BuildService { .. } => None,
@@ -238,18 +228,13 @@ pub async fn reconcile_kafka(
         .context(DereferenceSnafu)?;
 
     // validate (no client required)
-    let validate::ValidatedInputs {
+    let validate::ValidatedKafkaCluster {
         authorization_config,
         image,
         kafka_security,
-        role_config: validated_config,
-    } = validate::validate(
-        kafka,
-        dereferenced_objects,
-        &ctx.operator_environment,
-        &ctx.product_config,
-    )
-    .context(ValidateClusterSnafu)?;
+        role_groups,
+    } = validate::validate(kafka, dereferenced_objects, &ctx.operator_environment)
+        .context(ValidateClusterSnafu)?;
 
     let opa_connect = authorization_config
         .as_ref()
@@ -295,15 +280,9 @@ pub async fn reconcile_kafka(
 
     let mut bootstrap_listeners = Vec::<listener::v1alpha1::Listener>::new();
 
-    for (kafka_role_str, role_config) in &validated_config {
-        let kafka_role = KafkaRole::from_str(kafka_role_str).context(ParseRoleSnafu)?;
-
-        for (rolegroup_name, rolegroup_config) in role_config.iter() {
-            let rolegroup_ref = kafka.rolegroup_ref(&kafka_role, rolegroup_name);
-
-            let merged_config = kafka_role
-                .merged_config(kafka, &rolegroup_ref.role_group)
-                .context(FailedToResolveConfigSnafu)?;
+    for (kafka_role, rg_map) in &role_groups {
+        for (rolegroup_name, validated_rg) in rg_map {
+            let rolegroup_ref = kafka.rolegroup_ref(kafka_role, rolegroup_name);
 
             let rg_headless_service =
                 build_rolegroup_headless_service(kafka, &image, &rolegroup_ref, &kafka_security)
@@ -333,8 +312,9 @@ pub async fn reconcile_kafka(
                 &image,
                 &kafka_security,
                 &rolegroup_ref,
-                rolegroup_config,
-                &merged_config,
+                validated_rg.config_file_overrides.clone(),
+                validated_rg.jvm_security_overrides.clone(),
+                &validated_rg.merged_config,
                 &kafka_listeners,
                 &pod_descriptors,
                 opa_connect.as_deref(),
@@ -344,37 +324,37 @@ pub async fn reconcile_kafka(
             let rg_statefulset = match kafka_role {
                 KafkaRole::Broker => build_broker_rolegroup_statefulset(
                     kafka,
-                    &kafka_role,
+                    kafka_role,
                     &image,
                     &rolegroup_ref,
-                    rolegroup_config,
+                    &validated_rg.env_overrides,
                     &kafka_security,
-                    &merged_config,
+                    &validated_rg.merged_config,
                     &rbac_sa,
                     &client.kubernetes_cluster_info,
                 )
                 .context(BuildStatefulsetSnafu)?,
                 KafkaRole::Controller => build_controller_rolegroup_statefulset(
                     kafka,
-                    &kafka_role,
+                    kafka_role,
                     &image,
                     &rolegroup_ref,
-                    rolegroup_config,
+                    &validated_rg.env_overrides,
                     &kafka_security,
-                    &merged_config,
+                    &validated_rg.merged_config,
                     &rbac_sa,
                     &client.kubernetes_cluster_info,
                 )
                 .context(BuildStatefulsetSnafu)?,
             };
 
-            if let AnyConfig::Broker(broker_config) = merged_config {
+            if let AnyConfig::Broker(broker_config) = &validated_rg.merged_config {
                 let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
                     kafka,
                     &image,
                     &kafka_security,
                     &rolegroup_ref,
-                    &broker_config,
+                    broker_config,
                 )
                 .context(BuildListenerSnafu)?;
                 bootstrap_listeners.push(
@@ -417,12 +397,12 @@ pub async fn reconcile_kafka(
             );
         }
 
-        let role_config = kafka.role_config(&kafka_role);
+        let role_cfg = kafka.role_config(kafka_role);
         if let Some(GenericRoleConfig {
             pod_disruption_budget: pdb,
-        }) = role_config
+        }) = role_cfg
         {
-            add_pdbs(pdb, kafka, &kafka_role, client, &mut cluster_resources)
+            add_pdbs(pdb, kafka, kafka_role, client, &mut cluster_resources)
                 .await
                 .context(FailedToCreatePdbSnafu)?;
         }

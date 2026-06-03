@@ -1,9 +1,5 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    ops::Deref,
-};
+use std::{collections::BTreeMap, ops::Deref};
 
-use product_config::types::PropertyNameKind;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::{
@@ -171,7 +167,7 @@ pub fn build_broker_rolegroup_statefulset(
     kafka_role: &KafkaRole,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    broker_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
+    env_overrides: &BTreeMap<String, String>,
     kafka_security: &KafkaTlsSecurity,
     merged_config: &AnyConfig,
     service_account: &ServiceAccount,
@@ -249,10 +245,8 @@ pub fn build_broker_rolegroup_statefulset(
         .context(AddKerberosConfigSnafu)?;
     }
 
-    let mut env = broker_config
-        .get(&PropertyNameKind::Env)
-        .into_iter()
-        .flatten()
+    let mut env = env_overrides
+        .iter()
         .map(|(k, v)| EnvVar {
             name: k.clone(),
             value: Some(v.clone()),
@@ -581,7 +575,7 @@ pub fn build_controller_rolegroup_statefulset(
     kafka_role: &KafkaRole,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    controller_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
+    env_overrides: &BTreeMap<String, String>,
     kafka_security: &KafkaTlsSecurity,
     merged_config: &AnyConfig,
     service_account: &ServiceAccount,
@@ -603,10 +597,8 @@ pub fn build_controller_rolegroup_statefulset(
 
     let mut pod_builder = PodBuilder::new();
 
-    let mut env = controller_config
-        .get(&PropertyNameKind::Env)
-        .into_iter()
-        .flatten()
+    let mut env = env_overrides
+        .iter()
         .map(|(k, v)| EnvVar {
             name: k.clone(),
             value: Some(v.clone()),

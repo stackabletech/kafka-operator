@@ -16,13 +16,13 @@ use stackable_operator::{
         cluster_operation::ClusterOperation, networking::DomainName,
         product_image_selection::ProductImage,
     },
-    config_overrides::{KeyValueConfigOverrides, KeyValueOverridesProvider},
     deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
     role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
     utils::cluster_info::KubernetesClusterInfo,
+    v2::config_overrides::KeyValueConfigOverrides,
     versioned::versioned,
 };
 use strum::{Display, EnumIter, EnumString};
@@ -240,6 +240,8 @@ pub mod versioned {
         pub broker_id_pod_config_map_name: Option<String>,
     }
 
+    // Uses the v2 KeyValueConfigOverrides (Merge-capable, `nullable` values) to match
+    // trino/hdfs. Resolution into flat maps happens in controller/validate.rs.
     #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct KafkaBrokerConfigOverrides {
@@ -288,32 +290,6 @@ impl Default for v1alpha1::KafkaClusterConfig {
             metadata_manager: None,
             broker_id_pod_config_map_name: None,
         }
-    }
-}
-
-impl KeyValueOverridesProvider for v1alpha1::KafkaBrokerConfigOverrides {
-    fn get_key_value_overrides(&self, file: &str) -> BTreeMap<String, Option<String>> {
-        let field = match file {
-            role::broker::BROKER_PROPERTIES_FILE => self.broker_properties.as_ref(),
-            JVM_SECURITY_PROPERTIES_FILE => self.security_properties.as_ref(),
-            _ => None,
-        };
-        field
-            .map(KeyValueConfigOverrides::as_product_config_overrides)
-            .unwrap_or_default()
-    }
-}
-
-impl KeyValueOverridesProvider for v1alpha1::KafkaControllerConfigOverrides {
-    fn get_key_value_overrides(&self, file: &str) -> BTreeMap<String, Option<String>> {
-        let field = match file {
-            role::controller::CONTROLLER_PROPERTIES_FILE => self.controller_properties.as_ref(),
-            JVM_SECURITY_PROPERTIES_FILE => self.security_properties.as_ref(),
-            _ => None,
-        };
-        field
-            .map(KeyValueConfigOverrides::as_product_config_overrides)
-            .unwrap_or_default()
     }
 }
 
