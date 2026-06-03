@@ -40,7 +40,6 @@ use crate::{
     discovery::{self, build_discovery_configmap},
     operations::pdb::add_pdbs,
     resource::{
-        configmap::build_rolegroup_config_map,
         listener::build_broker_rolegroup_bootstrap_listener,
         service::{build_rolegroup_headless_service, build_rolegroup_metrics_service},
         statefulset::{build_broker_rolegroup_statefulset, build_controller_rolegroup_statefulset},
@@ -167,7 +166,7 @@ pub enum Error {
 
     #[snafu(display("failed to build configmap"))]
     BuildConfigMap {
-        source: crate::resource::configmap::Error,
+        source: crate::controller::build::config_map::Error,
     },
 
     #[snafu(display("failed to build service"))]
@@ -329,7 +328,7 @@ pub async fn reconcile_kafka(
                 )
                 .context(BuildPodDescriptorsSnafu)?;
 
-            let rg_configmap = build_rolegroup_config_map(
+            let rg_configmap = build::config_map::build_rolegroup_config_map(
                 kafka,
                 &image,
                 &kafka_security,
