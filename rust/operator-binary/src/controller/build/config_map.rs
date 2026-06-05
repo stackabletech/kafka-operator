@@ -7,10 +7,10 @@ use stackable_operator::{
     commons::product_image_selection::ResolvedProductImage,
     k8s_openapi::api::core::v1::ConfigMap,
     role_utils::RoleGroupRef,
+    v2::config_file_writer::{PropertiesWriterError, to_java_properties_string},
 };
 
 use crate::{
-    config::writer::to_java_properties_string,
     controller::KAFKA_CONTROLLER_NAME,
     crd::{
         JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, MetadataManager,
@@ -40,7 +40,7 @@ pub enum Error {
         rolegroup
     ))]
     JvmSecurityProperties {
-        source: crate::config::writer::PropertiesWriterError,
+        source: PropertiesWriterError,
         rolegroup: String,
     },
 
@@ -56,7 +56,7 @@ pub enum Error {
 
     #[snafu(display("failed to serialize config for {rolegroup}"))]
     SerializeConfig {
-        source: crate::config::writer::PropertiesWriterError,
+        source: PropertiesWriterError,
         rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
