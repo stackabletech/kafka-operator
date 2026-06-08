@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::Deref};
+use std::ops::Deref;
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
@@ -12,7 +12,6 @@ use stackable_operator::{
             volume::{ListenerOperatorVolumeSourceBuilder, ListenerReference, VolumeBuilder},
         },
     },
-    commons::product_image_selection::ResolvedProductImage,
     constants::RESTART_CONTROLLER_ENABLED_LABEL,
     k8s_openapi::{
         DeepMerge,
@@ -44,14 +43,14 @@ use crate::{
         command::{broker_kafka_container_commands, controller_kafka_container_command},
         node_id_hasher::node_id_hash32_offset,
     },
-    controller::KAFKA_CONTROLLER_NAME,
+    controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster, ValidatedRoleGroupConfig},
     crd::{
         self, APP_NAME, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
         MetadataManager, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         role::{
-            AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
+            KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
         },
         security::KafkaTlsSecurity,
@@ -165,14 +164,15 @@ pub enum Error {
 pub fn build_broker_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
-    resolved_product_image: &ResolvedProductImage,
+    validated_cluster: &ValidatedKafkaCluster,
     rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    env_overrides: &BTreeMap<String, String>,
-    kafka_security: &KafkaTlsSecurity,
-    merged_config: &AnyConfig,
+    validated_rg: &ValidatedRoleGroupConfig,
     service_account: &ServiceAccount,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet, Error> {
+    let kafka_security = &validated_cluster.kafka_security;
+    let resolved_product_image = &validated_cluster.image;
+    let merged_config = &validated_rg.merged_config;
     let recommended_object_labels = build_recommended_labels(
         kafka,
         KAFKA_CONTROLLER_NAME,
@@ -245,7 +245,8 @@ pub fn build_broker_rolegroup_statefulset(
         .context(AddKerberosConfigSnafu)?;
     }
 
-    let mut env = env_overrides
+    let mut env = validated_rg
+        .env_overrides
         .iter()
         .map(|(k, v)| EnvVar {
             name: k.clone(),
@@ -573,14 +574,15 @@ pub fn build_broker_rolegroup_statefulset(
 pub fn build_controller_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
-    resolved_product_image: &ResolvedProductImage,
+    validated_cluster: &ValidatedKafkaCluster,
     rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    env_overrides: &BTreeMap<String, String>,
-    kafka_security: &KafkaTlsSecurity,
-    merged_config: &AnyConfig,
+    validated_rg: &ValidatedRoleGroupConfig,
     service_account: &ServiceAccount,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet, Error> {
+    let kafka_security = &validated_cluster.kafka_security;
+    let resolved_product_image = &validated_cluster.image;
+    let merged_config = &validated_rg.merged_config;
     let recommended_object_labels = build_recommended_labels(
         kafka,
         KAFKA_CONTROLLER_NAME,
@@ -597,7 +599,8 @@ pub fn build_controller_rolegroup_statefulset(
 
     let mut pod_builder = PodBuilder::new();
 
-    let mut env = env_overrides
+    let mut env = validated_rg
+        .env_overrides
         .iter()
         .map(|(k, v)| EnvVar {
             name: k.clone(),

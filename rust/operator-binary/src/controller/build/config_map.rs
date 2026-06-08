@@ -4,20 +4,18 @@ use indoc::formatdoc;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
-    commons::product_image_selection::ResolvedProductImage,
     k8s_openapi::api::core::v1::ConfigMap,
     role_utils::RoleGroupRef,
     v2::config_file_writer::{PropertiesWriterError, to_java_properties_string},
 };
 
 use crate::{
-    controller::KAFKA_CONTROLLER_NAME,
+    controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster, ValidatedRoleGroupConfig},
     crd::{
         JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, MetadataManager,
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, node_address_cmd},
         role::AnyConfig,
-        security::KafkaTlsSecurity,
         v1alpha1,
     },
     product_logging::extend_role_group_config_map,
@@ -74,23 +72,23 @@ pub enum Error {
 #[allow(clippy::too_many_arguments)]
 pub fn build_rolegroup_config_map(
     kafka: &v1alpha1::KafkaCluster,
-    resolved_product_image: &ResolvedProductImage,
-    kafka_security: &KafkaTlsSecurity,
+    validated_cluster: &ValidatedKafkaCluster,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
-    config_file_overrides: BTreeMap<String, String>,
-    jvm_security_overrides: BTreeMap<String, String>,
-    merged_config: &AnyConfig,
+    validated_rg: &ValidatedRoleGroupConfig,
     listener_config: &KafkaListenerConfig,
     pod_descriptors: &[KafkaPodDescriptor],
     opa_connect_string: Option<&str>,
 ) -> Result<ConfigMap, Error> {
-    let kafka_config_file_name = merged_config.config_file_name();
+    let kafka_security = &validated_cluster.kafka_security;
+    let resolved_product_image = &validated_cluster.image;
+    let kafka_config_file_name = validated_rg.merged_config.config_file_name();
+    let config_overrides = validated_rg.config_file_overrides.clone();
 
     let metadata_manager = kafka
         .effective_metadata_manager()
         .context(InvalidMetadataManagerSnafu)?;
 
-    let kafka_config = match merged_config {
+    let kafka_config = match &validated_rg.merged_config {
         AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
             kafka_security,
             listener_config,
@@ -102,7 +100,7 @@ pub fn build_rolegroup_config_map(
                 .cluster_config
                 .broker_id_pod_config_map_name
                 .is_some(),
-            config_file_overrides,
+            config_overrides,
         ),
         AnyConfig::Controller(_) => {
             crate::controller::build::properties::controller_properties::build(
@@ -110,7 +108,7 @@ pub fn build_rolegroup_config_map(
                 listener_config,
                 pod_descriptors,
                 metadata_manager == MetadataManager::KRaft,
-                config_file_overrides,
+                config_overrides,
             )
         }
     }
@@ -123,7 +121,9 @@ pub fn build_rolegroup_config_map(
         .map(|(k, v)| (k, Some(v)))
         .collect::<Vec<_>>();
 
-    let jvm_sec_props: BTreeMap<String, Option<String>> = jvm_security_overrides
+    let jvm_sec_props: BTreeMap<String, Option<String>> = validated_rg
+        .jvm_security_overrides
+        .clone()
         .into_iter()
         .map(|(k, v)| (k, Some(v)))
         .collect();
@@ -189,7 +189,7 @@ pub fn build_rolegroup_config_map(
     extend_role_group_config_map(
         &resolved_product_image.product_version,
         rolegroup,
-        merged_config,
+        &validated_rg.merged_config,
         &mut cm_builder,
     );
 

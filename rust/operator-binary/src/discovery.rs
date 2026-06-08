@@ -3,15 +3,14 @@ use std::num::TryFromIntError;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
-    commons::product_image_selection::ResolvedProductImage,
     crd::listener,
     k8s_openapi::api::core::v1::ConfigMap,
     kube::{Resource, ResourceExt, runtime::reflector::ObjectRef},
 };
 
 use crate::{
-    controller::KAFKA_CONTROLLER_NAME,
-    crd::{role::KafkaRole, security::KafkaTlsSecurity, v1alpha1},
+    controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster},
+    crd::{role::KafkaRole, v1alpha1},
     utils::build_recommended_labels,
 };
 
@@ -48,10 +47,12 @@ pub enum Error {
 pub fn build_discovery_configmap(
     kafka: &v1alpha1::KafkaCluster,
     owner: &impl Resource<DynamicType = ()>,
-    resolved_product_image: &ResolvedProductImage,
-    kafka_security: &KafkaTlsSecurity,
+    validated_cluster: ValidatedKafkaCluster,
     listeners: &[listener::v1alpha1::Listener],
 ) -> Result<ConfigMap, Error> {
+    let kafka_security = &validated_cluster.kafka_security;
+    let resolved_product_image = &validated_cluster.image;
+
     let port_name = if kafka_security.has_kerberos_enabled() {
         kafka_security.bootstrap_port_name()
     } else {

@@ -6,18 +6,16 @@
 use std::collections::BTreeMap;
 
 use snafu::{ResultExt, Snafu};
-use stackable_operator::{
-    cli::OperatorEnvironmentOptions,
-    commons::product_image_selection::{self, ResolvedProductImage},
-};
+use stackable_operator::{cli::OperatorEnvironmentOptions, commons::product_image_selection};
 
 use crate::{
-    controller::dereference::DereferencedObjects,
+    controller::{
+        ValidatedKafkaCluster, ValidatedRoleGroupConfig, dereference::DereferencedObjects,
+    },
     crd::{
         self, CONTAINER_IMAGE_BASE_NAME,
         authentication::{self},
-        authorization::KafkaAuthorizationConfig,
-        role::{AnyConfig, KafkaRole},
+        role::KafkaRole,
         security::{self, KafkaTlsSecurity},
         v1alpha1,
     },
@@ -44,35 +42,6 @@ pub enum Error {
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
-
-/// The validated cluster. Carries everything the build steps need, resolved once
-/// here so downstream code never re-derives it or touches the raw spec.
-pub struct ValidatedKafkaCluster {
-    pub image: ResolvedProductImage,
-    pub kafka_security: KafkaTlsSecurity,
-    // DESIGN DECISION: the dereferenced authorization config is folded into the
-    // validated cluster (read from here downstream). The other dereferenced input,
-    // the authentication classes, is intentionally NOT stored: it is fully consumed
-    // here to build `kafka_security`. Alternative: also store the resolved auth
-    // classes — rejected because nothing downstream needs them beyond kafka_security.
-    pub authorization_config: Option<KafkaAuthorizationConfig>,
-    pub role_groups: BTreeMap<KafkaRole, BTreeMap<String, ValidatedRoleGroupConfig>>,
-}
-
-pub struct ValidatedRoleGroupConfig {
-    pub merged_config: AnyConfig,
-    // DESIGN DECISION: overrides are resolved into flat maps HERE rather than stored
-    // as the typed KeyValueConfigOverrides and resolved in the per-file builders (the
-    // hdfs-operator pattern). Reason: broker and controller use different override
-    // struct types (KafkaBrokerConfigOverrides vs KafkaControllerConfigOverrides), so a
-    // single typed field would require an enum. Resolving here keeps the build/properties
-    // builders taking plain `BTreeMap<String,String>`. Alternative: an enum over the two
-    // override types threaded to builders that call resolved_overrides() — more types for
-    // no behavioural gain.
-    pub config_file_overrides: BTreeMap<String, String>,
-    pub jvm_security_overrides: BTreeMap<String, String>,
-    pub env_overrides: BTreeMap<String, String>,
-}
 
 /// Validates the cluster spec and the dereferenced inputs.
 pub fn validate(

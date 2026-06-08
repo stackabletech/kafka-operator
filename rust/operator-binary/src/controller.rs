@@ -1,13 +1,13 @@
 //! Ensures that `Pod`s are configured and running for each [`v1alpha1::KafkaCluster`].
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use const_format::concatcp;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
-    commons::rbac::build_rbac_resources,
+    commons::{product_image_selection::ResolvedProductImage, rbac::build_rbac_resources},
     crd::listener,
     kube::{
         Resource,
@@ -32,8 +32,10 @@ mod validate;
 use crate::{
     crd::{
         self, APP_NAME, KafkaClusterStatus, OPERATOR_NAME,
+        authorization::KafkaAuthorizationConfig,
         listener::get_kafka_listener_config,
         role::{AnyConfig, KafkaRole},
+        security::KafkaTlsSecurity,
         v1alpha1,
     },
     discovery::{self, build_discovery_configmap},
@@ -208,6 +210,35 @@ impl ReconcilerError for Error {
     }
 }
 
+/// The validated cluster. Carries everything the build steps need, resolved once
+/// here so downstream code never re-derives it or touches the raw spec.
+pub struct ValidatedKafkaCluster {
+    pub image: ResolvedProductImage,
+    pub kafka_security: KafkaTlsSecurity,
+    // DESIGN DECISION: the dereferenced authorization config is folded into the
+    // validated cluster (read from here downstream). The other dereferenced input,
+    // the authentication classes, is intentionally NOT stored: it is fully consumed
+    // here to build `kafka_security`. Alternative: also store the resolved auth
+    // classes — rejected because nothing downstream needs them beyond kafka_security.
+    pub authorization_config: Option<KafkaAuthorizationConfig>,
+    pub role_groups: BTreeMap<KafkaRole, BTreeMap<String, ValidatedRoleGroupConfig>>,
+}
+
+pub struct ValidatedRoleGroupConfig {
+    pub merged_config: AnyConfig,
+    // DESIGN DECISION: overrides are resolved into flat maps HERE rather than stored
+    // as the typed KeyValueConfigOverrides and resolved in the per-file builders (the
+    // hdfs-operator pattern). Reason: broker and controller use different override
+    // struct types (KafkaBrokerConfigOverrides vs KafkaControllerConfigOverrides), so a
+    // single typed field would require an enum. Resolving here keeps the build/properties
+    // builders taking plain `BTreeMap<String,String>`. Alternative: an enum over the two
+    // override types threaded to builders that call resolved_overrides() — more types for
+    // no behavioural gain.
+    pub config_file_overrides: BTreeMap<String, String>,
+    pub jvm_security_overrides: BTreeMap<String, String>,
+    pub env_overrides: BTreeMap<String, String>,
+}
+
 pub async fn reconcile_kafka(
     kafka: Arc<DeserializeGuard<v1alpha1::KafkaCluster>>,
     ctx: Arc<Ctx>,
@@ -228,15 +259,12 @@ pub async fn reconcile_kafka(
         .context(DereferenceSnafu)?;
 
     // validate (no client required)
-    let validate::ValidatedKafkaCluster {
-        authorization_config,
-        image,
-        kafka_security,
-        role_groups,
-    } = validate::validate(kafka, dereferenced_objects, &ctx.operator_environment)
-        .context(ValidateClusterSnafu)?;
+    let validated_cluster =
+        validate::validate(kafka, dereferenced_objects, &ctx.operator_environment)
+            .context(ValidateClusterSnafu)?;
 
-    let opa_connect = authorization_config
+    let opa_connect = validated_cluster
+        .authorization_config
         .as_ref()
         .map(|auth_config| auth_config.opa_connect.clone());
 
@@ -251,10 +279,10 @@ pub async fn reconcile_kafka(
     .context(CreateClusterResourcesSnafu)?;
 
     tracing::debug!(
-        kerberos_enabled = kafka_security.has_kerberos_enabled(),
-        kerberos_secret_class = ?kafka_security.kerberos_secret_class(),
-        tls_enabled = kafka_security.tls_enabled(),
-        tls_client_authentication_class = ?kafka_security.tls_client_authentication_class(),
+        kerberos_enabled = validated_cluster.kafka_security.has_kerberos_enabled(),
+        kerberos_secret_class = ?validated_cluster.kafka_security.kerberos_secret_class(),
+        tls_enabled = validated_cluster.kafka_security.tls_enabled(),
+        tls_client_authentication_class = ?validated_cluster.kafka_security.tls_client_authentication_class(),
         "The following security settings are used"
     );
 
@@ -280,20 +308,25 @@ pub async fn reconcile_kafka(
 
     let mut bootstrap_listeners = Vec::<listener::v1alpha1::Listener>::new();
 
-    for (kafka_role, rg_map) in &role_groups {
+    for (kafka_role, rg_map) in &validated_cluster.role_groups {
         for (rolegroup_name, validated_rg) in rg_map {
             let rolegroup_ref = kafka.rolegroup_ref(kafka_role, rolegroup_name);
 
-            let rg_headless_service =
-                build_rolegroup_headless_service(kafka, &image, &rolegroup_ref, &kafka_security)
-                    .context(BuildServiceSnafu)?;
+            let rg_headless_service = build_rolegroup_headless_service(
+                kafka,
+                &validated_cluster.image,
+                &rolegroup_ref,
+                &validated_cluster.kafka_security,
+            )
+            .context(BuildServiceSnafu)?;
 
-            let rg_metrics_service = build_rolegroup_metrics_service(kafka, &image, &rolegroup_ref)
-                .context(BuildServiceSnafu)?;
+            let rg_metrics_service =
+                build_rolegroup_metrics_service(kafka, &validated_cluster.image, &rolegroup_ref)
+                    .context(BuildServiceSnafu)?;
 
             let kafka_listeners = get_kafka_listener_config(
                 kafka,
-                &kafka_security,
+                &validated_cluster.kafka_security,
                 &rolegroup_ref,
                 &client.kubernetes_cluster_info,
             )
@@ -303,18 +336,15 @@ pub async fn reconcile_kafka(
                 .pod_descriptors(
                     None,
                     &client.kubernetes_cluster_info,
-                    kafka_security.client_port(),
+                    validated_cluster.kafka_security.client_port(),
                 )
                 .context(BuildPodDescriptorsSnafu)?;
 
             let rg_configmap = build::config_map::build_rolegroup_config_map(
                 kafka,
-                &image,
-                &kafka_security,
+                &validated_cluster,
                 &rolegroup_ref,
-                validated_rg.config_file_overrides.clone(),
-                validated_rg.jvm_security_overrides.clone(),
-                &validated_rg.merged_config,
+                validated_rg,
                 &kafka_listeners,
                 &pod_descriptors,
                 opa_connect.as_deref(),
@@ -325,11 +355,9 @@ pub async fn reconcile_kafka(
                 KafkaRole::Broker => build_broker_rolegroup_statefulset(
                     kafka,
                     kafka_role,
-                    &image,
+                    &validated_cluster,
                     &rolegroup_ref,
-                    &validated_rg.env_overrides,
-                    &kafka_security,
-                    &validated_rg.merged_config,
+                    validated_rg,
                     &rbac_sa,
                     &client.kubernetes_cluster_info,
                 )
@@ -337,11 +365,9 @@ pub async fn reconcile_kafka(
                 KafkaRole::Controller => build_controller_rolegroup_statefulset(
                     kafka,
                     kafka_role,
-                    &image,
+                    &validated_cluster,
                     &rolegroup_ref,
-                    &validated_rg.env_overrides,
-                    &kafka_security,
-                    &validated_rg.merged_config,
+                    validated_rg,
                     &rbac_sa,
                     &client.kubernetes_cluster_info,
                 )
@@ -351,8 +377,7 @@ pub async fn reconcile_kafka(
             if let AnyConfig::Broker(broker_config) = &validated_rg.merged_config {
                 let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
                     kafka,
-                    &image,
-                    &kafka_security,
+                    &validated_cluster,
                     &rolegroup_ref,
                     broker_config,
                 )
@@ -409,7 +434,7 @@ pub async fn reconcile_kafka(
     }
 
     let discovery_cm =
-        build_discovery_configmap(kafka, kafka, &image, &kafka_security, &bootstrap_listeners)
+        build_discovery_configmap(kafka, kafka, validated_cluster, &bootstrap_listeners)
             .context(BuildDiscoveryConfigSnafu)?;
 
     cluster_resources

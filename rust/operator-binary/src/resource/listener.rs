@@ -1,11 +1,10 @@
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    builder::meta::ObjectMetaBuilder, commons::product_image_selection::ResolvedProductImage,
-    crd::listener, role_utils::RoleGroupRef,
+    builder::meta::ObjectMetaBuilder, crd::listener, role_utils::RoleGroupRef,
 };
 
 use crate::{
-    controller::KAFKA_CONTROLLER_NAME,
+    controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster},
     crd::{role::broker::BrokerConfig, security::KafkaTlsSecurity, v1alpha1},
     utils::build_recommended_labels,
 };
@@ -28,11 +27,13 @@ pub enum Error {
 // TODO (@NickLarsenNZ): Move shared functionality to stackable-operator
 pub fn build_broker_rolegroup_bootstrap_listener(
     kafka: &v1alpha1::KafkaCluster,
-    resolved_product_image: &ResolvedProductImage,
-    kafka_security: &KafkaTlsSecurity,
+    validated_cluster: &ValidatedKafkaCluster,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     merged_config: &BrokerConfig,
 ) -> Result<listener::v1alpha1::Listener, Error> {
+    let kafka_security = &validated_cluster.kafka_security;
+    let resolved_product_image = &validated_cluster.image;
+
     Ok(listener::v1alpha1::Listener {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(kafka)
