@@ -263,11 +263,6 @@ pub async fn reconcile_kafka(
         validate::validate(kafka, dereferenced_objects, &ctx.operator_environment)
             .context(ValidateClusterSnafu)?;
 
-    let opa_connect = validated_cluster
-        .authorization_config
-        .as_ref()
-        .map(|auth_config| auth_config.opa_connect.clone());
-
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
         OPERATOR_NAME,
@@ -347,7 +342,6 @@ pub async fn reconcile_kafka(
                 validated_rg,
                 &kafka_listeners,
                 &pod_descriptors,
-                opa_connect.as_deref(),
             )
             .context(BuildConfigMapSnafu)?;
 

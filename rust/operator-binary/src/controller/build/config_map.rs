@@ -76,12 +76,16 @@ pub fn build_rolegroup_config_map(
     validated_rg: &ValidatedRoleGroupConfig,
     listener_config: &KafkaListenerConfig,
     pod_descriptors: &[KafkaPodDescriptor],
-    opa_connect_string: Option<&str>,
 ) -> Result<ConfigMap, Error> {
     let kafka_security = &validated_cluster.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let kafka_config_file_name = validated_rg.merged_config.config_file_name();
     let config_overrides = validated_rg.config_file_overrides.clone();
+
+    let opa_connect = validated_cluster
+        .authorization_config
+        .as_ref()
+        .map(|auth_config| auth_config.opa_connect.clone());
 
     let metadata_manager = kafka
         .effective_metadata_manager()
@@ -92,7 +96,7 @@ pub fn build_rolegroup_config_map(
             kafka_security,
             listener_config,
             pod_descriptors,
-            opa_connect_string,
+            opa_connect.as_deref(),
             metadata_manager == MetadataManager::KRaft,
             kafka
                 .spec
