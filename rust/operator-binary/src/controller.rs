@@ -22,7 +22,6 @@ use stackable_operator::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
         statefulset::StatefulSetConditionBuilder,
     },
-    utils::cluster_info::KubernetesClusterInfo,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
@@ -32,7 +31,7 @@ mod validate;
 
 use crate::{
     crd::{
-        self, APP_NAME, KafkaClusterStatus, OPERATOR_NAME,
+        self, APP_NAME, KafkaClusterStatus, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
         authorization::KafkaAuthorizationConfig,
         listener::get_kafka_listener_config,
         role::{AnyConfig, KafkaRole},
@@ -219,7 +218,8 @@ pub struct ValidatedKafkaCluster {
     // classes — rejected because nothing downstream needs them beyond kafka_security.
     pub authorization_config: Option<KafkaAuthorizationConfig>,
     pub role_groups: BTreeMap<KafkaRole, BTreeMap<String, ValidatedRoleGroupConfig>>,
-    pub kubernetes_cluster_info: KubernetesClusterInfo,
+    pub pod_descriptors: Vec<KafkaPodDescriptor>,
+    pub metadata_manager: MetadataManager,
 }
 
 pub struct ValidatedRoleGroupConfig {

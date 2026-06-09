@@ -58,17 +58,14 @@ pub enum Error {
         rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
-    #[snafu(display("failed to build properties for {rolegroup}"))]
-    BuildProperties {
-        source: crate::controller::build::properties::Error,
-        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
-    },
-
     #[snafu(display("failed to build jaas configuration file for {rolegroup}"))]
     BuildJaasConfig { rolegroup: String },
 
     #[snafu(display("failed to build pod descriptors"))]
     BuildPodDescriptors { source: crate::crd::Error },
+
+    #[snafu(display("no Kraft controllers found to build"))]
+    NoKraftControllersFound,
 }
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
@@ -89,25 +86,19 @@ pub fn build_rolegroup_config_map(
         .as_ref()
         .map(|auth_config| auth_config.opa_connect.clone());
 
-    let pod_descriptors = &kafka
-        .pod_descriptors(
-            None,
-            &validated_cluster.kubernetes_cluster_info,
-            validated_cluster.kafka_security.client_port(),
-        )
-        .context(BuildPodDescriptorsSnafu)?;
+    let kraft_mode = validated_cluster.metadata_manager == MetadataManager::KRaft;
 
-    let metadata_manager = kafka
-        .effective_metadata_manager()
-        .context(InvalidMetadataManagerSnafu)?;
+    if kraft_mode && validated_cluster.pod_descriptors.is_empty() {
+        return NoKraftControllersFoundSnafu.fail();
+    }
 
     let kafka_config = match &validated_rg.merged_config {
         AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
             kafka_security,
             listener_config,
-            pod_descriptors,
+            &validated_cluster.pod_descriptors,
             opa_connect.as_deref(),
-            metadata_manager == MetadataManager::KRaft,
+            kraft_mode,
             kafka
                 .spec
                 .cluster_config
@@ -119,15 +110,12 @@ pub fn build_rolegroup_config_map(
             crate::controller::build::properties::controller_properties::build(
                 kafka_security,
                 listener_config,
-                pod_descriptors,
-                metadata_manager == MetadataManager::KRaft,
+                &validated_cluster.pod_descriptors,
+                kraft_mode,
                 config_overrides,
             )
         }
-    }
-    .with_context(|_| BuildPropertiesSnafu {
-        rolegroup: rolegroup.clone(),
-    })?;
+    };
 
     let kafka_config = kafka_config
         .into_iter()

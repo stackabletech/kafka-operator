@@ -39,6 +39,12 @@ pub enum Error {
 
     #[snafu(display("failed to resolve merged config for rolegroup"))]
     ResolveMergedConfig { source: crate::crd::role::Error },
+
+    #[snafu(display("failed to build pod descriptors"))]
+    BuildPodDescriptors { source: crate::crd::Error },
+
+    #[snafu(display("invalid metadata manager"))]
+    InvalidMetadataManager { source: crate::crd::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -141,12 +147,25 @@ pub fn validate(
         role_groups.insert(KafkaRole::Controller, controller_groups);
     }
 
+    let pod_descriptors = kafka
+        .pod_descriptors(
+            None,
+            &dereferenced_objects.kubernetes_cluster_info,
+            kafka_security.client_port(),
+        )
+        .context(BuildPodDescriptorsSnafu)?;
+
+    let metadata_manager = kafka
+        .effective_metadata_manager()
+        .context(InvalidMetadataManagerSnafu)?;
+
     Ok(ValidatedKafkaCluster {
         image,
         kafka_security,
         authorization_config: dereferenced_objects.authorization_config,
         role_groups,
-        kubernetes_cluster_info: dereferenced_objects.kubernetes_cluster_info,
+        pod_descriptors,
+        metadata_manager,
     })
 }
 

@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 
-use snafu::OptionExt;
-
-use super::{Error, NoKraftControllersFoundSnafu, kraft_controllers};
+use super::kraft_controllers;
 use crate::{
     crd::{
         KafkaPodDescriptor,
@@ -25,7 +23,7 @@ pub fn build(
     kraft_mode: bool,
     disable_broker_id_generation: bool,
     overrides: BTreeMap<String, String>,
-) -> Result<BTreeMap<String, String>, Error> {
+) -> BTreeMap<String, String> {
     let kraft_controllers = kraft_controllers(pod_descriptors);
 
     let mut result = BTreeMap::from([
@@ -49,7 +47,7 @@ pub fn build(
     ]);
 
     if kraft_mode {
-        let kraft_controllers = kraft_controllers.context(NoKraftControllersFoundSnafu)?;
+        let kraft_controllers = kraft_controllers.join(",");
 
         // Running in KRaft mode
         result.extend([
@@ -114,5 +112,5 @@ pub fn build(
     result.extend(graceful_shutdown_config_properties());
     result.extend(overrides);
 
-    Ok(result)
+    result
 }
