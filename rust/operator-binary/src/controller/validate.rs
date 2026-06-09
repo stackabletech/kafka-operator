@@ -6,7 +6,12 @@
 use std::collections::BTreeMap;
 
 use snafu::{ResultExt, Snafu};
-use stackable_operator::{cli::OperatorEnvironmentOptions, commons::product_image_selection};
+use stackable_operator::{
+    cli::OperatorEnvironmentOptions,
+    commons::product_image_selection,
+    config::merge::{Merge, merge},
+    v2::config_overrides::KeyValueConfigOverrides,
+};
 
 use crate::{
     controller::{
@@ -169,12 +174,30 @@ pub fn validate(
     })
 }
 
-// DESIGN DECISION: role-group overrides are merged role-level first, then role-group
-// extended on top so role-group wins — identical to the precedent product-config used.
-// We read the v2 KeyValueConfigOverrides `.overrides` map and BTreeMap::extend rather
-// than using its `Merge` impl, because plain extend reproduces the old behaviour exactly
-// (last-writer-wins per key) and avoids depending on Merge semantics. Alternative:
-// KeyValueConfigOverrides::merge — equivalent here but an unnecessary semantic dependency.
+/// Merge role-group overrides over the role-level overrides (role-group wins per key) via the
+/// `Merge` impl derived on the override structs.
+///
+/// NOTE on semantics: `Merge` treats a role-group `null` value as "inherit the role-level value",
+/// *not* "unset it". This differs from `main`'s product-config layering, which `.extend()`ed the
+/// maps so a role-group `null` *removed* a role-level key. The `tests` module has a worked
+/// example of the difference.
+fn merge_role_group_overrides<O: Merge + Clone>(role: &O, role_group: Option<&O>) -> O {
+    match role_group {
+        Some(role_group) => merge(role_group.clone(), role),
+        None => role.clone(),
+    }
+}
+
+/// Flatten resolved key/value overrides into a plain map, dropping entries whose value is
+/// unset (`null`).
+fn flatten_overrides(overrides: KeyValueConfigOverrides) -> BTreeMap<String, String> {
+    overrides
+        .overrides
+        .into_iter()
+        .filter_map(|(key, value)| value.map(|value| (key, value)))
+        .collect()
+}
+
 fn collect_broker_role_group_overrides(
     kafka: &v1alpha1::KafkaCluster,
     broker_role: &crate::crd::BrokerRole,
@@ -184,47 +207,15 @@ fn collect_broker_role_group_overrides(
     BTreeMap<String, String>,
     BTreeMap<String, String>,
 ) {
-    // --- broker.properties overrides ---
-    let role_broker_overrides: BTreeMap<String, Option<String>> = broker_role
-        .config
-        .config_overrides
-        .broker_properties
-        .as_ref()
-        .map(|o| o.overrides.clone())
-        .unwrap_or_default();
-    let rg_broker_overrides: BTreeMap<String, Option<String>> = broker_role
-        .role_groups
-        .get(rolegroup_name)
-        .and_then(|rg| rg.config.config_overrides.broker_properties.as_ref())
-        .map(|o| o.overrides.clone())
-        .unwrap_or_default();
-    let mut merged_broker = role_broker_overrides;
-    merged_broker.extend(rg_broker_overrides);
-    let config_file_overrides: BTreeMap<String, String> = merged_broker
-        .into_iter()
-        .filter_map(|(k, v)| v.map(|v| (k, v)))
-        .collect();
-
-    // --- security.properties overrides ---
-    let role_security_overrides: BTreeMap<String, Option<String>> = broker_role
-        .config
-        .config_overrides
-        .security_properties
-        .as_ref()
-        .map(|o| o.overrides.clone())
-        .unwrap_or_default();
-    let rg_security_overrides: BTreeMap<String, Option<String>> = broker_role
-        .role_groups
-        .get(rolegroup_name)
-        .and_then(|rg| rg.config.config_overrides.security_properties.as_ref())
-        .map(|o| o.overrides.clone())
-        .unwrap_or_default();
-    let mut merged_security = role_security_overrides;
-    merged_security.extend(rg_security_overrides);
-    let jvm_security_overrides: BTreeMap<String, String> = merged_security
-        .into_iter()
-        .filter_map(|(k, v)| v.map(|v| (k, v)))
-        .collect();
+    let merged_overrides = merge_role_group_overrides(
+        &broker_role.config.config_overrides,
+        broker_role
+            .role_groups
+            .get(rolegroup_name)
+            .map(|rg| &rg.config.config_overrides),
+    );
+    let config_file_overrides = flatten_overrides(merged_overrides.broker_properties);
+    let jvm_security_overrides = flatten_overrides(merged_overrides.security_properties);
 
     // --- env overrides ---
     // DESIGN DECISION: KAFKA_CLUSTER_ID is injected first, then the user env overrides
@@ -252,12 +243,6 @@ fn collect_broker_role_group_overrides(
     (config_file_overrides, jvm_security_overrides, env_overrides)
 }
 
-// DESIGN DECISION: role-group overrides are merged role-level first, then role-group
-// extended on top so role-group wins — identical to the precedent product-config used.
-// We read the v2 KeyValueConfigOverrides `.overrides` map and BTreeMap::extend rather
-// than using its `Merge` impl, because plain extend reproduces the old behaviour exactly
-// (last-writer-wins per key) and avoids depending on Merge semantics. Alternative:
-// KeyValueConfigOverrides::merge — equivalent here but an unnecessary semantic dependency.
 fn collect_controller_role_group_overrides(
     kafka: &v1alpha1::KafkaCluster,
     controller_role: &crate::crd::ControllerRole,
@@ -267,47 +252,15 @@ fn collect_controller_role_group_overrides(
     BTreeMap<String, String>,
     BTreeMap<String, String>,
 ) {
-    // --- controller.properties overrides ---
-    let role_controller_overrides: BTreeMap<String, Option<String>> = controller_role
-        .config
-        .config_overrides
-        .controller_properties
-        .as_ref()
-        .map(|o| o.overrides.clone())
-        .unwrap_or_default();
-    let rg_controller_overrides: BTreeMap<String, Option<String>> = controller_role
-        .role_groups
-        .get(rolegroup_name)
-        .and_then(|rg| rg.config.config_overrides.controller_properties.as_ref())
-        .map(|o| o.overrides.clone())
-        .unwrap_or_default();
-    let mut merged_controller = role_controller_overrides;
-    merged_controller.extend(rg_controller_overrides);
-    let config_file_overrides: BTreeMap<String, String> = merged_controller
-        .into_iter()
-        .filter_map(|(k, v)| v.map(|v| (k, v)))
-        .collect();
-
-    // --- security.properties overrides ---
-    let role_security_overrides: BTreeMap<String, Option<String>> = controller_role
-        .config
-        .config_overrides
-        .security_properties
-        .as_ref()
-        .map(|o| o.overrides.clone())
-        .unwrap_or_default();
-    let rg_security_overrides: BTreeMap<String, Option<String>> = controller_role
-        .role_groups
-        .get(rolegroup_name)
-        .and_then(|rg| rg.config.config_overrides.security_properties.as_ref())
-        .map(|o| o.overrides.clone())
-        .unwrap_or_default();
-    let mut merged_security = role_security_overrides;
-    merged_security.extend(rg_security_overrides);
-    let jvm_security_overrides: BTreeMap<String, String> = merged_security
-        .into_iter()
-        .filter_map(|(k, v)| v.map(|v| (k, v)))
-        .collect();
+    let merged_overrides = merge_role_group_overrides(
+        &controller_role.config.config_overrides,
+        controller_role
+            .role_groups
+            .get(rolegroup_name)
+            .map(|rg| &rg.config.config_overrides),
+    );
+    let config_file_overrides = flatten_overrides(merged_overrides.controller_properties);
+    let jvm_security_overrides = flatten_overrides(merged_overrides.security_properties);
 
     // --- env overrides ---
     // DESIGN DECISION: KAFKA_CLUSTER_ID is injected first, then the user env overrides
@@ -334,4 +287,78 @@ fn collect_controller_role_group_overrides(
     }
 
     (config_file_overrides, jvm_security_overrides, env_overrides)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use stackable_operator::v2::config_overrides::KeyValueConfigOverrides;
+
+    use super::{flatten_overrides, merge_role_group_overrides};
+
+    /// Build a `KeyValueConfigOverrides` from `(key, value)` pairs, where a `None` value
+    /// represents an explicit `null` (unset) in the CRD.
+    fn overrides(pairs: &[(&str, Option<&str>)]) -> KeyValueConfigOverrides {
+        KeyValueConfigOverrides {
+            overrides: pairs
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.map(str::to_string)))
+                .collect(),
+        }
+    }
+
+    /// Run the full role/role-group resolution (merge then flatten) for a single config file.
+    fn resolve(
+        role: KeyValueConfigOverrides,
+        role_group: Option<KeyValueConfigOverrides>,
+    ) -> BTreeMap<String, String> {
+        flatten_overrides(merge_role_group_overrides(&role, role_group.as_ref()))
+    }
+
+    #[test]
+    fn role_group_value_wins_over_role() {
+        let role = overrides(&[("a", Some("role")), ("b", Some("role-only"))]);
+        let role_group = overrides(&[("a", Some("rg"))]);
+
+        let merged = resolve(role, Some(role_group));
+
+        assert_eq!(
+            merged,
+            BTreeMap::from([
+                ("a".to_string(), "rg".to_string()), // role-group wins for shared keys
+                ("b".to_string(), "role-only".to_string()), // role-only keys are kept
+            ])
+        );
+    }
+
+    /// Illustrates the key consequence of using `Merge` (rather than `.extend()`, as `main`'s
+    /// product-config did): a role-group `null` is treated as "inherit", so the role-level value
+    /// is *kept* — it does NOT unset the key. Under the old `.extend()` behaviour this same input
+    /// would have removed `a` entirely.
+    #[test]
+    fn role_group_null_inherits_role_value_rather_than_unsetting_it() {
+        let role = overrides(&[("a", Some("role"))]);
+        let role_group = overrides(&[("a", None)]); // explicit `null` at the more specific level
+
+        let merged = resolve(role, Some(role_group));
+
+        assert_eq!(
+            merged,
+            BTreeMap::from([("a".to_string(), "role".to_string())]),
+            "a role-group `null` should inherit the role-level value under Merge semantics"
+        );
+    }
+
+    #[test]
+    fn without_a_role_group_role_values_are_kept_and_nulls_dropped() {
+        let role = overrides(&[("a", Some("role")), ("b", None)]);
+
+        let merged = resolve(role, None);
+
+        assert_eq!(
+            merged,
+            BTreeMap::from([("a".to_string(), "role".to_string())])
+        );
+    }
 }

@@ -16,6 +16,7 @@ use stackable_operator::{
         cluster_operation::ClusterOperation, networking::DomainName,
         product_image_selection::ProductImage,
     },
+    config::merge::Merge,
     deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
     role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroupRef},
@@ -240,42 +241,27 @@ pub mod versioned {
         pub broker_id_pod_config_map_name: Option<String>,
     }
 
-    // Uses the v2 KeyValueConfigOverrides (Merge-capable, `nullable` values) to match
-    // trino/hdfs. Resolution into flat maps happens in controller/validate.rs.
-    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+    // Uses the v2 KeyValueConfigOverrides (`nullable` values) to match trino/hdfs.
+    // Derives `Merge` so role/role-group overrides combine via the shared merge logic;
+    // resolution into flat maps happens in controller/validate.rs.
+    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Merge, PartialEq, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct KafkaBrokerConfigOverrides {
-        #[serde(
-            default,
-            rename = "broker.properties",
-            skip_serializing_if = "Option::is_none"
-        )]
-        pub broker_properties: Option<KeyValueConfigOverrides>,
+        #[serde(default, rename = "broker.properties")]
+        pub broker_properties: KeyValueConfigOverrides,
 
-        #[serde(
-            default,
-            rename = "security.properties",
-            skip_serializing_if = "Option::is_none"
-        )]
-        pub security_properties: Option<KeyValueConfigOverrides>,
+        #[serde(default, rename = "security.properties")]
+        pub security_properties: KeyValueConfigOverrides,
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Merge, PartialEq, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct KafkaControllerConfigOverrides {
-        #[serde(
-            default,
-            rename = "controller.properties",
-            skip_serializing_if = "Option::is_none"
-        )]
-        pub controller_properties: Option<KeyValueConfigOverrides>,
+        #[serde(default, rename = "controller.properties")]
+        pub controller_properties: KeyValueConfigOverrides,
 
-        #[serde(
-            default,
-            rename = "security.properties",
-            skip_serializing_if = "Option::is_none"
-        )]
-        pub security_properties: Option<KeyValueConfigOverrides>,
+        #[serde(default, rename = "security.properties")]
+        pub security_properties: KeyValueConfigOverrides,
     }
 }
 
