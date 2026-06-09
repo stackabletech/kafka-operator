@@ -137,7 +137,7 @@ fn log4j2_config_if_automatic(
     log_file: &str,
     max_log_file_size: MemoryQuantity,
 ) -> Option<String> {
-    let config = if let Some(ContainerLogConfig {
+    if let Some(ContainerLogConfig {
         choice: Some(ContainerLogConfigChoice::Automatic(log_config)),
     }) = log_config.as_deref()
     {
@@ -153,6 +153,5 @@ fn log4j2_config_if_automatic(
         ))
     } else {
         None
-    };
-    config
+    }
 }
