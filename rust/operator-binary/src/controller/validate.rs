@@ -341,12 +341,28 @@ mod tests {
         let role = overrides(&[("a", Some("role"))]);
         let role_group = overrides(&[("a", None)]); // explicit `null` at the more specific level
 
-        let merged = resolve(role, Some(role_group));
+        // For contrast: `main`'s product-config used a blind `.extend()`, so the role-group
+        // `null` overwrote the role value and the key was then dropped — i.e. unset entirely.
+        let old_extend_behaviour: BTreeMap<String, String> = {
+            let mut combined = role.overrides.clone();
+            combined.extend(role_group.overrides.clone());
+            combined
+                .into_iter()
+                .filter_map(|(key, value)| value.map(|value| (key, value)))
+                .collect()
+        };
+        assert!(
+            old_extend_behaviour.is_empty(),
+            "under the old `.extend()` behaviour the role-group `null` unsets `a`"
+        );
 
+        // What we do now (Merge): the role-group `null` means "inherit", so the role-level
+        // value is kept rather than unset.
+        let merged = resolve(role, Some(role_group));
         assert_eq!(
             merged,
             BTreeMap::from([("a".to_string(), "role".to_string())]),
-            "a role-group `null` should inherit the role-level value under Merge semantics"
+            "under Merge semantics the role-group `null` inherits the role-level value"
         );
     }
 
