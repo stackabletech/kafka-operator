@@ -18,7 +18,7 @@ use crate::{
         role::AnyConfig,
         v1alpha1,
     },
-    product_logging::extend_role_group_config_map,
+    product_logging::role_group_config_map_data,
     utils::build_recommended_labels,
 };
 
@@ -187,12 +187,16 @@ pub fn build_rolegroup_config_map(
     tracing::debug!(?kafka_config, "Applied kafka config");
     tracing::debug!(?jvm_sec_props, "Applied JVM config");
 
-    extend_role_group_config_map(
+    let config_data = role_group_config_map_data(
         &resolved_product_image.product_version,
         rolegroup,
         &validated_rg.merged_config,
-        &mut cm_builder,
     );
+    for (file_name, data) in config_data {
+        if let Some(data) = data {
+            cm_builder.add_data(file_name, data);
+        }
+    }
 
     cm_builder
         .build()
