@@ -22,6 +22,7 @@ use stackable_operator::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
         statefulset::StatefulSetConditionBuilder,
     },
+    utils::cluster_info::KubernetesClusterInfo,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
@@ -64,9 +65,6 @@ pub enum Error {
 
     #[snafu(display("failed to validate cluster"))]
     ValidateCluster { source: validate::Error },
-
-    #[snafu(display("failed to build pod descriptors"))]
-    BuildPodDescriptors { source: crate::crd::Error },
 
     #[snafu(display("invalid kafka listeners"))]
     InvalidKafkaListeners {
@@ -205,7 +203,6 @@ impl ReconcilerError for Error {
             Error::BuildService { .. } => None,
             Error::BuildListener { .. } => None,
             Error::InvalidKafkaListeners { .. } => None,
-            Error::BuildPodDescriptors { .. } => None,
         }
     }
 }
@@ -222,6 +219,7 @@ pub struct ValidatedKafkaCluster {
     // classes — rejected because nothing downstream needs them beyond kafka_security.
     pub authorization_config: Option<KafkaAuthorizationConfig>,
     pub role_groups: BTreeMap<KafkaRole, BTreeMap<String, ValidatedRoleGroupConfig>>,
+    pub kubernetes_cluster_info: KubernetesClusterInfo,
 }
 
 pub struct ValidatedRoleGroupConfig {
@@ -327,21 +325,12 @@ pub async fn reconcile_kafka(
             )
             .context(InvalidKafkaListenersSnafu)?;
 
-            let pod_descriptors = kafka
-                .pod_descriptors(
-                    None,
-                    &client.kubernetes_cluster_info,
-                    validated_cluster.kafka_security.client_port(),
-                )
-                .context(BuildPodDescriptorsSnafu)?;
-
             let rg_configmap = build::config_map::build_rolegroup_config_map(
                 kafka,
                 &validated_cluster,
                 &rolegroup_ref,
                 validated_rg,
                 &kafka_listeners,
-                &pod_descriptors,
             )
             .context(BuildConfigMapSnafu)?;
 

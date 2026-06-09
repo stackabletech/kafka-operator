@@ -12,8 +12,8 @@ use stackable_operator::{
 use crate::{
     controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster, ValidatedRoleGroupConfig},
     crd::{
-        JVM_SECURITY_PROPERTIES_FILE, KafkaPodDescriptor, MetadataManager,
-        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
+        JVM_SECURITY_PROPERTIES_FILE, MetadataManager, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+        STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, node_address_cmd},
         role::AnyConfig,
         v1alpha1,
@@ -66,6 +66,9 @@ pub enum Error {
 
     #[snafu(display("failed to build jaas configuration file for {rolegroup}"))]
     BuildJaasConfig { rolegroup: String },
+
+    #[snafu(display("failed to build pod descriptors"))]
+    BuildPodDescriptors { source: crate::crd::Error },
 }
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
@@ -75,7 +78,6 @@ pub fn build_rolegroup_config_map(
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     validated_rg: &ValidatedRoleGroupConfig,
     listener_config: &KafkaListenerConfig,
-    pod_descriptors: &[KafkaPodDescriptor],
 ) -> Result<ConfigMap, Error> {
     let kafka_security = &validated_cluster.kafka_security;
     let resolved_product_image = &validated_cluster.image;
@@ -86,6 +88,14 @@ pub fn build_rolegroup_config_map(
         .authorization_config
         .as_ref()
         .map(|auth_config| auth_config.opa_connect.clone());
+
+    let pod_descriptors = &kafka
+        .pod_descriptors(
+            None,
+            &validated_cluster.kubernetes_cluster_info,
+            validated_cluster.kafka_security.client_port(),
+        )
+        .context(BuildPodDescriptorsSnafu)?;
 
     let metadata_manager = kafka
         .effective_metadata_manager()

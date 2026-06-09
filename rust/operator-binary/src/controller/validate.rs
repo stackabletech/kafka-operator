@@ -146,6 +146,7 @@ pub fn validate(
         kafka_security,
         authorization_config: dereferenced_objects.authorization_config,
         role_groups,
+        kubernetes_cluster_info: dereferenced_objects.kubernetes_cluster_info,
     })
 }
 
