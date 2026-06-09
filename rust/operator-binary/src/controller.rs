@@ -433,9 +433,8 @@ pub async fn reconcile_kafka(
         }
     }
 
-    let discovery_cm =
-        build_discovery_configmap(kafka, kafka, validated_cluster, &bootstrap_listeners)
-            .context(BuildDiscoveryConfigSnafu)?;
+    let discovery_cm = build_discovery_configmap(kafka, validated_cluster, &bootstrap_listeners)
+        .context(BuildDiscoveryConfigSnafu)?;
 
     cluster_resources
         .add(client, discovery_cm)

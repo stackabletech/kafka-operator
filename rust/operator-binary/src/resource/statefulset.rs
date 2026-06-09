@@ -160,7 +160,6 @@ pub enum Error {
 ///
 /// The [`Pod`](`stackable_operator::k8s_openapi::api::core::v1::Pod`)s are accessible through the corresponding
 /// [`Service`](`stackable_operator::k8s_openapi::api::core::v1::Service`) from [`build_rolegroup_service`](`crate::resource::service::build_rolegroup_headless_service`).
-#[allow(clippy::too_many_arguments)]
 pub fn build_broker_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
@@ -570,7 +569,6 @@ pub fn build_broker_rolegroup_statefulset(
 }
 
 /// The controller rolegroup [`StatefulSet`] runs the rolegroup, as configured by the administrator.
-#[allow(clippy::too_many_arguments)]
 pub fn build_controller_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,

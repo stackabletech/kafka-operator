@@ -69,7 +69,6 @@ pub enum Error {
 }
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
-#[allow(clippy::too_many_arguments)]
 pub fn build_rolegroup_config_map(
     kafka: &v1alpha1::KafkaCluster,
     validated_cluster: &ValidatedKafkaCluster,
