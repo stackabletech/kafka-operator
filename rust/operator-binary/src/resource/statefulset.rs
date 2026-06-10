@@ -118,11 +118,6 @@ pub enum Error {
         source: stackable_operator::builder::pod::container::Error,
     },
 
-    #[snafu(display("invalid kafka listeners"))]
-    InvalidKafkaListeners {
-        source: crate::crd::listener::KafkaListenerError,
-    },
-
     #[snafu(display("failed to build Labels"))]
     LabelBuild {
         source: stackable_operator::kvp::LabelError,
@@ -147,11 +142,6 @@ pub enum Error {
     #[snafu(display("failed to retrieve rolegroup replicas"))]
     RoleGroupReplicas { source: crd::role::Error },
 
-    #[snafu(display(
-        "cluster does not define 'metadata.name' which is required for the Kafka cluster id"
-    ))]
-    ClusterIdMissing,
-
     #[snafu(display("vector agent is enabled but vector aggregator ConfigMap is missing"))]
     VectorAggregatorConfigMapMissing,
 }
@@ -159,7 +149,7 @@ pub enum Error {
 /// The broker rolegroup [`StatefulSet`] runs the rolegroup, as configured by the administrator.
 ///
 /// The [`Pod`](`stackable_operator::k8s_openapi::api::core::v1::Pod`)s are accessible through the corresponding
-/// [`Service`](`stackable_operator::k8s_openapi::api::core::v1::Service`) from [`build_rolegroup_service`](`crate::resource::service::build_rolegroup_headless_service`).
+/// [`Service`](`stackable_operator::k8s_openapi::api::core::v1::Service`) from [`build_rolegroup_headless_service`](`crate::resource::service::build_rolegroup_headless_service`).
 pub fn build_broker_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,

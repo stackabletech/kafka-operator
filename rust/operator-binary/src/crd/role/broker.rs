@@ -33,7 +33,6 @@ pub const BROKER_PROPERTIES_FILE: &str = "broker.properties";
 pub enum BrokerContainer {
     Vector,
     KcatProber,
-    GetService,
     Kafka,
 }
 

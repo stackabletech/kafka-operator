@@ -18,11 +18,11 @@ pub const BROKER_ID_POD_MAP_DIR: &str = "/stackable/broker-id-pod-map";
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
 pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
 // log4j
-pub const LOG4J_CONFIG_FILE: &str = "log4j.properties";
-pub const KAFKA_LOG4J_FILE: &str = "kafka.log4j.xml";
+const LOG4J_CONFIG_FILE: &str = "log4j.properties";
+const KAFKA_LOG4J_FILE: &str = "kafka.log4j.xml";
 // log4j2
-pub const LOG4J2_CONFIG_FILE: &str = "log4j2.properties";
-pub const KAFKA_LOG4J2_FILE: &str = "kafka.log4j2.xml";
+const LOG4J2_CONFIG_FILE: &str = "log4j2.properties";
+const KAFKA_LOG4J2_FILE: &str = "kafka.log4j2.xml";
 // max size
 pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {
     value: 10.0,

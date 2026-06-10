@@ -22,9 +22,6 @@ use crate::{
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("invalid metadata manager"))]
-    InvalidMetadataManager { source: crate::crd::Error },
-
     #[snafu(display("failed to build ConfigMap for {}", rolegroup))]
     BuildRoleGroupConfig {
         source: stackable_operator::builder::configmap::Error,
@@ -55,12 +52,6 @@ pub enum Error {
         source: PropertiesWriterError,
         rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
-
-    #[snafu(display("failed to build jaas configuration file for {rolegroup}"))]
-    BuildJaasConfig { rolegroup: String },
-
-    #[snafu(display("failed to build pod descriptors"))]
-    BuildPodDescriptors { source: crate::crd::Error },
 
     #[snafu(display("no Kraft controllers found to build"))]
     NoKraftControllersFound,

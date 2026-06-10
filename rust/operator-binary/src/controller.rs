@@ -35,7 +35,7 @@ mod validate;
 
 use crate::{
     crd::{
-        self, APP_NAME, KafkaClusterStatus, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
+        APP_NAME, KafkaClusterStatus, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
         authorization::KafkaAuthorizationConfig,
         listener::get_kafka_listener_config,
         role::{AnyConfig, AnyConfigOverrides, KafkaRole},
@@ -73,8 +73,8 @@ pub enum Error {
         source: crate::crd::listener::KafkaListenerError,
     },
 
-    #[snafu(display("failed to apply role Service"))]
-    ApplyRoleService {
+    #[snafu(display("failed to apply bootstrap Listener"))]
+    ApplyBootstrapListener {
         source: stackable_operator::cluster_resources::Error,
     },
 
@@ -150,9 +150,6 @@ pub enum Error {
         source: error_boundary::InvalidObject,
     },
 
-    #[snafu(display("KafkaCluster object is misconfigured"))]
-    MisconfiguredKafkaCluster { source: crd::Error },
-
     #[snafu(display("failed to build statefulset"))]
     BuildStatefulset {
         source: crate::resource::statefulset::Error,
@@ -184,7 +181,7 @@ impl ReconcilerError for Error {
         match self {
             Error::Dereference { .. } => None,
             Error::ValidateCluster { .. } => None,
-            Error::ApplyRoleService { .. } => None,
+            Error::ApplyBootstrapListener { .. } => None,
             Error::ApplyRoleGroupService { .. } => None,
             Error::ApplyRoleGroupConfig { .. } => None,
             Error::ApplyRoleGroupStatefulSet { .. } => None,
@@ -199,7 +196,6 @@ impl ReconcilerError for Error {
             Error::FailedToCreatePdb { .. } => None,
             Error::GetRequiredLabels { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
-            Error::MisconfiguredKafkaCluster { .. } => None,
             Error::BuildStatefulset { .. } => None,
             Error::BuildConfigMap { .. } => None,
             Error::BuildService { .. } => None,
@@ -444,7 +440,7 @@ pub async fn reconcile_kafka(
                     cluster_resources
                         .add(client, rg_bootstrap_listener)
                         .await
-                        .context(ApplyRoleServiceSnafu)?,
+                        .context(ApplyBootstrapListenerSnafu)?,
                 );
             }
 
