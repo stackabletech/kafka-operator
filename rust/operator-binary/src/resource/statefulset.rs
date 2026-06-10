@@ -171,7 +171,7 @@ pub fn build_broker_rolegroup_statefulset(
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
-    let merged_config = &validated_rg.merged_config;
+    let merged_config = &validated_rg.config;
     let recommended_object_labels = build_recommended_labels(
         validated_cluster,
         KAFKA_CONTROLLER_NAME,
@@ -244,15 +244,7 @@ pub fn build_broker_rolegroup_statefulset(
         .context(AddKerberosConfigSnafu)?;
     }
 
-    let mut env = validated_rg
-        .env_overrides
-        .iter()
-        .map(|(k, v)| EnvVar {
-            name: k.clone(),
-            value: Some(v.clone()),
-            ..EnvVar::default()
-        })
-        .collect::<Vec<_>>();
+    let mut env = Vec::<EnvVar>::from(validated_rg.env_overrides.clone());
 
     if let Some(zookeeper_config_map_name) = &kafka.spec.cluster_config.zookeeper_config_map_name {
         env.push(EnvVar {
@@ -580,7 +572,7 @@ pub fn build_controller_rolegroup_statefulset(
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
-    let merged_config = &validated_rg.merged_config;
+    let merged_config = &validated_rg.config;
     let recommended_object_labels = build_recommended_labels(
         validated_cluster,
         KAFKA_CONTROLLER_NAME,
@@ -597,15 +589,7 @@ pub fn build_controller_rolegroup_statefulset(
 
     let mut pod_builder = PodBuilder::new();
 
-    let mut env = validated_rg
-        .env_overrides
-        .iter()
-        .map(|(k, v)| EnvVar {
-            name: k.clone(),
-            value: Some(v.clone()),
-            ..EnvVar::default()
-        })
-        .collect::<Vec<_>>();
+    let mut env = Vec::<EnvVar>::from(validated_rg.env_overrides.clone());
 
     env.push(EnvVar {
         name: "NAMESPACE".to_string(),

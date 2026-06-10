@@ -5,14 +5,17 @@
 
 use std::{collections::BTreeMap, str::FromStr};
 
+use serde::Serialize;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     commons::product_image_selection,
-    config::merge::{Merge, merge},
+    config::{fragment::FromFragment, merge::Merge},
     kube::ResourceExt,
+    role_utils::{GenericRoleConfig, JavaCommonConfig, Role},
+    schemars::JsonSchema,
     v2::{
-        config_overrides::KeyValueConfigOverrides,
+        builder::pod::container::{self, EnvVarName, EnvVarSet},
         types::{
             kubernetes::{NamespaceName, Uid},
             operator::ClusterName,
@@ -28,11 +31,18 @@ use crate::{
     crd::{
         self, CONTAINER_IMAGE_BASE_NAME,
         authentication::{self},
-        role::KafkaRole,
+        role::{
+            AnyConfig, AnyConfigOverrides, KafkaRole, broker::BrokerConfig,
+            controller::ControllerConfig,
+        },
         security::{self, KafkaTlsSecurity},
         v1alpha1,
     },
+    framework::role_utils::with_validated_config,
 };
+
+/// The operator-managed env var carrying the Kafka cluster id.
+const KAFKA_CLUSTER_ID_ENV: &str = "KAFKA_CLUSTER_ID";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -50,8 +60,13 @@ pub enum Error {
     #[snafu(display("cluster object defines no '{role}' role"))]
     MissingKafkaRole { source: crd::Error, role: KafkaRole },
 
-    #[snafu(display("failed to resolve merged config for rolegroup"))]
-    ResolveMergedConfig { source: crate::crd::role::Error },
+    #[snafu(display("failed to merge and validate the role group config"))]
+    ValidateRoleGroupConfig {
+        source: crate::framework::role_utils::Error,
+    },
+
+    #[snafu(display("invalid environment variable name"))]
+    InvalidEnvVarName { source: container::Error },
 
     #[snafu(display("failed to build pod descriptors"))]
     BuildPodDescriptors { source: crate::crd::Error },
@@ -116,66 +131,36 @@ pub fn validate(
         .validate_authentication_methods()
         .context(FailedToValidateAuthenticationMethodSnafu)?;
 
+    let cluster_id = kafka.cluster_id();
+
     let mut role_group_configs: BTreeMap<
         KafkaRole,
         BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>,
     > = BTreeMap::new();
 
     // Brokers always exist.
-    let broker_role = kafka
-        .broker_role()
-        .cloned()
-        .context(MissingKafkaRoleSnafu {
-            role: KafkaRole::Broker,
-        })?;
-
-    let mut broker_groups: BTreeMap<RoleGroupName, ValidatedRoleGroupConfig> = BTreeMap::new();
-    for rolegroup_name in broker_role.role_groups.keys() {
-        let merged_config = KafkaRole::Broker
-            .merged_config(kafka, rolegroup_name)
-            .context(ResolveMergedConfigSnafu)?;
-        let (config_file_overrides, jvm_security_overrides, env_overrides) =
-            collect_broker_role_group_overrides(kafka, &broker_role, rolegroup_name);
-        broker_groups.insert(
-            rolegroup_name.clone(),
-            ValidatedRoleGroupConfig {
-                merged_config,
-                config_file_overrides,
-                jvm_security_overrides,
-                env_overrides,
-            },
-        );
-    }
+    let broker_role = kafka.broker_role().context(MissingKafkaRoleSnafu {
+        role: KafkaRole::Broker,
+    })?;
+    let broker_groups = validate_role_group_configs(
+        broker_role,
+        BrokerConfig::default_config(&kafka.name_any(), &KafkaRole::Broker.to_string()),
+        cluster_id,
+        AnyConfig::Broker,
+        AnyConfigOverrides::Broker,
+    )?;
     role_group_configs.insert(KafkaRole::Broker, broker_groups);
 
-    // We need this guard because controller_role() returns an error if controllers is None,
-    // which would stop reconciliation for ZooKeeper-mode clusters.
-    if kafka.spec.controllers.is_some() {
-        let controller_role = kafka
-            .controller_role()
-            .cloned()
-            .context(MissingKafkaRoleSnafu {
-                role: KafkaRole::Controller,
-            })?;
-
-        let mut controller_groups: BTreeMap<RoleGroupName, ValidatedRoleGroupConfig> =
-            BTreeMap::new();
-        for rolegroup_name in controller_role.role_groups.keys() {
-            let merged_config = KafkaRole::Controller
-                .merged_config(kafka, rolegroup_name)
-                .context(ResolveMergedConfigSnafu)?;
-            let (config_file_overrides, jvm_security_overrides, env_overrides) =
-                collect_controller_role_group_overrides(kafka, &controller_role, rolegroup_name);
-            controller_groups.insert(
-                rolegroup_name.clone(),
-                ValidatedRoleGroupConfig {
-                    merged_config,
-                    config_file_overrides,
-                    jvm_security_overrides,
-                    env_overrides,
-                },
-            );
-        }
+    // Controllers are optional: ZooKeeper-mode clusters have none, and `controller_role()`
+    // errors when `controllers` is unset, which would stop their reconciliation.
+    if let Some(controller_role) = kafka.spec.controllers.as_ref() {
+        let controller_groups = validate_role_group_configs(
+            controller_role,
+            ControllerConfig::default_config(&kafka.name_any(), &KafkaRole::Controller.to_string()),
+            cluster_id,
+            AnyConfig::Controller,
+            AnyConfigOverrides::Controller,
+        )?;
         role_group_configs.insert(KafkaRole::Controller, controller_groups);
     }
 
@@ -211,163 +196,108 @@ pub fn validate(
     ))
 }
 
-/// Merge role-group overrides over the role-level overrides (role-group wins per key) via the
-/// `Merge` impl derived on the override structs.
-fn merge_role_group_overrides<O: Merge + Clone>(role: &O, role_group: Option<&O>) -> O {
-    match role_group {
-        Some(role_group) => merge(role_group.clone(), role),
-        None => role.clone(),
-    }
+/// Validates every role group of a role into a map keyed by role group name.
+///
+/// Each role group is merged and validated via the local-`framework`
+/// [`with_validated_config`], which folds the config fragment (default <- role <-
+/// role group) plus the `configOverrides`, `envOverrides`, `cliOverrides` and
+/// `podOverrides` (role group wins) into a single
+/// [`RoleGroupConfig`](crate::framework::role_utils::RoleGroupConfig). The concrete
+/// per-role validated config and overrides are wrapped into the role-agnostic
+/// [`AnyConfig`]/[`AnyConfigOverrides`] via `wrap_config`/`wrap_overrides`, and the
+/// operator-managed `KAFKA_CLUSTER_ID` is injected into the env overrides.
+fn validate_role_group_configs<Config, ValidatedConfig, ConfigOverrides>(
+    role: &Role<Config, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
+    default_config: Config,
+    cluster_id: Option<&str>,
+    wrap_config: fn(ValidatedConfig) -> AnyConfig,
+    wrap_overrides: fn(ConfigOverrides) -> AnyConfigOverrides,
+) -> Result<BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>
+where
+    Config: Clone + Merge,
+    ValidatedConfig: FromFragment<Fragment = Config>,
+    ConfigOverrides: Clone + Default + JsonSchema + Merge + Serialize,
+{
+    role.role_groups
+        .iter()
+        .map(|(role_group_name, role_group)| {
+            let validated = with_validated_config::<
+                ValidatedConfig,
+                JavaCommonConfig,
+                Config,
+                GenericRoleConfig,
+                ConfigOverrides,
+            >(role_group, role, &default_config)
+            .context(ValidateRoleGroupConfigSnafu)?;
+
+            // Re-wrap the per-role validated config and overrides into the role-agnostic
+            // enums; the merged env/cli/pod overrides carry over unchanged, except that
+            // `KAFKA_CLUSTER_ID` is injected into the env overrides.
+            let validated = ValidatedRoleGroupConfig {
+                replicas: validated.replicas,
+                config: wrap_config(validated.config),
+                config_overrides: wrap_overrides(validated.config_overrides),
+                env_overrides: inject_cluster_id(validated.env_overrides, cluster_id)?,
+                cli_overrides: validated.cli_overrides,
+                pod_overrides: validated.pod_overrides,
+                product_specific_common_config: validated.product_specific_common_config,
+            };
+            Ok((role_group_name.clone(), validated))
+        })
+        .collect()
 }
 
-/// Flatten resolved key/value overrides into a plain map. operator-rs #1219 made the override
-/// values plain `String`, so there is no longer any `null`/unset entry to drop.
-fn flatten_overrides(overrides: KeyValueConfigOverrides) -> BTreeMap<String, String> {
-    overrides.overrides
-}
-
-fn collect_broker_role_group_overrides(
-    kafka: &v1alpha1::KafkaCluster,
-    broker_role: &crate::crd::BrokerRole,
-    rolegroup_name: &str,
-) -> (
-    BTreeMap<String, String>,
-    BTreeMap<String, String>,
-    BTreeMap<String, String>,
-) {
-    let merged_overrides = merge_role_group_overrides(
-        &broker_role.config.config_overrides,
-        broker_role
-            .role_groups
-            .get(rolegroup_name)
-            .map(|rg| &rg.config.config_overrides),
-    );
-    let config_file_overrides = flatten_overrides(merged_overrides.broker_properties);
-    let jvm_security_overrides = flatten_overrides(merged_overrides.security_properties);
-
-    // --- env overrides ---
-    // DESIGN DECISION: KAFKA_CLUSTER_ID is injected first, then the user env overrides
-    // (role then role-group) are extended on top, so a user override of the same key wins.
-    // This mirrors product-config's old merge of compute_env() output with user envOverrides.
-    // Alternative: inject after user overrides (operator wins) — rejected to preserve the
-    // previous precedence.
-    //
-    // KAFKA_CLUSTER_ID injection moved here from crd/role/broker.rs::Configuration::compute_env.
-    let mut env_overrides: BTreeMap<String, String> = BTreeMap::new();
-    if let Some(cluster_id) = kafka.cluster_id() {
-        env_overrides.insert("KAFKA_CLUSTER_ID".to_string(), cluster_id.to_string());
+/// Injects the operator-managed `KAFKA_CLUSTER_ID` into the merged env overrides,
+/// but only when the user has not already set it via `envOverrides` (user value
+/// wins, preserving product-config's old precedence).
+///
+/// `KAFKA_CLUSTER_ID` injection moved here from the now-removed
+/// `crd::role::*::Configuration::compute_env`.
+fn inject_cluster_id(env_overrides: EnvVarSet, cluster_id: Option<&str>) -> Result<EnvVarSet> {
+    let Some(cluster_id) = cluster_id else {
+        return Ok(env_overrides);
+    };
+    let name = EnvVarName::from_str(KAFKA_CLUSTER_ID_ENV).context(InvalidEnvVarNameSnafu)?;
+    if env_overrides.get(&name).is_some() {
+        // The user set `KAFKA_CLUSTER_ID` via envOverrides; their value wins.
+        Ok(env_overrides)
+    } else {
+        Ok(env_overrides.with_value(&name, cluster_id))
     }
-    let role_env: &std::collections::HashMap<String, String> = &broker_role.config.env_overrides;
-    env_overrides.extend(role_env.iter().map(|(k, v)| (k.clone(), v.clone())));
-    if let Some(rg) = broker_role.role_groups.get(rolegroup_name) {
-        env_overrides.extend(
-            rg.config
-                .env_overrides
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone())),
-        );
-    }
-
-    (config_file_overrides, jvm_security_overrides, env_overrides)
-}
-
-fn collect_controller_role_group_overrides(
-    kafka: &v1alpha1::KafkaCluster,
-    controller_role: &crate::crd::ControllerRole,
-    rolegroup_name: &str,
-) -> (
-    BTreeMap<String, String>,
-    BTreeMap<String, String>,
-    BTreeMap<String, String>,
-) {
-    let merged_overrides = merge_role_group_overrides(
-        &controller_role.config.config_overrides,
-        controller_role
-            .role_groups
-            .get(rolegroup_name)
-            .map(|rg| &rg.config.config_overrides),
-    );
-    let config_file_overrides = flatten_overrides(merged_overrides.controller_properties);
-    let jvm_security_overrides = flatten_overrides(merged_overrides.security_properties);
-
-    // --- env overrides ---
-    // DESIGN DECISION: KAFKA_CLUSTER_ID is injected first, then the user env overrides
-    // (role then role-group) are extended on top, so a user override of the same key wins.
-    // This mirrors product-config's old merge of compute_env() output with user envOverrides.
-    // Alternative: inject after user overrides (operator wins) — rejected to preserve the
-    // previous precedence.
-    //
-    // KAFKA_CLUSTER_ID injection moved here from crd/role/controller.rs::Configuration::compute_env.
-    let mut env_overrides: BTreeMap<String, String> = BTreeMap::new();
-    if let Some(cluster_id) = kafka.cluster_id() {
-        env_overrides.insert("KAFKA_CLUSTER_ID".to_string(), cluster_id.to_string());
-    }
-    let role_env: &std::collections::HashMap<String, String> =
-        &controller_role.config.env_overrides;
-    env_overrides.extend(role_env.iter().map(|(k, v)| (k.clone(), v.clone())));
-    if let Some(rg) = controller_role.role_groups.get(rolegroup_name) {
-        env_overrides.extend(
-            rg.config
-                .env_overrides
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone())),
-        );
-    }
-
-    (config_file_overrides, jvm_security_overrides, env_overrides)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::str::FromStr;
 
-    use stackable_operator::v2::config_overrides::KeyValueConfigOverrides;
+    use stackable_operator::v2::builder::pod::container::{EnvVarName, EnvVarSet};
 
-    use super::{flatten_overrides, merge_role_group_overrides};
+    use super::{KAFKA_CLUSTER_ID_ENV, inject_cluster_id};
 
-    /// Build a `KeyValueConfigOverrides` from `(key, value)` pairs.
-    fn overrides(pairs: &[(&str, &str)]) -> KeyValueConfigOverrides {
-        KeyValueConfigOverrides {
-            overrides: pairs
-                .iter()
-                .map(|(key, value)| (key.to_string(), value.to_string()))
-                .collect(),
-        }
-    }
-
-    /// Run the full role/role-group resolution (merge then flatten) for a single config file.
-    fn resolve(
-        role: KeyValueConfigOverrides,
-        role_group: Option<KeyValueConfigOverrides>,
-    ) -> BTreeMap<String, String> {
-        flatten_overrides(merge_role_group_overrides(&role, role_group.as_ref()))
+    fn cluster_id_value(env: &EnvVarSet) -> Option<String> {
+        let name = EnvVarName::from_str(KAFKA_CLUSTER_ID_ENV).unwrap();
+        env.get(&name).and_then(|var| var.value.clone())
     }
 
     #[test]
-    fn role_group_value_wins_over_role() {
-        let role = overrides(&[("a", "role"), ("b", "role-only")]);
-        let role_group = overrides(&[("a", "rg")]);
-
-        let merged = resolve(role, Some(role_group));
-
-        assert_eq!(
-            merged,
-            BTreeMap::from([
-                ("a".to_string(), "rg".to_string()), // role-group wins for shared keys
-                ("b".to_string(), "role-only".to_string()), // role-only keys are kept
-            ])
-        );
+    fn injects_cluster_id_when_absent() {
+        let env = inject_cluster_id(EnvVarSet::new(), Some("my-id")).unwrap();
+        assert_eq!(cluster_id_value(&env), Some("my-id".to_string()));
     }
 
     #[test]
-    fn without_a_role_group_role_values_are_kept() {
-        let role = overrides(&[("a", "role")]);
+    fn user_cluster_id_override_wins() {
+        let name = EnvVarName::from_str(KAFKA_CLUSTER_ID_ENV).unwrap();
+        let env = EnvVarSet::new().with_value(&name, "user-value");
 
-        let merged = resolve(role, None);
+        let env = inject_cluster_id(env, Some("operator-value")).unwrap();
 
-        assert_eq!(
-            merged,
-            BTreeMap::from([("a".to_string(), "role".to_string())])
-        );
+        assert_eq!(cluster_id_value(&env), Some("user-value".to_string()));
+    }
+
+    #[test]
+    fn without_cluster_id_nothing_is_injected() {
+        let env = inject_cluster_id(EnvVarSet::new(), None).unwrap();
+        assert_eq!(cluster_id_value(&env), None);
     }
 }

@@ -76,8 +76,12 @@ pub fn build_rolegroup_config_map(
 ) -> Result<ConfigMap, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
-    let kafka_config_file_name = validated_rg.merged_config.config_file_name();
-    let config_overrides = validated_rg.config_file_overrides.clone();
+    let kafka_config_file_name = validated_rg.config.config_file_name();
+    let config_overrides = validated_rg
+        .config_overrides
+        .config_file_overrides()
+        .overrides
+        .clone();
 
     let opa_connect = validated_cluster
         .cluster_config
@@ -91,7 +95,7 @@ pub fn build_rolegroup_config_map(
         return NoKraftControllersFoundSnafu.fail();
     }
 
-    let kafka_config = match &validated_rg.merged_config {
+    let kafka_config = match &validated_rg.config {
         AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
             kafka_security,
             listener_config,
@@ -116,7 +120,10 @@ pub fn build_rolegroup_config_map(
         }
     };
 
-    let jvm_sec_props = &validated_rg.jvm_security_overrides;
+    let jvm_sec_props = &validated_rg
+        .config_overrides
+        .security_properties()
+        .overrides;
 
     let mut cm_builder = ConfigMapBuilder::new();
     cm_builder
@@ -179,7 +186,7 @@ pub fn build_rolegroup_config_map(
     let config_data = role_group_config_map_data(
         &resolved_product_image.product_version,
         rolegroup,
-        &validated_rg.merged_config,
+        &validated_rg.config,
     );
     for (file_name, data) in config_data {
         if let Some(data) = data {

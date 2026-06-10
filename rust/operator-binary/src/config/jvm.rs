@@ -110,8 +110,17 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use stackable_operator::kube::ResourceExt;
+
     use super::*;
-    use crate::crd::{BrokerRole, role::KafkaRole, v1alpha1};
+    use crate::{
+        crd::{
+            BrokerRole,
+            role::{KafkaRole, broker::BrokerConfig},
+            v1alpha1,
+        },
+        framework::role_utils::with_validated_config,
+    };
 
     #[test]
     fn test_construct_jvm_arguments_defaults() {
@@ -197,12 +206,12 @@ mod tests {
         let kafka: v1alpha1::KafkaCluster =
             serde_yaml::from_str(kafka_cluster).expect("illegal test input");
 
-        let kafka_role = KafkaRole::Broker;
-        let rolegroup_ref = kafka.rolegroup_ref(&kafka_role, "default");
-        let merged_config = kafka_role
-            .merged_config(&kafka, &rolegroup_ref.role_group)
-            .unwrap();
-        let role = kafka.spec.brokers.unwrap();
+        let role = kafka.spec.brokers.clone().unwrap();
+        let role_group = role.role_groups.get("default").unwrap();
+        let default_config =
+            BrokerConfig::default_config(&kafka.name_any(), &KafkaRole::Broker.to_string());
+        let validated = with_validated_config(role_group, &role, &default_config).unwrap();
+        let merged_config = AnyConfig::Broker(validated.config);
 
         (merged_config, role, "default".to_owned())
     }

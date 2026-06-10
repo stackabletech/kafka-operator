@@ -30,9 +30,17 @@ mod tests {
             api::core::v1::{PodAffinityTerm, PodAntiAffinity, WeightedPodAffinityTerm},
             apimachinery::pkg::apis::meta::v1::LabelSelector,
         },
+        kube::ResourceExt,
     };
 
-    use crate::crd::{KafkaRole, v1alpha1};
+    use crate::{
+        crd::{
+            KafkaRole,
+            role::{AnyConfig, broker::BrokerConfig},
+            v1alpha1,
+        },
+        framework::role_utils::with_validated_config,
+    };
 
     #[rstest]
     #[case(KafkaRole::Broker)]
@@ -55,7 +63,11 @@ mod tests {
 
         let kafka: v1alpha1::KafkaCluster =
             serde_yaml::from_str(input).expect("illegal test input");
-        let merged_config = role.merged_config(&kafka, "default").unwrap();
+        let broker_role = kafka.spec.brokers.clone().unwrap();
+        let role_group = broker_role.role_groups.get("default").unwrap();
+        let default_config = BrokerConfig::default_config(&kafka.name_any(), &role.to_string());
+        let validated = with_validated_config(role_group, &broker_role, &default_config).unwrap();
+        let merged_config = AnyConfig::Broker(validated.config);
 
         assert_eq!(
             merged_config.affinity,

@@ -8,15 +8,12 @@ use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::resources::{NoRuntimeLimits, Resources},
-    config::{
-        fragment::{self, ValidationError},
-        merge::Merge,
-    },
     k8s_openapi::api::core::v1::PodTemplateSpec,
-    kube::{ResourceExt, runtime::reflector::ObjectRef},
+    kube::runtime::reflector::ObjectRef,
     product_logging::spec::ContainerLogConfig,
     role_utils::RoleGroupRef,
     schemars::{self, JsonSchema},
+    v2::config_overrides::KeyValueConfigOverrides,
 };
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
@@ -73,9 +70,6 @@ pub const KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS: &str = "controller.quorum.b
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("fragment validation failure"))]
-    FragmentValidationFailure { source: ValidationError },
-
     #[snafu(display("the Kafka role [{role}] is missing from spec"))]
     MissingRole {
         source: crate::crd::Error,
@@ -138,87 +132,6 @@ impl KafkaRole {
     /// but is similar to HBase).
     pub fn kerberos_service_name(&self) -> &'static str {
         "kafka"
-    }
-
-    /// Merge the [Broker|Controller]ConfigFragment defaults, role and role group settings.
-    /// The priority is: default < role config < role_group config
-    pub fn merged_config(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-        rolegroup: &str,
-    ) -> Result<AnyConfig, Error> {
-        match self {
-            Self::Broker => {
-                // Initialize the result with all default values as baseline
-                let default_config =
-                    BrokerConfig::default_config(&kafka.name_any(), &self.to_string());
-
-                // Retrieve role resource config
-                let role = kafka.broker_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?;
-
-                let mut role_config = role.config.config.clone();
-                // Retrieve rolegroup specific resource config
-                let mut role_group_config = role
-                    .role_groups
-                    .get(rolegroup)
-                    .with_context(|| MissingRoleGroupSnafu {
-                        role: self.to_string(),
-                        rolegroup: rolegroup.to_string(),
-                    })?
-                    .config
-                    .config
-                    .clone();
-
-                // Merge more specific configs into default config
-                // Hierarchy is:
-                // 1. RoleGroup
-                // 2. Role
-                // 3. Default
-                role_config.merge(&default_config);
-                role_group_config.merge(&role_config);
-                Ok(AnyConfig::Broker(
-                    fragment::validate::<BrokerConfig>(role_group_config)
-                        .context(FragmentValidationFailureSnafu)?,
-                ))
-            }
-            Self::Controller => {
-                // Initialize the result with all default values as baseline
-                let default_config =
-                    ControllerConfig::default_config(&kafka.name_any(), &self.to_string());
-
-                // Retrieve role resource config
-                let role = kafka.controller_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?;
-
-                let mut role_config = role.config.config.clone();
-                // Retrieve rolegroup specific resource config
-                let mut role_group_config = role
-                    .role_groups
-                    .get(rolegroup)
-                    .with_context(|| MissingRoleGroupSnafu {
-                        role: self.to_string(),
-                        rolegroup: rolegroup.to_string(),
-                    })?
-                    .config
-                    .config
-                    .clone();
-
-                // Merge more specific configs into default config
-                // Hierarchy is:
-                // 1. RoleGroup
-                // 2. Role
-                // 3. Default
-                role_config.merge(&default_config);
-                role_group_config.merge(&role_config);
-                Ok(AnyConfig::Controller(
-                    fragment::validate::<ControllerConfig>(role_group_config)
-                        .context(FragmentValidationFailureSnafu)?,
-                ))
-            }
-        }
     }
 
     pub fn construct_non_heap_jvm_args(
@@ -446,6 +359,36 @@ impl AnyConfig {
         match self {
             AnyConfig::Broker(_) => BROKER_PROPERTIES_FILE,
             AnyConfig::Controller(_) => CONTROLLER_PROPERTIES_FILE,
+        }
+    }
+}
+
+/// Merged role/role-group `configOverrides` for a role group of an unknown type.
+///
+/// Mirrors [`AnyConfig`] for the override side: broker and controller use distinct
+/// override structs, so this enum lets the build layer carry the typed, merged
+/// overrides through a single role-agnostic `RoleGroupConfig`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AnyConfigOverrides {
+    Broker(v1alpha1::KafkaBrokerConfigOverrides),
+    Controller(v1alpha1::KafkaControllerConfigOverrides),
+}
+
+impl AnyConfigOverrides {
+    /// The merged product config-file overrides (`broker.properties` for brokers,
+    /// `controller.properties` for controllers).
+    pub fn config_file_overrides(&self) -> &KeyValueConfigOverrides {
+        match self {
+            AnyConfigOverrides::Broker(o) => &o.broker_properties,
+            AnyConfigOverrides::Controller(o) => &o.controller_properties,
+        }
+    }
+
+    /// The merged `security.properties` overrides (shared by both roles).
+    pub fn security_properties(&self) -> &KeyValueConfigOverrides {
+        match self {
+            AnyConfigOverrides::Broker(o) => &o.security_properties,
+            AnyConfigOverrides::Controller(o) => &o.security_properties,
         }
     }
 }

@@ -38,7 +38,7 @@ use crate::{
         self, APP_NAME, KafkaClusterStatus, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
         authorization::KafkaAuthorizationConfig,
         listener::get_kafka_listener_config,
-        role::{AnyConfig, KafkaRole},
+        role::{AnyConfig, AnyConfigOverrides, KafkaRole},
         security::KafkaTlsSecurity,
         v1alpha1,
     },
@@ -296,20 +296,18 @@ impl Resource for ValidatedCluster {
     }
 }
 
-pub struct ValidatedRoleGroupConfig {
-    pub merged_config: AnyConfig,
-    // DESIGN DECISION: overrides are resolved into flat maps HERE rather than stored
-    // as the typed KeyValueConfigOverrides and resolved in the per-file builders (the
-    // hdfs-operator pattern). Reason: broker and controller use different override
-    // struct types (KafkaBrokerConfigOverrides vs KafkaControllerConfigOverrides), so a
-    // single typed field would require an enum. Resolving here keeps the build/properties
-    // builders taking plain `BTreeMap<String,String>`. Alternative: an enum over the two
-    // override types threaded to builders that call resolved_overrides() — more types for
-    // no behavioural gain.
-    pub config_file_overrides: BTreeMap<String, String>,
-    pub jvm_security_overrides: BTreeMap<String, String>,
-    pub env_overrides: BTreeMap<String, String>,
-}
+/// A validated, merged Kafka role-group config.
+///
+/// The merged config fragment is wrapped in [`AnyConfig`] and the merged
+/// `configOverrides` in [`AnyConfigOverrides`], so a single role-agnostic type
+/// carries both broker and controller role groups (their concrete config and
+/// override types differ). Produced via the local-`framework`
+/// [`with_validated_config`](crate::framework::role_utils::with_validated_config).
+pub type ValidatedRoleGroupConfig = crate::framework::role_utils::RoleGroupConfig<
+    AnyConfig,
+    stackable_operator::role_utils::JavaCommonConfig,
+    AnyConfigOverrides,
+>;
 
 pub async fn reconcile_kafka(
     kafka: Arc<DeserializeGuard<v1alpha1::KafkaCluster>>,
@@ -434,7 +432,7 @@ pub async fn reconcile_kafka(
                 .context(BuildStatefulsetSnafu)?,
             };
 
-            if let AnyConfig::Broker(broker_config) = &validated_rg.merged_config {
+            if let AnyConfig::Broker(broker_config) = &validated_rg.config {
                 let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
                     kafka,
                     &validated_cluster,
