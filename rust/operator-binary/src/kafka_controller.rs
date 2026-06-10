@@ -1,17 +1,17 @@
 //! Ensures that `Pod`s are configured and running for each [`v1alpha1::KafkaCluster`].
 
-use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use const_format::concatcp;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
-    commons::{product_image_selection::ResolvedProductImage, rbac::build_rbac_resources},
+    commons::rbac::build_rbac_resources,
     crd::listener,
     kube::{
         Resource,
-        api::{DynamicObject, ObjectMeta},
+        api::DynamicObject,
         core::{DeserializeGuard, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
     },
@@ -24,24 +24,15 @@ use stackable_operator::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
         statefulset::StatefulSetConditionBuilder,
     },
-    v2::types::{
-        kubernetes::{NamespaceName, Uid},
-        operator::ClusterName,
-    },
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-pub(crate) mod build;
-mod dereference;
-mod validate;
-
 use crate::{
+    controller::{build, dereference, validate},
     crd::{
-        APP_NAME, KafkaClusterStatus, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
-        authorization::KafkaAuthorizationConfig,
+        APP_NAME, KafkaClusterStatus, OPERATOR_NAME,
         listener::get_kafka_listener_config,
-        role::{AnyConfig, AnyConfigOverrides, KafkaRole},
-        security::KafkaTlsSecurity,
+        role::{AnyConfig, KafkaRole},
         v1alpha1,
     },
     operations::pdb::add_pdbs,
@@ -235,106 +226,6 @@ impl ReconcilerError for Error {
     }
 }
 
-pub type RoleGroupName = String;
-
-/// The validated cluster. Carries everything the build steps need, resolved once
-/// here so downstream code never re-derives it or touches the raw spec.
-///
-/// The cluster identity (`name`, `namespace`, `uid`) is captured here so that owner
-/// references for child objects can be built straight from this struct (via its
-/// [`Resource`] impl) without threading the raw [`v1alpha1::KafkaCluster`] around.
-/// This mirrors the hive-/opensearch-operator's `ValidatedCluster`.
-pub struct ValidatedCluster {
-    /// `ObjectMeta` carrying `name`, `namespace` and `uid`, so this struct can act as the
-    /// owner [`Resource`] for child objects.
-    metadata: ObjectMeta,
-    pub name: ClusterName,
-    pub namespace: NamespaceName,
-    pub image: ResolvedProductImage,
-    pub cluster_config: ValidatedClusterConfig,
-    pub role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
-}
-
-impl ValidatedCluster {
-    pub fn new(
-        name: ClusterName,
-        namespace: NamespaceName,
-        uid: Uid,
-        image: ResolvedProductImage,
-        cluster_config: ValidatedClusterConfig,
-        role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
-    ) -> Self {
-        Self {
-            metadata: ObjectMeta {
-                name: Some(name.to_string()),
-                namespace: Some(namespace.to_string()),
-                uid: Some(uid.to_string()),
-                ..ObjectMeta::default()
-            },
-            name,
-            namespace,
-            image,
-            cluster_config,
-            role_group_configs,
-        }
-    }
-}
-
-/// Cluster-wide settings resolved during validation and dereferencing.
-///
-/// Everything the build steps need is resolved here so they never have to read the
-/// raw [`v1alpha1::KafkaCluster`] spec.
-pub struct ValidatedClusterConfig {
-    pub kafka_security: KafkaTlsSecurity,
-    pub authorization_config: Option<KafkaAuthorizationConfig>,
-    pub pod_descriptors: Vec<KafkaPodDescriptor>,
-    pub metadata_manager: MetadataManager,
-}
-
-/// Lets [`ValidatedCluster`] act as the owner [`Resource`] for child objects, so owner
-/// references are built from it (via the captured `metadata`) rather than the raw CR.
-impl Resource for ValidatedCluster {
-    type DynamicType = <v1alpha1::KafkaCluster as Resource>::DynamicType;
-    type Scope = <v1alpha1::KafkaCluster as Resource>::Scope;
-
-    fn kind(dt: &Self::DynamicType) -> Cow<'_, str> {
-        v1alpha1::KafkaCluster::kind(dt)
-    }
-
-    fn group(dt: &Self::DynamicType) -> Cow<'_, str> {
-        v1alpha1::KafkaCluster::group(dt)
-    }
-
-    fn version(dt: &Self::DynamicType) -> Cow<'_, str> {
-        v1alpha1::KafkaCluster::version(dt)
-    }
-
-    fn plural(dt: &Self::DynamicType) -> Cow<'_, str> {
-        v1alpha1::KafkaCluster::plural(dt)
-    }
-
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
-    }
-}
-
-/// A validated, merged Kafka role-group config.
-///
-/// The merged config fragment is wrapped in [`AnyConfig`] and the merged
-/// `configOverrides` in [`AnyConfigOverrides`], so a single role-agnostic type
-/// carries both broker and controller role groups (their concrete config and
-/// override types differ). Produced via the local-`framework`
-/// [`with_validated_config`](crate::framework::role_utils::with_validated_config).
-pub type ValidatedRoleGroupConfig = crate::framework::role_utils::RoleGroupConfig<
-    AnyConfig,
-    stackable_operator::role_utils::JavaCommonConfig,
-    AnyConfigOverrides,
->;
-
 pub async fn reconcile_kafka(
     kafka: Arc<DeserializeGuard<v1alpha1::KafkaCluster>>,
     ctx: Arc<Ctx>,
@@ -427,7 +318,6 @@ pub async fn reconcile_kafka(
             .context(InvalidKafkaListenersSnafu)?;
 
             let rg_configmap = build::config_map::build_rolegroup_config_map(
-                kafka,
                 &validated_cluster,
                 &rolegroup_ref,
                 validated_rg,

@@ -19,10 +19,13 @@ use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
 use crate::{
     config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
-    crd::role::{
-        broker::{BROKER_PROPERTIES_FILE, BrokerConfig},
-        commons::{CommonConfig, Storage},
-        controller::{CONTROLLER_PROPERTIES_FILE, ControllerConfig},
+    crd::{
+        ConfigFileName,
+        role::{
+            broker::BrokerConfig,
+            commons::{CommonConfig, Storage},
+            controller::ControllerConfig,
+        },
     },
     v1alpha1,
 };
@@ -355,10 +358,10 @@ impl AnyConfig {
         }
     }
 
-    pub fn config_file_name(&self) -> &str {
+    pub fn config_file_name(&self) -> ConfigFileName {
         match self {
-            AnyConfig::Broker(_) => BROKER_PROPERTIES_FILE,
-            AnyConfig::Controller(_) => CONTROLLER_PROPERTIES_FILE,
+            AnyConfig::Broker(_) => ConfigFileName::BrokerProperties,
+            AnyConfig::Controller(_) => ConfigFileName::ControllerProperties,
         }
     }
 }

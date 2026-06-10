@@ -1,6 +1,7 @@
 pub mod affinity;
 pub mod authentication;
 pub mod authorization;
+pub mod config_file;
 pub mod listener;
 pub mod role;
 pub mod security;
@@ -9,6 +10,7 @@ pub mod tls;
 use std::collections::{BTreeMap, HashMap};
 
 use authentication::KafkaAuthentication;
+pub use config_file::ConfigFileName;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
 use stackable_operator::{
@@ -44,8 +46,6 @@ pub const FIELD_MANAGER: &str = "kafka-operator";
 // metrics
 pub const METRICS_PORT_NAME: &str = "metrics";
 pub const METRICS_PORT: u16 = 9606;
-// config files
-pub const JVM_SECURITY_PROPERTIES_FILE: &str = "security.properties";
 // env vars
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
@@ -64,8 +64,6 @@ pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
 pub const BROKER_ID_POD_MAP_DIR: &str = "/stackable/broker-id-pod-map";
-pub const LOG4J_CONFIG_FILE: &str = "log4j.properties";
-pub const LOG4J2_CONFIG_FILE: &str = "log4j2.properties";
 
 #[derive(Snafu, Debug)]
 pub enum Error {

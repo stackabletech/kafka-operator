@@ -13,8 +13,6 @@ use strum::{Display, EnumIter};
 
 use crate::crd::role::commons::{CommonConfig, Storage, StorageFragment};
 
-pub const CONTROLLER_PROPERTIES_FILE: &str = "controller.properties";
-
 #[derive(
     Clone,
     Debug,

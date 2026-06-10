@@ -9,16 +9,17 @@ use stackable_operator::{
 
 use crate::{
     controller::{
-        KAFKA_CONTROLLER_NAME, ValidatedCluster, ValidatedRoleGroupConfig,
-        build::properties::logging::role_group_config_map_data, build_recommended_labels,
+        ValidatedCluster, ValidatedRoleGroupConfig,
+        build::properties::logging::role_group_config_map_data,
     },
     crd::{
-        JVM_SECURITY_PROPERTIES_FILE, MetadataManager, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+        ConfigFileName, MetadataManager, STACKABLE_LISTENER_BOOTSTRAP_DIR,
         STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, node_address_cmd},
         role::AnyConfig,
         v1alpha1,
     },
+    kafka_controller::{KAFKA_CONTROLLER_NAME, build_recommended_labels},
 };
 
 #[derive(Snafu, Debug)]
@@ -29,10 +30,7 @@ pub enum Error {
         rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
     },
 
-    #[snafu(display(
-        "failed to serialize [{JVM_SECURITY_PROPERTIES_FILE}] for {}",
-        rolegroup
-    ))]
+    #[snafu(display("failed to serialize [{}] for {rolegroup}", ConfigFileName::Security))]
     JvmSecurityProperties {
         source: PropertiesWriterError,
         rolegroup: String,
@@ -60,7 +58,6 @@ pub enum Error {
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
 pub fn build_rolegroup_config_map(
-    kafka: &v1alpha1::KafkaCluster,
     validated_cluster: &ValidatedCluster,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     validated_rg: &ValidatedRoleGroupConfig,
@@ -68,7 +65,7 @@ pub fn build_rolegroup_config_map(
 ) -> Result<ConfigMap, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
-    let kafka_config_file_name = validated_rg.config.config_file_name();
+    let kafka_config_file_name = validated_rg.config.config_file_name().to_string();
     let config_overrides = validated_rg
         .config_overrides
         .config_file_overrides()
@@ -94,11 +91,9 @@ pub fn build_rolegroup_config_map(
             &validated_cluster.cluster_config.pod_descriptors,
             opa_connect.as_deref(),
             kraft_mode,
-            kafka
-                .spec
+            validated_cluster
                 .cluster_config
-                .broker_id_pod_config_map_name
-                .is_some(),
+                .disable_broker_id_generation,
             config_overrides,
         ),
         AnyConfig::Controller(_) => {
@@ -144,7 +139,7 @@ pub fn build_rolegroup_config_map(
             })?,
         )
         .add_data(
-            JVM_SECURITY_PROPERTIES_FILE,
+            ConfigFileName::Security.to_string(),
             to_java_properties_string(jvm_sec_props.iter()).with_context(|_| {
                 JvmSecurityPropertiesSnafu {
                     rolegroup: rolegroup.role_group.clone(),
@@ -152,7 +147,7 @@ pub fn build_rolegroup_config_map(
             })?,
         )
         .add_data(
-            "client.properties",
+            ConfigFileName::Client.to_string(),
             to_java_properties_string(
                 kafka_security
                     .client_properties()
@@ -168,7 +163,7 @@ pub fn build_rolegroup_config_map(
         // It is processed by `config-utils` to substitute "env:" and "file:" variables
         // and this tool currently doesn't support the JAAS login configuration format.
         .add_data(
-            "jaas.properties",
+            ConfigFileName::Jaas.to_string(),
             jaas_config_file(kafka_security.has_kerberos_enabled()),
         );
 

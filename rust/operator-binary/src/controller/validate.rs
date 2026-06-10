@@ -191,6 +191,11 @@ pub fn validate(
             authorization_config: dereferenced_objects.authorization_config,
             pod_descriptors,
             metadata_manager,
+            disable_broker_id_generation: kafka
+                .spec
+                .cluster_config
+                .broker_id_pod_config_map_name
+                .is_some(),
         },
         role_group_configs,
     ))

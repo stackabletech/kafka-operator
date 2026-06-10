@@ -13,12 +13,12 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::MAX_KAFKA_LOG_FILES_SIZE,
     crd::{
-        LOG4J_CONFIG_FILE, LOG4J2_CONFIG_FILE, STACKABLE_LOG_DIR,
+        ConfigFileName, STACKABLE_LOG_DIR,
         role::{AnyConfig, broker::BrokerContainer, controller::ControllerContainer},
         v1alpha1,
     },
+    kafka_controller::MAX_KAFKA_LOG_FILES_SIZE,
 };
 
 const KAFKA_LOG4J_FILE: &str = "kafka.log4j.xml";
@@ -44,7 +44,7 @@ pub fn role_group_config_map_data(
     match product_version.starts_with("3.") {
         true => {
             configs.insert(
-                LOG4J_CONFIG_FILE.to_string(),
+                ConfigFileName::Log4j.to_string(),
                 log4j_config_if_automatic(
                     Some(merged_config.kafka_logging()),
                     container_name,
@@ -55,7 +55,7 @@ pub fn role_group_config_map_data(
         }
         false => {
             configs.insert(
-                LOG4J2_CONFIG_FILE.to_string(),
+                ConfigFileName::Log4j2.to_string(),
                 log4j2_config_if_automatic(
                     Some(merged_config.kafka_logging()),
                     container_name,

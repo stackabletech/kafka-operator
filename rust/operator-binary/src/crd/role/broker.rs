@@ -13,8 +13,6 @@ use strum::{Display, EnumIter};
 
 use crate::crd::role::commons::{CommonConfig, Storage, StorageFragment};
 
-pub const BROKER_PROPERTIES_FILE: &str = "broker.properties";
-
 #[derive(
     Clone,
     Debug,

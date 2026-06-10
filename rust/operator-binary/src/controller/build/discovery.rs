@@ -9,8 +9,9 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{KAFKA_CONTROLLER_NAME, ValidatedCluster, build_recommended_labels},
+    controller::ValidatedCluster,
     crd::{role::KafkaRole, v1alpha1},
+    kafka_controller::{KAFKA_CONTROLLER_NAME, build_recommended_labels},
 };
 
 #[derive(Snafu, Debug)]

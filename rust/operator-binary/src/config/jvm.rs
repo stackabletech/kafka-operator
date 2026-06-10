@@ -6,9 +6,7 @@ use stackable_operator::{
     schemars::JsonSchema,
 };
 
-use crate::crd::{
-    JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT, STACKABLE_CONFIG_DIR, role::AnyConfig,
-};
+use crate::crd::{ConfigFileName, METRICS_PORT, STACKABLE_CONFIG_DIR, role::AnyConfig};
 
 const JAVA_HEAP_FACTOR: f32 = 0.8;
 
@@ -54,7 +52,10 @@ where
         // Heap settings
         format!("-Xmx{java_heap}"),
         format!("-Xms{java_heap}"),
-        format!("-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE}"),
+        format!(
+            "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{security}",
+            security = ConfigFileName::Security
+        ),
         format!(
             "-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/server.yaml"
         ),

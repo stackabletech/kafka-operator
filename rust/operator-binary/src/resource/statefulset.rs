@@ -46,10 +46,7 @@ use crate::{
         },
         node_id_hasher::node_id_hash32_offset,
     },
-    controller::{
-        KAFKA_CONTROLLER_NAME, MAX_KAFKA_LOG_FILES_SIZE, ValidatedCluster,
-        ValidatedRoleGroupConfig, build_recommended_labels,
-    },
+    controller::{ValidatedCluster, ValidatedRoleGroupConfig},
     crd::{
         self, APP_NAME, BROKER_ID_POD_MAP_DIR, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
@@ -63,6 +60,7 @@ use crate::{
         security::KafkaTlsSecurity,
         v1alpha1,
     },
+    kafka_controller::{KAFKA_CONTROLLER_NAME, MAX_KAFKA_LOG_FILES_SIZE, build_recommended_labels},
     kerberos::add_kerberos_pod_config,
     operations::graceful_shutdown::add_graceful_shutdown_config,
 };
