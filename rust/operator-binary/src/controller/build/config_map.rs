@@ -8,7 +8,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster, ValidatedRoleGroupConfig},
+    controller::{KAFKA_CONTROLLER_NAME, ValidatedCluster, ValidatedRoleGroupConfig},
     crd::{
         JVM_SECURITY_PROPERTIES_FILE, MetadataManager, STACKABLE_LISTENER_BOOTSTRAP_DIR,
         STACKABLE_LISTENER_BROKER_DIR,
@@ -69,24 +69,25 @@ pub enum Error {
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
 pub fn build_rolegroup_config_map(
     kafka: &v1alpha1::KafkaCluster,
-    validated_cluster: &ValidatedKafkaCluster,
+    validated_cluster: &ValidatedCluster,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     validated_rg: &ValidatedRoleGroupConfig,
     listener_config: &KafkaListenerConfig,
 ) -> Result<ConfigMap, Error> {
-    let kafka_security = &validated_cluster.kafka_security;
+    let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let kafka_config_file_name = validated_rg.merged_config.config_file_name();
     let config_overrides = validated_rg.config_file_overrides.clone();
 
     let opa_connect = validated_cluster
+        .cluster_config
         .authorization_config
         .as_ref()
         .map(|auth_config| auth_config.opa_connect.clone());
 
-    let kraft_mode = validated_cluster.metadata_manager == MetadataManager::KRaft;
+    let kraft_mode = validated_cluster.cluster_config.metadata_manager == MetadataManager::KRaft;
 
-    if kraft_mode && validated_cluster.pod_descriptors.is_empty() {
+    if kraft_mode && validated_cluster.cluster_config.pod_descriptors.is_empty() {
         return NoKraftControllersFoundSnafu.fail();
     }
 
@@ -94,7 +95,7 @@ pub fn build_rolegroup_config_map(
         AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
             kafka_security,
             listener_config,
-            &validated_cluster.pod_descriptors,
+            &validated_cluster.cluster_config.pod_descriptors,
             opa_connect.as_deref(),
             kraft_mode,
             kafka
@@ -108,7 +109,7 @@ pub fn build_rolegroup_config_map(
             crate::controller::build::properties::controller_properties::build(
                 kafka_security,
                 listener_config,
-                &validated_cluster.pod_descriptors,
+                &validated_cluster.cluster_config.pod_descriptors,
                 kraft_mode,
                 config_overrides,
             )

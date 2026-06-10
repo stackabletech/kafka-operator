@@ -1,7 +1,7 @@
 //! The validate step in the KafkaCluster controller.
 //!
 //! Synchronously validates inputs that don't require a Kubernetes client. Produces
-//! [`ValidatedKafkaCluster`], consumed by the rest of `reconcile_kafka`.
+//! [`ValidatedCluster`], consumed by the rest of `reconcile_kafka`.
 
 use std::{collections::BTreeMap, str::FromStr};
 
@@ -22,7 +22,8 @@ use stackable_operator::{
 
 use crate::{
     controller::{
-        ValidatedKafkaCluster, ValidatedRoleGroupConfig, dereference::DereferencedObjects,
+        RoleGroupName, ValidatedCluster, ValidatedClusterConfig, ValidatedRoleGroupConfig,
+        dereference::DereferencedObjects,
     },
     crd::{
         self, CONTAINER_IMAGE_BASE_NAME,
@@ -87,7 +88,7 @@ pub fn validate(
     kafka: &v1alpha1::KafkaCluster,
     dereferenced_objects: DereferencedObjects,
     operator_environment: &OperatorEnvironmentOptions,
-) -> Result<ValidatedKafkaCluster> {
+) -> Result<ValidatedCluster> {
     let image = kafka
         .spec
         .image
@@ -115,13 +116,10 @@ pub fn validate(
         .validate_authentication_methods()
         .context(FailedToValidateAuthenticationMethodSnafu)?;
 
-    // DESIGN DECISION: build the per-rolegroup config (merged config + resolved overrides)
-    // here, so reconcile reads a fully-typed ValidatedKafkaCluster instead of re-deriving
-    // merged_config in the loop and threading a product-config HashMap. Alternative: keep
-    // deriving merged_config in the reconcile loop — rejected; validation is the right place
-    // to prove every rolegroup resolves before any resource is built.
-    let mut role_groups: BTreeMap<KafkaRole, BTreeMap<String, ValidatedRoleGroupConfig>> =
-        BTreeMap::new();
+    let mut role_group_configs: BTreeMap<
+        KafkaRole,
+        BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>,
+    > = BTreeMap::new();
 
     // Brokers always exist.
     let broker_role = kafka
@@ -131,7 +129,7 @@ pub fn validate(
             role: KafkaRole::Broker,
         })?;
 
-    let mut broker_groups: BTreeMap<String, ValidatedRoleGroupConfig> = BTreeMap::new();
+    let mut broker_groups: BTreeMap<RoleGroupName, ValidatedRoleGroupConfig> = BTreeMap::new();
     for rolegroup_name in broker_role.role_groups.keys() {
         let merged_config = KafkaRole::Broker
             .merged_config(kafka, rolegroup_name)
@@ -148,7 +146,7 @@ pub fn validate(
             },
         );
     }
-    role_groups.insert(KafkaRole::Broker, broker_groups);
+    role_group_configs.insert(KafkaRole::Broker, broker_groups);
 
     // We need this guard because controller_role() returns an error if controllers is None,
     // which would stop reconciliation for ZooKeeper-mode clusters.
@@ -160,7 +158,8 @@ pub fn validate(
                 role: KafkaRole::Controller,
             })?;
 
-        let mut controller_groups: BTreeMap<String, ValidatedRoleGroupConfig> = BTreeMap::new();
+        let mut controller_groups: BTreeMap<RoleGroupName, ValidatedRoleGroupConfig> =
+            BTreeMap::new();
         for rolegroup_name in controller_role.role_groups.keys() {
             let merged_config = KafkaRole::Controller
                 .merged_config(kafka, rolegroup_name)
@@ -177,7 +176,7 @@ pub fn validate(
                 },
             );
         }
-        role_groups.insert(KafkaRole::Controller, controller_groups);
+        role_group_configs.insert(KafkaRole::Controller, controller_groups);
     }
 
     let pod_descriptors = kafka
@@ -197,16 +196,18 @@ pub fn validate(
         .context(InvalidNamespaceSnafu)?;
     let uid = Uid::from_str(&kafka.uid().context(ObjectHasNoUidSnafu)?).context(InvalidUidSnafu)?;
 
-    Ok(ValidatedKafkaCluster::new(
+    Ok(ValidatedCluster::new(
         name,
         namespace,
         uid,
         image,
-        kafka_security,
-        dereferenced_objects.authorization_config,
-        role_groups,
-        pod_descriptors,
-        metadata_manager,
+        ValidatedClusterConfig {
+            kafka_security,
+            authorization_config: dereferenced_objects.authorization_config,
+            pod_descriptors,
+            metadata_manager,
+        },
+        role_group_configs,
     ))
 }
 

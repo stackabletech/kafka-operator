@@ -4,7 +4,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster},
+    controller::{KAFKA_CONTROLLER_NAME, ValidatedCluster},
     crd::{role::broker::BrokerConfig, security::KafkaTlsSecurity, v1alpha1},
     utils::build_recommended_labels,
 };
@@ -27,11 +27,11 @@ pub enum Error {
 // TODO (@NickLarsenNZ): Move shared functionality to stackable-operator
 pub fn build_broker_rolegroup_bootstrap_listener(
     kafka: &v1alpha1::KafkaCluster,
-    validated_cluster: &ValidatedKafkaCluster,
+    validated_cluster: &ValidatedCluster,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     merged_config: &BrokerConfig,
 ) -> Result<listener::v1alpha1::Listener, Error> {
-    let kafka_security = &validated_cluster.kafka_security;
+    let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
 
     Ok(listener::v1alpha1::Listener {

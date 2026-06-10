@@ -8,7 +8,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster},
+    controller::{KAFKA_CONTROLLER_NAME, ValidatedCluster},
     crd::{APP_NAME, METRICS_PORT, METRICS_PORT_NAME, security::KafkaTlsSecurity, v1alpha1},
     utils::build_recommended_labels,
 };
@@ -35,7 +35,7 @@ pub enum Error {
 ///
 /// This is mostly useful for internal communication between peers, or for clients that perform client-side load balancing.
 pub fn build_rolegroup_headless_service(
-    validated_cluster: &ValidatedKafkaCluster,
+    validated_cluster: &ValidatedCluster,
     resolved_product_image: &ResolvedProductImage,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     kafka_security: &KafkaTlsSecurity,
@@ -77,7 +77,7 @@ pub fn build_rolegroup_headless_service(
 
 /// The rolegroup metrics [`Service`] is a service that exposes metrics and a prometheus scraping label
 pub fn build_rolegroup_metrics_service(
-    validated_cluster: &ValidatedKafkaCluster,
+    validated_cluster: &ValidatedCluster,
     resolved_product_image: &ResolvedProductImage,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
 ) -> Result<Service, Error> {

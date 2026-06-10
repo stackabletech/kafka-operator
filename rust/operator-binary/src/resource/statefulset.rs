@@ -43,7 +43,7 @@ use crate::{
         command::{broker_kafka_container_commands, controller_kafka_container_command},
         node_id_hasher::node_id_hash32_offset,
     },
-    controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster, ValidatedRoleGroupConfig},
+    controller::{KAFKA_CONTROLLER_NAME, ValidatedCluster, ValidatedRoleGroupConfig},
     crd::{
         self, APP_NAME, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
@@ -163,13 +163,13 @@ pub enum Error {
 pub fn build_broker_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
-    validated_cluster: &ValidatedKafkaCluster,
+    validated_cluster: &ValidatedCluster,
     rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
     validated_rg: &ValidatedRoleGroupConfig,
     service_account: &ServiceAccount,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet, Error> {
-    let kafka_security = &validated_cluster.kafka_security;
+    let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.merged_config;
     let recommended_object_labels = build_recommended_labels(
@@ -572,13 +572,13 @@ pub fn build_broker_rolegroup_statefulset(
 pub fn build_controller_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
-    validated_cluster: &ValidatedKafkaCluster,
+    validated_cluster: &ValidatedCluster,
     rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
     validated_rg: &ValidatedRoleGroupConfig,
     service_account: &ServiceAccount,
     cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet, Error> {
-    let kafka_security = &validated_cluster.kafka_security;
+    let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.merged_config;
     let recommended_object_labels = build_recommended_labels(

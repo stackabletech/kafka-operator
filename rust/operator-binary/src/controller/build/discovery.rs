@@ -9,7 +9,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster},
+    controller::{KAFKA_CONTROLLER_NAME, ValidatedCluster},
     crd::{role::KafkaRole, v1alpha1},
     utils::build_recommended_labels,
 };
@@ -42,10 +42,10 @@ pub enum Error {
 /// Build a discovery [`ConfigMap`] containing information about how to connect to a certain
 /// [`v1alpha1::KafkaCluster`].
 pub fn build_discovery_configmap(
-    validated_cluster: &ValidatedKafkaCluster,
+    validated_cluster: &ValidatedCluster,
     listeners: &[listener::v1alpha1::Listener],
 ) -> Result<ConfigMap, Error> {
-    let kafka_security = &validated_cluster.kafka_security;
+    let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
 
     let port_name = if kafka_security.has_kerberos_enabled() {
@@ -87,7 +87,7 @@ pub fn build_discovery_configmap(
 
 /// An [`ObjectRef`] to the owning cluster, built from the validated identity — used only for
 /// error context.
-fn cluster_object_ref(cluster: &ValidatedKafkaCluster) -> ObjectRef<v1alpha1::KafkaCluster> {
+fn cluster_object_ref(cluster: &ValidatedCluster) -> ObjectRef<v1alpha1::KafkaCluster> {
     ObjectRef::new(cluster.name.as_ref()).within(cluster.namespace.as_ref())
 }
 

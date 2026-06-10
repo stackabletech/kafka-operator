@@ -209,6 +209,8 @@ impl ReconcilerError for Error {
     }
 }
 
+pub type RoleGroupName = String;
+
 /// The validated cluster. Carries everything the build steps need, resolved once
 /// here so downstream code never re-derives it or touches the raw spec.
 ///
@@ -216,37 +218,25 @@ impl ReconcilerError for Error {
 /// references for child objects can be built straight from this struct (via its
 /// [`Resource`] impl) without threading the raw [`v1alpha1::KafkaCluster`] around.
 /// This mirrors the hive-/opensearch-operator's `ValidatedCluster`.
-pub struct ValidatedKafkaCluster {
+pub struct ValidatedCluster {
     /// `ObjectMeta` carrying `name`, `namespace` and `uid`, so this struct can act as the
     /// owner [`Resource`] for child objects.
     metadata: ObjectMeta,
     pub name: ClusterName,
     pub namespace: NamespaceName,
     pub image: ResolvedProductImage,
-    pub kafka_security: KafkaTlsSecurity,
-    // DESIGN DECISION: the dereferenced authorization config is folded into the
-    // validated cluster (read from here downstream). The other dereferenced input,
-    // the authentication classes, is intentionally NOT stored: it is fully consumed
-    // here to build `kafka_security`. Alternative: also store the resolved auth
-    // classes — rejected because nothing downstream needs them beyond kafka_security.
-    pub authorization_config: Option<KafkaAuthorizationConfig>,
-    pub role_groups: BTreeMap<KafkaRole, BTreeMap<String, ValidatedRoleGroupConfig>>,
-    pub pod_descriptors: Vec<KafkaPodDescriptor>,
-    pub metadata_manager: MetadataManager,
+    pub cluster_config: ValidatedClusterConfig,
+    pub role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
 }
 
-impl ValidatedKafkaCluster {
-    #[allow(clippy::too_many_arguments)]
+impl ValidatedCluster {
     pub fn new(
         name: ClusterName,
         namespace: NamespaceName,
         uid: Uid,
         image: ResolvedProductImage,
-        kafka_security: KafkaTlsSecurity,
-        authorization_config: Option<KafkaAuthorizationConfig>,
-        role_groups: BTreeMap<KafkaRole, BTreeMap<String, ValidatedRoleGroupConfig>>,
-        pod_descriptors: Vec<KafkaPodDescriptor>,
-        metadata_manager: MetadataManager,
+        cluster_config: ValidatedClusterConfig,
+        role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
     ) -> Self {
         Self {
             metadata: ObjectMeta {
@@ -258,18 +248,26 @@ impl ValidatedKafkaCluster {
             name,
             namespace,
             image,
-            kafka_security,
-            authorization_config,
-            role_groups,
-            pod_descriptors,
-            metadata_manager,
+            cluster_config,
+            role_group_configs,
         }
     }
 }
 
-/// Lets [`ValidatedKafkaCluster`] act as the owner [`Resource`] for child objects, so owner
+/// Cluster-wide settings resolved during validation and dereferencing.
+///
+/// Everything the build steps need is resolved here so they never have to read the
+/// raw [`v1alpha1::KafkaCluster`] spec.
+pub struct ValidatedClusterConfig {
+    pub kafka_security: KafkaTlsSecurity,
+    pub authorization_config: Option<KafkaAuthorizationConfig>,
+    pub pod_descriptors: Vec<KafkaPodDescriptor>,
+    pub metadata_manager: MetadataManager,
+}
+
+/// Lets [`ValidatedCluster`] act as the owner [`Resource`] for child objects, so owner
 /// references are built from it (via the captured `metadata`) rather than the raw CR.
-impl Resource for ValidatedKafkaCluster {
+impl Resource for ValidatedCluster {
     type DynamicType = <v1alpha1::KafkaCluster as Resource>::DynamicType;
     type Scope = <v1alpha1::KafkaCluster as Resource>::Scope;
 
@@ -348,10 +346,10 @@ pub async fn reconcile_kafka(
     .context(CreateClusterResourcesSnafu)?;
 
     tracing::debug!(
-        kerberos_enabled = validated_cluster.kafka_security.has_kerberos_enabled(),
-        kerberos_secret_class = ?validated_cluster.kafka_security.kerberos_secret_class(),
-        tls_enabled = validated_cluster.kafka_security.tls_enabled(),
-        tls_client_authentication_class = ?validated_cluster.kafka_security.tls_client_authentication_class(),
+        kerberos_enabled = validated_cluster.cluster_config.kafka_security.has_kerberos_enabled(),
+        kerberos_secret_class = ?validated_cluster.cluster_config.kafka_security.kerberos_secret_class(),
+        tls_enabled = validated_cluster.cluster_config.kafka_security.tls_enabled(),
+        tls_client_authentication_class = ?validated_cluster.cluster_config.kafka_security.tls_client_authentication_class(),
         "The following security settings are used"
     );
 
@@ -377,7 +375,7 @@ pub async fn reconcile_kafka(
 
     let mut bootstrap_listeners = Vec::<listener::v1alpha1::Listener>::new();
 
-    for (kafka_role, rg_map) in &validated_cluster.role_groups {
+    for (kafka_role, rg_map) in &validated_cluster.role_group_configs {
         for (rolegroup_name, validated_rg) in rg_map {
             let rolegroup_ref = kafka.rolegroup_ref(kafka_role, rolegroup_name);
 
@@ -385,7 +383,7 @@ pub async fn reconcile_kafka(
                 &validated_cluster,
                 &validated_cluster.image,
                 &rolegroup_ref,
-                &validated_cluster.kafka_security,
+                &validated_cluster.cluster_config.kafka_security,
             )
             .context(BuildServiceSnafu)?;
 
@@ -398,7 +396,7 @@ pub async fn reconcile_kafka(
 
             let kafka_listeners = get_kafka_listener_config(
                 kafka,
-                &validated_cluster.kafka_security,
+                &validated_cluster.cluster_config.kafka_security,
                 &rolegroup_ref,
                 &client.kubernetes_cluster_info,
             )
