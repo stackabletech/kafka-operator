@@ -241,7 +241,7 @@ pub mod versioned {
         pub broker_id_pod_config_map_name: Option<String>,
     }
 
-    // Uses the v2 KeyValueConfigOverrides (`nullable` values) to match trino/hdfs.
+    // Uses the v2 KeyValueConfigOverrides (plain string values) to match trino/hdfs.
     // Derives `Merge` so role/role-group overrides combine via the shared merge logic;
     // resolution into flat maps happens in controller/validate.rs.
     #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Merge, PartialEq, Serialize)]

@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use indoc::formatdoc;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
@@ -117,17 +115,7 @@ pub fn build_rolegroup_config_map(
         }
     };
 
-    let kafka_config = kafka_config
-        .into_iter()
-        .map(|(k, v)| (k, Some(v)))
-        .collect::<Vec<_>>();
-
-    let jvm_sec_props: BTreeMap<String, Option<String>> = validated_rg
-        .jvm_security_overrides
-        .clone()
-        .into_iter()
-        .map(|(k, v)| (k, Some(v)))
-        .collect();
+    let jvm_sec_props = &validated_rg.jvm_security_overrides;
 
     let mut cm_builder = ConfigMapBuilder::new();
     cm_builder
@@ -149,11 +137,11 @@ pub fn build_rolegroup_config_map(
         )
         .add_data(
             kafka_config_file_name,
-            to_java_properties_string(kafka_config.iter().map(|(k, v)| (k, v))).with_context(
-                |_| SerializeConfigSnafu {
+            to_java_properties_string(kafka_config.iter()).with_context(|_| {
+                SerializeConfigSnafu {
                     rolegroup: rolegroup.clone(),
-                },
-            )?,
+                }
+            })?,
         )
         .add_data(
             JVM_SECURITY_PROPERTIES_FILE,
@@ -169,7 +157,7 @@ pub fn build_rolegroup_config_map(
                 kafka_security
                     .client_properties()
                     .iter()
-                    .map(|(k, v)| (k, v)),
+                    .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
             )
             .with_context(|_| JvmSecurityPropertiesSnafu {
                 rolegroup: rolegroup.role_group.clone(),
