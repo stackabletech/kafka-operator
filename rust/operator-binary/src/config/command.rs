@@ -6,14 +6,28 @@ use stackable_operator::{
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
-use crate::{
-    crd::{
-        KafkaPodDescriptor, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
-        role::{broker::BROKER_PROPERTIES_FILE, controller::CONTROLLER_PROPERTIES_FILE},
-        security::KafkaTlsSecurity,
-    },
-    product_logging::{BROKER_ID_POD_MAP_DIR, STACKABLE_LOG_DIR},
+use crate::crd::{
+    BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, LOG4J_CONFIG_FILE, LOG4J2_CONFIG_FILE,
+    STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LOG_CONFIG_DIR,
+    STACKABLE_LOG_DIR,
+    role::{broker::BROKER_PROPERTIES_FILE, controller::CONTROLLER_PROPERTIES_FILE},
+    security::KafkaTlsSecurity,
 };
+
+/// The JVM options selecting the Kafka log4j/log4j2 config file. Kafka 3.x uses log4j,
+/// Kafka 4.0 and higher use log4j2.
+pub fn kafka_log_opts(product_version: &str) -> String {
+    if product_version.starts_with("3.") {
+        format!("-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J_CONFIG_FILE}")
+    } else {
+        format!("-Dlog4j2.configurationFile=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J2_CONFIG_FILE}")
+    }
+}
+
+/// The env var carrying the Kafka log4j options (see [`kafka_log_opts`]).
+pub fn kafka_log_opts_env_var() -> String {
+    "KAFKA_LOG4J_OPTS".to_string()
+}
 
 /// Returns the commands to start the main Kafka container
 pub fn broker_kafka_container_commands(

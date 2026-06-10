@@ -46,9 +46,7 @@ mod crd;
 mod framework;
 mod kerberos;
 mod operations;
-mod product_logging;
 mod resource;
-mod utils;
 mod webhooks;
 
 mod built_info {

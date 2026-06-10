@@ -40,15 +40,22 @@ use stackable_operator::{
 
 use crate::{
     config::{
-        command::{broker_kafka_container_commands, controller_kafka_container_command},
+        command::{
+            broker_kafka_container_commands, controller_kafka_container_command, kafka_log_opts,
+            kafka_log_opts_env_var,
+        },
         node_id_hasher::node_id_hash32_offset,
     },
-    controller::{KAFKA_CONTROLLER_NAME, ValidatedCluster, ValidatedRoleGroupConfig},
+    controller::{
+        KAFKA_CONTROLLER_NAME, MAX_KAFKA_LOG_FILES_SIZE, ValidatedCluster,
+        ValidatedRoleGroupConfig, build_recommended_labels,
+    },
     crd::{
-        self, APP_NAME, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
+        self, APP_NAME, BROKER_ID_POD_MAP_DIR, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
         MetadataManager, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
-        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
+        STACKABLE_LOG_DIR,
         role::{
             KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
@@ -58,11 +65,6 @@ use crate::{
     },
     kerberos::add_kerberos_pod_config,
     operations::graceful_shutdown::add_graceful_shutdown_config,
-    product_logging::{
-        BROKER_ID_POD_MAP_DIR, MAX_KAFKA_LOG_FILES_SIZE, STACKABLE_LOG_CONFIG_DIR,
-        STACKABLE_LOG_DIR, kafka_log_opts, kafka_log_opts_env_var,
-    },
-    utils::build_recommended_labels,
 };
 
 #[derive(Snafu, Debug)]

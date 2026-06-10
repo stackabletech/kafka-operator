@@ -60,6 +60,12 @@ pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 // kerberos
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
 pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
+// logging
+pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
+pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
+pub const BROKER_ID_POD_MAP_DIR: &str = "/stackable/broker-id-pod-map";
+pub const LOG4J_CONFIG_FILE: &str = "log4j.properties";
+pub const LOG4J2_CONFIG_FILE: &str = "log4j2.properties";
 
 #[derive(Snafu, Debug)]
 pub enum Error {

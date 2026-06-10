@@ -15,7 +15,9 @@ use stackable_operator::{
         core::{DeserializeGuard, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
     },
+    kvp::ObjectLabels,
     logging::controller::ReconcilerError,
+    memory::{BinaryMultiple, MemoryQuantity},
     role_utils::{GenericRoleConfig, RoleGroupRef},
     shared::time::Duration,
     status::condition::{
@@ -52,6 +54,34 @@ use crate::{
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
 pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.', OPERATOR_NAME);
+
+/// The maximum size of a single Kafka log file before it is rotated.
+pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {
+    value: 10.0,
+    unit: BinaryMultiple::Mebi,
+};
+
+/// Build recommended values for labels.
+///
+/// Generic over the owner `T` so the owner can be either the raw `KafkaCluster` or the
+/// [`ValidatedCluster`] (which also implements `Resource`).
+pub fn build_recommended_labels<'a, T>(
+    owner: &'a T,
+    controller_name: &'a str,
+    app_version: &'a str,
+    role: &'a str,
+    role_group: &'a str,
+) -> ObjectLabels<'a, T> {
+    ObjectLabels {
+        owner,
+        app_name: APP_NAME,
+        app_version,
+        operator_name: OPERATOR_NAME,
+        controller_name,
+        role,
+        role_group,
+    }
+}
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,

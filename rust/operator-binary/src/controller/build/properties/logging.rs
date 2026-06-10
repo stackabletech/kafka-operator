@@ -1,3 +1,6 @@
+//! Renders the logging config files (`log4j.properties` / `log4j2.properties` and the
+//! Vector agent config) assembled into the rolegroup `ConfigMap`.
+
 use std::{borrow::Cow, collections::BTreeMap, fmt::Display};
 
 use stackable_operator::{
@@ -9,40 +12,20 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
-use crate::crd::{
-    role::{AnyConfig, broker::BrokerContainer, controller::ControllerContainer},
-    v1alpha1,
+use crate::{
+    controller::MAX_KAFKA_LOG_FILES_SIZE,
+    crd::{
+        LOG4J_CONFIG_FILE, LOG4J2_CONFIG_FILE, STACKABLE_LOG_DIR,
+        role::{AnyConfig, broker::BrokerContainer, controller::ControllerContainer},
+        v1alpha1,
+    },
 };
 
-pub const BROKER_ID_POD_MAP_DIR: &str = "/stackable/broker-id-pod-map";
-pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
-pub const STACKABLE_LOG_DIR: &str = "/stackable/log";
-// log4j
-const LOG4J_CONFIG_FILE: &str = "log4j.properties";
 const KAFKA_LOG4J_FILE: &str = "kafka.log4j.xml";
-// log4j2
-const LOG4J2_CONFIG_FILE: &str = "log4j2.properties";
 const KAFKA_LOG4J2_FILE: &str = "kafka.log4j2.xml";
-// max size
-pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {
-    value: 10.0,
-    unit: BinaryMultiple::Mebi,
-};
 
 const CONSOLE_CONVERSION_PATTERN_LOG4J: &str = "[%d] %p %m (%c)%n";
 const CONSOLE_CONVERSION_PATTERN_LOG4J2: &str = "%d{ISO8601} %p [%t] %c - %m%n";
-
-pub fn kafka_log_opts(product_version: &str) -> String {
-    if product_version.starts_with("3.") {
-        format!("-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J_CONFIG_FILE}")
-    } else {
-        format!("-Dlog4j2.configurationFile=file:{STACKABLE_LOG_CONFIG_DIR}/{LOG4J2_CONFIG_FILE}")
-    }
-}
-
-pub fn kafka_log_opts_env_var() -> String {
-    "KAFKA_LOG4J_OPTS".to_string()
-}
 
 /// Get the role group ConfigMap data with logging and Vector configurations
 pub fn role_group_config_map_data(

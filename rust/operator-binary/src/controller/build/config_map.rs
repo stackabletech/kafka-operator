@@ -8,7 +8,10 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{KAFKA_CONTROLLER_NAME, ValidatedCluster, ValidatedRoleGroupConfig},
+    controller::{
+        KAFKA_CONTROLLER_NAME, ValidatedCluster, ValidatedRoleGroupConfig,
+        build::properties::logging::role_group_config_map_data, build_recommended_labels,
+    },
     crd::{
         JVM_SECURITY_PROPERTIES_FILE, MetadataManager, STACKABLE_LISTENER_BOOTSTRAP_DIR,
         STACKABLE_LISTENER_BROKER_DIR,
@@ -16,8 +19,6 @@ use crate::{
         role::AnyConfig,
         v1alpha1,
     },
-    product_logging::role_group_config_map_data,
-    utils::build_recommended_labels,
 };
 
 #[derive(Snafu, Debug)]

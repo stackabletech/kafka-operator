@@ -2,6 +2,7 @@
 
 pub mod broker_properties;
 pub mod controller_properties;
+pub mod logging;
 
 use crate::crd::{KafkaPodDescriptor, role::KafkaRole};
 
