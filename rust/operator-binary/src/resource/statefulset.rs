@@ -173,7 +173,7 @@ pub fn build_broker_rolegroup_statefulset(
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.merged_config;
     let recommended_object_labels = build_recommended_labels(
-        kafka,
+        validated_cluster,
         KAFKA_CONTROLLER_NAME,
         &resolved_product_image.app_version_label_value,
         &rolegroup_ref.role,
@@ -183,7 +183,7 @@ pub fn build_broker_rolegroup_statefulset(
         Labels::recommended(&recommended_object_labels).context(LabelBuildSnafu)?;
     // Used for PVC templates that cannot be modified once they are deployed
     let unversioned_recommended_labels = Labels::recommended(&build_recommended_labels(
-        kafka,
+        validated_cluster,
         KAFKA_CONTROLLER_NAME,
         // A version value is required, and we do want to use the "recommended" format for the other desired labels
         "none",
@@ -526,12 +526,12 @@ pub fn build_broker_rolegroup_statefulset(
 
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
-            .name_and_namespace(kafka)
+            .name_and_namespace(validated_cluster)
             .name(rolegroup_ref.object_name())
-            .ownerreference_from_resource(kafka, None, Some(true))
+            .ownerreference_from_resource(validated_cluster, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(&build_recommended_labels(
-                kafka,
+                validated_cluster,
                 KAFKA_CONTROLLER_NAME,
                 &resolved_product_image.app_version_label_value,
                 &rolegroup_ref.role,
@@ -582,7 +582,7 @@ pub fn build_controller_rolegroup_statefulset(
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.merged_config;
     let recommended_object_labels = build_recommended_labels(
-        kafka,
+        validated_cluster,
         KAFKA_CONTROLLER_NAME,
         &resolved_product_image.app_version_label_value,
         &rolegroup_ref.role,
@@ -852,12 +852,12 @@ pub fn build_controller_rolegroup_statefulset(
 
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
-            .name_and_namespace(kafka)
+            .name_and_namespace(validated_cluster)
             .name(rolegroup_ref.object_name())
-            .ownerreference_from_resource(kafka, None, Some(true))
+            .ownerreference_from_resource(validated_cluster, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(&build_recommended_labels(
-                kafka,
+                validated_cluster,
                 KAFKA_CONTROLLER_NAME,
                 &resolved_product_image.app_version_label_value,
                 &rolegroup_ref.role,

@@ -8,7 +8,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::KAFKA_CONTROLLER_NAME,
+    controller::{KAFKA_CONTROLLER_NAME, ValidatedKafkaCluster},
     crd::{APP_NAME, METRICS_PORT, METRICS_PORT_NAME, security::KafkaTlsSecurity, v1alpha1},
     utils::build_recommended_labels,
 };
@@ -35,19 +35,19 @@ pub enum Error {
 ///
 /// This is mostly useful for internal communication between peers, or for clients that perform client-side load balancing.
 pub fn build_rolegroup_headless_service(
-    kafka: &v1alpha1::KafkaCluster,
+    validated_cluster: &ValidatedKafkaCluster,
     resolved_product_image: &ResolvedProductImage,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     kafka_security: &KafkaTlsSecurity,
 ) -> Result<Service, Error> {
     Ok(Service {
         metadata: ObjectMetaBuilder::new()
-            .name_and_namespace(kafka)
+            .name_and_namespace(validated_cluster)
             .name(rolegroup.rolegroup_headless_service_name())
-            .ownerreference_from_resource(kafka, None, Some(true))
+            .ownerreference_from_resource(validated_cluster, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(&build_recommended_labels(
-                kafka,
+                validated_cluster,
                 KAFKA_CONTROLLER_NAME,
                 &resolved_product_image.app_version_label_value,
                 &rolegroup.role,
@@ -60,7 +60,7 @@ pub fn build_rolegroup_headless_service(
             ports: Some(headless_ports(kafka_security)),
             selector: Some(
                 Labels::role_group_selector(
-                    kafka,
+                    validated_cluster,
                     APP_NAME,
                     &rolegroup.role,
                     &rolegroup.role_group,
@@ -77,18 +77,18 @@ pub fn build_rolegroup_headless_service(
 
 /// The rolegroup metrics [`Service`] is a service that exposes metrics and a prometheus scraping label
 pub fn build_rolegroup_metrics_service(
-    kafka: &v1alpha1::KafkaCluster,
+    validated_cluster: &ValidatedKafkaCluster,
     resolved_product_image: &ResolvedProductImage,
     rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
 ) -> Result<Service, Error> {
     let metrics_service = Service {
         metadata: ObjectMetaBuilder::new()
-            .name_and_namespace(kafka)
+            .name_and_namespace(validated_cluster)
             .name(rolegroup.rolegroup_metrics_service_name())
-            .ownerreference_from_resource(kafka, None, Some(true))
+            .ownerreference_from_resource(validated_cluster, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(&build_recommended_labels(
-                kafka,
+                validated_cluster,
                 KAFKA_CONTROLLER_NAME,
                 &resolved_product_image.app_version_label_value,
                 &rolegroup.role,
@@ -105,7 +105,7 @@ pub fn build_rolegroup_metrics_service(
             ports: Some(metrics_ports()),
             selector: Some(
                 Labels::role_group_selector(
-                    kafka,
+                    validated_cluster,
                     APP_NAME,
                     &rolegroup.role,
                     &rolegroup.role_group,

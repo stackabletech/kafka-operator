@@ -36,12 +36,12 @@ pub fn build_broker_rolegroup_bootstrap_listener(
 
     Ok(listener::v1alpha1::Listener {
         metadata: ObjectMetaBuilder::new()
-            .name_and_namespace(kafka)
+            .name_and_namespace(validated_cluster)
             .name(kafka.bootstrap_service_name(rolegroup))
-            .ownerreference_from_resource(kafka, None, Some(true))
+            .ownerreference_from_resource(validated_cluster, None, Some(true))
             .context(ObjectMissingMetadataForOwnerRefSnafu)?
             .with_recommended_labels(&build_recommended_labels(
-                kafka,
+                validated_cluster,
                 KAFKA_CONTROLLER_NAME,
                 &resolved_product_image.app_version_label_value,
                 &rolegroup.role,

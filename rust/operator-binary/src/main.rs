@@ -43,7 +43,6 @@ use crate::{
 mod config;
 mod controller;
 mod crd;
-mod discovery;
 mod kerberos;
 mod operations;
 mod product_logging;

@@ -1,6 +1,6 @@
 //! Ensures that `Pod`s are configured and running for each [`v1alpha1::KafkaCluster`].
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
 
 use const_format::concatcp;
 use snafu::{ResultExt, Snafu};
@@ -11,7 +11,7 @@ use stackable_operator::{
     crd::listener,
     kube::{
         Resource,
-        api::DynamicObject,
+        api::{DynamicObject, ObjectMeta},
         core::{DeserializeGuard, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
     },
@@ -21,6 +21,10 @@ use stackable_operator::{
     status::condition::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
         statefulset::StatefulSetConditionBuilder,
+    },
+    v2::types::{
+        kubernetes::{NamespaceName, Uid},
+        operator::ClusterName,
     },
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
@@ -38,7 +42,6 @@ use crate::{
         security::KafkaTlsSecurity,
         v1alpha1,
     },
-    discovery::{self, build_discovery_configmap},
     operations::pdb::add_pdbs,
     resource::{
         listener::build_broker_rolegroup_bootstrap_listener,
@@ -94,7 +97,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to build discovery ConfigMap"))]
-    BuildDiscoveryConfig { source: discovery::Error },
+    BuildDiscoveryConfig { source: build::discovery::Error },
 
     #[snafu(display("failed to apply discovery ConfigMap"))]
     ApplyDiscoveryConfig {
@@ -208,7 +211,17 @@ impl ReconcilerError for Error {
 
 /// The validated cluster. Carries everything the build steps need, resolved once
 /// here so downstream code never re-derives it or touches the raw spec.
+///
+/// The cluster identity (`name`, `namespace`, `uid`) is captured here so that owner
+/// references for child objects can be built straight from this struct (via its
+/// [`Resource`] impl) without threading the raw [`v1alpha1::KafkaCluster`] around.
+/// This mirrors the hive-/opensearch-operator's `ValidatedCluster`.
 pub struct ValidatedKafkaCluster {
+    /// `ObjectMeta` carrying `name`, `namespace` and `uid`, so this struct can act as the
+    /// owner [`Resource`] for child objects.
+    metadata: ObjectMeta,
+    pub name: ClusterName,
+    pub namespace: NamespaceName,
     pub image: ResolvedProductImage,
     pub kafka_security: KafkaTlsSecurity,
     // DESIGN DECISION: the dereferenced authorization config is folded into the
@@ -220,6 +233,69 @@ pub struct ValidatedKafkaCluster {
     pub role_groups: BTreeMap<KafkaRole, BTreeMap<String, ValidatedRoleGroupConfig>>,
     pub pod_descriptors: Vec<KafkaPodDescriptor>,
     pub metadata_manager: MetadataManager,
+}
+
+impl ValidatedKafkaCluster {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        name: ClusterName,
+        namespace: NamespaceName,
+        uid: Uid,
+        image: ResolvedProductImage,
+        kafka_security: KafkaTlsSecurity,
+        authorization_config: Option<KafkaAuthorizationConfig>,
+        role_groups: BTreeMap<KafkaRole, BTreeMap<String, ValidatedRoleGroupConfig>>,
+        pod_descriptors: Vec<KafkaPodDescriptor>,
+        metadata_manager: MetadataManager,
+    ) -> Self {
+        Self {
+            metadata: ObjectMeta {
+                name: Some(name.to_string()),
+                namespace: Some(namespace.to_string()),
+                uid: Some(uid.to_string()),
+                ..ObjectMeta::default()
+            },
+            name,
+            namespace,
+            image,
+            kafka_security,
+            authorization_config,
+            role_groups,
+            pod_descriptors,
+            metadata_manager,
+        }
+    }
+}
+
+/// Lets [`ValidatedKafkaCluster`] act as the owner [`Resource`] for child objects, so owner
+/// references are built from it (via the captured `metadata`) rather than the raw CR.
+impl Resource for ValidatedKafkaCluster {
+    type DynamicType = <v1alpha1::KafkaCluster as Resource>::DynamicType;
+    type Scope = <v1alpha1::KafkaCluster as Resource>::Scope;
+
+    fn kind(dt: &Self::DynamicType) -> Cow<'_, str> {
+        v1alpha1::KafkaCluster::kind(dt)
+    }
+
+    fn group(dt: &Self::DynamicType) -> Cow<'_, str> {
+        v1alpha1::KafkaCluster::group(dt)
+    }
+
+    fn version(dt: &Self::DynamicType) -> Cow<'_, str> {
+        v1alpha1::KafkaCluster::version(dt)
+    }
+
+    fn plural(dt: &Self::DynamicType) -> Cow<'_, str> {
+        v1alpha1::KafkaCluster::plural(dt)
+    }
+
+    fn meta(&self) -> &ObjectMeta {
+        &self.metadata
+    }
+
+    fn meta_mut(&mut self) -> &mut ObjectMeta {
+        &mut self.metadata
+    }
 }
 
 pub struct ValidatedRoleGroupConfig {
@@ -265,7 +341,7 @@ pub async fn reconcile_kafka(
         APP_NAME,
         OPERATOR_NAME,
         KAFKA_CONTROLLER_NAME,
-        &kafka.object_ref(&()),
+        &validated_cluster.object_ref(&()),
         ClusterResourceApplyStrategy::from(&kafka.spec.cluster_operation),
         &kafka.spec.object_overrides,
     )
@@ -306,16 +382,19 @@ pub async fn reconcile_kafka(
             let rolegroup_ref = kafka.rolegroup_ref(kafka_role, rolegroup_name);
 
             let rg_headless_service = build_rolegroup_headless_service(
-                kafka,
+                &validated_cluster,
                 &validated_cluster.image,
                 &rolegroup_ref,
                 &validated_cluster.kafka_security,
             )
             .context(BuildServiceSnafu)?;
 
-            let rg_metrics_service =
-                build_rolegroup_metrics_service(kafka, &validated_cluster.image, &rolegroup_ref)
-                    .context(BuildServiceSnafu)?;
+            let rg_metrics_service = build_rolegroup_metrics_service(
+                &validated_cluster,
+                &validated_cluster.image,
+                &rolegroup_ref,
+            )
+            .context(BuildServiceSnafu)?;
 
             let kafka_listeners = get_kafka_listener_config(
                 kafka,
@@ -416,8 +495,9 @@ pub async fn reconcile_kafka(
         }
     }
 
-    let discovery_cm = build_discovery_configmap(kafka, validated_cluster, &bootstrap_listeners)
-        .context(BuildDiscoveryConfigSnafu)?;
+    let discovery_cm =
+        build::discovery::build_discovery_configmap(&validated_cluster, &bootstrap_listeners)
+            .context(BuildDiscoveryConfigSnafu)?;
 
     cluster_resources
         .add(client, discovery_cm)

@@ -3,14 +3,21 @@
 //! Synchronously validates inputs that don't require a Kubernetes client. Produces
 //! [`ValidatedKafkaCluster`], consumed by the rest of `reconcile_kafka`.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, str::FromStr};
 
-use snafu::{ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     commons::product_image_selection,
     config::merge::{Merge, merge},
-    v2::config_overrides::KeyValueConfigOverrides,
+    kube::ResourceExt,
+    v2::{
+        config_overrides::KeyValueConfigOverrides,
+        types::{
+            kubernetes::{NamespaceName, Uid},
+            operator::ClusterName,
+        },
+    },
 };
 
 use crate::{
@@ -50,6 +57,27 @@ pub enum Error {
 
     #[snafu(display("invalid metadata manager"))]
     InvalidMetadataManager { source: crate::crd::Error },
+
+    #[snafu(display("invalid cluster name"))]
+    InvalidClusterName {
+        source: stackable_operator::v2::macros::attributed_string_type::Error,
+    },
+
+    #[snafu(display("object defines no namespace"))]
+    ObjectHasNoNamespace,
+
+    #[snafu(display("invalid cluster namespace"))]
+    InvalidNamespace {
+        source: stackable_operator::v2::macros::attributed_string_type::Error,
+    },
+
+    #[snafu(display("object has no uid"))]
+    ObjectHasNoUid,
+
+    #[snafu(display("invalid cluster uid"))]
+    InvalidUid {
+        source: stackable_operator::v2::macros::attributed_string_type::Error,
+    },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -164,14 +192,22 @@ pub fn validate(
         .effective_metadata_manager()
         .context(InvalidMetadataManagerSnafu)?;
 
-    Ok(ValidatedKafkaCluster {
+    let name = ClusterName::from_str(&kafka.name_any()).context(InvalidClusterNameSnafu)?;
+    let namespace = NamespaceName::from_str(&kafka.namespace().context(ObjectHasNoNamespaceSnafu)?)
+        .context(InvalidNamespaceSnafu)?;
+    let uid = Uid::from_str(&kafka.uid().context(ObjectHasNoUidSnafu)?).context(InvalidUidSnafu)?;
+
+    Ok(ValidatedKafkaCluster::new(
+        name,
+        namespace,
+        uid,
         image,
         kafka_security,
-        authorization_config: dereferenced_objects.authorization_config,
+        dereferenced_objects.authorization_config,
         role_groups,
         pod_descriptors,
         metadata_manager,
-    })
+    ))
 }
 
 /// Merge role-group overrides over the role-level overrides (role-group wins per key) via the

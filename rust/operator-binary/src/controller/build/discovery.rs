@@ -5,7 +5,7 @@ use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
     crd::listener,
     k8s_openapi::api::core::v1::ConfigMap,
-    kube::{ResourceExt, runtime::reflector::ObjectRef},
+    kube::runtime::reflector::ObjectRef,
 };
 
 use crate::{
@@ -21,9 +21,6 @@ pub enum Error {
         source: stackable_operator::builder::meta::Error,
         kafka: ObjectRef<v1alpha1::KafkaCluster>,
     },
-
-    #[snafu(display("object has no name associated"))]
-    NoName,
 
     #[snafu(display("could not find service port with name {}", port_name))]
     NoServicePort { port_name: String },
@@ -45,8 +42,7 @@ pub enum Error {
 /// Build a discovery [`ConfigMap`] containing information about how to connect to a certain
 /// [`v1alpha1::KafkaCluster`].
 pub fn build_discovery_configmap(
-    owner: &v1alpha1::KafkaCluster,
-    validated_cluster: ValidatedKafkaCluster,
+    validated_cluster: &ValidatedKafkaCluster,
     listeners: &[listener::v1alpha1::Listener],
 ) -> Result<ConfigMap, Error> {
     let kafka_security = &validated_cluster.kafka_security;
@@ -68,14 +64,14 @@ pub fn build_discovery_configmap(
     ConfigMapBuilder::new()
         .metadata(
             ObjectMetaBuilder::new()
-                .name_and_namespace(owner)
-                .name(owner.name_unchecked())
-                .ownerreference_from_resource(owner, None, Some(true))
+                .name_and_namespace(validated_cluster)
+                .name(validated_cluster.name.to_string())
+                .ownerreference_from_resource(validated_cluster, None, Some(true))
                 .with_context(|_| ObjectMissingMetadataForOwnerRefSnafu {
-                    kafka: ObjectRef::from_obj(owner),
+                    kafka: cluster_object_ref(validated_cluster),
                 })?
                 .with_recommended_labels(&build_recommended_labels(
-                    owner,
+                    validated_cluster,
                     KAFKA_CONTROLLER_NAME,
                     &resolved_product_image.product_version,
                     &KafkaRole::Broker.to_string(),
@@ -87,6 +83,12 @@ pub fn build_discovery_configmap(
         .add_data("KAFKA", bootstrap_servers)
         .build()
         .context(BuildConfigMapSnafu)
+}
+
+/// An [`ObjectRef`] to the owning cluster, built from the validated identity — used only for
+/// error context.
+fn cluster_object_ref(cluster: &ValidatedKafkaCluster) -> ObjectRef<v1alpha1::KafkaCluster> {
+    ObjectRef::new(cluster.name.as_ref()).within(cluster.namespace.as_ref())
 }
 
 fn listener_hosts(
