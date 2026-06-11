@@ -55,7 +55,7 @@ pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {
 /// Build recommended values for labels.
 ///
 /// Generic over the owner `T` so the owner can be either the raw `KafkaCluster` or the
-/// [`ValidatedCluster`] (which also implements `Resource`).
+/// `ValidatedCluster` (which also implements `Resource`).
 pub fn build_recommended_labels<'a, T>(
     owner: &'a T,
     controller_name: &'a str,
