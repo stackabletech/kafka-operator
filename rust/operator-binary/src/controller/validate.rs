@@ -254,10 +254,7 @@ where
 
 /// Injects the operator-managed `KAFKA_CLUSTER_ID` into the merged env overrides,
 /// but only when the user has not already set it via `envOverrides` (user value
-/// wins, preserving product-config's old precedence).
-///
-/// `KAFKA_CLUSTER_ID` injection moved here from the now-removed
-/// `crd::role::*::Configuration::compute_env`.
+/// wins).
 fn inject_cluster_id(env_overrides: EnvVarSet, cluster_id: Option<&str>) -> Result<EnvVarSet> {
     let Some(cluster_id) = cluster_id else {
         return Ok(env_overrides);
