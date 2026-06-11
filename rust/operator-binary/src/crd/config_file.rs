@@ -3,7 +3,6 @@
 //! A single source of truth for the on-disk file names, used by the config-map
 //! builder, the per-file property builders, the JVM/command builders and
 //! [`AnyConfig::config_file_name`](crate::crd::role::AnyConfig::config_file_name).
-//! Mirrors the hive-operator's `ConfigFileName`.
 
 /// The names of the Kafka config files assembled into the rolegroup `ConfigMap`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, strum::Display)]

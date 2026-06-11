@@ -65,7 +65,6 @@ pub fn build_discovery_configmap(
         .metadata(
             ObjectMetaBuilder::new()
                 .name_and_namespace(validated_cluster)
-                .name(validated_cluster.name.to_string())
                 .ownerreference_from_resource(validated_cluster, None, Some(true))
                 .with_context(|_| ObjectMissingMetadataForOwnerRefSnafu {
                     kafka: cluster_object_ref(validated_cluster),

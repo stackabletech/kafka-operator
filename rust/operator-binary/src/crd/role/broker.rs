@@ -93,4 +93,3 @@ impl BrokerConfig {
     }
 }
 
-// KAFKA_CLUSTER_ID injection moved to controller/validate.rs::collect_broker_role_group_overrides.
