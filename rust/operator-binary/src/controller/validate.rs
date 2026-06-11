@@ -6,20 +6,18 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use serde::Serialize;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     commons::product_image_selection,
     config::{fragment::FromFragment, merge::Merge},
     kube::ResourceExt,
-    role_utils::{GenericRoleConfig, JavaCommonConfig, Role},
+    role_utils::{GenericRoleConfig, Role},
     schemars::JsonSchema,
     v2::{
         builder::pod::container::{self, EnvVarName, EnvVarSet},
-        types::{
-            kubernetes::{NamespaceName, Uid},
-            operator::ClusterName,
-        },
+        controller_utils::{get_cluster_name, get_namespace, get_uid},
+        role_utils::{JavaCommonConfig, with_validated_config},
     },
 };
 
@@ -38,7 +36,6 @@ use crate::{
         security::{self, KafkaTlsSecurity},
         v1alpha1,
     },
-    framework::role_utils::with_validated_config,
 };
 
 /// The operator-managed env var carrying the Kafka cluster id.
@@ -62,7 +59,7 @@ pub enum Error {
 
     #[snafu(display("failed to merge and validate the role group config"))]
     ValidateRoleGroupConfig {
-        source: crate::framework::role_utils::Error,
+        source: stackable_operator::config::fragment::ValidationError,
     },
 
     #[snafu(display("invalid environment variable name"))]
@@ -74,25 +71,19 @@ pub enum Error {
     #[snafu(display("invalid metadata manager"))]
     InvalidMetadataManager { source: crate::crd::Error },
 
-    #[snafu(display("invalid cluster name"))]
-    InvalidClusterName {
-        source: stackable_operator::v2::macros::attributed_string_type::Error,
+    #[snafu(display("failed to resolve the cluster name"))]
+    ResolveClusterName {
+        source: stackable_operator::v2::controller_utils::Error,
     },
 
-    #[snafu(display("object defines no namespace"))]
-    ObjectHasNoNamespace,
-
-    #[snafu(display("invalid cluster namespace"))]
-    InvalidNamespace {
-        source: stackable_operator::v2::macros::attributed_string_type::Error,
+    #[snafu(display("failed to resolve the cluster namespace"))]
+    ResolveNamespace {
+        source: stackable_operator::v2::controller_utils::Error,
     },
 
-    #[snafu(display("object has no uid"))]
-    ObjectHasNoUid,
-
-    #[snafu(display("invalid cluster uid"))]
-    InvalidUid {
-        source: stackable_operator::v2::macros::attributed_string_type::Error,
+    #[snafu(display("failed to resolve the cluster uid"))]
+    ResolveUid {
+        source: stackable_operator::v2::controller_utils::Error,
     },
 }
 
@@ -176,10 +167,9 @@ pub fn validate(
         .effective_metadata_manager()
         .context(InvalidMetadataManagerSnafu)?;
 
-    let name = ClusterName::from_str(&kafka.name_any()).context(InvalidClusterNameSnafu)?;
-    let namespace = NamespaceName::from_str(&kafka.namespace().context(ObjectHasNoNamespaceSnafu)?)
-        .context(InvalidNamespaceSnafu)?;
-    let uid = Uid::from_str(&kafka.uid().context(ObjectHasNoUidSnafu)?).context(InvalidUidSnafu)?;
+    let name = get_cluster_name(kafka).context(ResolveClusterNameSnafu)?;
+    let namespace = get_namespace(kafka).context(ResolveNamespaceSnafu)?;
+    let uid = get_uid(kafka).context(ResolveUidSnafu)?;
 
     Ok(ValidatedCluster::new(
         name,
@@ -203,14 +193,14 @@ pub fn validate(
 
 /// Validates every role group of a role into a map keyed by role group name.
 ///
-/// Each role group is merged and validated via the local-`framework`
+/// Each role group is merged and validated via the upstream
 /// [`with_validated_config`], which folds the config fragment (default <- role <-
-/// role group) plus the `configOverrides`, `envOverrides`, `cliOverrides` and
-/// `podOverrides` (role group wins) into a single
-/// [`RoleGroupConfig`](crate::framework::role_utils::RoleGroupConfig). The concrete
-/// per-role validated config and overrides are wrapped into the role-agnostic
-/// [`AnyConfig`]/[`AnyConfigOverrides`] via `wrap_config`/`wrap_overrides`, and the
-/// operator-managed `KAFKA_CLUSTER_ID` is injected into the env overrides.
+/// role group) plus the `configOverrides`, `envOverrides`, `podOverrides` and
+/// `jvmArgumentOverrides` (role group wins) into a single
+/// [`ValidatedRoleGroupConfig`]. The concrete per-role validated config and overrides
+/// are wrapped into the role-agnostic [`AnyConfig`]/[`AnyConfigOverrides`] via
+/// `wrap_config`/`wrap_overrides`, and the operator-managed `KAFKA_CLUSTER_ID` is
+/// injected into the env overrides.
 fn validate_role_group_configs<Config, ValidatedConfig, ConfigOverrides>(
     role: &Role<Config, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
     default_config: Config,
@@ -226,7 +216,7 @@ where
     role.role_groups
         .iter()
         .map(|(role_group_name, role_group)| {
-            let validated = with_validated_config::<
+            let merged = with_validated_config::<
                 ValidatedConfig,
                 JavaCommonConfig,
                 Config,
@@ -235,17 +225,25 @@ where
             >(role_group, role, &default_config)
             .context(ValidateRoleGroupConfigSnafu)?;
 
-            // Re-wrap the per-role validated config and overrides into the role-agnostic
-            // enums; the merged env/cli/pod overrides carry over unchanged, except that
-            // `KAFKA_CLUSTER_ID` is injected into the env overrides.
+            // The upstream merge returns env overrides as a HashMap. Convert to an
+            // EnvVarSet (validating names early), then inject KAFKA_CLUSTER_ID.
+            let mut env_overrides = EnvVarSet::new();
+            for (name, value) in merged.config.env_overrides {
+                let name = EnvVarName::from_str(&name).context(InvalidEnvVarNameSnafu)?;
+                env_overrides = env_overrides.with_value(&name, value);
+            }
+            let env_overrides = inject_cluster_id(env_overrides, cluster_id)?;
+
             let validated = ValidatedRoleGroupConfig {
-                replicas: validated.replicas,
-                config: wrap_config(validated.config),
-                config_overrides: wrap_overrides(validated.config_overrides),
-                env_overrides: inject_cluster_id(validated.env_overrides, cluster_id)?,
-                cli_overrides: validated.cli_overrides,
-                pod_overrides: validated.pod_overrides,
-                product_specific_common_config: validated.product_specific_common_config,
+                replicas: merged.replicas.unwrap_or(1),
+                config: wrap_config(merged.config.config),
+                config_overrides: wrap_overrides(merged.config.config_overrides),
+                env_overrides,
+                pod_overrides: merged.config.pod_overrides,
+                jvm_argument_overrides: merged
+                    .config
+                    .product_specific_common_config
+                    .jvm_argument_overrides,
             };
             Ok((role_group_name.clone(), validated))
         })

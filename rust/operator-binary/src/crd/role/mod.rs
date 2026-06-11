@@ -18,7 +18,6 @@ use stackable_operator::{
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
 use crate::{
-    config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::{
         ConfigFileName,
         role::{
@@ -81,9 +80,6 @@ pub enum Error {
 
     #[snafu(display("missing role group {rolegroup:?} for role {role:?}"))]
     MissingRoleGroup { role: String, rolegroup: String },
-
-    #[snafu(display("failed to construct JVM arguments"))]
-    ConstructJvmArguments { source: crate::config::jvm::Error },
 }
 
 #[derive(
@@ -135,58 +131,6 @@ impl KafkaRole {
     /// but is similar to HBase).
     pub fn kerberos_service_name(&self) -> &'static str {
         "kafka"
-    }
-
-    pub fn construct_non_heap_jvm_args(
-        &self,
-        merged_config: &AnyConfig,
-        kafka: &v1alpha1::KafkaCluster,
-        rolegroup: &str,
-    ) -> Result<String, Error> {
-        match self {
-            Self::Broker => construct_non_heap_jvm_args(
-                merged_config,
-                kafka.broker_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?,
-                rolegroup,
-            )
-            .context(ConstructJvmArgumentsSnafu),
-            Self::Controller => construct_non_heap_jvm_args(
-                merged_config,
-                kafka.controller_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?,
-                rolegroup,
-            )
-            .context(ConstructJvmArgumentsSnafu),
-        }
-    }
-
-    pub fn construct_heap_jvm_args(
-        &self,
-        merged_config: &AnyConfig,
-        kafka: &v1alpha1::KafkaCluster,
-        rolegroup: &str,
-    ) -> Result<String, Error> {
-        match self {
-            Self::Broker => construct_heap_jvm_args(
-                merged_config,
-                kafka.broker_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?,
-                rolegroup,
-            )
-            .context(ConstructJvmArgumentsSnafu),
-            Self::Controller => construct_heap_jvm_args(
-                merged_config,
-                kafka.controller_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?,
-                rolegroup,
-            )
-            .context(ConstructJvmArgumentsSnafu),
-        }
     }
 
     pub fn role_pod_overrides(
@@ -295,7 +239,7 @@ impl KafkaRole {
 }
 
 /// Configuration for a role and rolegroup of an unknown type.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AnyConfig {
     Broker(BrokerConfig),
     Controller(ControllerConfig),

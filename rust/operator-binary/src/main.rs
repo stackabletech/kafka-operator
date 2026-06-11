@@ -43,7 +43,6 @@ use crate::{
 mod config;
 mod controller;
 mod crd;
-mod framework;
 mod kafka_controller;
 mod kerberos;
 mod operations;

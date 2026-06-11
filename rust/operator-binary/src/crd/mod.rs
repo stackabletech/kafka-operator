@@ -21,11 +21,11 @@ use stackable_operator::{
     config::merge::Merge,
     deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
-    role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroupRef},
+    role_utils::{GenericRoleConfig, Role, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
     utils::cluster_info::KubernetesClusterInfo,
-    v2::config_overrides::KeyValueConfigOverrides,
+    v2::{config_overrides::KeyValueConfigOverrides, role_utils::JavaCommonConfig},
     versioned::versioned,
 };
 use strum::{Display, EnumIter, EnumString};

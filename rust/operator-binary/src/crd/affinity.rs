@@ -30,16 +30,11 @@ mod tests {
             api::core::v1::{PodAffinityTerm, PodAntiAffinity, WeightedPodAffinityTerm},
             apimachinery::pkg::apis::meta::v1::LabelSelector,
         },
-        kube::ResourceExt,
     };
 
     use crate::{
-        crd::{
-            KafkaRole,
-            role::{AnyConfig, broker::BrokerConfig},
-            v1alpha1,
-        },
-        framework::role_utils::with_validated_config,
+        controller::test_support::{minimal_kafka, validated_cluster},
+        crd::KafkaRole,
     };
 
     #[rstest]
@@ -50,6 +45,8 @@ mod tests {
         kind: KafkaCluster
         metadata:
           name: simple-kafka
+          namespace: default
+          uid: 12345678-1234-1234-1234-123456789012
         spec:
           image:
             productVersion: 3.9.2
@@ -61,13 +58,14 @@ mod tests {
                 replicas: 1
         "#;
 
-        let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
-        let broker_role = kafka.spec.brokers.clone().unwrap();
-        let role_group = broker_role.role_groups.get("default").unwrap();
-        let default_config = BrokerConfig::default_config(&kafka.name_any(), &role.to_string());
-        let validated = with_validated_config(role_group, &broker_role, &default_config).unwrap();
-        let merged_config = AnyConfig::Broker(validated.config);
+        let kafka = minimal_kafka(input);
+        let validated = validated_cluster(&kafka);
+        let merged_config = validated
+            .role_group_configs
+            .get(&role)
+            .and_then(|groups| groups.get("default"))
+            .map(|rg| &rg.config)
+            .expect("role group should exist");
 
         assert_eq!(
             merged_config.affinity,

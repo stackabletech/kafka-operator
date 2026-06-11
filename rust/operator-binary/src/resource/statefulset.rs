@@ -105,7 +105,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to construct JVM arguments"))]
-    ConstructJvmArguments { source: crate::crd::role::Error },
+    ConstructJvmArguments { source: crate::config::jvm::Error },
 
     #[snafu(display("failed to configure graceful shutdown"))]
     GracefulShutdown {
@@ -291,15 +291,19 @@ pub fn build_broker_rolegroup_statefulset(
         )])
         .add_env_var(
             "EXTRA_ARGS",
-            kafka_role
-                .construct_non_heap_jvm_args(merged_config, kafka, &rolegroup_ref.role_group)
-                .context(ConstructJvmArgumentsSnafu)?,
+            crate::config::jvm::construct_non_heap_jvm_args(
+                merged_config,
+                &validated_rg.jvm_argument_overrides,
+            )
+            .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
             KAFKA_HEAP_OPTS,
-            kafka_role
-                .construct_heap_jvm_args(merged_config, kafka, &rolegroup_ref.role_group)
-                .context(ConstructJvmArgumentsSnafu)?,
+            crate::config::jvm::construct_heap_jvm_args(
+                merged_config,
+                &validated_rg.jvm_argument_overrides,
+            )
+            .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
             kafka_log_opts_env_var(),
@@ -657,15 +661,19 @@ pub fn build_controller_rolegroup_statefulset(
         .add_env_var("PRE_STOP_CONTROLLER_SLEEP_SECONDS", "10")
         .add_env_var(
             "EXTRA_ARGS",
-            kafka_role
-                .construct_non_heap_jvm_args(merged_config, kafka, &rolegroup_ref.role_group)
-                .context(ConstructJvmArgumentsSnafu)?,
+            crate::config::jvm::construct_non_heap_jvm_args(
+                merged_config,
+                &validated_rg.jvm_argument_overrides,
+            )
+            .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
             KAFKA_HEAP_OPTS,
-            kafka_role
-                .construct_heap_jvm_args(merged_config, kafka, &rolegroup_ref.role_group)
-                .context(ConstructJvmArgumentsSnafu)?,
+            crate::config::jvm::construct_heap_jvm_args(
+                merged_config,
+                &validated_rg.jvm_argument_overrides,
+            )
+            .context(ConstructJvmArgumentsSnafu)?,
         )
         .add_env_var(
             kafka_log_opts_env_var(),

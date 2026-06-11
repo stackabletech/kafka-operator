@@ -20,15 +20,12 @@ pub(crate) mod build;
 pub(crate) mod dereference;
 pub(crate) mod validate;
 
-use crate::{
-    crd::{
-        KafkaPodDescriptor, MetadataManager,
-        authorization::KafkaAuthorizationConfig,
-        role::{AnyConfig, AnyConfigOverrides, KafkaRole},
-        security::KafkaTlsSecurity,
-        v1alpha1,
-    },
-    framework::role_utils::RoleGroupConfig,
+use crate::crd::{
+    KafkaPodDescriptor, MetadataManager,
+    authorization::KafkaAuthorizationConfig,
+    role::{AnyConfig, AnyConfigOverrides, KafkaRole},
+    security::KafkaTlsSecurity,
+    v1alpha1,
 };
 
 pub type RoleGroupName = String;
@@ -140,12 +137,62 @@ impl Resource for ValidatedCluster {
 /// A validated, merged Kafka role-group config.
 ///
 /// The merged config fragment is wrapped in [`AnyConfig`] and the merged
-/// `configOverrides` in [`AnyConfigOverrides`], so a single role-agnostic type
-/// carries both broker and controller role groups (their concrete config and
-/// override types differ). Produced via the local-`framework`
-/// [`with_validated_config`](crate::framework::role_utils::with_validated_config).
-pub type ValidatedRoleGroupConfig = RoleGroupConfig<
-    AnyConfig,
-    stackable_operator::role_utils::JavaCommonConfig,
-    AnyConfigOverrides,
->;
+/// `configOverrides` in [`AnyConfigOverrides`], so a single role-agnostic type carries
+/// both broker and controller role groups. Produced from the upstream
+/// [`stackable_operator::v2::role_utils::with_validated_config`] result in
+/// [`validate`](crate::controller::validate). `jvm_argument_overrides` is already merged
+/// (role <- role group) at validation time and applied as-is during build.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ValidatedRoleGroupConfig {
+    pub replicas: u16,
+    pub config: AnyConfig,
+    pub config_overrides: AnyConfigOverrides,
+    pub env_overrides: stackable_operator::v2::builder::pod::container::EnvVarSet,
+    pub pod_overrides: stackable_operator::k8s_openapi::api::core::v1::PodTemplateSpec,
+    pub jvm_argument_overrides:
+        stackable_operator::v2::jvm_argument_overrides::JvmArgumentOverrides,
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use stackable_operator::{
+        cli::OperatorEnvironmentOptions,
+        commons::networking::DomainName,
+        utils::{cluster_info::KubernetesClusterInfo, yaml_from_str_singleton_map},
+    };
+
+    use super::{ValidatedCluster, dereference::DereferencedObjects, validate::validate};
+    use crate::crd::{authentication::ResolvedAuthenticationClasses, v1alpha1};
+
+    pub fn minimal_kafka(yaml: &str) -> v1alpha1::KafkaCluster {
+        yaml_from_str_singleton_map(yaml).expect("invalid test KafkaCluster YAML")
+    }
+
+    fn cluster_info() -> KubernetesClusterInfo {
+        KubernetesClusterInfo {
+            cluster_domain: DomainName::try_from("cluster.local").expect("valid domain"),
+        }
+    }
+
+    fn operator_environment() -> OperatorEnvironmentOptions {
+        OperatorEnvironmentOptions {
+            operator_namespace: "stackable-operators".to_owned(),
+            operator_service_name: "kafka-operator".to_owned(),
+            image_repository: "oci.example.org".to_owned(),
+        }
+    }
+
+    /// Runs the real validate step against a minimal (auth/OPA-free) fixture.
+    pub fn validated_cluster(kafka: &v1alpha1::KafkaCluster) -> ValidatedCluster {
+        validate(
+            kafka,
+            DereferencedObjects {
+                authentication_classes: ResolvedAuthenticationClasses::new(Vec::new()),
+                authorization_config: None,
+                kubernetes_cluster_info: cluster_info(),
+            },
+            &operator_environment(),
+        )
+        .expect("validate should succeed for the test fixture")
+    }
+}

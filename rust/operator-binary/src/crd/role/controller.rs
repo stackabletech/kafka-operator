@@ -33,7 +33,7 @@ pub enum ControllerContainer {
     Kafka,
 }
 
-#[derive(Debug, Default, PartialEq, Fragment, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Fragment, JsonSchema)]
 #[fragment_attrs(
     derive(
         Clone,
