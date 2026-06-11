@@ -92,6 +92,20 @@ pub struct ValidatedClusterConfig {
     pub disable_broker_id_generation: bool,
 }
 
+impl ValidatedClusterConfig {
+    /// Whether the cluster runs in KRaft mode (as opposed to ZooKeeper mode).
+    pub fn is_kraft_mode(&self) -> bool {
+        self.metadata_manager == MetadataManager::KRaft
+    }
+
+    /// The OPA connect string, if OPA authorization is configured.
+    pub fn opa_connect(&self) -> Option<&str> {
+        self.authorization_config
+            .as_ref()
+            .map(|auth_config| auth_config.opa_connect.as_str())
+    }
+}
+
 /// Lets [`ValidatedCluster`] act as the owner [`Resource`] for child objects, so owner
 /// references are built from it (via the captured `metadata`) rather than the raw CR.
 impl Resource for ValidatedCluster {

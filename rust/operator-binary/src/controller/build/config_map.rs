@@ -13,8 +13,7 @@ use crate::{
         build::properties::logging::role_group_config_map_data,
     },
     crd::{
-        ConfigFileName, MetadataManager, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR,
+        ConfigFileName, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, node_address_cmd},
         role::AnyConfig,
         v1alpha1,
@@ -63,7 +62,8 @@ pub fn build_rolegroup_config_map(
     validated_rg: &ValidatedRoleGroupConfig,
     listener_config: &KafkaListenerConfig,
 ) -> Result<ConfigMap, Error> {
-    let kafka_security = &validated_cluster.cluster_config.kafka_security;
+    let cluster_config = &validated_cluster.cluster_config;
+    let kafka_security = &cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let kafka_config_file_name = validated_rg.config.config_file_name().to_string();
     let config_overrides = validated_rg
@@ -72,36 +72,20 @@ pub fn build_rolegroup_config_map(
         .overrides
         .clone();
 
-    let opa_connect = validated_cluster
-        .cluster_config
-        .authorization_config
-        .as_ref()
-        .map(|auth_config| auth_config.opa_connect.clone());
-
-    let kraft_mode = validated_cluster.cluster_config.metadata_manager == MetadataManager::KRaft;
-
-    if kraft_mode && validated_cluster.cluster_config.pod_descriptors.is_empty() {
+    if cluster_config.is_kraft_mode() && cluster_config.pod_descriptors.is_empty() {
         return NoKraftControllersFoundSnafu.fail();
     }
 
     let kafka_config = match &validated_rg.config {
         AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
-            kafka_security,
+            cluster_config,
             listener_config,
-            &validated_cluster.cluster_config.pod_descriptors,
-            opa_connect.as_deref(),
-            kraft_mode,
-            validated_cluster
-                .cluster_config
-                .disable_broker_id_generation,
             config_overrides,
         ),
         AnyConfig::Controller(_) => {
             crate::controller::build::properties::controller_properties::build(
-                kafka_security,
+                cluster_config,
                 listener_config,
-                &validated_cluster.cluster_config.pod_descriptors,
-                kraft_mode,
                 config_overrides,
             )
         }

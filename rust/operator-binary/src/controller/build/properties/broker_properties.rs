@@ -2,29 +2,24 @@ use std::collections::BTreeMap;
 
 use super::kraft_controllers;
 use crate::{
+    controller::ValidatedClusterConfig,
     crd::{
-        KafkaPodDescriptor,
         listener::{KafkaListenerConfig, KafkaListenerName},
         role::{
             KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
             KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, KAFKA_LISTENERS, KAFKA_LOG_DIRS, KAFKA_NODE_ID,
             KAFKA_PROCESS_ROLES, KafkaRole,
         },
-        security::KafkaTlsSecurity,
     },
     operations::graceful_shutdown::graceful_shutdown_config_properties,
 };
 
 pub fn build(
-    kafka_security: &KafkaTlsSecurity,
+    cluster_config: &ValidatedClusterConfig,
     listener_config: &KafkaListenerConfig,
-    pod_descriptors: &[KafkaPodDescriptor],
-    opa_connect_string: Option<&str>,
-    kraft_mode: bool,
-    disable_broker_id_generation: bool,
     overrides: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let kraft_controllers = kraft_controllers(pod_descriptors);
+    let kraft_controllers = kraft_controllers(&cluster_config.pod_descriptors);
 
     let mut result = BTreeMap::from([
         (
@@ -46,7 +41,7 @@ pub fn build(
         ),
     ]);
 
-    if kraft_mode {
+    if cluster_config.is_kraft_mode() {
         let kraft_controllers = kraft_controllers.join(",");
 
         // Running in KRaft mode
@@ -79,7 +74,7 @@ pub fn build(
         // so we disable automatic id generation.
         // This check ensures that existing clusters running in ZooKeeper mode do not
         // suddenly break after the introduction of this change.
-        if disable_broker_id_generation {
+        if cluster_config.disable_broker_id_generation {
             result.extend([
                 (
                     "broker.id.generation.enable".to_string(),
@@ -91,7 +86,7 @@ pub fn build(
     }
 
     // Enable OPA authorization
-    if opa_connect_string.is_some() {
+    if let Some(opa_connect_string) = cluster_config.opa_connect() {
         result.extend([
             (
                 "authorizer.class.name".to_string(),
@@ -103,12 +98,12 @@ pub fn build(
             ),
             (
                 "opa.authorizer.url".to_string(),
-                opa_connect_string.unwrap_or_default().to_string(),
+                opa_connect_string.to_string(),
             ),
         ]);
     }
 
-    result.extend(kafka_security.broker_config_settings());
+    result.extend(cluster_config.kafka_security.broker_config_settings());
     result.extend(graceful_shutdown_config_properties());
     result.extend(overrides);
 

@@ -2,26 +2,23 @@ use std::collections::BTreeMap;
 
 use super::kraft_controllers;
 use crate::{
+    controller::ValidatedClusterConfig,
     crd::{
-        KafkaPodDescriptor,
         listener::{KafkaListenerConfig, KafkaListenerName},
         role::{
             KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP,
             KAFKA_LISTENERS, KAFKA_LOG_DIRS, KAFKA_NODE_ID, KAFKA_PROCESS_ROLES, KafkaRole,
         },
-        security::KafkaTlsSecurity,
     },
     operations::graceful_shutdown::graceful_shutdown_config_properties,
 };
 
 pub fn build(
-    kafka_security: &KafkaTlsSecurity,
+    cluster_config: &ValidatedClusterConfig,
     listener_config: &KafkaListenerConfig,
-    pod_descriptors: &[KafkaPodDescriptor],
-    kraft_mode: bool,
     overrides: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let kraft_controllers = kraft_controllers(pod_descriptors).join(",");
+    let kraft_controllers = kraft_controllers(&cluster_config.pod_descriptors).join(",");
 
     let mut result = BTreeMap::from([
         (
@@ -58,14 +55,14 @@ pub fn build(
 
     // The ZooKeeper connection is needed for migration from ZooKeeper to KRaft mode.
     // It is not needed once the controller is fully running in KRaft mode.
-    if !kraft_mode {
+    if !cluster_config.is_kraft_mode() {
         result.insert(
             "zookeeper.connect".to_string(),
             "${env:ZOOKEEPER}".to_string(),
         );
     }
 
-    result.extend(kafka_security.controller_config_settings());
+    result.extend(cluster_config.kafka_security.controller_config_settings());
     result.extend(graceful_shutdown_config_properties());
     result.extend(overrides);
 
