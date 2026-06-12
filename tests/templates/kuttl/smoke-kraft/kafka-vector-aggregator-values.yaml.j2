@@ -36,49 +36,49 @@ customConfig:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-broker-automatic-log-config-0" &&
+        .pod == "test-kafka-broker-automatic-log-0" &&
         .container == "kafka"
     filteredAutomaticLogConfigBrokerVector:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-broker-automatic-log-config-0" &&
+        .pod == "test-kafka-broker-automatic-log-0" &&
         .container == "vector"
     filteredCustomLogConfigBrokerKafka:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-broker-custom-log-config-0" &&
+        .pod == "test-kafka-broker-custom-log-0" &&
         .container == "kafka"
     filteredCustomLogConfigBrokerVector:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-broker-custom-log-config-0" &&
+        .pod == "test-kafka-broker-custom-log-0" &&
         .container == "vector"
     filteredAutomaticLogConfigControllerKafka:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-controller-automatic-log-config-0" &&
+        .pod == "test-kafka-controller-automatic-log-0" &&
         .container == "kafka"
     filteredAutomaticLogConfigControllerVector:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-controller-automatic-log-config-0" &&
+        .pod == "test-kafka-controller-automatic-log-0" &&
         .container == "vector"
     filteredCustomLogConfigControllerKafka:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-controller-custom-log-config-0" &&
+        .pod == "test-kafka-controller-custom-log-0" &&
         .container == "kafka"
     filteredCustomLogConfigControllerVector:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-controller-custom-log-config-0" &&
+        .pod == "test-kafka-controller-custom-log-0" &&
         .container == "vector"
     filteredInvalidEvents:
       type: filter

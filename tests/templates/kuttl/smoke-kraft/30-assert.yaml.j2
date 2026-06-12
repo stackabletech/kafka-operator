@@ -17,7 +17,7 @@ status:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-kafka-broker-automatic-log-config
+  name: test-kafka-broker-automatic-log
   generation: 1 # There should be no unneeded Pod restarts
   labels:
     restarter.stackable.tech/enabled: "true"
@@ -28,7 +28,7 @@ status:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-kafka-broker-custom-log-config
+  name: test-kafka-broker-custom-log
   generation: 1 # There should be no unneeded Pod restarts
   labels:
     restarter.stackable.tech/enabled: "true"
@@ -39,7 +39,7 @@ status:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-kafka-controller-automatic-log-config
+  name: test-kafka-controller-automatic-log
   generation: 1 # There should be no unneeded Pod restarts
   labels:
     restarter.stackable.tech/enabled: "true"
@@ -50,7 +50,7 @@ status:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-kafka-controller-custom-log-config
+  name: test-kafka-controller-custom-log
   generation: 1 # There should be no unneeded Pod restarts
   labels:
     restarter.stackable.tech/enabled: "true"
@@ -83,7 +83,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-kafka-broker-automatic-log-config-headless
+  name: test-kafka-broker-automatic-log-headless
 spec:
   ports:
   - name: kafka-tls
@@ -94,7 +94,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-kafka-broker-automatic-log-config-metrics
+  name: test-kafka-broker-automatic-log-metrics
 spec:
   ports:
   - name: metrics
@@ -105,7 +105,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-kafka-broker-custom-log-config-headless
+  name: test-kafka-broker-custom-log-headless
 spec:
   ports:
   - name: kafka-tls
@@ -116,7 +116,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-kafka-broker-custom-log-config-metrics
+  name: test-kafka-broker-custom-log-metrics
 spec:
   ports:
   - name: metrics
@@ -127,7 +127,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-kafka-controller-automatic-log-config-headless
+  name: test-kafka-controller-automatic-log-headless
 spec:
   ports:
   - name: kafka-tls
@@ -138,7 +138,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-kafka-controller-automatic-log-config-metrics
+  name: test-kafka-controller-automatic-log-metrics
 spec:
   ports:
   - name: metrics
@@ -149,7 +149,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-kafka-controller-custom-log-config-headless
+  name: test-kafka-controller-custom-log-headless
 spec:
   ports:
   - name: kafka-tls
@@ -160,7 +160,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-kafka-controller-custom-log-config-metrics
+  name: test-kafka-controller-custom-log-metrics
 spec:
   ports:
   - name: metrics
