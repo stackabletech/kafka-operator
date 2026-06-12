@@ -4,6 +4,7 @@ pub mod broker_properties;
 pub mod controller_properties;
 pub mod listener;
 pub mod logging;
+pub mod security_properties;
 
 use crate::crd::{KafkaPodDescriptor, role::KafkaRole};
 

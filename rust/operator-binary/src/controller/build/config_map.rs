@@ -102,10 +102,15 @@ pub fn build_rolegroup_config_map(
         }
     };
 
-    let jvm_sec_props = &validated_rg
-        .config_overrides
-        .security_properties()
-        .overrides;
+    // The `networkaddress.cache.*` defaults are always emitted (with user `security.properties`
+    // overrides winning); see `security_properties::build`.
+    let jvm_sec_props = crate::controller::build::properties::security_properties::build(
+        validated_rg
+            .config_overrides
+            .security_properties()
+            .overrides
+            .clone(),
+    );
 
     let mut cm_builder = ConfigMapBuilder::new();
     cm_builder
