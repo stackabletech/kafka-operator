@@ -5,14 +5,25 @@
 //! touches the raw [`v1alpha1::KafkaCluster`] spec. The reconcile loop that consumes
 //! it lives in [`crate::kafka_controller`].
 
-use std::{borrow::Cow, collections::BTreeMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+};
 
+use snafu::Snafu;
 use stackable_operator::{
-    commons::product_image_selection::ResolvedProductImage,
+    commons::{networking::DomainName, product_image_selection::ResolvedProductImage},
     kube::{Resource, api::ObjectMeta},
-    v2::types::{
-        kubernetes::{NamespaceName, Uid},
-        operator::ClusterName,
+    kvp::Labels,
+    v2::{
+        HasName, HasUid, NameIsValidLabelValue,
+        kvp::label::{recommended_labels, role_group_selector},
+        role_group_utils::ResourceNames,
+        types::{
+            kubernetes::{NamespaceName, Uid},
+            operator::{ClusterName, ControllerName, OperatorName, ProductName, ProductVersion},
+        },
     },
 };
 
@@ -20,15 +31,34 @@ pub(crate) mod build;
 pub(crate) mod dereference;
 pub(crate) mod validate;
 
-use crate::crd::{
-    KafkaPodDescriptor, MetadataManager,
-    authorization::KafkaAuthorizationConfig,
-    role::{AnyConfig, AnyConfigOverrides, KafkaRole},
-    security::KafkaTlsSecurity,
-    v1alpha1,
+/// The type-safe role-group name from stackable-operator's v2 module. Re-exported so the rest
+/// of the operator can refer to it as `controller::RoleGroupName`.
+pub use stackable_operator::v2::types::operator::{RoleGroupName, RoleName};
+
+use crate::{
+    config::node_id_hasher::node_id_hash32_offset,
+    crd::{
+        APP_NAME, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
+        authorization::KafkaAuthorizationConfig,
+        role::{AnyConfig, AnyConfigOverrides, KafkaRole},
+        security::KafkaTlsSecurity,
+        v1alpha1,
+    },
+    kafka_controller::KAFKA_CONTROLLER_NAME,
 };
 
-pub type RoleGroupName = String;
+#[derive(Snafu, Debug)]
+pub enum PodDescriptorsError {
+    #[snafu(display(
+        "the node id hash offset of role group {role}/{role_group} collides with {colliding_role}/{colliding_role_group}; node ids must be unique across the cluster"
+    ))]
+    KafkaNodeIdHashCollision {
+        role: KafkaRole,
+        role_group: RoleGroupName,
+        colliding_role: KafkaRole,
+        colliding_role_group: RoleGroupName,
+    },
+}
 
 /// The validated cluster. Carries everything the build steps need, resolved once
 /// here so downstream code never re-derives it or touches the raw spec.
@@ -43,7 +73,15 @@ pub struct ValidatedCluster {
     metadata: ObjectMeta,
     pub name: ClusterName,
     pub namespace: NamespaceName,
+    pub uid: Uid,
+    /// The Kubernetes cluster domain (e.g. `cluster.local`), resolved from the operator's
+    /// `KubernetesClusterInfo`. Used to compute pod FQDNs in [`Self::pod_descriptors`].
+    pub cluster_domain: DomainName,
     pub image: ResolvedProductImage,
+    /// The product version as a valid label value, used for the recommended
+    /// `app.kubernetes.io/version` label. Derived from the resolved image's app version label
+    /// value.
+    pub product_version: ProductVersion,
     pub cluster_config: ValidatedClusterConfig,
     pub role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
 }
@@ -53,10 +91,15 @@ impl ValidatedCluster {
         name: ClusterName,
         namespace: NamespaceName,
         uid: Uid,
+        cluster_domain: DomainName,
         image: ResolvedProductImage,
         cluster_config: ValidatedClusterConfig,
         role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
     ) -> Self {
+        // `app_version_label_value` is constructed to be a valid label value, so it is also a
+        // valid `ProductVersion`.
+        let product_version = ProductVersion::from_str(&image.app_version_label_value)
+            .expect("the app version label value is a valid product version");
         Self {
             metadata: ObjectMeta {
                 name: Some(name.to_string()),
@@ -66,11 +109,187 @@ impl ValidatedCluster {
             },
             name,
             namespace,
+            uid,
+            cluster_domain,
             image,
+            product_version,
             cluster_config,
             role_group_configs,
         }
     }
+
+    /// Predicts the pods of this cluster (or just `requested_kafka_role`'s pods, if given).
+    ///
+    /// Pods are predicted rather than read from the live cluster to avoid instance churn. The
+    /// node-id hash offsets must be unique across the whole cluster, so collisions are detected
+    /// across all role groups regardless of `requested_kafka_role`.
+    ///
+    /// Resource names reuse [`Self::resource_names`] (the canonical
+    /// `<cluster>-<role>-<role-group>` naming) so they stay in sync with the StatefulSet and
+    /// headless Service this descriptor refers to.
+    pub fn pod_descriptors(
+        &self,
+        requested_kafka_role: Option<&KafkaRole>,
+    ) -> Result<Vec<KafkaPodDescriptor>, PodDescriptorsError> {
+        let client_port = self.cluster_config.kafka_security.client_port();
+        let mut pod_descriptors = Vec::new();
+        let mut seen_hashes = HashMap::<u32, (KafkaRole, RoleGroupName)>::new();
+
+        for (role, role_groups) in &self.role_group_configs {
+            for (role_group_name, validated_rg) in role_groups {
+                let node_id_hash_offset = node_id_hash32_offset(role, role_group_name.as_ref());
+
+                // The node id hash offset must be unique across the cluster.
+                if let Some((colliding_role, colliding_role_group)) =
+                    seen_hashes.get(&node_id_hash_offset)
+                {
+                    return KafkaNodeIdHashCollisionSnafu {
+                        role: role.clone(),
+                        role_group: role_group_name.clone(),
+                        colliding_role: colliding_role.clone(),
+                        colliding_role_group: colliding_role_group.clone(),
+                    }
+                    .fail();
+                }
+                seen_hashes.insert(node_id_hash_offset, (role.clone(), role_group_name.clone()));
+
+                if requested_kafka_role.is_none() || Some(role) == requested_kafka_role {
+                    let resource_names = self.resource_names(role, role_group_name);
+                    let role_group_statefulset_name =
+                        resource_names.stateful_set_name().to_string();
+                    let role_group_service_name =
+                        resource_names.headless_service_name().to_string();
+                    for replica in 0..validated_rg.replicas {
+                        pod_descriptors.push(KafkaPodDescriptor {
+                            namespace: self.namespace.to_string(),
+                            role: role.to_string(),
+                            role_group_service_name: role_group_service_name.clone(),
+                            role_group_statefulset_name: role_group_statefulset_name.clone(),
+                            replica,
+                            cluster_domain: self.cluster_domain.clone(),
+                            node_id: node_id_hash_offset + u32::from(replica),
+                            client_port,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(pod_descriptors)
+    }
+
+    /// The given [`KafkaRole`] as a type-safe [`RoleName`].
+    pub fn role_name(role: &KafkaRole) -> RoleName {
+        RoleName::from_str(&role.to_string()).expect("a KafkaRole is a valid role name")
+    }
+
+    /// Type-safe names for the resources of a given role group.
+    pub(crate) fn resource_names(
+        &self,
+        role: &KafkaRole,
+        role_group_name: &RoleGroupName,
+    ) -> ResourceNames {
+        ResourceNames {
+            cluster_name: self.name.clone(),
+            role_name: Self::role_name(role),
+            role_group_name: role_group_name.clone(),
+        }
+    }
+
+    /// The name of the broker rolegroup's bootstrap [`Listener`](stackable_operator::crd::listener),
+    /// `<cluster>-<role>-<role-group>-bootstrap`.
+    pub fn bootstrap_listener_name(
+        &self,
+        role: &KafkaRole,
+        role_group_name: &RoleGroupName,
+    ) -> String {
+        format!(
+            "{}-bootstrap",
+            self.resource_names(role, role_group_name)
+                .stateful_set_name()
+        )
+    }
+
+    /// Recommended labels for a role-group resource, using the given product version.
+    fn recommended_labels_for(
+        &self,
+        product_version: &ProductVersion,
+        role: &KafkaRole,
+        role_group_name: &RoleGroupName,
+    ) -> Labels {
+        recommended_labels(
+            self,
+            &product_name(),
+            product_version,
+            &operator_name(),
+            &controller_name(),
+            &Self::role_name(role),
+            role_group_name,
+        )
+    }
+
+    /// Recommended labels for a role-group resource.
+    pub fn recommended_labels(&self, role: &KafkaRole, role_group_name: &RoleGroupName) -> Labels {
+        self.recommended_labels_for(&self.product_version, role, role_group_name)
+    }
+
+    /// Recommended labels without a version, for PVC templates that cannot be modified once
+    /// deployed.
+    pub fn unversioned_recommended_labels(
+        &self,
+        role: &KafkaRole,
+        role_group_name: &RoleGroupName,
+    ) -> Labels {
+        // A version value is required, and we do want to use the "recommended" format for the
+        // other desired labels.
+        let none_version =
+            ProductVersion::from_str("none").expect("'none' is a valid product version");
+        self.recommended_labels_for(&none_version, role, role_group_name)
+    }
+
+    /// Selector labels matching the pods of a role group.
+    pub fn role_group_selector(&self, role: &KafkaRole, role_group_name: &RoleGroupName) -> Labels {
+        role_group_selector(
+            self,
+            &product_name(),
+            &Self::role_name(role),
+            role_group_name,
+        )
+    }
+}
+
+impl HasName for ValidatedCluster {
+    fn to_name(&self) -> String {
+        self.name.to_string()
+    }
+}
+
+impl HasUid for ValidatedCluster {
+    fn to_uid(&self) -> Uid {
+        self.uid.clone()
+    }
+}
+
+impl NameIsValidLabelValue for ValidatedCluster {
+    fn to_label_value(&self) -> String {
+        self.name.to_label_value()
+    }
+}
+
+/// The product name (`kafka`) as a type-safe label value.
+fn product_name() -> ProductName {
+    ProductName::from_str(APP_NAME).expect("'kafka' is a valid product name")
+}
+
+/// The operator name as a type-safe label value.
+fn operator_name() -> OperatorName {
+    OperatorName::from_str(OPERATOR_NAME).expect("the operator name is a valid label value")
+}
+
+/// The controller name as a type-safe label value.
+fn controller_name() -> ControllerName {
+    ControllerName::from_str(KAFKA_CONTROLLER_NAME)
+        .expect("the controller name is a valid label value")
 }
 
 /// Cluster-wide settings resolved during validation and dereferencing.
@@ -80,7 +299,6 @@ impl ValidatedCluster {
 pub struct ValidatedClusterConfig {
     pub kafka_security: KafkaTlsSecurity,
     pub authorization_config: Option<KafkaAuthorizationConfig>,
-    pub pod_descriptors: Vec<KafkaPodDescriptor>,
     pub metadata_manager: MetadataManager,
 
     /// Whether the operator must not generate broker ids itself, because the user

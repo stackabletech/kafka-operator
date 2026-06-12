@@ -1,53 +1,37 @@
-use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    builder::meta::ObjectMetaBuilder, crd::listener, role_utils::RoleGroupRef,
+    builder::meta::ObjectMetaBuilder, crd::listener,
+    v2::builder::meta::ownerreference_from_resource,
 };
 
 use crate::{
-    controller::ValidatedCluster,
-    crd::{role::broker::BrokerConfig, security::KafkaTlsSecurity, v1alpha1},
-    kafka_controller::{KAFKA_CONTROLLER_NAME, build_recommended_labels},
+    controller::{RoleGroupName, ValidatedCluster},
+    crd::{
+        role::{KafkaRole, broker::BrokerConfig},
+        security::KafkaTlsSecurity,
+    },
 };
-
-#[derive(Snafu, Debug)]
-pub enum Error {
-    #[snafu(display("failed to build Metadata"))]
-    MetadataBuild {
-        source: stackable_operator::builder::meta::Error,
-    },
-
-    #[snafu(display("object is missing metadata to build owner reference"))]
-    ObjectMissingMetadataForOwnerRef {
-        source: stackable_operator::builder::meta::Error,
-    },
-}
 
 /// Kafka clients will use the load-balanced bootstrap listener to get a list of broker addresses and will use those to
 /// transmit data to the correct broker.
 // TODO (@NickLarsenNZ): Move shared functionality to stackable-operator
 pub fn build_broker_rolegroup_bootstrap_listener(
-    kafka: &v1alpha1::KafkaCluster,
     validated_cluster: &ValidatedCluster,
-    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
+    role: &KafkaRole,
+    role_group_name: &RoleGroupName,
     merged_config: &BrokerConfig,
-) -> Result<listener::v1alpha1::Listener, Error> {
+) -> listener::v1alpha1::Listener {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
-    let resolved_product_image = &validated_cluster.image;
 
-    Ok(listener::v1alpha1::Listener {
+    listener::v1alpha1::Listener {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(validated_cluster)
-            .name(kafka.bootstrap_service_name(rolegroup))
-            .ownerreference_from_resource(validated_cluster, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(&build_recommended_labels(
+            .name(validated_cluster.bootstrap_listener_name(role, role_group_name))
+            .ownerreference(ownerreference_from_resource(
                 validated_cluster,
-                KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label_value,
-                &rolegroup.role,
-                &rolegroup.role_group,
+                None,
+                Some(true),
             ))
-            .context(MetadataBuildSnafu)?
+            .with_labels(validated_cluster.recommended_labels(role, role_group_name))
             .build(),
         spec: listener::v1alpha1::ListenerSpec {
             class_name: Some(merged_config.bootstrap_listener_class.clone()),
@@ -55,7 +39,7 @@ pub fn build_broker_rolegroup_bootstrap_listener(
             ..listener::v1alpha1::ListenerSpec::default()
         },
         status: None,
-    })
+    }
 }
 
 fn bootstrap_listener_ports(

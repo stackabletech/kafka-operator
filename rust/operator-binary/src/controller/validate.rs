@@ -65,9 +65,6 @@ pub enum Error {
     #[snafu(display("invalid environment variable name"))]
     InvalidEnvVarName { source: container::Error },
 
-    #[snafu(display("failed to build pod descriptors"))]
-    BuildPodDescriptors { source: crate::crd::Error },
-
     #[snafu(display("invalid metadata manager"))]
     InvalidMetadataManager { source: crate::crd::Error },
 
@@ -84,6 +81,12 @@ pub enum Error {
     #[snafu(display("failed to resolve the cluster uid"))]
     ResolveUid {
         source: stackable_operator::v2::controller_utils::Error,
+    },
+
+    #[snafu(display("the role group name {role_group_name:?} is invalid"))]
+    ParseRoleGroupName {
+        source: stackable_operator::v2::macros::attributed_string_type::Error,
+        role_group_name: String,
     },
 }
 
@@ -155,14 +158,6 @@ pub fn validate(
         role_group_configs.insert(KafkaRole::Controller, controller_groups);
     }
 
-    let pod_descriptors = kafka
-        .pod_descriptors(
-            None,
-            &dereferenced_objects.kubernetes_cluster_info,
-            kafka_security.client_port(),
-        )
-        .context(BuildPodDescriptorsSnafu)?;
-
     let metadata_manager = kafka
         .effective_metadata_manager()
         .context(InvalidMetadataManagerSnafu)?;
@@ -170,16 +165,20 @@ pub fn validate(
     let name = get_cluster_name(kafka).context(ResolveClusterNameSnafu)?;
     let namespace = get_namespace(kafka).context(ResolveNamespaceSnafu)?;
     let uid = get_uid(kafka).context(ResolveUidSnafu)?;
+    let cluster_domain = dereferenced_objects
+        .kubernetes_cluster_info
+        .cluster_domain
+        .clone();
 
     Ok(ValidatedCluster::new(
         name,
         namespace,
         uid,
+        cluster_domain,
         image,
         ValidatedClusterConfig {
             kafka_security,
             authorization_config: dereferenced_objects.authorization_config,
-            pod_descriptors,
             metadata_manager,
             disable_broker_id_generation: kafka
                 .spec
@@ -245,7 +244,12 @@ where
                     .product_specific_common_config
                     .jvm_argument_overrides,
             };
-            Ok((role_group_name.clone(), validated))
+            let role_group_name = RoleGroupName::from_str(role_group_name).with_context(|_| {
+                ParseRoleGroupNameSnafu {
+                    role_group_name: role_group_name.clone(),
+                }
+            })?;
+            Ok((role_group_name, validated))
         })
         .collect()
 }

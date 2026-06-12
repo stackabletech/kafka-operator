@@ -7,8 +7,6 @@ pub mod role;
 pub mod security;
 pub mod tls;
 
-use std::collections::{BTreeMap, HashMap};
-
 use authentication::KafkaAuthentication;
 pub use config_file::ConfigFileName;
 use serde::{Deserialize, Serialize};
@@ -24,19 +22,15 @@ use stackable_operator::{
     role_utils::{GenericRoleConfig, Role, RoleGroupRef},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
-    utils::cluster_info::KubernetesClusterInfo,
     v2::{config_overrides::KeyValueConfigOverrides, role_utils::JavaCommonConfig},
     versioned::versioned,
 };
 use strum::{Display, EnumIter, EnumString};
 
-use crate::{
-    config::node_id_hasher::node_id_hash32_offset,
-    crd::{
-        authorization::KafkaAuthorization,
-        role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
-        tls::KafkaTls,
-    },
+use crate::crd::{
+    authorization::KafkaAuthorization,
+    role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
+    tls::KafkaTls,
 };
 
 pub const CONTAINER_IMAGE_BASE_NAME: &str = "kafka";
@@ -75,9 +69,6 @@ pub enum Error {
     #[snafu(display("The Kafka role [{role}] is missing from spec"))]
     MissingRole { role: String },
 
-    #[snafu(display("Object has no namespace associated"))]
-    NoNamespace,
-
     #[snafu(display(
         "Kafka version 4 and higher requires a Kraft controller (configured via `spec.controller`)"
     ))]
@@ -87,16 +78,6 @@ pub enum Error {
         "Kraft controller (`spec.controller`) and ZooKeeper (`spec.clusterConfig.zookeeperConfigMapName`) are configured. Please only choose one"
     ))]
     KraftAndZookeeperConfigured,
-
-    #[snafu(display(
-        "Could not calculate 'node.id' hash offset for role '{role}' and rolegroup '{rolegroup}' which collides with role '{coliding_role}' and rolegroup '{colliding_rolegroup}'. Please try to rename one of the rolegroups."
-    ))]
-    KafkaNodeIdHashCollision {
-        role: KafkaRole,
-        rolegroup: String,
-        coliding_role: KafkaRole,
-        colliding_rolegroup: String,
-    },
 }
 
 pub type BrokerRole = Role<
@@ -332,12 +313,6 @@ impl v1alpha1::KafkaCluster {
             })
     }
 
-    /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
-    /// to get a list of broker addresses and will use those to transmit data to the correct broker.
-    pub fn bootstrap_service_name(&self, rolegroup: &RoleGroupRef<Self>) -> String {
-        format!("{}-bootstrap", rolegroup.object_name())
-    }
-
     /// Metadata about a rolegroup
     pub fn rolegroup_ref(
         &self,
@@ -369,91 +344,6 @@ impl v1alpha1::KafkaCluster {
             role: KafkaRole::Controller.to_string(),
         })
     }
-
-    /// List pod descriptors for a given role and all its rolegroups.
-    /// If no role is provided, pod descriptors for all roles (and all groups) are listed.
-    /// We try to predict the pods here rather than looking at the current cluster state in order to
-    /// avoid instance churn.
-    pub fn pod_descriptors(
-        &self,
-        requested_kafka_role: Option<&KafkaRole>,
-        cluster_info: &KubernetesClusterInfo,
-        client_port: u16,
-    ) -> Result<Vec<KafkaPodDescriptor>, Error> {
-        let namespace = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
-        let mut pod_descriptors = Vec::new();
-        let mut seen_hashes = HashMap::<u32, (KafkaRole, String)>::new();
-
-        for current_role in KafkaRole::roles() {
-            let rolegroup_replicas = self.extract_rolegroup_replicas(&current_role)?;
-            for (rolegroup, replicas) in rolegroup_replicas {
-                let rolegroup_ref = self.rolegroup_ref(&current_role, &rolegroup);
-                let node_id_hash_offset = node_id_hash32_offset(&rolegroup_ref);
-
-                // check collisions
-                match seen_hashes.get(&node_id_hash_offset) {
-                    Some((coliding_role, coliding_rolegroup)) => {
-                        return KafkaNodeIdHashCollisionSnafu {
-                            role: current_role.clone(),
-                            rolegroup: rolegroup.clone(),
-                            coliding_role: coliding_role.clone(),
-                            colliding_rolegroup: coliding_rolegroup.to_string(),
-                        }
-                        .fail();
-                    }
-                    None => {
-                        seen_hashes.insert(node_id_hash_offset, (current_role.clone(), rolegroup))
-                    }
-                };
-
-                // If no specific role is requested, or the current role matches the requested one, add pod descriptors
-                if requested_kafka_role.is_none() || Some(&current_role) == requested_kafka_role {
-                    for replica in 0..replicas {
-                        pod_descriptors.push(KafkaPodDescriptor {
-                            namespace: namespace.clone(),
-                            role: current_role.to_string(),
-                            role_group_service_name: rolegroup_ref
-                                .rolegroup_headless_service_name(),
-                            role_group_statefulset_name: rolegroup_ref.object_name(),
-                            replica,
-                            cluster_domain: cluster_info.cluster_domain.clone(),
-                            node_id: node_id_hash_offset + u32::from(replica),
-                            client_port,
-                        });
-                    }
-                }
-            }
-        }
-
-        Ok(pod_descriptors)
-    }
-
-    fn extract_rolegroup_replicas(
-        &self,
-        kafka_role: &KafkaRole,
-    ) -> Result<BTreeMap<String, u16>, Error> {
-        Ok(match kafka_role {
-            KafkaRole::Broker => self
-                .broker_role()
-                .iter()
-                .flat_map(|role| &role.role_groups)
-                .flat_map(|(rolegroup_name, rolegroup)| {
-                    std::iter::once((rolegroup_name.to_string(), rolegroup.replicas.unwrap_or(0)))
-                })
-                // Order rolegroups consistently, to avoid spurious downstream rewrites
-                .collect::<BTreeMap<_, _>>(),
-
-            KafkaRole::Controller => self
-                .controller_role()
-                .iter()
-                .flat_map(|role| &role.role_groups)
-                .flat_map(|(rolegroup_name, rolegroup)| {
-                    std::iter::once((rolegroup_name.to_string(), rolegroup.replicas.unwrap_or(0)))
-                })
-                // Order rolegroups consistently, to avoid spurious downstream rewrites
-                .collect::<BTreeMap<_, _>>(),
-        })
-    }
 }
 
 /// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
@@ -461,12 +351,12 @@ impl v1alpha1::KafkaCluster {
 /// Used for service discovery.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KafkaPodDescriptor {
-    namespace: String,
-    role_group_statefulset_name: String,
-    role_group_service_name: String,
-    replica: u16,
-    cluster_domain: DomainName,
-    node_id: u32,
+    pub(crate) namespace: String,
+    pub(crate) role_group_statefulset_name: String,
+    pub(crate) role_group_service_name: String,
+    pub(crate) replica: u16,
+    pub(crate) cluster_domain: DomainName,
+    pub(crate) node_id: u32,
     pub role: String,
     pub client_port: u16,
 }
@@ -500,15 +390,6 @@ impl KafkaPodDescriptor {
     pub fn as_voter(&self) -> String {
         format!(
             "{node_id}@{fqdn}:{port}:0000000000-{node_id:0>11}",
-            node_id = self.node_id,
-            port = self.client_port,
-            fqdn = self.fqdn(),
-        )
-    }
-
-    pub fn as_quorum_voter(&self) -> String {
-        format!(
-            "{node_id}@{fqdn}:{port}",
             node_id = self.node_id,
             port = self.client_port,
             fqdn = self.fqdn(),

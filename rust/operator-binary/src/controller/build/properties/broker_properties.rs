@@ -4,6 +4,7 @@ use super::kraft_controllers;
 use crate::{
     controller::ValidatedClusterConfig,
     crd::{
+        KafkaPodDescriptor,
         listener::{KafkaListenerConfig, KafkaListenerName},
         role::{
             KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
@@ -17,9 +18,10 @@ use crate::{
 pub fn build(
     cluster_config: &ValidatedClusterConfig,
     listener_config: &KafkaListenerConfig,
+    pod_descriptors: &[KafkaPodDescriptor],
     overrides: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let kraft_controllers = kraft_controllers(&cluster_config.pod_descriptors);
+    let kraft_controllers = kraft_controllers(pod_descriptors);
 
     let mut result = BTreeMap::from([
         (

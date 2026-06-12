@@ -26,7 +26,6 @@ use stackable_operator::{
         apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
     },
     kube::ResourceExt,
-    kvp::Labels,
     product_logging::{
         self,
         spec::{
@@ -34,8 +33,7 @@ use stackable_operator::{
             CustomContainerLogConfig,
         },
     },
-    role_utils::RoleGroupRef,
-    utils::cluster_info::KubernetesClusterInfo,
+    v2::builder::meta::ownerreference_from_resource,
 };
 
 use crate::{
@@ -46,9 +44,9 @@ use crate::{
         },
         node_id_hasher::node_id_hash32_offset,
     },
-    controller::{ValidatedCluster, ValidatedRoleGroupConfig},
+    controller::{RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig},
     crd::{
-        self, APP_NAME, BROKER_ID_POD_MAP_DIR, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
+        self, BROKER_ID_POD_MAP_DIR, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
         MetadataManager, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
@@ -60,7 +58,7 @@ use crate::{
         security::KafkaTlsSecurity,
         v1alpha1,
     },
-    kafka_controller::{KAFKA_CONTROLLER_NAME, MAX_KAFKA_LOG_FILES_SIZE, build_recommended_labels},
+    kafka_controller::MAX_KAFKA_LOG_FILES_SIZE,
     kerberos::add_kerberos_pod_config,
     operations::graceful_shutdown::add_graceful_shutdown_config,
 };
@@ -97,7 +95,9 @@ pub enum Error {
     },
 
     #[snafu(display("failed to build pod descriptors"))]
-    BuildPodDescriptors { source: crate::crd::Error },
+    BuildPodDescriptors {
+        source: crate::controller::PodDescriptorsError,
+    },
 
     #[snafu(display("failed to configure logging"))]
     ConfigureLogging {
@@ -118,26 +118,11 @@ pub enum Error {
         source: stackable_operator::builder::pod::container::Error,
     },
 
-    #[snafu(display("failed to build Labels"))]
-    LabelBuild {
-        source: stackable_operator::kvp::LabelError,
-    },
-
     #[snafu(display("failed to merge pod overrides"))]
     MergePodOverrides { source: crd::role::Error },
 
-    #[snafu(display("failed to build Metadata"))]
-    MetadataBuild {
-        source: stackable_operator::builder::meta::Error,
-    },
-
     #[snafu(display("missing secret lifetime"))]
     MissingSecretLifetime,
-
-    #[snafu(display("object is missing metadata to build owner reference"))]
-    ObjectMissingMetadataForOwnerRef {
-        source: stackable_operator::builder::meta::Error,
-    },
 
     #[snafu(display("failed to retrieve rolegroup replicas"))]
     RoleGroupReplicas { source: crd::role::Error },
@@ -153,34 +138,19 @@ pub enum Error {
 pub fn build_broker_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
+    role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
-    rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
     validated_rg: &ValidatedRoleGroupConfig,
     service_account: &ServiceAccount,
-    cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.config;
-    let recommended_object_labels = build_recommended_labels(
-        validated_cluster,
-        KAFKA_CONTROLLER_NAME,
-        &resolved_product_image.app_version_label_value,
-        &rolegroup_ref.role,
-        &rolegroup_ref.role_group,
-    );
-    let recommended_labels =
-        Labels::recommended(&recommended_object_labels).context(LabelBuildSnafu)?;
+    let resource_names = validated_cluster.resource_names(kafka_role, role_group_name);
+    let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
     // Used for PVC templates that cannot be modified once they are deployed
-    let unversioned_recommended_labels = Labels::recommended(&build_recommended_labels(
-        validated_cluster,
-        KAFKA_CONTROLLER_NAME,
-        // A version value is required, and we do want to use the "recommended" format for the other desired labels
-        "none",
-        &rolegroup_ref.role,
-        &rolegroup_ref.role_group,
-    ))
-    .context(LabelBuildSnafu)?;
+    let unversioned_recommended_labels =
+        validated_cluster.unversioned_recommended_labels(kafka_role, role_group_name);
 
     let kcat_prober_container_name = BrokerContainer::KcatProber.to_string();
     let mut cb_kcat_prober =
@@ -216,7 +186,9 @@ pub fn build_broker_rolegroup_statefulset(
     // main broker listener is an ephemeral PVC instead
     pvcs.push(
         ListenerOperatorVolumeSourceBuilder::new(
-            &ListenerReference::ListenerName(kafka.bootstrap_service_name(rolegroup_ref)),
+            &ListenerReference::ListenerName(
+                validated_cluster.bootstrap_listener_name(kafka_role, role_group_name),
+            ),
             &unversioned_recommended_labels,
         )
         .build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME)
@@ -279,12 +251,8 @@ pub fn build_broker_rolegroup_statefulset(
         .args(vec![broker_kafka_container_commands(
             metadata_manager == MetadataManager::KRaft,
             // we need controller pods
-            kafka
-                .pod_descriptors(
-                    Some(&KafkaRole::Controller),
-                    cluster_info,
-                    kafka_security.client_port(),
-                )
+            validated_cluster
+                .pod_descriptors(Some(&KafkaRole::Controller))
                 .context(BuildPodDescriptorsSnafu)?,
             kafka_security,
             &resolved_product_image.product_version,
@@ -316,7 +284,7 @@ pub fn build_broker_rolegroup_statefulset(
         )
         .add_env_var(
             KAFKA_NODE_ID_OFFSET,
-            node_id_hash32_offset(rolegroup_ref).to_string(),
+            node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string(),
         )
         .add_env_var(
             "KAFKA_CLIENT_PORT".to_string(),
@@ -402,15 +370,14 @@ pub fn build_broker_rolegroup_statefulset(
         pod_builder
             .add_volume(
                 VolumeBuilder::new("log-config")
-                    .with_config_map(rolegroup_ref.object_name())
+                    .with_config_map(resource_names.role_group_config_map().to_string())
                     .build(),
             )
             .context(AddVolumeSnafu)?;
     }
 
     let metadata = ObjectMetaBuilder::new()
-        .with_recommended_labels(&recommended_object_labels)
-        .context(MetadataBuildSnafu)?
+        .with_labels(recommended_labels.clone())
         .build();
 
     if let Some(listener_class) = merged_config.listener_class() {
@@ -447,7 +414,7 @@ pub fn build_broker_rolegroup_statefulset(
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {
-                name: rolegroup_ref.object_name(),
+                name: resource_names.role_group_config_map().to_string(),
                 ..ConfigMapVolumeSource::default()
             }),
             ..Volume::default()
@@ -506,46 +473,37 @@ pub fn build_broker_rolegroup_statefulset(
     );
     pod_template.merge_from(
         kafka_role
-            .role_group_pod_overrides(kafka, &rolegroup_ref.role_group)
+            .role_group_pod_overrides(kafka, role_group_name.as_ref())
             .context(MergePodOverridesSnafu)?,
     );
 
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(validated_cluster)
-            .name(rolegroup_ref.object_name())
-            .ownerreference_from_resource(validated_cluster, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(&build_recommended_labels(
+            .name(resource_names.stateful_set_name().to_string())
+            .ownerreference(ownerreference_from_resource(
                 validated_cluster,
-                KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label_value,
-                &rolegroup_ref.role,
-                &rolegroup_ref.role_group,
+                None,
+                Some(true),
             ))
-            .context(MetadataBuildSnafu)?
+            .with_labels(recommended_labels.clone())
             .with_label(RESTART_CONTROLLER_ENABLED_LABEL.to_owned())
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
             replicas: kafka_role
-                .replicas(kafka, &rolegroup_ref.role_group)
+                .replicas(kafka, role_group_name.as_ref())
                 .context(RoleGroupReplicasSnafu)?
                 .map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
-                    Labels::role_group_selector(
-                        kafka,
-                        APP_NAME,
-                        &rolegroup_ref.role,
-                        &rolegroup_ref.role_group,
-                    )
-                    .context(LabelBuildSnafu)?
-                    .into(),
+                    validated_cluster
+                        .role_group_selector(kafka_role, role_group_name)
+                        .into(),
                 ),
                 ..LabelSelector::default()
             },
-            service_name: Some(rolegroup_ref.rolegroup_headless_service_name()),
+            service_name: Some(resource_names.headless_service_name().to_string()),
             template: pod_template,
             volume_claim_templates: Some(pvcs),
             ..StatefulSetSpec::default()
@@ -558,22 +516,16 @@ pub fn build_broker_rolegroup_statefulset(
 pub fn build_controller_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
+    role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
-    rolegroup_ref: &RoleGroupRef<v1alpha1::KafkaCluster>,
     validated_rg: &ValidatedRoleGroupConfig,
     service_account: &ServiceAccount,
-    cluster_info: &KubernetesClusterInfo,
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.config;
-    let recommended_object_labels = build_recommended_labels(
-        validated_cluster,
-        KAFKA_CONTROLLER_NAME,
-        &resolved_product_image.app_version_label_value,
-        &rolegroup_ref.role,
-        &rolegroup_ref.role_group,
-    );
+    let resource_names = validated_cluster.resource_names(kafka_role, role_group_name);
+    let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
 
     let kafka_container_name = ControllerContainer::Kafka.to_string();
     let mut cb_kafka =
@@ -611,13 +563,13 @@ pub fn build_controller_rolegroup_statefulset(
 
     env.push(EnvVar {
         name: "ROLEGROUP_HEADLESS_SERVICE_NAME".to_string(),
-        value: Some(rolegroup_ref.rolegroup_headless_service_name()),
+        value: Some(resource_names.headless_service_name().to_string()),
         ..EnvVar::default()
     });
 
     env.push(EnvVar {
         name: "CLUSTER_DOMAIN".to_string(),
-        value: Some(cluster_info.cluster_domain.to_string()),
+        value: Some(validated_cluster.cluster_domain.to_string()),
         ..EnvVar::default()
     });
 
@@ -653,8 +605,8 @@ pub fn build_controller_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![controller_kafka_container_command(
-            kafka
-                .pod_descriptors(Some(kafka_role), cluster_info, kafka_security.client_port())
+            validated_cluster
+                .pod_descriptors(Some(kafka_role))
                 .context(BuildPodDescriptorsSnafu)?,
             &resolved_product_image.product_version,
         )])
@@ -686,7 +638,7 @@ pub fn build_controller_rolegroup_statefulset(
         )
         .add_env_var(
             KAFKA_NODE_ID_OFFSET,
-            node_id_hash32_offset(rolegroup_ref).to_string(),
+            node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string(),
         )
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
@@ -739,15 +691,14 @@ pub fn build_controller_rolegroup_statefulset(
         pod_builder
             .add_volume(
                 VolumeBuilder::new("log-config")
-                    .with_config_map(rolegroup_ref.object_name())
+                    .with_config_map(resource_names.role_group_config_map().to_string())
                     .build(),
             )
             .context(AddVolumeSnafu)?;
     }
 
     let metadata = ObjectMetaBuilder::new()
-        .with_recommended_labels(&recommended_object_labels)
-        .context(MetadataBuildSnafu)?
+        .with_labels(recommended_labels.clone())
         .build();
 
     // Add TLS related volumes and volume mounts
@@ -773,7 +724,7 @@ pub fn build_controller_rolegroup_statefulset(
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {
-                name: rolegroup_ref.object_name(),
+                name: resource_names.role_group_config_map().to_string(),
                 ..ConfigMapVolumeSource::default()
             }),
             ..Volume::default()
@@ -828,24 +779,20 @@ pub fn build_controller_rolegroup_statefulset(
     );
     pod_template.merge_from(
         kafka_role
-            .role_group_pod_overrides(kafka, &rolegroup_ref.role_group)
+            .role_group_pod_overrides(kafka, role_group_name.as_ref())
             .context(MergePodOverridesSnafu)?,
     );
 
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(validated_cluster)
-            .name(rolegroup_ref.object_name())
-            .ownerreference_from_resource(validated_cluster, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(&build_recommended_labels(
+            .name(resource_names.stateful_set_name().to_string())
+            .ownerreference(ownerreference_from_resource(
                 validated_cluster,
-                KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label_value,
-                &rolegroup_ref.role,
-                &rolegroup_ref.role_group,
+                None,
+                Some(true),
             ))
-            .context(MetadataBuildSnafu)?
+            .with_labels(recommended_labels.clone())
             .with_label(RESTART_CONTROLLER_ENABLED_LABEL.to_owned())
             .build(),
         spec: Some(StatefulSetSpec {
@@ -855,23 +802,18 @@ pub fn build_controller_rolegroup_statefulset(
                 ..StatefulSetUpdateStrategy::default()
             }),
             replicas: kafka_role
-                .replicas(kafka, &rolegroup_ref.role_group)
+                .replicas(kafka, role_group_name.as_ref())
                 .context(RoleGroupReplicasSnafu)?
                 .map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
-                    Labels::role_group_selector(
-                        kafka,
-                        APP_NAME,
-                        &rolegroup_ref.role,
-                        &rolegroup_ref.role_group,
-                    )
-                    .context(LabelBuildSnafu)?
-                    .into(),
+                    validated_cluster
+                        .role_group_selector(kafka_role, role_group_name)
+                        .into(),
                 ),
                 ..LabelSelector::default()
             },
-            service_name: Some(rolegroup_ref.rolegroup_headless_service_name()),
+            service_name: Some(resource_names.headless_service_name().to_string()),
             template: pod_template,
             volume_claim_templates: Some(merged_config.resources().storage.build_pvcs()),
             ..StatefulSetSpec::default()

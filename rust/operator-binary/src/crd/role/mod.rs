@@ -9,9 +9,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::resources::{NoRuntimeLimits, Resources},
     k8s_openapi::api::core::v1::PodTemplateSpec,
-    kube::runtime::reflector::ObjectRef,
     product_logging::spec::ContainerLogConfig,
-    role_utils::RoleGroupRef,
     schemars::{self, JsonSchema},
     v2::config_overrides::KeyValueConfigOverrides,
 };
@@ -112,19 +110,6 @@ impl KafkaRole {
             roles.push(role)
         }
         roles
-    }
-
-    /// Metadata about a rolegroup
-    pub fn rolegroup_ref(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-        group_name: impl Into<String>,
-    ) -> RoleGroupRef<v1alpha1::KafkaCluster> {
-        RoleGroupRef {
-            cluster: ObjectRef::from_obj(kafka),
-            role: self.to_string(),
-            role_group: group_name.into(),
-        }
     }
 
     /// A Kerberos principal has three parts, with the form username/fully.qualified.domain.name@YOUR-REALM.COM.
@@ -257,6 +242,14 @@ impl Deref for AnyConfig {
 }
 
 impl AnyConfig {
+    /// The [`KafkaRole`] this config belongs to.
+    pub fn kafka_role(&self) -> KafkaRole {
+        match self {
+            AnyConfig::Broker(_) => KafkaRole::Broker,
+            AnyConfig::Controller(_) => KafkaRole::Controller,
+        }
+    }
+
     pub fn resources(&self) -> &Resources<Storage, NoRuntimeLimits> {
         match self {
             AnyConfig::Broker(broker_config) => &broker_config.resources,

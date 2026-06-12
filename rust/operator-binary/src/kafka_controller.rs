@@ -15,7 +15,6 @@ use stackable_operator::{
         core::{DeserializeGuard, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
     },
-    kvp::ObjectLabels,
     logging::controller::ReconcilerError,
     memory::{BinaryMultiple, MemoryQuantity},
     role_utils::{GenericRoleConfig, RoleGroupRef},
@@ -28,10 +27,11 @@ use stackable_operator::{
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
-    controller::{build, dereference, validate},
+    controller::{
+        build, build::properties::listener::get_kafka_listener_config, dereference, validate,
+    },
     crd::{
         APP_NAME, KafkaClusterStatus, OPERATOR_NAME,
-        listener::get_kafka_listener_config,
         role::{AnyConfig, KafkaRole},
         v1alpha1,
     },
@@ -52,28 +52,6 @@ pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {
     unit: BinaryMultiple::Mebi,
 };
 
-/// Build recommended values for labels.
-///
-/// Generic over the owner `T` so the owner can be either the raw `KafkaCluster` or the
-/// `ValidatedCluster` (which also implements `Resource`).
-pub fn build_recommended_labels<'a, T>(
-    owner: &'a T,
-    controller_name: &'a str,
-    app_version: &'a str,
-    role: &'a str,
-    role_group: &'a str,
-) -> ObjectLabels<'a, T> {
-    ObjectLabels {
-        owner,
-        app_name: APP_NAME,
-        app_version,
-        operator_name: OPERATOR_NAME,
-        controller_name,
-        role,
-        role_group,
-    }
-}
-
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
     pub operator_environment: OperatorEnvironmentOptions,
@@ -88,11 +66,6 @@ pub enum Error {
 
     #[snafu(display("failed to validate cluster"))]
     ValidateCluster { source: validate::Error },
-
-    #[snafu(display("invalid kafka listeners"))]
-    InvalidKafkaListeners {
-        source: crate::crd::listener::KafkaListenerError,
-    },
 
     #[snafu(display("failed to apply bootstrap Listener"))]
     ApplyBootstrapListener {
@@ -180,16 +153,6 @@ pub enum Error {
     BuildConfigMap {
         source: crate::controller::build::config_map::Error,
     },
-
-    #[snafu(display("failed to build service"))]
-    BuildService {
-        source: crate::resource::service::Error,
-    },
-
-    #[snafu(display("failed to build listener"))]
-    BuildListener {
-        source: crate::resource::listener::Error,
-    },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -219,9 +182,6 @@ impl ReconcilerError for Error {
             Error::InvalidKafkaCluster { .. } => None,
             Error::BuildStatefulset { .. } => None,
             Error::BuildConfigMap { .. } => None,
-            Error::BuildService { .. } => None,
-            Error::BuildListener { .. } => None,
-            Error::InvalidKafkaListeners { .. } => None,
         }
     }
 }
@@ -292,36 +252,39 @@ pub async fn reconcile_kafka(
 
     for (kafka_role, rg_map) in &validated_cluster.role_group_configs {
         for (rolegroup_name, validated_rg) in rg_map {
-            let rolegroup_ref = kafka.rolegroup_ref(kafka_role, rolegroup_name);
+            // The Vector log-aggregation config still consumes a v1 `RoleGroupRef`; it is built
+            // here and used only for that. All other identification uses the typed `kafka_role` /
+            // `rolegroup_name` (and `ValidatedCluster::resource_names`).
+            let rolegroup_ref = kafka.rolegroup_ref(kafka_role, rolegroup_name.to_string());
+            let vector_config = build::properties::logging::build_vector_config(
+                &rolegroup_ref,
+                &validated_rg.config,
+            );
 
             let rg_headless_service = build_rolegroup_headless_service(
                 &validated_cluster,
-                &validated_cluster.image,
-                &rolegroup_ref,
+                kafka_role,
+                rolegroup_name,
                 &validated_cluster.cluster_config.kafka_security,
-            )
-            .context(BuildServiceSnafu)?;
+            );
 
-            let rg_metrics_service = build_rolegroup_metrics_service(
-                &validated_cluster,
-                &validated_cluster.image,
-                &rolegroup_ref,
-            )
-            .context(BuildServiceSnafu)?;
+            let rg_metrics_service =
+                build_rolegroup_metrics_service(&validated_cluster, kafka_role, rolegroup_name);
 
             let kafka_listeners = get_kafka_listener_config(
-                kafka,
+                &validated_cluster,
                 &validated_cluster.cluster_config.kafka_security,
-                &rolegroup_ref,
+                kafka_role,
+                rolegroup_name,
                 &client.kubernetes_cluster_info,
-            )
-            .context(InvalidKafkaListenersSnafu)?;
+            );
 
             let rg_configmap = build::config_map::build_rolegroup_config_map(
                 &validated_cluster,
-                &rolegroup_ref,
+                rolegroup_name,
                 validated_rg,
                 &kafka_listeners,
+                vector_config,
             )
             .context(BuildConfigMapSnafu)?;
 
@@ -329,33 +292,30 @@ pub async fn reconcile_kafka(
                 KafkaRole::Broker => build_broker_rolegroup_statefulset(
                     kafka,
                     kafka_role,
+                    rolegroup_name,
                     &validated_cluster,
-                    &rolegroup_ref,
                     validated_rg,
                     &rbac_sa,
-                    &client.kubernetes_cluster_info,
                 )
                 .context(BuildStatefulsetSnafu)?,
                 KafkaRole::Controller => build_controller_rolegroup_statefulset(
                     kafka,
                     kafka_role,
+                    rolegroup_name,
                     &validated_cluster,
-                    &rolegroup_ref,
                     validated_rg,
                     &rbac_sa,
-                    &client.kubernetes_cluster_info,
                 )
                 .context(BuildStatefulsetSnafu)?,
             };
 
             if let AnyConfig::Broker(broker_config) = &validated_rg.config {
                 let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
-                    kafka,
                     &validated_cluster,
-                    &rolegroup_ref,
+                    kafka_role,
+                    rolegroup_name,
                     broker_config,
-                )
-                .context(BuildListenerSnafu)?;
+                );
                 bootstrap_listeners.push(
                     cluster_resources
                         .add(client, rg_bootstrap_listener)

@@ -1,100 +1,75 @@
-use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::meta::ObjectMetaBuilder,
-    commons::product_image_selection::ResolvedProductImage,
     k8s_openapi::api::core::v1::{Service, ServicePort, ServiceSpec},
     kvp::{Annotations, Labels},
-    role_utils::RoleGroupRef,
+    v2::builder::meta::ownerreference_from_resource,
 };
 
 use crate::{
-    controller::ValidatedCluster,
-    crd::{APP_NAME, METRICS_PORT, METRICS_PORT_NAME, security::KafkaTlsSecurity, v1alpha1},
-    kafka_controller::{KAFKA_CONTROLLER_NAME, build_recommended_labels},
+    controller::{RoleGroupName, ValidatedCluster},
+    crd::{METRICS_PORT, METRICS_PORT_NAME, role::KafkaRole, security::KafkaTlsSecurity},
 };
-
-#[derive(Snafu, Debug)]
-pub enum Error {
-    #[snafu(display("failed to build Metadata"))]
-    MetadataBuild {
-        source: stackable_operator::builder::meta::Error,
-    },
-
-    #[snafu(display("failed to build Labels"))]
-    LabelBuild {
-        source: stackable_operator::kvp::LabelError,
-    },
-
-    #[snafu(display("object is missing metadata to build owner reference"))]
-    ObjectMissingMetadataForOwnerRef {
-        source: stackable_operator::builder::meta::Error,
-    },
-}
 
 /// The rolegroup [`Service`] is a headless service that allows direct access to the instances of a certain rolegroup
 ///
 /// This is mostly useful for internal communication between peers, or for clients that perform client-side load balancing.
 pub fn build_rolegroup_headless_service(
     validated_cluster: &ValidatedCluster,
-    resolved_product_image: &ResolvedProductImage,
-    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
+    role: &KafkaRole,
+    role_group_name: &RoleGroupName,
     kafka_security: &KafkaTlsSecurity,
-) -> Result<Service, Error> {
-    Ok(Service {
+) -> Service {
+    Service {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(validated_cluster)
-            .name(rolegroup.rolegroup_headless_service_name())
-            .ownerreference_from_resource(validated_cluster, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(&build_recommended_labels(
+            .name(
+                validated_cluster
+                    .resource_names(role, role_group_name)
+                    .headless_service_name()
+                    .to_string(),
+            )
+            .ownerreference(ownerreference_from_resource(
                 validated_cluster,
-                KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label_value,
-                &rolegroup.role,
-                &rolegroup.role_group,
+                None,
+                Some(true),
             ))
-            .context(MetadataBuildSnafu)?
+            .with_labels(validated_cluster.recommended_labels(role, role_group_name))
             .build(),
         spec: Some(ServiceSpec {
             cluster_ip: Some("None".to_string()),
             ports: Some(headless_ports(kafka_security)),
             selector: Some(
-                Labels::role_group_selector(
-                    validated_cluster,
-                    APP_NAME,
-                    &rolegroup.role,
-                    &rolegroup.role_group,
-                )
-                .context(LabelBuildSnafu)?
-                .into(),
+                validated_cluster
+                    .role_group_selector(role, role_group_name)
+                    .into(),
             ),
             publish_not_ready_addresses: Some(true),
             ..ServiceSpec::default()
         }),
         status: None,
-    })
+    }
 }
 
 /// The rolegroup metrics [`Service`] is a service that exposes metrics and a prometheus scraping label
 pub fn build_rolegroup_metrics_service(
     validated_cluster: &ValidatedCluster,
-    resolved_product_image: &ResolvedProductImage,
-    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
-) -> Result<Service, Error> {
-    let metrics_service = Service {
+    role: &KafkaRole,
+    role_group_name: &RoleGroupName,
+) -> Service {
+    Service {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(validated_cluster)
-            .name(rolegroup.rolegroup_metrics_service_name())
-            .ownerreference_from_resource(validated_cluster, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .with_recommended_labels(&build_recommended_labels(
+            .name(metrics_service_name(
                 validated_cluster,
-                KAFKA_CONTROLLER_NAME,
-                &resolved_product_image.app_version_label_value,
-                &rolegroup.role,
-                &rolegroup.role_group,
+                role,
+                role_group_name,
             ))
-            .context(MetadataBuildSnafu)?
+            .ownerreference(ownerreference_from_resource(
+                validated_cluster,
+                None,
+                Some(true),
+            ))
+            .with_labels(validated_cluster.recommended_labels(role, role_group_name))
             .with_labels(prometheus_labels())
             .with_annotations(prometheus_annotations())
             .build(),
@@ -104,21 +79,33 @@ pub fn build_rolegroup_metrics_service(
             cluster_ip: Some("None".to_string()),
             ports: Some(metrics_ports()),
             selector: Some(
-                Labels::role_group_selector(
-                    validated_cluster,
-                    APP_NAME,
-                    &rolegroup.role,
-                    &rolegroup.role_group,
-                )
-                .context(LabelBuildSnafu)?
-                .into(),
+                validated_cluster
+                    .role_group_selector(role, role_group_name)
+                    .into(),
             ),
             publish_not_ready_addresses: Some(true),
             ..ServiceSpec::default()
         }),
         status: None,
-    };
-    Ok(metrics_service)
+    }
+}
+
+/// The metrics [`Service`] name, `<cluster>-<role>-<rolegroup>-metrics`.
+///
+/// [`ResourceNames`](stackable_operator::v2::role_group_utils::ResourceNames) has no metrics
+/// service helper, so the `-metrics` suffix is appended to the qualified role-group name (which is
+/// also the StatefulSet name).
+fn metrics_service_name(
+    validated_cluster: &ValidatedCluster,
+    role: &KafkaRole,
+    role_group_name: &RoleGroupName,
+) -> String {
+    format!(
+        "{qualified}-metrics",
+        qualified = validated_cluster
+            .resource_names(role, role_group_name)
+            .stateful_set_name()
+    )
 }
 
 fn metrics_ports() -> Vec<ServicePort> {

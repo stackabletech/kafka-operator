@@ -3,65 +3,70 @@ use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
     k8s_openapi::api::core::v1::ConfigMap,
-    role_utils::RoleGroupRef,
-    v2::config_file_writer::{PropertiesWriterError, to_java_properties_string},
+    product_logging::framework::VECTOR_CONFIG_FILE,
+    v2::{
+        builder::meta::ownerreference_from_resource,
+        config_file_writer::{PropertiesWriterError, to_java_properties_string},
+    },
 };
 
 use crate::{
     controller::{
-        ValidatedCluster, ValidatedRoleGroupConfig,
+        RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
         build::properties::logging::role_group_config_map_data,
     },
     crd::{
         ConfigFileName, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, node_address_cmd},
         role::AnyConfig,
-        v1alpha1,
     },
-    kafka_controller::{KAFKA_CONTROLLER_NAME, build_recommended_labels},
 };
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("failed to build ConfigMap for {}", rolegroup))]
+    #[snafu(display("failed to build ConfigMap for role group {role_group}"))]
     BuildRoleGroupConfig {
         source: stackable_operator::builder::configmap::Error,
-        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
+        role_group: RoleGroupName,
     },
 
-    #[snafu(display("failed to serialize [{}] for {rolegroup}", ConfigFileName::Security))]
+    #[snafu(display(
+        "failed to serialize [{}] for role group {role_group}",
+        ConfigFileName::Security
+    ))]
     JvmSecurityProperties {
         source: PropertiesWriterError,
-        rolegroup: String,
+        role_group: RoleGroupName,
     },
 
-    #[snafu(display("failed to build Metadata"))]
-    MetadataBuild {
-        source: stackable_operator::builder::meta::Error,
-    },
-
-    #[snafu(display("object is missing metadata to build owner reference"))]
-    ObjectMissingMetadataForOwnerRef {
-        source: stackable_operator::builder::meta::Error,
-    },
-
-    #[snafu(display("failed to serialize config for {rolegroup}"))]
+    #[snafu(display("failed to serialize config for role group {role_group}"))]
     SerializeConfig {
         source: PropertiesWriterError,
-        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
+        role_group: RoleGroupName,
+    },
+
+    #[snafu(display("failed to build pod descriptors"))]
+    BuildPodDescriptors {
+        source: crate::controller::PodDescriptorsError,
     },
 
     #[snafu(display("no Kraft controllers found to build"))]
     NoKraftControllersFound,
 }
 
-/// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator
+/// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator.
+///
+/// `vector_config` is the Vector agent config built by the caller (where a `RoleGroupRef` is
+/// available); it is `None` when the Vector agent is disabled. Resource naming and labels use the
+/// role (derived from `validated_rg.config`) and the typed `role_group_name`.
 pub fn build_rolegroup_config_map(
     validated_cluster: &ValidatedCluster,
-    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
+    role_group_name: &RoleGroupName,
     validated_rg: &ValidatedRoleGroupConfig,
     listener_config: &KafkaListenerConfig,
+    vector_config: Option<String>,
 ) -> Result<ConfigMap, Error> {
+    let role = validated_rg.config.kafka_role();
     let cluster_config = &validated_cluster.cluster_config;
     let kafka_security = &cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
@@ -72,7 +77,11 @@ pub fn build_rolegroup_config_map(
         .overrides
         .clone();
 
-    if cluster_config.is_kraft_mode() && cluster_config.pod_descriptors.is_empty() {
+    let pod_descriptors = validated_cluster
+        .pod_descriptors(None)
+        .context(BuildPodDescriptorsSnafu)?;
+
+    if cluster_config.is_kraft_mode() && pod_descriptors.is_empty() {
         return NoKraftControllersFoundSnafu.fail();
     }
 
@@ -80,12 +89,14 @@ pub fn build_rolegroup_config_map(
         AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
             cluster_config,
             listener_config,
+            &pod_descriptors,
             config_overrides,
         ),
         AnyConfig::Controller(_) => {
             crate::controller::build::properties::controller_properties::build(
                 cluster_config,
                 listener_config,
+                &pod_descriptors,
                 config_overrides,
             )
         }
@@ -101,24 +112,25 @@ pub fn build_rolegroup_config_map(
         .metadata(
             ObjectMetaBuilder::new()
                 .name_and_namespace(validated_cluster)
-                .name(rolegroup.object_name())
-                .ownerreference_from_resource(validated_cluster, None, Some(true))
-                .context(ObjectMissingMetadataForOwnerRefSnafu)?
-                .with_recommended_labels(&build_recommended_labels(
+                .name(
+                    validated_cluster
+                        .resource_names(&role, role_group_name)
+                        .role_group_config_map()
+                        .to_string(),
+                )
+                .ownerreference(ownerreference_from_resource(
                     validated_cluster,
-                    KAFKA_CONTROLLER_NAME,
-                    &resolved_product_image.app_version_label_value,
-                    &rolegroup.role,
-                    &rolegroup.role_group,
+                    None,
+                    Some(true),
                 ))
-                .context(MetadataBuildSnafu)?
+                .with_labels(validated_cluster.recommended_labels(&role, role_group_name))
                 .build(),
         )
         .add_data(
             kafka_config_file_name,
             to_java_properties_string(kafka_config.iter()).with_context(|_| {
                 SerializeConfigSnafu {
-                    rolegroup: rolegroup.clone(),
+                    role_group: role_group_name.clone(),
                 }
             })?,
         )
@@ -126,7 +138,7 @@ pub fn build_rolegroup_config_map(
             ConfigFileName::Security.to_string(),
             to_java_properties_string(jvm_sec_props.iter()).with_context(|_| {
                 JvmSecurityPropertiesSnafu {
-                    rolegroup: rolegroup.role_group.clone(),
+                    role_group: role_group_name.clone(),
                 }
             })?,
         )
@@ -139,7 +151,7 @@ pub fn build_rolegroup_config_map(
                     .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
             )
             .with_context(|_| JvmSecurityPropertiesSnafu {
-                rolegroup: rolegroup.role_group.clone(),
+                role_group: role_group_name.clone(),
             })?,
         )
         // This file contains the JAAS configuration for Kerberos authentication
@@ -156,7 +168,6 @@ pub fn build_rolegroup_config_map(
 
     let config_data = role_group_config_map_data(
         &resolved_product_image.product_version,
-        rolegroup,
         &validated_rg.config,
     );
     for (file_name, data) in config_data {
@@ -165,10 +176,14 @@ pub fn build_rolegroup_config_map(
         }
     }
 
+    if let Some(vector_config) = vector_config {
+        cm_builder.add_data(VECTOR_CONFIG_FILE, vector_config);
+    }
+
     cm_builder
         .build()
         .with_context(|_| BuildRoleGroupConfigSnafu {
-            rolegroup: rolegroup.clone(),
+            role_group: role_group_name.clone(),
         })
 }
 

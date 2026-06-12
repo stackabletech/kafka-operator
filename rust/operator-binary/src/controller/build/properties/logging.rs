@@ -27,10 +27,12 @@ const KAFKA_LOG4J2_FILE: &str = "kafka.log4j2.xml";
 const CONSOLE_CONVERSION_PATTERN_LOG4J: &str = "[%d] %p %m (%c)%n";
 const CONSOLE_CONVERSION_PATTERN_LOG4J2: &str = "%d{ISO8601} %p [%t] %c - %m%n";
 
-/// Get the role group ConfigMap data with logging and Vector configurations
+/// Get the role group ConfigMap data with the log4j/log4j2 logging configuration.
+///
+/// The Vector agent config is built separately via [`build_vector_config`] (which needs a
+/// [`RoleGroupRef`]) and added by the caller.
 pub fn role_group_config_map_data(
     product_version: &str,
-    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
     merged_config: &AnyConfig,
 ) -> BTreeMap<String, Option<String>> {
     let container_name = match merged_config {
@@ -66,6 +68,17 @@ pub fn role_group_config_map_data(
         }
     }
 
+    configs
+}
+
+/// Builds the Vector agent config for a role group, or `None` when the Vector agent is disabled.
+///
+/// Takes a v1 [`RoleGroupRef`] because the upstream `create_vector_config` still requires one;
+/// this is the only remaining consumer of `RoleGroupRef` in the operator.
+pub fn build_vector_config(
+    rolegroup: &RoleGroupRef<v1alpha1::KafkaCluster>,
+    merged_config: &AnyConfig,
+) -> Option<String> {
     let vector_log_config = merged_config.vector_logging();
     let vector_log_config = if let ContainerLogConfig {
         choice: Some(ContainerLogConfigChoice::Automatic(log_config)),
@@ -76,16 +89,9 @@ pub fn role_group_config_map_data(
         None
     };
 
-    if merged_config.vector_logging_enabled() {
-        configs.insert(
-            product_logging::framework::VECTOR_CONFIG_FILE.to_string(),
-            Some(product_logging::framework::create_vector_config(
-                rolegroup,
-                vector_log_config,
-            )),
-        );
-    }
-    configs
+    merged_config
+        .vector_logging_enabled()
+        .then(|| product_logging::framework::create_vector_config(rolegroup, vector_log_config))
 }
 
 fn log4j_config_if_automatic(

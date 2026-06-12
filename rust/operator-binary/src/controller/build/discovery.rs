@@ -1,27 +1,20 @@
-use std::num::TryFromIntError;
+use std::{num::TryFromIntError, str::FromStr};
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
     crd::listener,
     k8s_openapi::api::core::v1::ConfigMap,
-    kube::runtime::reflector::ObjectRef,
+    v2::builder::meta::ownerreference_from_resource,
 };
 
 use crate::{
-    controller::ValidatedCluster,
-    crd::{role::KafkaRole, v1alpha1},
-    kafka_controller::{KAFKA_CONTROLLER_NAME, build_recommended_labels},
+    controller::{RoleGroupName, ValidatedCluster},
+    crd::role::KafkaRole,
 };
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("object {} is missing metadata to build owner reference", kafka))]
-    ObjectMissingMetadataForOwnerRef {
-        source: stackable_operator::builder::meta::Error,
-        kafka: ObjectRef<v1alpha1::KafkaCluster>,
-    },
-
     #[snafu(display("could not find service port with name {}", port_name))]
     NoServicePort { port_name: String },
 
@@ -32,11 +25,6 @@ pub enum Error {
     BuildConfigMap {
         source: stackable_operator::builder::configmap::Error,
     },
-
-    #[snafu(display("failed to build metadata"))]
-    MetadataBuild {
-        source: stackable_operator::builder::meta::Error,
-    },
 }
 
 /// Build a discovery [`ConfigMap`] containing information about how to connect to a certain
@@ -46,7 +34,6 @@ pub fn build_discovery_configmap(
     listeners: &[listener::v1alpha1::Listener],
 ) -> Result<ConfigMap, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
-    let resolved_product_image = &validated_cluster.image;
 
     let port_name = if kafka_security.has_kerberos_enabled() {
         kafka_security.bootstrap_port_name()
@@ -65,29 +52,23 @@ pub fn build_discovery_configmap(
         .metadata(
             ObjectMetaBuilder::new()
                 .name_and_namespace(validated_cluster)
-                .ownerreference_from_resource(validated_cluster, None, Some(true))
-                .with_context(|_| ObjectMissingMetadataForOwnerRefSnafu {
-                    kafka: cluster_object_ref(validated_cluster),
-                })?
-                .with_recommended_labels(&build_recommended_labels(
+                .ownerreference(ownerreference_from_resource(
                     validated_cluster,
-                    KAFKA_CONTROLLER_NAME,
-                    &resolved_product_image.product_version,
-                    &KafkaRole::Broker.to_string(),
-                    "discovery",
+                    None,
+                    Some(true),
                 ))
-                .context(MetadataBuildSnafu)?
+                .with_labels(
+                    validated_cluster.recommended_labels(
+                        &KafkaRole::Broker,
+                        &RoleGroupName::from_str("discovery")
+                            .expect("'discovery' is a valid role group name"),
+                    ),
+                )
                 .build(),
         )
         .add_data("KAFKA", bootstrap_servers)
         .build()
         .context(BuildConfigMapSnafu)
-}
-
-/// An [`ObjectRef`] to the owning cluster, built from the validated identity — used only for
-/// error context.
-fn cluster_object_ref(cluster: &ValidatedCluster) -> ObjectRef<v1alpha1::KafkaCluster> {
-    ObjectRef::new(cluster.name.as_ref()).within(cluster.namespace.as_ref())
 }
 
 fn listener_hosts(
