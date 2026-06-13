@@ -24,21 +24,19 @@ use stackable_operator::{
         apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
     },
     kube::ResourceExt,
-    product_logging::{
-        self,
-        spec::{
-            ConfigMapLogConfig, ContainerLogConfig, ContainerLogConfigChoice,
-            CustomContainerLogConfig,
-        },
-    },
+    product_logging,
     v2::{
         builder::{
             meta::ownerreference_from_resource,
-            pod::volume::{ListenerReference, listener_operator_volume_source_builder_build_pvc},
+            pod::{
+                container::EnvVarSet,
+                volume::{ListenerReference, listener_operator_volume_source_builder_build_pvc},
+            },
         },
         jvm_argument_overrides::JvmArgumentOverrides,
+        product_logging::framework::{ValidatedContainerLogConfigChoice, vector_container},
         role_group_utils::ResourceNames,
-        types::kubernetes::{ListenerName, PersistentVolumeClaimName},
+        types::kubernetes::{ContainerName, ListenerName, PersistentVolumeClaimName, VolumeName},
     },
 };
 
@@ -52,9 +50,10 @@ use crate::{
             },
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::add_kerberos_pod_config,
-            properties::logging::MAX_KAFKA_LOG_FILES_SIZE,
+            properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
         },
         node_id_hasher::node_id_hash32_offset,
+        validate::ValidatedLogging,
     },
     crd::{
         BROKER_ID_POD_MAP_DIR, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
@@ -68,6 +67,12 @@ use crate::{
         security::KafkaTlsSecurity,
     },
 };
+
+stackable_operator::constant!(VECTOR_CONTAINER_NAME: ContainerName = "vector");
+// The Vector container reads its `vector.yaml` from the `config` volume (the rolegroup
+// ConfigMap) and tails product logs from the `log` volume.
+stackable_operator::constant!(VECTOR_CONFIG_VOLUME_NAME: VolumeName = "config");
+stackable_operator::constant!(VECTOR_LOG_VOLUME_NAME: VolumeName = "log");
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -99,11 +104,6 @@ pub enum Error {
         source: crate::controller::PodDescriptorsError,
     },
 
-    #[snafu(display("failed to configure logging"))]
-    ConfigureLogging {
-        source: stackable_operator::product_logging::framework::LoggingError,
-    },
-
     #[snafu(display("failed to construct JVM arguments"))]
     ConstructJvmArguments {
         source: crate::controller::build::jvm::Error,
@@ -122,9 +122,6 @@ pub enum Error {
 
     #[snafu(display("missing secret lifetime"))]
     MissingSecretLifetime,
-
-    #[snafu(display("vector agent is enabled but vector aggregator ConfigMap is missing"))]
-    VectorAggregatorConfigMapMissing,
 }
 
 /// The broker rolegroup [`StatefulSet`] runs the rolegroup, as configured by the administrator.
@@ -328,7 +325,7 @@ pub fn build_broker_rolegroup_statefulset(
             ..Probe::default()
         });
 
-    add_log_config_volume(&mut pod_builder, merged_config, &resource_names)?;
+    add_log_config_volume(&mut pod_builder, &validated_rg.logging, &resource_names)?;
 
     let metadata = ObjectMetaBuilder::new()
         .with_labels(recommended_labels.clone())
@@ -371,10 +368,10 @@ pub fn build_broker_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        validated_cluster,
+        &validated_rg.logging,
         resolved_product_image,
-        merged_config,
-    )?;
+        &resource_names,
+    );
 
     add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
 
@@ -563,7 +560,7 @@ pub fn build_controller_rolegroup_statefulset(
             ..Probe::default()
         });
 
-    add_log_config_volume(&mut pod_builder, merged_config, &resource_names)?;
+    add_log_config_volume(&mut pod_builder, &validated_rg.logging, &resource_names)?;
 
     let metadata = ObjectMetaBuilder::new()
         .with_labels(recommended_labels.clone())
@@ -594,10 +591,10 @@ pub fn build_controller_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        validated_cluster,
+        &validated_rg.logging,
         resolved_product_image,
-        merged_config,
-    )?;
+        &resource_names,
+    );
 
     add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
 
@@ -713,35 +710,26 @@ fn add_common_kafka_env(
 }
 
 /// Adds the `log-config` volume, sourced either from the user-supplied custom log config
-/// `ConfigMap` or the rolegroup `ConfigMap`.
+/// `ConfigMap` or the rolegroup `ConfigMap` (which carries the operator-generated config).
+/// Branches on the *validated* Kafka-container logging choice.
 fn add_log_config_volume(
     pod_builder: &mut PodBuilder,
-    merged_config: &AnyConfig,
+    logging: &ValidatedLogging,
     resource_names: &ResourceNames,
 ) -> Result<(), Error> {
-    if let ContainerLogConfig {
-        choice:
-            Some(ContainerLogConfigChoice::Custom(CustomContainerLogConfig {
-                custom: ConfigMapLogConfig { config_map },
-            })),
-    } = &*merged_config.kafka_logging()
-    {
-        pod_builder
-            .add_volume(
-                VolumeBuilder::new("log-config")
-                    .with_config_map(config_map)
-                    .build(),
-            )
-            .context(AddVolumeSnafu)?;
-    } else {
-        pod_builder
-            .add_volume(
-                VolumeBuilder::new("log-config")
-                    .with_config_map(resource_names.role_group_config_map().to_string())
-                    .build(),
-            )
-            .context(AddVolumeSnafu)?;
-    }
+    let config_map = match &logging.kafka_container {
+        ValidatedContainerLogConfigChoice::Custom(config_map_name) => config_map_name.to_string(),
+        ValidatedContainerLogConfigChoice::Automatic(_) => {
+            resource_names.role_group_config_map().to_string()
+        }
+    };
+    pod_builder
+        .add_volume(
+            VolumeBuilder::new("log-config")
+                .with_config_map(config_map)
+                .build(),
+        )
+        .context(AddVolumeSnafu)?;
     Ok(())
 }
 
@@ -774,44 +762,29 @@ fn add_common_pod_config(
     Ok(())
 }
 
-/// Adds the Vector log-aggregation sidecar container, when Vector logging is enabled.
+/// Adds the v2 Vector log-aggregation sidecar container, when the Vector agent is enabled.
 ///
-/// Errors if Vector logging is enabled but no Vector aggregator discovery `ConfigMap` is
-/// configured on the cluster.
+/// Whether Vector is enabled, the per-container log config and the (validated) aggregator
+/// discovery `ConfigMap` name are resolved up-front in
+/// [`ValidatedLogging`](crate::controller::validate::ValidatedLogging). The container mounts the
+/// static `vector.yaml` from the `config` volume and is driven by the env vars the v2
+/// [`vector_container`] sets.
 fn add_vector_container(
     pod_builder: &mut PodBuilder,
-    validated_cluster: &ValidatedCluster,
+    logging: &ValidatedLogging,
     resolved_product_image: &ResolvedProductImage,
-    merged_config: &AnyConfig,
-) -> Result<(), Error> {
+    resource_names: &ResourceNames,
+) {
     // Add vector container after kafka container to keep the defaulting into kafka container
-    if merged_config.vector_logging_enabled() {
-        match &validated_cluster
-            .cluster_config
-            .vector_aggregator_config_map_name
-        {
-            Some(vector_aggregator_config_map_name) => {
-                pod_builder.add_container(
-                    product_logging::framework::vector_container(
-                        resolved_product_image,
-                        "config",
-                        "log",
-                        Some(&*merged_config.vector_logging()),
-                        ResourceRequirementsBuilder::new()
-                            .with_cpu_request("250m")
-                            .with_cpu_limit("500m")
-                            .with_memory_request("128Mi")
-                            .with_memory_limit("128Mi")
-                            .build(),
-                        vector_aggregator_config_map_name,
-                    )
-                    .context(ConfigureLoggingSnafu)?,
-                );
-            }
-            None => {
-                VectorAggregatorConfigMapMissingSnafu.fail()?;
-            }
-        }
+    if let Some(vector_container_log_config) = &logging.vector_container {
+        pod_builder.add_container(vector_container(
+            &VECTOR_CONTAINER_NAME,
+            resolved_product_image,
+            vector_container_log_config,
+            resource_names,
+            &VECTOR_CONFIG_VOLUME_NAME,
+            &VECTOR_LOG_VOLUME_NAME,
+            EnvVarSet::new(),
+        ));
     }
-    Ok(())
 }

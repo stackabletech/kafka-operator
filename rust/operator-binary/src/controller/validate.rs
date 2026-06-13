@@ -6,18 +6,24 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use serde::Serialize;
-use snafu::{ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     commons::product_image_selection,
     config::{fragment::FromFragment, merge::Merge},
     kube::ResourceExt,
+    product_logging::spec::Logging,
     role_utils::{GenericRoleConfig, Role},
     schemars::JsonSchema,
     v2::{
         builder::pod::container::{self, EnvVarName, EnvVarSet},
         controller_utils::{get_cluster_name, get_namespace, get_uid},
+        product_logging::framework::{
+            ValidatedContainerLogConfigChoice, VectorContainerLogConfig,
+            validate_logging_configuration_for_container,
+        },
         role_utils::{JavaCommonConfig, with_validated_config},
+        types::kubernetes::ConfigMapName,
     },
 };
 
@@ -30,8 +36,9 @@ use crate::{
         self, CONTAINER_IMAGE_BASE_NAME,
         authentication::{self},
         role::{
-            AnyConfig, AnyConfigOverrides, KafkaRole, broker::BrokerConfig,
-            controller::ControllerConfig,
+            AnyConfig, AnyConfigOverrides, KafkaRole,
+            broker::{BrokerConfig, BrokerContainer},
+            controller::{ControllerConfig, ControllerContainer},
         },
         security::{self, KafkaTlsSecurity},
         v1alpha1,
@@ -88,6 +95,96 @@ pub enum Error {
         source: stackable_operator::v2::macros::attributed_string_type::Error,
         role_group_name: String,
     },
+
+    #[snafu(display("failed to validate the logging configuration"))]
+    ValidateLoggingConfig {
+        source: stackable_operator::v2::product_logging::framework::Error,
+    },
+
+    #[snafu(display(
+        "the Vector aggregator discovery ConfigMap name is required when the Vector agent is enabled"
+    ))]
+    MissingVectorAggregatorConfigMapName,
+
+    #[snafu(display("the Vector aggregator discovery ConfigMap name is invalid"))]
+    ParseVectorAggregatorConfigMapName {
+        source: stackable_operator::v2::macros::attributed_string_type::Error,
+    },
+}
+
+/// Validated logging configuration for a Kafka role group's Kafka and (optional) Vector
+/// containers.
+///
+/// Produced up-front by [`validate_logging`] (mirroring the hive-/opensearch-operator) so that
+/// an invalid custom log `ConfigMap` name or a missing Vector aggregator discovery `ConfigMap`
+/// name fails reconciliation during validation rather than at resource-build time.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ValidatedLogging {
+    pub kafka_container: ValidatedContainerLogConfigChoice,
+    pub vector_container: Option<VectorContainerLogConfig>,
+}
+
+/// Validates the logging configuration for a role group's Kafka and (optional) Vector container.
+///
+/// `vector_aggregator_config_map_name` is the discovery `ConfigMap` name of the Vector
+/// aggregator; it is required (and was validated into a [`ConfigMapName`]) only when the Vector
+/// agent is enabled. Generic over the role's container enum so it serves both broker and
+/// controller role groups.
+fn validate_logging<C>(
+    logging: &Logging<C>,
+    kafka_container: C,
+    vector_container: C,
+    vector_aggregator_config_map_name: &Option<ConfigMapName>,
+) -> Result<ValidatedLogging>
+where
+    C: Clone + std::fmt::Display + Ord,
+{
+    let kafka_container = validate_logging_configuration_for_container(logging, &kafka_container)
+        .context(ValidateLoggingConfigSnafu)?;
+
+    let vector_container = if logging.enable_vector_agent {
+        let vector_aggregator_config_map_name = vector_aggregator_config_map_name
+            .clone()
+            .context(MissingVectorAggregatorConfigMapNameSnafu)?;
+        Some(VectorContainerLogConfig {
+            log_config: validate_logging_configuration_for_container(logging, &vector_container)
+                .context(ValidateLoggingConfigSnafu)?,
+            vector_aggregator_config_map_name,
+        })
+    } else {
+        None
+    };
+
+    Ok(ValidatedLogging {
+        kafka_container,
+        vector_container,
+    })
+}
+
+/// Validates a broker role group's logging configuration.
+fn validate_broker_logging(
+    config: &BrokerConfig,
+    vector_aggregator_config_map_name: &Option<ConfigMapName>,
+) -> Result<ValidatedLogging> {
+    validate_logging(
+        &config.logging,
+        BrokerContainer::Kafka,
+        BrokerContainer::Vector,
+        vector_aggregator_config_map_name,
+    )
+}
+
+/// Validates a controller role group's logging configuration.
+fn validate_controller_logging(
+    config: &ControllerConfig,
+    vector_aggregator_config_map_name: &Option<ConfigMapName>,
+) -> Result<ValidatedLogging> {
+    validate_logging(
+        &config.logging,
+        ControllerContainer::Kafka,
+        ControllerContainer::Vector,
+        vector_aggregator_config_map_name,
+    )
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -127,6 +224,18 @@ pub fn validate(
 
     let cluster_id = kafka.cluster_id();
 
+    // The Vector aggregator discovery ConfigMap name, validated up-front so an invalid name
+    // fails reconciliation here rather than at resource-build time. It is only required (per
+    // role group) when the Vector agent is enabled; see [`validate_logging`].
+    let vector_aggregator_config_map_name = kafka
+        .spec
+        .cluster_config
+        .vector_aggregator_config_map_name
+        .as_deref()
+        .map(ConfigMapName::from_str)
+        .transpose()
+        .context(ParseVectorAggregatorConfigMapNameSnafu)?;
+
     let mut role_group_configs: BTreeMap<
         KafkaRole,
         BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>,
@@ -142,6 +251,8 @@ pub fn validate(
         cluster_id,
         AnyConfig::Broker,
         AnyConfigOverrides::Broker,
+        validate_broker_logging,
+        &vector_aggregator_config_map_name,
     )?;
     role_group_configs.insert(KafkaRole::Broker, broker_groups);
 
@@ -154,6 +265,8 @@ pub fn validate(
             cluster_id,
             AnyConfig::Controller,
             AnyConfigOverrides::Controller,
+            validate_controller_logging,
+            &vector_aggregator_config_map_name,
         )?;
         role_group_configs.insert(KafkaRole::Controller, controller_groups);
     }
@@ -186,11 +299,6 @@ pub fn validate(
                 .cluster_config
                 .broker_id_pod_config_map_name
                 .clone(),
-            vector_aggregator_config_map_name: kafka
-                .spec
-                .cluster_config
-                .vector_aggregator_config_map_name
-                .clone(),
         },
         role_group_configs,
     ))
@@ -212,6 +320,8 @@ fn validate_role_group_configs<Config, ValidatedConfig, ConfigOverrides>(
     cluster_id: Option<&str>,
     wrap_config: fn(ValidatedConfig) -> AnyConfig,
     wrap_overrides: fn(ConfigOverrides) -> AnyConfigOverrides,
+    validate_logging: fn(&ValidatedConfig, &Option<ConfigMapName>) -> Result<ValidatedLogging>,
+    vector_aggregator_config_map_name: &Option<ConfigMapName>,
 ) -> Result<BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>
 where
     Config: Clone + Merge,
@@ -239,6 +349,9 @@ where
             }
             let env_overrides = inject_cluster_id(env_overrides, cluster_id)?;
 
+            let logging =
+                validate_logging(&merged.config.config, vector_aggregator_config_map_name)?;
+
             let validated = ValidatedRoleGroupConfig {
                 replicas: merged.replicas.unwrap_or(1),
                 config: wrap_config(merged.config.config),
@@ -249,6 +362,7 @@ where
                     .config
                     .product_specific_common_config
                     .jvm_argument_overrides,
+                logging,
             };
             let role_group_name = RoleGroupName::from_str(role_group_name).with_context(|_| {
                 ParseRoleGroupNameSnafu {

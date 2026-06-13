@@ -14,7 +14,7 @@ use crate::{
     controller::{
         RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
         build::properties::{
-            ConfigFileName, config_file_name, logging::role_group_config_map_data,
+            ConfigFileName, config_file_name, product_logging::role_group_config_map_data,
         },
     },
     crd::{

@@ -347,11 +347,6 @@ pub struct ValidatedClusterConfig {
     /// The `ConfigMap` mapping pods to broker ids, if the user supplied one. Resolved from the
     /// raw spec during validation so the build steps never have to read it.
     pub broker_id_pod_config_map_name: Option<String>,
-
-    /// The discovery `ConfigMap` providing the Vector aggregator address, if Vector log
-    /// aggregation is configured. Resolved from the raw spec during validation so the build
-    /// steps never have to read it.
-    pub vector_aggregator_config_map_name: Option<String>,
 }
 
 impl ValidatedClusterConfig {
@@ -422,6 +417,8 @@ pub struct ValidatedRoleGroupConfig {
     pub pod_overrides: stackable_operator::k8s_openapi::api::core::v1::PodTemplateSpec,
     pub jvm_argument_overrides:
         stackable_operator::v2::jvm_argument_overrides::JvmArgumentOverrides,
+    /// Validated logging configuration (derived from `config.logging` during validation).
+    pub logging: validate::ValidatedLogging,
 }
 
 pub struct Ctx {
@@ -621,14 +618,17 @@ pub async fn reconcile_kafka(
 
     for (kafka_role, rg_map) in &validated_cluster.role_group_configs {
         for (rolegroup_name, validated_rg) in rg_map {
-            // The Vector log-aggregation config still consumes a v1 `RoleGroupRef`; it is built
-            // here and used only for that. All other identification uses the typed `kafka_role` /
-            // `rolegroup_name` (and `ValidatedCluster::resource_names`).
+            // `rolegroup_ref` is a v1 `RoleGroupRef` retained only for the error context of the
+            // per-rolegroup apply calls below. All other identification uses the typed
+            // `kafka_role` / `rolegroup_name` (and `ValidatedCluster::resource_names`).
             let rolegroup_ref = kafka.rolegroup_ref(kafka_role, rolegroup_name.to_string());
-            let vector_config = build::properties::logging::build_vector_config(
-                &rolegroup_ref,
-                &validated_rg.config,
-            );
+            // The Vector agent config is the static `vector.yaml`, added to the rolegroup
+            // ConfigMap only when the Vector agent is enabled (resolved during validation).
+            let vector_config = validated_rg
+                .logging
+                .vector_container
+                .is_some()
+                .then(build::properties::product_logging::vector_config_file_content);
 
             let rg_headless_service = build_rolegroup_headless_service(
                 &validated_cluster,

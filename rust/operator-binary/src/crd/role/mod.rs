@@ -147,26 +147,6 @@ impl AnyConfig {
         }
     }
 
-    pub fn vector_logging(&'_ self) -> Cow<'_, ContainerLogConfig> {
-        match &self {
-            AnyConfig::Broker(broker_config) => broker_config
-                .logging
-                .for_container(&broker::BrokerContainer::Vector),
-            AnyConfig::Controller(controller_config) => controller_config
-                .logging
-                .for_container(&controller::ControllerContainer::Vector),
-        }
-    }
-
-    pub fn vector_logging_enabled(&self) -> bool {
-        match self {
-            AnyConfig::Broker(broker_config) => broker_config.logging.enable_vector_agent,
-            AnyConfig::Controller(controller_config) => {
-                controller_config.logging.enable_vector_agent
-            }
-        }
-    }
-
     pub fn listener_class(&self) -> Option<&String> {
         match self {
             AnyConfig::Broker(broker_config) => Some(&broker_config.broker_listener_class),
