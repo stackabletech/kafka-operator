@@ -1,14 +1,12 @@
 pub mod affinity;
 pub mod authentication;
 pub mod authorization;
-pub mod config_file;
 pub mod listener;
 pub mod role;
 pub mod security;
 pub mod tls;
 
 use authentication::KafkaAuthentication;
-pub use config_file::ConfigFileName;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, Snafu};
 use stackable_operator::{

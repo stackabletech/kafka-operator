@@ -15,13 +15,10 @@ use stackable_operator::{
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
 use crate::{
-    crd::{
-        ConfigFileName,
-        role::{
-            broker::BrokerConfig,
-            commons::{CommonConfig, Storage},
-            controller::ControllerConfig,
-        },
+    crd::role::{
+        broker::BrokerConfig,
+        commons::{CommonConfig, Storage},
+        controller::ControllerConfig,
     },
     v1alpha1,
 };
@@ -226,13 +223,6 @@ impl AnyConfig {
         match self {
             AnyConfig::Broker(broker_config) => Some(&broker_config.broker_listener_class),
             AnyConfig::Controller(_) => None,
-        }
-    }
-
-    pub fn config_file_name(&self) -> ConfigFileName {
-        match self {
-            AnyConfig::Broker(_) => ConfigFileName::BrokerProperties,
-            AnyConfig::Controller(_) => ConfigFileName::ControllerProperties,
         }
     }
 }

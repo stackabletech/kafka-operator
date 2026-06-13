@@ -12,8 +12,9 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
+use super::ConfigFileName;
 use crate::crd::{
-    ConfigFileName, STACKABLE_LOG_DIR,
+    STACKABLE_LOG_DIR,
     role::{AnyConfig, broker::BrokerContainer, controller::ControllerContainer},
     v1alpha1,
 };

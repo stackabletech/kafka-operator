@@ -13,10 +13,12 @@ use stackable_operator::{
 use crate::{
     controller::{
         RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
-        build::properties::logging::role_group_config_map_data,
+        build::properties::{
+            ConfigFileName, config_file_name, logging::role_group_config_map_data,
+        },
     },
     crd::{
-        ConfigFileName, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, node_address_cmd},
         role::AnyConfig,
     },
@@ -70,7 +72,7 @@ pub fn build_rolegroup_config_map(
     let cluster_config = &validated_cluster.cluster_config;
     let kafka_security = &cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
-    let kafka_config_file_name = validated_rg.config.config_file_name().to_string();
+    let kafka_config_file_name = config_file_name(&validated_rg.config).to_string();
     let config_overrides = validated_rg
         .config_overrides
         .config_file_overrides()

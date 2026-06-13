@@ -6,10 +6,10 @@ use stackable_operator::{
     utils::COMMON_BASH_TRAP_FUNCTIONS,
 };
 
+use super::properties::ConfigFileName;
 use crate::crd::{
-    BROKER_ID_POD_MAP_DIR, ConfigFileName, KafkaPodDescriptor, STACKABLE_CONFIG_DIR,
-    STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
-    security::KafkaTlsSecurity,
+    BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
+    STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR, security::KafkaTlsSecurity,
 };
 
 /// The JVM options selecting the Kafka log4j/log4j2 config file. Kafka 3.x uses log4j,

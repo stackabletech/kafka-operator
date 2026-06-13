@@ -4,7 +4,8 @@ use stackable_operator::{
     v2::jvm_argument_overrides::JvmArgumentOverrides,
 };
 
-use crate::crd::{ConfigFileName, METRICS_PORT, STACKABLE_CONFIG_DIR, role::AnyConfig};
+use super::properties::ConfigFileName;
+use crate::crd::{METRICS_PORT, STACKABLE_CONFIG_DIR, role::AnyConfig};
 
 const JAVA_HEAP_FACTOR: f32 = 0.8;
 
