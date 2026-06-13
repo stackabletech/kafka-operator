@@ -86,7 +86,10 @@ impl KafkaTlsSecurity {
     pub const SECURE_CLIENT_PORT_NAME: &'static str = "kafka-tls";
     pub const SECURE_INTERNAL_PORT: u16 = 19093;
     // - TLS global
+    const KEYSTORE_P12_FILE_NAME: &'static str = "keystore.p12";
     const SSL_STORE_PASSWORD: &'static str = "";
+    const SSL_STORE_TYPE_PKCS12: &'static str = "PKCS12";
+    const TRUSTSTORE_P12_FILE_NAME: &'static str = "truststore.p12";
     const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &'static str = "/stackable/tls-kafka-internal";
     const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &'static str = "tls-kafka-internal";
     const STACKABLE_TLS_KAFKA_SERVER_DIR: &'static str = "/stackable/tls-kafka-server";
@@ -180,9 +183,10 @@ impl KafkaTlsSecurity {
     pub fn copy_opa_tls_cert_command(&self) -> String {
         match self.has_opa_tls_enabled() {
             true => format!(
-                "keytool -importcert -file {opa_mount_path}/ca.crt -keystore {tls_dir}/truststore.p12 -storepass '{tls_password}' -alias opa-ca -noprompt",
+                "keytool -importcert -file {opa_mount_path}/ca.crt -keystore {tls_dir}/{truststore} -storepass '{tls_password}' -alias opa-ca -noprompt",
                 opa_mount_path = Self::OPA_TLS_MOUNT_PATH,
                 tls_dir = Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+                truststore = Self::TRUSTSTORE_P12_FILE_NAME,
                 tls_password = Self::SSL_STORE_PASSWORD,
             ),
             false => "".to_string(),
@@ -339,33 +343,7 @@ impl KafkaTlsSecurity {
                 Some(KafkaListenerProtocol::Ssl.to_string()),
             ));
             props.push(("ssl.client.auth".to_string(), Some("required".to_string())));
-            props.push(("ssl.keystore.type".to_string(), Some("PKCS12".to_string())));
-            props.push((
-                "ssl.keystore.location".to_string(),
-                Some(format!(
-                    "{}/keystore.p12",
-                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR
-                )),
-            ));
-            props.push((
-                "ssl.keystore.password".to_string(),
-                Some(Self::SSL_STORE_PASSWORD.to_string()),
-            ));
-            props.push((
-                "ssl.truststore.type".to_string(),
-                Some("PKCS12".to_string()),
-            ));
-            props.push((
-                "ssl.truststore.location".to_string(),
-                Some(format!(
-                    "{}/truststore.p12",
-                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR
-                )),
-            ));
-            props.push((
-                "ssl.truststore.password".to_string(),
-                Some(Self::SSL_STORE_PASSWORD.to_string()),
-            ));
+            Self::push_client_ssl_stores(&mut props, Self::STACKABLE_TLS_KAFKA_SERVER_DIR);
         } else if self.has_kerberos_enabled() {
             // TODO: to make this configuration file usable out of the box the operator needs to be
             // refactored to write out Java jaas files instead of passing command line parameters
@@ -376,33 +354,7 @@ impl KafkaTlsSecurity {
                 "security.protocol".to_string(),
                 Some(KafkaListenerProtocol::SaslSsl.to_string()),
             ));
-            props.push(("ssl.keystore.type".to_string(), Some("PKCS12".to_string())));
-            props.push((
-                "ssl.keystore.location".to_string(),
-                Some(format!(
-                    "{}/keystore.p12",
-                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR
-                )),
-            ));
-            props.push((
-                "ssl.keystore.password".to_string(),
-                Some(Self::SSL_STORE_PASSWORD.to_string()),
-            ));
-            props.push((
-                "ssl.truststore.type".to_string(),
-                Some("PKCS12".to_string()),
-            ));
-            props.push((
-                "ssl.truststore.location".to_string(),
-                Some(format!(
-                    "{}/truststore.p12",
-                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR
-                )),
-            ));
-            props.push((
-                "ssl.truststore.password".to_string(),
-                Some(Self::SSL_STORE_PASSWORD.to_string()),
-            ));
+            Self::push_client_ssl_stores(&mut props, Self::STACKABLE_TLS_KAFKA_SERVER_DIR);
             props.push((
                 "sasl.enabled.mechanisms".to_string(),
                 Some("GSSAPI".to_string()),
@@ -427,21 +379,7 @@ impl KafkaTlsSecurity {
                 "security.protocol".to_string(),
                 Some(KafkaListenerProtocol::Ssl.to_string()),
             ));
-            props.push((
-                "ssl.truststore.type".to_string(),
-                Some("PKCS12".to_string()),
-            ));
-            props.push((
-                "ssl.truststore.location".to_string(),
-                Some(format!(
-                    "{}/truststore.p12",
-                    Self::STACKABLE_TLS_KAFKA_SERVER_DIR
-                )),
-            ));
-            props.push((
-                "ssl.truststore.password".to_string(),
-                Some(Self::SSL_STORE_PASSWORD.to_string()),
-            ));
+            Self::push_client_ssl_truststore(&mut props, Self::STACKABLE_TLS_KAFKA_SERVER_DIR);
         } else {
             props.push((
                 "security.protocol".to_string(),
@@ -573,6 +511,74 @@ impl KafkaTlsSecurity {
         Ok(())
     }
 
+    /// Inserts the `listener.<name>.ssl.{keystore,truststore}.{location,password,type}`
+    /// settings for `listener`, pointing at the PKCS12 stores under `dir`.
+    fn insert_listener_ssl_stores(
+        config: &mut BTreeMap<String, String>,
+        listener: &KafkaListenerName,
+        dir: &str,
+    ) {
+        config.insert(
+            listener.listener_ssl_keystore_location(),
+            format!("{dir}/{}", Self::KEYSTORE_P12_FILE_NAME),
+        );
+        config.insert(
+            listener.listener_ssl_keystore_password(),
+            Self::SSL_STORE_PASSWORD.to_string(),
+        );
+        config.insert(
+            listener.listener_ssl_keystore_type(),
+            Self::SSL_STORE_TYPE_PKCS12.to_string(),
+        );
+        config.insert(
+            listener.listener_ssl_truststore_location(),
+            format!("{dir}/{}", Self::TRUSTSTORE_P12_FILE_NAME),
+        );
+        config.insert(
+            listener.listener_ssl_truststore_password(),
+            Self::SSL_STORE_PASSWORD.to_string(),
+        );
+        config.insert(
+            listener.listener_ssl_truststore_type(),
+            Self::SSL_STORE_TYPE_PKCS12.to_string(),
+        );
+    }
+
+    /// Pushes the client-side `ssl.keystore.*` and `ssl.truststore.*` properties, pointing
+    /// at the PKCS12 stores under `dir`.
+    fn push_client_ssl_stores(props: &mut Vec<(String, Option<String>)>, dir: &str) {
+        props.push((
+            "ssl.keystore.type".to_string(),
+            Some(Self::SSL_STORE_TYPE_PKCS12.to_string()),
+        ));
+        props.push((
+            "ssl.keystore.location".to_string(),
+            Some(format!("{dir}/{}", Self::KEYSTORE_P12_FILE_NAME)),
+        ));
+        props.push((
+            "ssl.keystore.password".to_string(),
+            Some(Self::SSL_STORE_PASSWORD.to_string()),
+        ));
+        Self::push_client_ssl_truststore(props, dir);
+    }
+
+    /// Pushes the client-side `ssl.truststore.*` properties, pointing at the PKCS12
+    /// truststore under `dir`.
+    fn push_client_ssl_truststore(props: &mut Vec<(String, Option<String>)>, dir: &str) {
+        props.push((
+            "ssl.truststore.type".to_string(),
+            Some(Self::SSL_STORE_TYPE_PKCS12.to_string()),
+        ));
+        props.push((
+            "ssl.truststore.location".to_string(),
+            Some(format!("{dir}/{}", Self::TRUSTSTORE_P12_FILE_NAME)),
+        ));
+        props.push((
+            "ssl.truststore.password".to_string(),
+            Some(Self::SSL_STORE_PASSWORD.to_string()),
+        ));
+    }
+
     /// Returns required Kafka configuration settings for the `broker.properties` file
     /// depending on the tls and authentication settings.
     pub fn broker_config_settings(&self) -> BTreeMap<String, String> {
@@ -584,29 +590,10 @@ impl KafkaTlsSecurity {
         if self.tls_client_authentication_class().is_some()
             || self.tls_server_secret_class().is_some()
         {
-            config.insert(
-                KafkaListenerName::Client.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Client.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Client.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Client.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Client.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Client.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
+            Self::insert_listener_ssl_stores(
+                &mut config,
+                &KafkaListenerName::Client,
+                Self::STACKABLE_TLS_KAFKA_SERVER_DIR,
             );
             if self.tls_client_authentication_class().is_some() {
                 // client auth required
@@ -619,29 +606,10 @@ impl KafkaTlsSecurity {
 
         if self.has_kerberos_enabled() {
             // Bootstrap
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_SERVER_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Bootstrap.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
+            Self::insert_listener_ssl_stores(
+                &mut config,
+                &KafkaListenerName::Bootstrap,
+                Self::STACKABLE_TLS_KAFKA_SERVER_DIR,
             );
             config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
             config.insert(
@@ -658,54 +626,16 @@ impl KafkaTlsSecurity {
         // Internal TLS
         if self.tls_internal_secret_class().is_some() {
             // BROKERS
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
+            Self::insert_listener_ssl_stores(
+                &mut config,
+                &KafkaListenerName::Internal,
+                Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR,
             );
             // CONTROLLERS
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
+            Self::insert_listener_ssl_stores(
+                &mut config,
+                &KafkaListenerName::Controller,
+                Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR,
             );
             // client auth required
             config.insert(
@@ -718,7 +648,11 @@ impl KafkaTlsSecurity {
         if self.opa_secret_class.is_some() {
             config.insert(
                 "opa.authorizer.truststore.path".to_string(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
+                format!(
+                    "{}/{}",
+                    Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+                    Self::TRUSTSTORE_P12_FILE_NAME
+                ),
             );
             config.insert(
                 "opa.authorizer.truststore.password".to_string(),
@@ -726,7 +660,7 @@ impl KafkaTlsSecurity {
             );
             config.insert(
                 "opa.authorizer.truststore.type".to_string(),
-                "PKCS12".to_string(),
+                Self::SSL_STORE_TYPE_PKCS12.to_string(),
             );
         }
 
@@ -747,56 +681,18 @@ impl KafkaTlsSecurity {
         if self.tls_client_authentication_class().is_some()
             || self.tls_internal_secret_class().is_some()
         {
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
+            Self::insert_listener_ssl_stores(
+                &mut config,
+                &KafkaListenerName::Controller,
+                Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR,
             );
 
             // The TLS properties for the internal broker listener are needed by the Kraft controllers
             // too during metadata migration from ZooKeeper to Kraft mode.
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_keystore_location(),
-                format!("{}/keystore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_keystore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_keystore_type(),
-                "PKCS12".to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_truststore_location(),
-                format!("{}/truststore.p12", Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR),
-            );
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_truststore_password(),
-                Self::SSL_STORE_PASSWORD.to_string(),
-            );
-            config.insert(
-                KafkaListenerName::Internal.listener_ssl_truststore_type(),
-                "PKCS12".to_string(),
+            Self::insert_listener_ssl_stores(
+                &mut config,
+                &KafkaListenerName::Internal,
+                Self::STACKABLE_TLS_KAFKA_INTERNAL_DIR,
             );
             // We set either client tls with authentication or client tls without authentication
             // If authentication is explicitly required we do not want to have any other CAs to

@@ -47,7 +47,7 @@ pub fn role_group_config_map_data(
     let mut configs: BTreeMap<String, Option<String>> = BTreeMap::new();
 
     // Starting with Kafka 4.0, log4j2 is used instead of log4j.
-    match product_version.starts_with("3.") {
+    match super::uses_legacy_log4j(product_version) {
         true => {
             configs.insert(
                 ConfigFileName::Log4j.to_string(),

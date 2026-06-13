@@ -15,7 +15,7 @@ use crate::crd::{
 /// The JVM options selecting the Kafka log4j/log4j2 config file. Kafka 3.x uses log4j,
 /// Kafka 4.0 and higher use log4j2.
 pub fn kafka_log_opts(product_version: &str) -> String {
-    if product_version.starts_with("3.") {
+    if super::properties::uses_legacy_log4j(product_version) {
         format!(
             "-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{log4j}",
             log4j = ConfigFileName::Log4j

@@ -46,6 +46,16 @@ pub fn config_file_name(config: &AnyConfig) -> ConfigFileName {
     }
 }
 
+/// Whether the given Kafka version uses the legacy log4j logging framework.
+///
+/// Kafka 3.x uses log4j ([`ConfigFileName::Log4j`]); Kafka 4.0 and later use log4j2
+/// ([`ConfigFileName::Log4j2`]). This is the single source of truth for that decision,
+/// used both when rendering the log config file and when selecting the JVM option that
+/// points at it.
+pub fn uses_legacy_log4j(product_version: &str) -> bool {
+    product_version.starts_with("3.")
+}
+
 pub(crate) fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
     pod_descriptors
         .iter()
