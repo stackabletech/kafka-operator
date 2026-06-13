@@ -1,61 +1,37 @@
-use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    builder::pdb::PodDisruptionBudgetBuilder, client::Client, cluster_resources::ClusterResources,
-    commons::pdb::PdbConfig, kube::ResourceExt,
+    commons::pdb::PdbConfig, k8s_openapi::api::policy::v1::PodDisruptionBudget,
+    v2::builder::pdb::pod_disruption_budget_builder_with_role,
 };
 
 use crate::{
-    controller::KAFKA_CONTROLLER_NAME,
-    crd::{APP_NAME, OPERATOR_NAME, role::KafkaRole, v1alpha1},
+    controller::{ValidatedCluster, controller_name, operator_name, product_name},
+    crd::role::KafkaRole,
 };
 
-#[derive(Snafu, Debug)]
-pub enum Error {
-    #[snafu(display("Cannot create PodDisruptionBudget for role [{role}]"))]
-    CreatePdb {
-        source: stackable_operator::builder::pdb::Error,
-        role: String,
-    },
-    #[snafu(display("Cannot apply PodDisruptionBudget [{name}]"))]
-    ApplyPdb {
-        source: stackable_operator::cluster_resources::Error,
-        name: String,
-    },
-}
-
-pub async fn add_pdbs(
+/// Builds the [`PodDisruptionBudget`] for the given `role`, or `None` if PDBs are disabled.
+pub fn build_pdb(
     pdb: &PdbConfig,
-    kafka: &v1alpha1::KafkaCluster,
+    validated_cluster: &ValidatedCluster,
     role: &KafkaRole,
-    client: &Client,
-    cluster_resources: &mut ClusterResources<'_>,
-) -> Result<(), Error> {
+) -> Option<PodDisruptionBudget> {
     if !pdb.enabled {
-        return Ok(());
+        return None;
     }
     let max_unavailable = pdb.max_unavailable.unwrap_or(match role {
         KafkaRole::Broker => max_unavailable_brokers(),
         KafkaRole::Controller => max_unavailable_controllers(),
     });
-    let pdb = PodDisruptionBudgetBuilder::new_with_role(
-        kafka,
-        APP_NAME,
-        &role.to_string(),
-        OPERATOR_NAME,
-        KAFKA_CONTROLLER_NAME,
+    let pdb = pod_disruption_budget_builder_with_role(
+        validated_cluster,
+        &product_name(),
+        &ValidatedCluster::role_name(role),
+        &operator_name(),
+        &controller_name(),
     )
-    .with_context(|_| CreatePdbSnafu {
-        role: role.to_string(),
-    })?
     .with_max_unavailable(max_unavailable)
     .build();
-    let pdb_name = pdb.name_any();
-    cluster_resources
-        .add(client, pdb)
-        .await
-        .with_context(|_| ApplyPdbSnafu { name: pdb_name })?;
 
-    Ok(())
+    Some(pdb)
 }
 
 fn max_unavailable_brokers() -> u16 {

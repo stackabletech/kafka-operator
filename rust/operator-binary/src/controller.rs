@@ -16,7 +16,7 @@ use const_format::concatcp;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
-    cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
+    cluster_resources::ClusterResourceApplyStrategy,
     commons::{
         networking::DomainName, product_image_selection::ResolvedProductImage,
         rbac::build_rbac_resources,
@@ -38,6 +38,7 @@ use stackable_operator::{
     },
     v2::{
         HasName, HasUid, NameIsValidLabelValue,
+        cluster_resources::cluster_resources_new,
         kvp::label::{recommended_labels, role_group_selector},
         role_group_utils::ResourceNames,
         types::{
@@ -63,7 +64,7 @@ use crate::{
             properties::listener::get_kafka_listener_config,
             resource::{
                 listener::build_broker_rolegroup_bootstrap_listener,
-                pdb::add_pdbs,
+                pdb::build_pdb,
                 service::{build_rolegroup_headless_service, build_rolegroup_metrics_service},
                 statefulset::{
                     build_broker_rolegroup_statefulset, build_controller_rolegroup_statefulset,
@@ -314,17 +315,17 @@ impl NameIsValidLabelValue for ValidatedCluster {
 }
 
 /// The product name (`kafka`) as a type-safe label value.
-fn product_name() -> ProductName {
+pub(crate) fn product_name() -> ProductName {
     ProductName::from_str(APP_NAME).expect("'kafka' is a valid product name")
 }
 
 /// The operator name as a type-safe label value.
-fn operator_name() -> OperatorName {
+pub(crate) fn operator_name() -> OperatorName {
     OperatorName::from_str(OPERATOR_NAME).expect("the operator name is a valid label value")
 }
 
 /// The controller name as a type-safe label value.
-fn controller_name() -> ControllerName {
+pub(crate) fn controller_name() -> ControllerName {
     ControllerName::from_str(KAFKA_CONTROLLER_NAME)
         .expect("the controller name is a valid label value")
 }
@@ -461,11 +462,6 @@ pub enum Error {
         source: stackable_operator::cluster_resources::Error,
     },
 
-    #[snafu(display("failed to create cluster resources"))]
-    CreateClusterResources {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
     #[snafu(display("failed to patch service account"))]
     ApplyServiceAccount {
         source: stackable_operator::cluster_resources::Error,
@@ -486,9 +482,9 @@ pub enum Error {
         source: stackable_operator::commons::rbac::Error,
     },
 
-    #[snafu(display("failed to create PodDisruptionBudget"))]
-    FailedToCreatePdb {
-        source: crate::controller::build::resource::pdb::Error,
+    #[snafu(display("failed to apply PodDisruptionBudget"))]
+    ApplyPdb {
+        source: stackable_operator::cluster_resources::Error,
     },
 
     #[snafu(display("failed to get required Labels"))]
@@ -530,12 +526,11 @@ impl ReconcilerError for Error {
             Error::BuildDiscoveryConfig { .. } => None,
             Error::ApplyDiscoveryConfig { .. } => None,
             Error::DeleteOrphans { .. } => None,
-            Error::CreateClusterResources { .. } => None,
             Error::ApplyServiceAccount { .. } => None,
             Error::ApplyRoleBinding { .. } => None,
             Error::ApplyStatus { .. } => None,
             Error::BuildRbacResources { .. } => None,
-            Error::FailedToCreatePdb { .. } => None,
+            Error::ApplyPdb { .. } => None,
             Error::GetRequiredLabels { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
             Error::BuildStatefulset { .. } => None,
@@ -568,15 +563,16 @@ pub async fn reconcile_kafka(
         validate::validate(kafka, dereferenced_objects, &ctx.operator_environment)
             .context(ValidateClusterSnafu)?;
 
-    let mut cluster_resources = ClusterResources::new(
-        APP_NAME,
-        OPERATOR_NAME,
-        KAFKA_CONTROLLER_NAME,
-        &validated_cluster.object_ref(&()),
+    let mut cluster_resources = cluster_resources_new(
+        &product_name(),
+        &operator_name(),
+        &controller_name(),
+        &validated_cluster.name,
+        &validated_cluster.namespace,
+        &validated_cluster.uid,
         ClusterResourceApplyStrategy::from(&kafka.spec.cluster_operation),
         &kafka.spec.object_overrides,
-    )
-    .context(CreateClusterResourcesSnafu)?;
+    );
 
     tracing::debug!(
         kerberos_enabled = validated_cluster.cluster_config.kafka_security.has_kerberos_enabled(),
@@ -718,10 +714,12 @@ pub async fn reconcile_kafka(
         if let Some(GenericRoleConfig {
             pod_disruption_budget: pdb,
         }) = role_cfg
+            && let Some(pdb) = build_pdb(pdb, &validated_cluster, kafka_role)
         {
-            add_pdbs(pdb, kafka, kafka_role, client, &mut cluster_resources)
+            cluster_resources
+                .add(client, pdb)
                 .await
-                .context(FailedToCreatePdbSnafu)?;
+                .context(ApplyPdbSnafu)?;
         }
     }
 

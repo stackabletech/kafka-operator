@@ -1,15 +1,12 @@
-use std::ops::Deref;
+use std::{ops::Deref, str::FromStr};
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::{
         meta::ObjectMetaBuilder,
         pod::{
-            PodBuilder,
-            container::ContainerBuilder,
-            resources::ResourceRequirementsBuilder,
-            security::PodSecurityContextBuilder,
-            volume::{ListenerOperatorVolumeSourceBuilder, ListenerReference, VolumeBuilder},
+            PodBuilder, container::ContainerBuilder, resources::ResourceRequirementsBuilder,
+            security::PodSecurityContextBuilder, volume::VolumeBuilder,
         },
     },
     commons::product_image_selection::ResolvedProductImage,
@@ -35,8 +32,13 @@ use stackable_operator::{
         },
     },
     v2::{
-        builder::meta::ownerreference_from_resource, jvm_argument_overrides::JvmArgumentOverrides,
+        builder::{
+            meta::ownerreference_from_resource,
+            pod::volume::{ListenerReference, listener_operator_volume_source_builder_build_pvc},
+        },
+        jvm_argument_overrides::JvmArgumentOverrides,
         role_group_utils::ResourceNames,
+        types::kubernetes::{ListenerName, PersistentVolumeClaimName},
     },
 };
 
@@ -95,11 +97,6 @@ pub enum Error {
     #[snafu(display("failed to add needed volume"))]
     AddVolume {
         source: stackable_operator::builder::pod::Error,
-    },
-
-    #[snafu(display("failed to build bootstrap listener pvc"))]
-    BuildBootstrapListenerPvc {
-        source: stackable_operator::builder::pod::volume::ListenerOperatorVolumeSourceBuilderError,
     },
 
     #[snafu(display("failed to build pod descriptors"))]
@@ -191,16 +188,17 @@ pub fn build_broker_rolegroup_statefulset(
 
     // bootstrap listener should be persistent,
     // main broker listener is an ephemeral PVC instead
-    pvcs.push(
-        ListenerOperatorVolumeSourceBuilder::new(
-            &ListenerReference::ListenerName(
-                validated_cluster.bootstrap_listener_name(kafka_role, role_group_name),
-            ),
-            &unversioned_recommended_labels,
-        )
-        .build_pvc(LISTENER_BOOTSTRAP_VOLUME_NAME)
-        .context(BuildBootstrapListenerPvcSnafu)?,
-    );
+    let bootstrap_listener_name = ListenerName::from_str(
+        &validated_cluster.bootstrap_listener_name(kafka_role, role_group_name),
+    )
+    .expect("the bootstrap listener name is a valid Listener name");
+    let bootstrap_pvc_name = PersistentVolumeClaimName::from_str(LISTENER_BOOTSTRAP_VOLUME_NAME)
+        .expect("the bootstrap listener volume name is a valid PVC name");
+    pvcs.push(listener_operator_volume_source_builder_build_pvc(
+        &ListenerReference::Listener(bootstrap_listener_name),
+        &unversioned_recommended_labels,
+        &bootstrap_pvc_name,
+    ));
 
     if kafka_security.has_kerberos_enabled() {
         add_kerberos_pod_config(
