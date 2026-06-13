@@ -124,9 +124,6 @@ pub enum Error {
         source: stackable_operator::builder::pod::container::Error,
     },
 
-    #[snafu(display("failed to merge pod overrides"))]
-    MergePodOverrides { source: crd::role::Error },
-
     #[snafu(display("missing secret lifetime"))]
     MissingSecretLifetime,
 
@@ -472,16 +469,8 @@ pub fn build_broker_rolegroup_statefulset(
     // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
     pod_template_spec.share_process_namespace = Some(true);
 
-    pod_template.merge_from(
-        kafka_role
-            .role_pod_overrides(kafka)
-            .context(MergePodOverridesSnafu)?,
-    );
-    pod_template.merge_from(
-        kafka_role
-            .role_group_pod_overrides(kafka, role_group_name.as_ref())
-            .context(MergePodOverridesSnafu)?,
-    );
+    // Pod overrides were already merged (role <- role group) during validation.
+    pod_template.merge_from(validated_rg.pod_overrides.clone());
 
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()
@@ -778,16 +767,8 @@ pub fn build_controller_rolegroup_statefulset(
 
     let mut pod_template = pod_builder.build_template();
 
-    pod_template.merge_from(
-        kafka_role
-            .role_pod_overrides(kafka)
-            .context(MergePodOverridesSnafu)?,
-    );
-    pod_template.merge_from(
-        kafka_role
-            .role_group_pod_overrides(kafka, role_group_name.as_ref())
-            .context(MergePodOverridesSnafu)?,
-    );
+    // Pod overrides were already merged (role <- role group) during validation.
+    pod_template.merge_from(validated_rg.pod_overrides.clone());
 
     Ok(StatefulSet {
         metadata: ObjectMetaBuilder::new()

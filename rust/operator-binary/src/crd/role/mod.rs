@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::resources::{NoRuntimeLimits, Resources},
-    k8s_openapi::api::core::v1::PodTemplateSpec,
     product_logging::spec::ContainerLogConfig,
     schemars::{self, JsonSchema},
     v2::config_overrides::KeyValueConfigOverrides,
@@ -116,71 +115,6 @@ impl KafkaRole {
     /// but is similar to HBase).
     pub fn kerberos_service_name(&self) -> &'static str {
         "kafka"
-    }
-
-    pub fn role_pod_overrides(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-    ) -> Result<PodTemplateSpec, Error> {
-        let pod_overrides = match self {
-            Self::Broker => kafka
-                .broker_role()
-                .with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?
-                .config
-                .pod_overrides
-                .clone(),
-            Self::Controller => kafka
-                .controller_role()
-                .with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?
-                .config
-                .pod_overrides
-                .clone(),
-        };
-
-        Ok(pod_overrides)
-    }
-
-    pub fn role_group_pod_overrides(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-        rolegroup: &str,
-    ) -> Result<PodTemplateSpec, Error> {
-        let pod_overrides = match self {
-            Self::Broker => kafka
-                .broker_role()
-                .with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?
-                .role_groups
-                .get(rolegroup)
-                .with_context(|| MissingRoleGroupSnafu {
-                    role: self.to_string(),
-                    rolegroup: rolegroup.to_string(),
-                })?
-                .config
-                .pod_overrides
-                .clone(),
-            Self::Controller => kafka
-                .controller_role()
-                .with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?
-                .role_groups
-                .get(rolegroup)
-                .with_context(|| MissingRoleGroupSnafu {
-                    role: self.to_string(),
-                    rolegroup: rolegroup.to_string(),
-                })?
-                .config
-                .pod_overrides
-                .clone(),
-        };
-
-        Ok(pod_overrides)
     }
 
     pub fn replicas(
