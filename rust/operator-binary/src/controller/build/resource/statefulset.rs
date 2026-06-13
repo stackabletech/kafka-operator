@@ -12,6 +12,7 @@ use stackable_operator::{
             volume::{ListenerOperatorVolumeSourceBuilder, ListenerReference, VolumeBuilder},
         },
     },
+    commons::product_image_selection::ResolvedProductImage,
     constants::RESTART_CONTROLLER_ENABLED_LABEL,
     k8s_openapi::{
         DeepMerge,
@@ -33,7 +34,10 @@ use stackable_operator::{
             CustomContainerLogConfig,
         },
     },
-    v2::builder::meta::ownerreference_from_resource,
+    v2::{
+        builder::meta::ownerreference_from_resource, jvm_argument_overrides::JvmArgumentOverrides,
+        role_group_utils::ResourceNames,
+    },
 };
 
 use crate::{
@@ -57,7 +61,7 @@ use crate::{
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
         STACKABLE_LOG_DIR,
         role::{
-            KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
+            AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
         },
         security::KafkaTlsSecurity,
@@ -259,36 +263,18 @@ pub fn build_broker_rolegroup_statefulset(
                 .context(BuildPodDescriptorsSnafu)?,
             kafka_security,
             &resolved_product_image.product_version,
-        )])
-        .add_env_var(
-            "EXTRA_ARGS",
-            crate::controller::build::jvm::construct_non_heap_jvm_args(
-                merged_config,
-                &validated_rg.jvm_argument_overrides,
-            )
-            .context(ConstructJvmArgumentsSnafu)?,
-        )
-        .add_env_var(
-            KAFKA_HEAP_OPTS,
-            crate::controller::build::jvm::construct_heap_jvm_args(
-                merged_config,
-                &validated_rg.jvm_argument_overrides,
-            )
-            .context(ConstructJvmArgumentsSnafu)?,
-        )
-        .add_env_var(
-            kafka_log_opts_env_var(),
-            kafka_log_opts(&resolved_product_image.product_version),
-        )
-        // Needed for the `containerdebug` process to log it's tracing information to.
-        .add_env_var(
-            "CONTAINERDEBUG_LOG_DIRECTORY",
-            format!("{STACKABLE_LOG_DIR}/containerdebug"),
-        )
-        .add_env_var(
-            KAFKA_NODE_ID_OFFSET,
-            node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string(),
-        )
+        )]);
+
+    add_common_kafka_env(
+        &mut cb_kafka,
+        merged_config,
+        &validated_rg.jvm_argument_overrides,
+        resolved_product_image,
+        kafka_role,
+        role_group_name,
+    )?;
+
+    cb_kafka
         .add_env_var(
             "KAFKA_CLIENT_PORT".to_string(),
             kafka_security.client_port().to_string(),
@@ -355,29 +341,7 @@ pub fn build_broker_rolegroup_statefulset(
             ..Probe::default()
         });
 
-    if let ContainerLogConfig {
-        choice:
-            Some(ContainerLogConfigChoice::Custom(CustomContainerLogConfig {
-                custom: ConfigMapLogConfig { config_map },
-            })),
-    } = &*merged_config.kafka_logging()
-    {
-        pod_builder
-            .add_volume(
-                VolumeBuilder::new("log-config")
-                    .with_config_map(config_map)
-                    .build(),
-            )
-            .context(AddVolumeSnafu)?;
-    } else {
-        pod_builder
-            .add_volume(
-                VolumeBuilder::new("log-config")
-                    .with_config_map(resource_names.role_group_config_map().to_string())
-                    .build(),
-            )
-            .context(AddVolumeSnafu)?;
-    }
+    add_log_config_volume(&mut pod_builder, merged_config, &resource_names)?;
 
     let metadata = ObjectMetaBuilder::new()
         .with_labels(recommended_labels.clone())
@@ -413,53 +377,16 @@ pub fn build_broker_rolegroup_statefulset(
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(cb_kafka.build())
         .add_container(cb_kcat_prober.build())
-        .affinity(&merged_config.affinity)
-        .add_volume(Volume {
-            name: "config".to_string(),
-            config_map: Some(ConfigMapVolumeSource {
-                name: resource_names.role_group_config_map().to_string(),
-                ..ConfigMapVolumeSource::default()
-            }),
-            ..Volume::default()
-        })
-        .context(AddVolumeSnafu)?
-        // bootstrap volume is a persistent volume template instead, to keep addresses persistent
-        .add_empty_dir_volume(
-            "log",
-            Some(product_logging::framework::calculate_log_volume_size_limit(
-                &[MAX_KAFKA_LOG_FILES_SIZE],
-            )),
-        )
-        .context(AddVolumeSnafu)?
-        .service_account_name(service_account.name_any())
-        .security_context(PodSecurityContextBuilder::new().fs_group(1000).build());
+        .affinity(&merged_config.affinity);
 
-    // Add vector container after kafka container to keep the defaulting into kafka container
-    if merged_config.vector_logging_enabled() {
-        match &kafka.spec.cluster_config.vector_aggregator_config_map_name {
-            Some(vector_aggregator_config_map_name) => {
-                pod_builder.add_container(
-                    product_logging::framework::vector_container(
-                        resolved_product_image,
-                        "config",
-                        "log",
-                        Some(&*merged_config.vector_logging()),
-                        ResourceRequirementsBuilder::new()
-                            .with_cpu_request("250m")
-                            .with_cpu_limit("500m")
-                            .with_memory_request("128Mi")
-                            .with_memory_limit("128Mi")
-                            .build(),
-                        vector_aggregator_config_map_name,
-                    )
-                    .context(ConfigureLoggingSnafu)?,
-                );
-            }
-            None => {
-                VectorAggregatorConfigMapMissingSnafu.fail()?;
-            }
-        }
-    }
+    add_common_pod_config(&mut pod_builder, &resource_names, service_account)?;
+
+    add_vector_container(
+        &mut pod_builder,
+        kafka,
+        resolved_product_image,
+        merged_config,
+    )?;
 
     add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
 
@@ -605,36 +532,18 @@ pub fn build_controller_rolegroup_statefulset(
                 .context(BuildPodDescriptorsSnafu)?,
             &resolved_product_image.product_version,
         )])
-        .add_env_var("PRE_STOP_CONTROLLER_SLEEP_SECONDS", "10")
-        .add_env_var(
-            "EXTRA_ARGS",
-            crate::controller::build::jvm::construct_non_heap_jvm_args(
-                merged_config,
-                &validated_rg.jvm_argument_overrides,
-            )
-            .context(ConstructJvmArgumentsSnafu)?,
-        )
-        .add_env_var(
-            KAFKA_HEAP_OPTS,
-            crate::controller::build::jvm::construct_heap_jvm_args(
-                merged_config,
-                &validated_rg.jvm_argument_overrides,
-            )
-            .context(ConstructJvmArgumentsSnafu)?,
-        )
-        .add_env_var(
-            kafka_log_opts_env_var(),
-            kafka_log_opts(&resolved_product_image.product_version),
-        )
-        // Needed for the `containerdebug` process to log it's tracing information to.
-        .add_env_var(
-            "CONTAINERDEBUG_LOG_DIRECTORY",
-            format!("{STACKABLE_LOG_DIR}/containerdebug"),
-        )
-        .add_env_var(
-            KAFKA_NODE_ID_OFFSET,
-            node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string(),
-        )
+        .add_env_var("PRE_STOP_CONTROLLER_SLEEP_SECONDS", "10");
+
+    add_common_kafka_env(
+        &mut cb_kafka,
+        merged_config,
+        &validated_rg.jvm_argument_overrides,
+        resolved_product_image,
+        kafka_role,
+        role_group_name,
+    )?;
+
+    cb_kafka
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
@@ -668,29 +577,7 @@ pub fn build_controller_rolegroup_statefulset(
             ..Probe::default()
         });
 
-    if let ContainerLogConfig {
-        choice:
-            Some(ContainerLogConfigChoice::Custom(CustomContainerLogConfig {
-                custom: ConfigMapLogConfig { config_map },
-            })),
-    } = &*merged_config.kafka_logging()
-    {
-        pod_builder
-            .add_volume(
-                VolumeBuilder::new("log-config")
-                    .with_config_map(config_map)
-                    .build(),
-            )
-            .context(AddVolumeSnafu)?;
-    } else {
-        pod_builder
-            .add_volume(
-                VolumeBuilder::new("log-config")
-                    .with_config_map(resource_names.role_group_config_map().to_string())
-                    .build(),
-            )
-            .context(AddVolumeSnafu)?;
-    }
+    add_log_config_volume(&mut pod_builder, merged_config, &resource_names)?;
 
     let metadata = ObjectMetaBuilder::new()
         .with_labels(recommended_labels.clone())
@@ -715,53 +602,16 @@ pub fn build_controller_rolegroup_statefulset(
         .metadata(metadata)
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(kafka_container)
-        .affinity(&merged_config.affinity)
-        .add_volume(Volume {
-            name: "config".to_string(),
-            config_map: Some(ConfigMapVolumeSource {
-                name: resource_names.role_group_config_map().to_string(),
-                ..ConfigMapVolumeSource::default()
-            }),
-            ..Volume::default()
-        })
-        .context(AddVolumeSnafu)?
-        // bootstrap volume is a persistent volume template instead, to keep addresses persistent
-        .add_empty_dir_volume(
-            "log",
-            Some(product_logging::framework::calculate_log_volume_size_limit(
-                &[MAX_KAFKA_LOG_FILES_SIZE],
-            )),
-        )
-        .context(AddVolumeSnafu)?
-        .service_account_name(service_account.name_any())
-        .security_context(PodSecurityContextBuilder::new().fs_group(1000).build());
+        .affinity(&merged_config.affinity);
 
-    // Add vector container after kafka container to keep the defaulting into kafka container
-    if merged_config.vector_logging_enabled() {
-        match &kafka.spec.cluster_config.vector_aggregator_config_map_name {
-            Some(vector_aggregator_config_map_name) => {
-                pod_builder.add_container(
-                    product_logging::framework::vector_container(
-                        resolved_product_image,
-                        "config",
-                        "log",
-                        Some(&*merged_config.vector_logging()),
-                        ResourceRequirementsBuilder::new()
-                            .with_cpu_request("250m")
-                            .with_cpu_limit("500m")
-                            .with_memory_request("128Mi")
-                            .with_memory_limit("128Mi")
-                            .build(),
-                        vector_aggregator_config_map_name,
-                    )
-                    .context(ConfigureLoggingSnafu)?,
-                );
-            }
-            None => {
-                VectorAggregatorConfigMapMissingSnafu.fail()?;
-            }
-        }
-    }
+    add_common_pod_config(&mut pod_builder, &resource_names, service_account)?;
+
+    add_vector_container(
+        &mut pod_builder,
+        kafka,
+        resolved_product_image,
+        merged_config,
+    )?;
 
     add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
 
@@ -834,4 +684,148 @@ fn container_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ContainerPort> {
         });
     }
     ports
+}
+
+/// Adds the env vars that the broker and controller Kafka containers share: the JVM
+/// arguments, log options, the `containerdebug` log directory and the node-id offset.
+fn add_common_kafka_env(
+    cb_kafka: &mut ContainerBuilder,
+    merged_config: &AnyConfig,
+    jvm_argument_overrides: &JvmArgumentOverrides,
+    resolved_product_image: &ResolvedProductImage,
+    kafka_role: &KafkaRole,
+    role_group_name: &RoleGroupName,
+) -> Result<(), Error> {
+    cb_kafka
+        .add_env_var(
+            "EXTRA_ARGS",
+            crate::controller::build::jvm::construct_non_heap_jvm_args(
+                merged_config,
+                jvm_argument_overrides,
+            )
+            .context(ConstructJvmArgumentsSnafu)?,
+        )
+        .add_env_var(
+            KAFKA_HEAP_OPTS,
+            crate::controller::build::jvm::construct_heap_jvm_args(
+                merged_config,
+                jvm_argument_overrides,
+            )
+            .context(ConstructJvmArgumentsSnafu)?,
+        )
+        .add_env_var(
+            kafka_log_opts_env_var(),
+            kafka_log_opts(&resolved_product_image.product_version),
+        )
+        // Needed for the `containerdebug` process to log it's tracing information to.
+        .add_env_var(
+            "CONTAINERDEBUG_LOG_DIRECTORY",
+            format!("{STACKABLE_LOG_DIR}/containerdebug"),
+        )
+        .add_env_var(
+            KAFKA_NODE_ID_OFFSET,
+            node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string(),
+        );
+    Ok(())
+}
+
+/// Adds the `log-config` volume, sourced either from the user-supplied custom log config
+/// `ConfigMap` or the rolegroup `ConfigMap`.
+fn add_log_config_volume(
+    pod_builder: &mut PodBuilder,
+    merged_config: &AnyConfig,
+    resource_names: &ResourceNames,
+) -> Result<(), Error> {
+    if let ContainerLogConfig {
+        choice:
+            Some(ContainerLogConfigChoice::Custom(CustomContainerLogConfig {
+                custom: ConfigMapLogConfig { config_map },
+            })),
+    } = &*merged_config.kafka_logging()
+    {
+        pod_builder
+            .add_volume(
+                VolumeBuilder::new("log-config")
+                    .with_config_map(config_map)
+                    .build(),
+            )
+            .context(AddVolumeSnafu)?;
+    } else {
+        pod_builder
+            .add_volume(
+                VolumeBuilder::new("log-config")
+                    .with_config_map(resource_names.role_group_config_map().to_string())
+                    .build(),
+            )
+            .context(AddVolumeSnafu)?;
+    }
+    Ok(())
+}
+
+/// Adds the `config` volume, the `log` emptyDir, the service account and the pod security
+/// context that the broker and controller pods share.
+fn add_common_pod_config(
+    pod_builder: &mut PodBuilder,
+    resource_names: &ResourceNames,
+    service_account: &ServiceAccount,
+) -> Result<(), Error> {
+    pod_builder
+        .add_volume(Volume {
+            name: "config".to_string(),
+            config_map: Some(ConfigMapVolumeSource {
+                name: resource_names.role_group_config_map().to_string(),
+                ..ConfigMapVolumeSource::default()
+            }),
+            ..Volume::default()
+        })
+        .context(AddVolumeSnafu)?
+        .add_empty_dir_volume(
+            "log",
+            Some(product_logging::framework::calculate_log_volume_size_limit(
+                &[MAX_KAFKA_LOG_FILES_SIZE],
+            )),
+        )
+        .context(AddVolumeSnafu)?
+        .service_account_name(service_account.name_any())
+        .security_context(PodSecurityContextBuilder::new().fs_group(1000).build());
+    Ok(())
+}
+
+/// Adds the Vector log-aggregation sidecar container, when Vector logging is enabled.
+///
+/// Errors if Vector logging is enabled but no Vector aggregator discovery `ConfigMap` is
+/// configured on the cluster.
+fn add_vector_container(
+    pod_builder: &mut PodBuilder,
+    kafka: &v1alpha1::KafkaCluster,
+    resolved_product_image: &ResolvedProductImage,
+    merged_config: &AnyConfig,
+) -> Result<(), Error> {
+    // Add vector container after kafka container to keep the defaulting into kafka container
+    if merged_config.vector_logging_enabled() {
+        match &kafka.spec.cluster_config.vector_aggregator_config_map_name {
+            Some(vector_aggregator_config_map_name) => {
+                pod_builder.add_container(
+                    product_logging::framework::vector_container(
+                        resolved_product_image,
+                        "config",
+                        "log",
+                        Some(&*merged_config.vector_logging()),
+                        ResourceRequirementsBuilder::new()
+                            .with_cpu_request("250m")
+                            .with_cpu_limit("500m")
+                            .with_memory_request("128Mi")
+                            .with_memory_limit("128Mi")
+                            .build(),
+                        vector_aggregator_config_map_name,
+                    )
+                    .context(ConfigureLoggingSnafu)?,
+                );
+            }
+            None => {
+                VectorAggregatorConfigMapMissingSnafu.fail()?;
+            }
+        }
+    }
+    Ok(())
 }
