@@ -57,25 +57,20 @@ use crate::{
         node_id_hasher::node_id_hash32_offset,
     },
     crd::{
-        self, BROKER_ID_POD_MAP_DIR, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
+        BROKER_ID_POD_MAP_DIR, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
-        MetadataManager, STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR,
-        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
-        STACKABLE_LOG_DIR,
+        STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+        STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
         role::{
             AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
         },
         security::KafkaTlsSecurity,
-        v1alpha1,
     },
 };
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("invalid metadata manager"))]
-    InvalidMetadataManager { source: crate::crd::Error },
-
     #[snafu(display("failed to add kerberos config"))]
     AddKerberosConfig {
         source: crate::controller::build::kerberos::Error,
@@ -128,9 +123,6 @@ pub enum Error {
     #[snafu(display("missing secret lifetime"))]
     MissingSecretLifetime,
 
-    #[snafu(display("failed to retrieve rolegroup replicas"))]
-    RoleGroupReplicas { source: crd::role::Error },
-
     #[snafu(display("vector agent is enabled but vector aggregator ConfigMap is missing"))]
     VectorAggregatorConfigMapMissing,
 }
@@ -140,7 +132,6 @@ pub enum Error {
 /// The [`Pod`](`stackable_operator::k8s_openapi::api::core::v1::Pod`)s are accessible through the corresponding
 /// [`Service`](`stackable_operator::k8s_openapi::api::core::v1::Service`) from [`build_rolegroup_headless_service`](`crate::controller::build::resource::service::build_rolegroup_headless_service`).
 pub fn build_broker_rolegroup_statefulset(
-    kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
     role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
@@ -213,7 +204,9 @@ pub fn build_broker_rolegroup_statefulset(
 
     let mut env = Vec::<EnvVar>::from(validated_rg.env_overrides.clone());
 
-    if let Some(zookeeper_config_map_name) = &kafka.spec.cluster_config.zookeeper_config_map_name {
+    if let Some(zookeeper_config_map_name) =
+        &validated_cluster.cluster_config.zookeeper_config_map_name
+    {
         env.push(EnvVar {
             name: "ZOOKEEPER".to_string(),
             value_from: Some(EnvVarSource {
@@ -240,10 +233,6 @@ pub fn build_broker_rolegroup_statefulset(
         ..EnvVar::default()
     });
 
-    let metadata_manager = kafka
-        .effective_metadata_manager()
-        .context(InvalidMetadataManagerSnafu)?;
-
     cb_kafka
         .image_from_product_image(resolved_product_image)
         .command(vec![
@@ -254,7 +243,7 @@ pub fn build_broker_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![broker_kafka_container_commands(
-            metadata_manager == MetadataManager::KRaft,
+            validated_cluster.cluster_config.is_kraft_mode(),
             // we need controller pods
             validated_cluster
                 .pod_descriptors(Some(&KafkaRole::Controller))
@@ -355,8 +344,9 @@ pub fn build_broker_rolegroup_statefulset(
             .context(AddListenerVolumeSnafu)?;
     }
 
-    if let Some(broker_id_config_map_name) =
-        &kafka.spec.cluster_config.broker_id_pod_config_map_name
+    if let Some(broker_id_config_map_name) = &validated_cluster
+        .cluster_config
+        .broker_id_pod_config_map_name
     {
         pod_builder
             .add_volume(
@@ -381,7 +371,7 @@ pub fn build_broker_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        kafka,
+        validated_cluster,
         resolved_product_image,
         merged_config,
     )?;
@@ -411,10 +401,7 @@ pub fn build_broker_rolegroup_statefulset(
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
-            replicas: kafka_role
-                .replicas(kafka, role_group_name.as_ref())
-                .context(RoleGroupReplicasSnafu)?
-                .map(i32::from),
+            replicas: Some(i32::from(validated_rg.replicas)),
             selector: LabelSelector {
                 match_labels: Some(
                     validated_cluster
@@ -434,7 +421,6 @@ pub fn build_broker_rolegroup_statefulset(
 
 /// The controller rolegroup [`StatefulSet`] runs the rolegroup, as configured by the administrator.
 pub fn build_controller_rolegroup_statefulset(
-    kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
     role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
@@ -500,7 +486,9 @@ pub fn build_controller_rolegroup_statefulset(
     });
 
     // Controllers need the ZooKeeper connection string for migration
-    if let Some(zookeeper_config_map_name) = &kafka.spec.cluster_config.zookeeper_config_map_name {
+    if let Some(zookeeper_config_map_name) =
+        &validated_cluster.cluster_config.zookeeper_config_map_name
+    {
         env.push(EnvVar {
             name: "ZOOKEEPER".to_string(),
             value_from: Some(EnvVarSource {
@@ -606,7 +594,7 @@ pub fn build_controller_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        kafka,
+        validated_cluster,
         resolved_product_image,
         merged_config,
     )?;
@@ -636,10 +624,7 @@ pub fn build_controller_rolegroup_statefulset(
                 type_: Some("RollingUpdate".to_string()),
                 ..StatefulSetUpdateStrategy::default()
             }),
-            replicas: kafka_role
-                .replicas(kafka, role_group_name.as_ref())
-                .context(RoleGroupReplicasSnafu)?
-                .map(i32::from),
+            replicas: Some(i32::from(validated_rg.replicas)),
             selector: LabelSelector {
                 match_labels: Some(
                     validated_cluster
@@ -795,13 +780,16 @@ fn add_common_pod_config(
 /// configured on the cluster.
 fn add_vector_container(
     pod_builder: &mut PodBuilder,
-    kafka: &v1alpha1::KafkaCluster,
+    validated_cluster: &ValidatedCluster,
     resolved_product_image: &ResolvedProductImage,
     merged_config: &AnyConfig,
 ) -> Result<(), Error> {
     // Add vector container after kafka container to keep the defaulting into kafka container
     if merged_config.vector_logging_enabled() {
-        match &kafka.spec.cluster_config.vector_aggregator_config_map_name {
+        match &validated_cluster
+            .cluster_config
+            .vector_aggregator_config_map_name
+        {
             Some(vector_aggregator_config_map_name) => {
                 pod_builder.add_container(
                     product_logging::framework::vector_container(

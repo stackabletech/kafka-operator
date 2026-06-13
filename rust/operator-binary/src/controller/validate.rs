@@ -180,11 +180,17 @@ pub fn validate(
             kafka_security,
             authorization_config: dereferenced_objects.authorization_config,
             metadata_manager,
-            disable_broker_id_generation: kafka
+            zookeeper_config_map_name: kafka.spec.cluster_config.zookeeper_config_map_name.clone(),
+            broker_id_pod_config_map_name: kafka
                 .spec
                 .cluster_config
                 .broker_id_pod_config_map_name
-                .is_some(),
+                .clone(),
+            vector_aggregator_config_map_name: kafka
+                .spec
+                .cluster_config
+                .vector_aggregator_config_map_name
+                .clone(),
         },
         role_group_configs,
     ))

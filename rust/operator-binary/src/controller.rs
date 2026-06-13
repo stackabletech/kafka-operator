@@ -339,16 +339,31 @@ pub struct ValidatedClusterConfig {
     pub authorization_config: Option<KafkaAuthorizationConfig>,
     pub metadata_manager: MetadataManager,
 
-    /// Whether the operator must not generate broker ids itself, because the user
-    /// supplied a `broker_id_pod_config_map_name`. Resolved from the raw spec during
-    /// validation so the config-map builder never has to read it.
-    pub disable_broker_id_generation: bool,
+    /// The discovery `ConfigMap` providing the ZooKeeper connection string, if the cluster
+    /// is connected to a ZooKeeper ensemble. Resolved from the raw spec during validation so
+    /// the build steps never have to read it.
+    pub zookeeper_config_map_name: Option<String>,
+
+    /// The `ConfigMap` mapping pods to broker ids, if the user supplied one. Resolved from the
+    /// raw spec during validation so the build steps never have to read it.
+    pub broker_id_pod_config_map_name: Option<String>,
+
+    /// The discovery `ConfigMap` providing the Vector aggregator address, if Vector log
+    /// aggregation is configured. Resolved from the raw spec during validation so the build
+    /// steps never have to read it.
+    pub vector_aggregator_config_map_name: Option<String>,
 }
 
 impl ValidatedClusterConfig {
     /// Whether the cluster runs in KRaft mode (as opposed to ZooKeeper mode).
     pub fn is_kraft_mode(&self) -> bool {
         self.metadata_manager == MetadataManager::KRaft
+    }
+
+    /// Whether the operator must not generate broker ids itself, because the user supplied a
+    /// `broker_id_pod_config_map_name`.
+    pub fn disable_broker_id_generation(&self) -> bool {
+        self.broker_id_pod_config_map_name.is_some()
     }
 
     /// The OPA connect string, if OPA authorization is configured.
@@ -644,7 +659,6 @@ pub async fn reconcile_kafka(
 
             let rg_statefulset = match kafka_role {
                 KafkaRole::Broker => build_broker_rolegroup_statefulset(
-                    kafka,
                     kafka_role,
                     rolegroup_name,
                     &validated_cluster,
@@ -653,7 +667,6 @@ pub async fn reconcile_kafka(
                 )
                 .context(BuildStatefulsetSnafu)?,
                 KafkaRole::Controller => build_controller_rolegroup_statefulset(
-                    kafka,
                     kafka_role,
                     rolegroup_name,
                     &validated_cluster,

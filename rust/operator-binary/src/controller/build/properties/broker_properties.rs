@@ -77,7 +77,7 @@ pub fn build(
         // so we disable automatic id generation.
         // This check ensures that existing clusters running in ZooKeeper mode do not
         // suddenly break after the introduction of this change.
-        if cluster_config.disable_broker_id_generation {
+        if cluster_config.disable_broker_id_generation() {
             result.extend([
                 (
                     "broker.id.generation.enable".to_string(),

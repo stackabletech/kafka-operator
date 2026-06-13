@@ -5,7 +5,6 @@ pub mod controller;
 use std::{borrow::Cow, ops::Deref};
 
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::resources::{NoRuntimeLimits, Resources},
     product_logging::spec::ContainerLogConfig,
@@ -64,18 +63,6 @@ pub const KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: &str = "listener.security.protoc
 /// For example: localhost:9092,localhost:9093,localhost:9094.
 pub const KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS: &str = "controller.quorum.bootstrap.servers";
 
-#[derive(Snafu, Debug)]
-pub enum Error {
-    #[snafu(display("the Kafka role [{role}] is missing from spec"))]
-    MissingRole {
-        source: crate::crd::Error,
-        role: String,
-    },
-
-    #[snafu(display("missing role group {rolegroup:?} for role {role:?}"))]
-    MissingRoleGroup { role: String, rolegroup: String },
-}
-
 #[derive(
     Clone,
     Debug,
@@ -112,45 +99,6 @@ impl KafkaRole {
     /// but is similar to HBase).
     pub fn kerberos_service_name(&self) -> &'static str {
         "kafka"
-    }
-
-    pub fn replicas(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-        rolegroup: &str,
-    ) -> Result<Option<u16>, Error> {
-        let replicas = match self {
-            Self::Broker => {
-                kafka
-                    .broker_role()
-                    .with_context(|_| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?
-                    .role_groups
-                    .get(rolegroup)
-                    .with_context(|| MissingRoleGroupSnafu {
-                        role: self.to_string(),
-                        rolegroup: rolegroup.to_string(),
-                    })?
-                    .replicas
-            }
-            Self::Controller => {
-                kafka
-                    .controller_role()
-                    .with_context(|_| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?
-                    .role_groups
-                    .get(rolegroup)
-                    .with_context(|| MissingRoleGroupSnafu {
-                        role: self.to_string(),
-                        rolegroup: rolegroup.to_string(),
-                    })?
-                    .replicas
-            }
-        };
-
-        Ok(replicas)
     }
 }
 
