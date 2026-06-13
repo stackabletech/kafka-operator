@@ -37,14 +37,19 @@ use stackable_operator::{
 };
 
 use crate::{
-    config::{
-        command::{
-            broker_kafka_container_commands, controller_kafka_container_command, kafka_log_opts,
-            kafka_log_opts_env_var,
+    controller::{
+        RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
+        build::{
+            command::{
+                broker_kafka_container_commands, controller_kafka_container_command,
+                kafka_log_opts, kafka_log_opts_env_var,
+            },
+            graceful_shutdown::add_graceful_shutdown_config,
+            kerberos::add_kerberos_pod_config,
+            properties::logging::MAX_KAFKA_LOG_FILES_SIZE,
         },
         node_id_hasher::node_id_hash32_offset,
     },
-    controller::{RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig},
     crd::{
         self, BROKER_ID_POD_MAP_DIR, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
@@ -58,9 +63,6 @@ use crate::{
         security::KafkaTlsSecurity,
         v1alpha1,
     },
-    kafka_controller::MAX_KAFKA_LOG_FILES_SIZE,
-    kerberos::add_kerberos_pod_config,
-    operations::graceful_shutdown::add_graceful_shutdown_config,
 };
 
 #[derive(Snafu, Debug)]
@@ -69,7 +71,9 @@ pub enum Error {
     InvalidMetadataManager { source: crate::crd::Error },
 
     #[snafu(display("failed to add kerberos config"))]
-    AddKerberosConfig { source: crate::kerberos::Error },
+    AddKerberosConfig {
+        source: crate::controller::build::kerberos::Error,
+    },
 
     #[snafu(display("failed to add listener volume"))]
     AddListenerVolume {
@@ -105,11 +109,13 @@ pub enum Error {
     },
 
     #[snafu(display("failed to construct JVM arguments"))]
-    ConstructJvmArguments { source: crate::config::jvm::Error },
+    ConstructJvmArguments {
+        source: crate::controller::build::jvm::Error,
+    },
 
     #[snafu(display("failed to configure graceful shutdown"))]
     GracefulShutdown {
-        source: crate::operations::graceful_shutdown::Error,
+        source: crate::controller::build::graceful_shutdown::Error,
     },
 
     #[snafu(display("invalid Container name [{name}]"))]
@@ -134,7 +140,7 @@ pub enum Error {
 /// The broker rolegroup [`StatefulSet`] runs the rolegroup, as configured by the administrator.
 ///
 /// The [`Pod`](`stackable_operator::k8s_openapi::api::core::v1::Pod`)s are accessible through the corresponding
-/// [`Service`](`stackable_operator::k8s_openapi::api::core::v1::Service`) from [`build_rolegroup_headless_service`](`crate::resource::service::build_rolegroup_headless_service`).
+/// [`Service`](`stackable_operator::k8s_openapi::api::core::v1::Service`) from [`build_rolegroup_headless_service`](`crate::controller::build::resource::service::build_rolegroup_headless_service`).
 pub fn build_broker_rolegroup_statefulset(
     kafka: &v1alpha1::KafkaCluster,
     kafka_role: &KafkaRole,
@@ -259,7 +265,7 @@ pub fn build_broker_rolegroup_statefulset(
         )])
         .add_env_var(
             "EXTRA_ARGS",
-            crate::config::jvm::construct_non_heap_jvm_args(
+            crate::controller::build::jvm::construct_non_heap_jvm_args(
                 merged_config,
                 &validated_rg.jvm_argument_overrides,
             )
@@ -267,7 +273,7 @@ pub fn build_broker_rolegroup_statefulset(
         )
         .add_env_var(
             KAFKA_HEAP_OPTS,
-            crate::config::jvm::construct_heap_jvm_args(
+            crate::controller::build::jvm::construct_heap_jvm_args(
                 merged_config,
                 &validated_rg.jvm_argument_overrides,
             )
@@ -613,7 +619,7 @@ pub fn build_controller_rolegroup_statefulset(
         .add_env_var("PRE_STOP_CONTROLLER_SLEEP_SECONDS", "10")
         .add_env_var(
             "EXTRA_ARGS",
-            crate::config::jvm::construct_non_heap_jvm_args(
+            crate::controller::build::jvm::construct_non_heap_jvm_args(
                 merged_config,
                 &validated_rg.jvm_argument_overrides,
             )
@@ -621,7 +627,7 @@ pub fn build_controller_rolegroup_statefulset(
         )
         .add_env_var(
             KAFKA_HEAP_OPTS,
-            crate::config::jvm::construct_heap_jvm_args(
+            crate::controller::build::jvm::construct_heap_jvm_args(
                 merged_config,
                 &validated_rg.jvm_argument_overrides,
             )

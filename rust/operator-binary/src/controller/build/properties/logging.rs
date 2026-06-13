@@ -12,13 +12,16 @@ use stackable_operator::{
     role_utils::RoleGroupRef,
 };
 
-use crate::{
-    crd::{
-        ConfigFileName, STACKABLE_LOG_DIR,
-        role::{AnyConfig, broker::BrokerContainer, controller::ControllerContainer},
-        v1alpha1,
-    },
-    kafka_controller::MAX_KAFKA_LOG_FILES_SIZE,
+use crate::crd::{
+    ConfigFileName, STACKABLE_LOG_DIR,
+    role::{AnyConfig, broker::BrokerContainer, controller::ControllerContainer},
+    v1alpha1,
+};
+
+/// The maximum size of a single Kafka log file before it is rotated.
+pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {
+    value: 10.0,
+    unit: BinaryMultiple::Mebi,
 };
 
 const KAFKA_LOG4J_FILE: &str = "kafka.log4j.xml";

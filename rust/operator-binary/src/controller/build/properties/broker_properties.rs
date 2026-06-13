@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use super::kraft_controllers;
 use crate::{
-    controller::ValidatedClusterConfig,
+    controller::{
+        ValidatedClusterConfig, build::graceful_shutdown::graceful_shutdown_config_properties,
+    },
     crd::{
         KafkaPodDescriptor,
         listener::{KafkaListenerConfig, KafkaListenerName},
@@ -12,7 +14,6 @@ use crate::{
             KAFKA_PROCESS_ROLES, KafkaRole,
         },
     },
-    operations::graceful_shutdown::graceful_shutdown_config_properties,
 };
 
 pub fn build(

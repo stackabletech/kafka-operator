@@ -1,21 +1,41 @@
-//! The validated cluster model and the steps that produce it.
+//! The validated cluster model, the reconcile loop, and the steps that produce it.
 //!
 //! [`ValidatedCluster`] carries everything the build steps need, resolved once during
 //! [`validate`] (after [`dereference`]) so downstream code never re-derives it or
-//! touches the raw [`v1alpha1::KafkaCluster`] spec. The reconcile loop that consumes
-//! it lives in [`crate::kafka_controller`].
+//! touches the raw [`v1alpha1::KafkaCluster`] spec. [`reconcile_kafka`] consumes it to
+//! build (under [`build`]) and apply the child resources.
 
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
     str::FromStr,
+    sync::Arc,
 };
 
-use snafu::Snafu;
+use const_format::concatcp;
+use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    commons::{networking::DomainName, product_image_selection::ResolvedProductImage},
-    kube::{Resource, api::ObjectMeta},
+    cli::OperatorEnvironmentOptions,
+    cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
+    commons::{
+        networking::DomainName, product_image_selection::ResolvedProductImage,
+        rbac::build_rbac_resources,
+    },
+    crd::listener,
+    kube::{
+        Resource,
+        api::{DynamicObject, ObjectMeta},
+        core::{DeserializeGuard, error_boundary},
+        runtime::{controller::Action, reflector::ObjectRef},
+    },
     kvp::Labels,
+    logging::controller::ReconcilerError,
+    role_utils::{GenericRoleConfig, RoleGroupRef},
+    shared::time::Duration,
+    status::condition::{
+        compute_conditions, operations::ClusterOperationsConditionBuilder,
+        statefulset::StatefulSetConditionBuilder,
+    },
     v2::{
         HasName, HasUid, NameIsValidLabelValue,
         kvp::label::{recommended_labels, role_group_selector},
@@ -26,9 +46,11 @@ use stackable_operator::{
         },
     },
 };
+use strum::{EnumDiscriminants, IntoStaticStr};
 
 pub(crate) mod build;
 pub(crate) mod dereference;
+pub(crate) mod node_id_hasher;
 pub(crate) mod validate;
 
 /// The type-safe role-group name from stackable-operator's v2 module. Re-exported so the rest
@@ -36,16 +58,31 @@ pub(crate) mod validate;
 pub use stackable_operator::v2::types::operator::{RoleGroupName, RoleName};
 
 use crate::{
-    config::node_id_hasher::node_id_hash32_offset,
+    controller::{
+        build::{
+            properties::listener::get_kafka_listener_config,
+            resource::{
+                listener::build_broker_rolegroup_bootstrap_listener,
+                pdb::add_pdbs,
+                service::{build_rolegroup_headless_service, build_rolegroup_metrics_service},
+                statefulset::{
+                    build_broker_rolegroup_statefulset, build_controller_rolegroup_statefulset,
+                },
+            },
+        },
+        node_id_hasher::node_id_hash32_offset,
+    },
     crd::{
-        APP_NAME, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
+        APP_NAME, KafkaClusterStatus, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
         authorization::KafkaAuthorizationConfig,
         role::{AnyConfig, AnyConfigOverrides, KafkaRole},
         security::KafkaTlsSecurity,
         v1alpha1,
     },
-    kafka_controller::KAFKA_CONTROLLER_NAME,
 };
+
+pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
+pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.', OPERATOR_NAME);
 
 #[derive(Snafu, Debug)]
 pub enum PodDescriptorsError {
@@ -369,6 +406,365 @@ pub struct ValidatedRoleGroupConfig {
     pub pod_overrides: stackable_operator::k8s_openapi::api::core::v1::PodTemplateSpec,
     pub jvm_argument_overrides:
         stackable_operator::v2::jvm_argument_overrides::JvmArgumentOverrides,
+}
+
+pub struct Ctx {
+    pub client: stackable_operator::client::Client,
+    pub operator_environment: OperatorEnvironmentOptions,
+}
+
+#[derive(Snafu, Debug, EnumDiscriminants)]
+#[strum_discriminants(derive(IntoStaticStr))]
+#[allow(clippy::enum_variant_names)]
+pub enum Error {
+    #[snafu(display("failed to dereference resources"))]
+    Dereference { source: dereference::Error },
+
+    #[snafu(display("failed to validate cluster"))]
+    ValidateCluster { source: validate::Error },
+
+    #[snafu(display("failed to apply bootstrap Listener"))]
+    ApplyBootstrapListener {
+        source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to apply Service for {}", rolegroup))]
+    ApplyRoleGroupService {
+        source: stackable_operator::cluster_resources::Error,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
+    },
+
+    #[snafu(display("failed to apply ConfigMap for {}", rolegroup))]
+    ApplyRoleGroupConfig {
+        source: stackable_operator::cluster_resources::Error,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
+    },
+
+    #[snafu(display("failed to apply StatefulSet for {}", rolegroup))]
+    ApplyRoleGroupStatefulSet {
+        source: stackable_operator::cluster_resources::Error,
+        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
+    },
+
+    #[snafu(display("failed to build discovery ConfigMap"))]
+    BuildDiscoveryConfig {
+        source: build::resource::discovery::Error,
+    },
+
+    #[snafu(display("failed to apply discovery ConfigMap"))]
+    ApplyDiscoveryConfig {
+        source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to delete orphaned resources"))]
+    DeleteOrphans {
+        source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to create cluster resources"))]
+    CreateClusterResources {
+        source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to patch service account"))]
+    ApplyServiceAccount {
+        source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to patch role binding"))]
+    ApplyRoleBinding {
+        source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to update status"))]
+    ApplyStatus {
+        source: stackable_operator::client::Error,
+    },
+
+    #[snafu(display("failed to build RBAC resources"))]
+    BuildRbacResources {
+        source: stackable_operator::commons::rbac::Error,
+    },
+
+    #[snafu(display("failed to create PodDisruptionBudget"))]
+    FailedToCreatePdb {
+        source: crate::controller::build::resource::pdb::Error,
+    },
+
+    #[snafu(display("failed to get required Labels"))]
+    GetRequiredLabels {
+        source:
+            stackable_operator::kvp::KeyValuePairError<stackable_operator::kvp::LabelValueError>,
+    },
+
+    #[snafu(display("KafkaCluster object is invalid"))]
+    InvalidKafkaCluster {
+        source: error_boundary::InvalidObject,
+    },
+
+    #[snafu(display("failed to build statefulset"))]
+    BuildStatefulset {
+        source: crate::controller::build::resource::statefulset::Error,
+    },
+
+    #[snafu(display("failed to build configmap"))]
+    BuildConfigMap {
+        source: crate::controller::build::resource::config_map::Error,
+    },
+}
+type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl ReconcilerError for Error {
+    fn category(&self) -> &'static str {
+        ErrorDiscriminants::from(self).into()
+    }
+
+    fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
+        match self {
+            Error::Dereference { .. } => None,
+            Error::ValidateCluster { .. } => None,
+            Error::ApplyBootstrapListener { .. } => None,
+            Error::ApplyRoleGroupService { .. } => None,
+            Error::ApplyRoleGroupConfig { .. } => None,
+            Error::ApplyRoleGroupStatefulSet { .. } => None,
+            Error::BuildDiscoveryConfig { .. } => None,
+            Error::ApplyDiscoveryConfig { .. } => None,
+            Error::DeleteOrphans { .. } => None,
+            Error::CreateClusterResources { .. } => None,
+            Error::ApplyServiceAccount { .. } => None,
+            Error::ApplyRoleBinding { .. } => None,
+            Error::ApplyStatus { .. } => None,
+            Error::BuildRbacResources { .. } => None,
+            Error::FailedToCreatePdb { .. } => None,
+            Error::GetRequiredLabels { .. } => None,
+            Error::InvalidKafkaCluster { .. } => None,
+            Error::BuildStatefulset { .. } => None,
+            Error::BuildConfigMap { .. } => None,
+        }
+    }
+}
+
+pub async fn reconcile_kafka(
+    kafka: Arc<DeserializeGuard<v1alpha1::KafkaCluster>>,
+    ctx: Arc<Ctx>,
+) -> Result<Action> {
+    tracing::info!("Starting reconcile");
+
+    let kafka = kafka
+        .0
+        .as_ref()
+        .map_err(error_boundary::InvalidObject::clone)
+        .context(InvalidKafkaClusterSnafu)?;
+
+    let client = &ctx.client;
+
+    // dereference (client required)
+    let dereferenced_objects = dereference::dereference(client, kafka)
+        .await
+        .context(DereferenceSnafu)?;
+
+    // validate (no client required)
+    let validated_cluster =
+        validate::validate(kafka, dereferenced_objects, &ctx.operator_environment)
+            .context(ValidateClusterSnafu)?;
+
+    let mut cluster_resources = ClusterResources::new(
+        APP_NAME,
+        OPERATOR_NAME,
+        KAFKA_CONTROLLER_NAME,
+        &validated_cluster.object_ref(&()),
+        ClusterResourceApplyStrategy::from(&kafka.spec.cluster_operation),
+        &kafka.spec.object_overrides,
+    )
+    .context(CreateClusterResourcesSnafu)?;
+
+    tracing::debug!(
+        kerberos_enabled = validated_cluster.cluster_config.kafka_security.has_kerberos_enabled(),
+        kerberos_secret_class = ?validated_cluster.cluster_config.kafka_security.kerberos_secret_class(),
+        tls_enabled = validated_cluster.cluster_config.kafka_security.tls_enabled(),
+        tls_client_authentication_class = ?validated_cluster.cluster_config.kafka_security.tls_client_authentication_class(),
+        "The following security settings are used"
+    );
+
+    let mut ss_cond_builder = StatefulSetConditionBuilder::default();
+
+    let (rbac_sa, rbac_rolebinding) = build_rbac_resources(
+        kafka,
+        APP_NAME,
+        cluster_resources
+            .get_required_labels()
+            .context(GetRequiredLabelsSnafu)?,
+    )
+    .context(BuildRbacResourcesSnafu)?;
+
+    let rbac_sa = cluster_resources
+        .add(client, rbac_sa.clone())
+        .await
+        .context(ApplyServiceAccountSnafu)?;
+    cluster_resources
+        .add(client, rbac_rolebinding)
+        .await
+        .context(ApplyRoleBindingSnafu)?;
+
+    let mut bootstrap_listeners = Vec::<listener::v1alpha1::Listener>::new();
+
+    for (kafka_role, rg_map) in &validated_cluster.role_group_configs {
+        for (rolegroup_name, validated_rg) in rg_map {
+            // The Vector log-aggregation config still consumes a v1 `RoleGroupRef`; it is built
+            // here and used only for that. All other identification uses the typed `kafka_role` /
+            // `rolegroup_name` (and `ValidatedCluster::resource_names`).
+            let rolegroup_ref = kafka.rolegroup_ref(kafka_role, rolegroup_name.to_string());
+            let vector_config = build::properties::logging::build_vector_config(
+                &rolegroup_ref,
+                &validated_rg.config,
+            );
+
+            let rg_headless_service = build_rolegroup_headless_service(
+                &validated_cluster,
+                kafka_role,
+                rolegroup_name,
+                &validated_cluster.cluster_config.kafka_security,
+            );
+
+            let rg_metrics_service =
+                build_rolegroup_metrics_service(&validated_cluster, kafka_role, rolegroup_name);
+
+            let kafka_listeners = get_kafka_listener_config(
+                &validated_cluster,
+                &validated_cluster.cluster_config.kafka_security,
+                kafka_role,
+                rolegroup_name,
+                &client.kubernetes_cluster_info,
+            );
+
+            let rg_configmap = build::resource::config_map::build_rolegroup_config_map(
+                &validated_cluster,
+                rolegroup_name,
+                validated_rg,
+                &kafka_listeners,
+                vector_config,
+            )
+            .context(BuildConfigMapSnafu)?;
+
+            let rg_statefulset = match kafka_role {
+                KafkaRole::Broker => build_broker_rolegroup_statefulset(
+                    kafka,
+                    kafka_role,
+                    rolegroup_name,
+                    &validated_cluster,
+                    validated_rg,
+                    &rbac_sa,
+                )
+                .context(BuildStatefulsetSnafu)?,
+                KafkaRole::Controller => build_controller_rolegroup_statefulset(
+                    kafka,
+                    kafka_role,
+                    rolegroup_name,
+                    &validated_cluster,
+                    validated_rg,
+                    &rbac_sa,
+                )
+                .context(BuildStatefulsetSnafu)?,
+            };
+
+            if let AnyConfig::Broker(broker_config) = &validated_rg.config {
+                let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
+                    &validated_cluster,
+                    kafka_role,
+                    rolegroup_name,
+                    broker_config,
+                );
+                bootstrap_listeners.push(
+                    cluster_resources
+                        .add(client, rg_bootstrap_listener)
+                        .await
+                        .context(ApplyBootstrapListenerSnafu)?,
+                );
+            }
+
+            cluster_resources
+                .add(client, rg_headless_service)
+                .await
+                .with_context(|_| ApplyRoleGroupServiceSnafu {
+                    rolegroup: rolegroup_ref.clone(),
+                })?;
+            cluster_resources
+                .add(client, rg_metrics_service)
+                .await
+                .with_context(|_| ApplyRoleGroupServiceSnafu {
+                    rolegroup: rolegroup_ref.clone(),
+                })?;
+            cluster_resources
+                .add(client, rg_configmap)
+                .await
+                .with_context(|_| ApplyRoleGroupConfigSnafu {
+                    rolegroup: rolegroup_ref.clone(),
+                })?;
+
+            // Note: The StatefulSet needs to be applied after all ConfigMaps and Secrets it mounts
+            // to prevent unnecessary Pod restarts.
+            // See https://github.com/stackabletech/commons-operator/issues/111 for details.
+            ss_cond_builder.add(
+                cluster_resources
+                    .add(client, rg_statefulset)
+                    .await
+                    .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
+                        rolegroup: rolegroup_ref.clone(),
+                    })?,
+            );
+        }
+
+        let role_cfg = kafka.role_config(kafka_role);
+        if let Some(GenericRoleConfig {
+            pod_disruption_budget: pdb,
+        }) = role_cfg
+        {
+            add_pdbs(pdb, kafka, kafka_role, client, &mut cluster_resources)
+                .await
+                .context(FailedToCreatePdbSnafu)?;
+        }
+    }
+
+    let discovery_cm = build::resource::discovery::build_discovery_configmap(
+        &validated_cluster,
+        &bootstrap_listeners,
+    )
+    .context(BuildDiscoveryConfigSnafu)?;
+
+    cluster_resources
+        .add(client, discovery_cm)
+        .await
+        .context(ApplyDiscoveryConfigSnafu)?;
+
+    let cluster_operation_cond_builder =
+        ClusterOperationsConditionBuilder::new(&kafka.spec.cluster_operation);
+
+    let status = KafkaClusterStatus {
+        conditions: compute_conditions(kafka, &[&ss_cond_builder, &cluster_operation_cond_builder]),
+    };
+
+    cluster_resources
+        .delete_orphaned_resources(client)
+        .await
+        .context(DeleteOrphansSnafu)?;
+
+    client
+        .apply_patch_status(OPERATOR_NAME, kafka, &status)
+        .await
+        .context(ApplyStatusSnafu)?;
+
+    Ok(Action::await_change())
+}
+
+pub fn error_policy(
+    _obj: Arc<DeserializeGuard<v1alpha1::KafkaCluster>>,
+    error: &Error,
+    _ctx: Arc<Ctx>,
+) -> Action {
+    match error {
+        Error::InvalidKafkaCluster { .. } => Action::await_change(),
+        _ => Action::requeue(*Duration::from_secs(5)),
+    }
 }
 
 #[cfg(test)]
