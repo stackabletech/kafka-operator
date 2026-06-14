@@ -78,6 +78,8 @@ impl KafkaTlsSecurity {
     pub const INTERNAL_PORT: u16 = 19092;
     // - TLS internal
     const INTER_BROKER_LISTENER_NAME: &'static str = "inter.broker.listener.name";
+    // - TLS global
+    const KEYSTORE_P12_FILE_NAME: &'static str = "keystore.p12";
     const OPA_TLS_MOUNT_PATH: &str = "/stackable/tls-opa";
     // opa
     const OPA_TLS_VOLUME_NAME: &str = "tls-opa";
@@ -85,11 +87,8 @@ impl KafkaTlsSecurity {
     pub const SECURE_CLIENT_PORT: u16 = 9093;
     pub const SECURE_CLIENT_PORT_NAME: &'static str = "kafka-tls";
     pub const SECURE_INTERNAL_PORT: u16 = 19093;
-    // - TLS global
-    const KEYSTORE_P12_FILE_NAME: &'static str = "keystore.p12";
     const SSL_STORE_PASSWORD: &'static str = "";
     const SSL_STORE_TYPE_PKCS12: &'static str = "PKCS12";
-    const TRUSTSTORE_P12_FILE_NAME: &'static str = "truststore.p12";
     const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &'static str = "/stackable/tls-kafka-internal";
     const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &'static str = "tls-kafka-internal";
     const STACKABLE_TLS_KAFKA_SERVER_DIR: &'static str = "/stackable/tls-kafka-server";
@@ -97,6 +96,7 @@ impl KafkaTlsSecurity {
     // directories
     const STACKABLE_TLS_KCAT_DIR: &'static str = "/stackable/tls-kcat";
     const STACKABLE_TLS_KCAT_VOLUME_NAME: &'static str = "tls-kcat";
+    const TRUSTSTORE_P12_FILE_NAME: &'static str = "truststore.p12";
 
     #[cfg(test)]
     pub fn new(
