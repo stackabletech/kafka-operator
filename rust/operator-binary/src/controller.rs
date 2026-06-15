@@ -17,10 +17,7 @@ use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     cluster_resources::ClusterResourceApplyStrategy,
-    commons::{
-        networking::DomainName, product_image_selection::ResolvedProductImage,
-        rbac::build_rbac_resources,
-    },
+    commons::{networking::DomainName, product_image_selection::ResolvedProductImage},
     crd::listener,
     kube::{
         Resource,
@@ -65,6 +62,7 @@ use crate::{
             resource::{
                 listener::build_broker_rolegroup_bootstrap_listener,
                 pdb::build_pdb,
+                rbac::{build_rbac_role_binding, build_rbac_service_account},
                 service::{build_rolegroup_headless_service, build_rolegroup_metrics_service},
                 statefulset::{
                     build_broker_rolegroup_statefulset, build_controller_rolegroup_statefulset,
@@ -489,11 +487,6 @@ pub enum Error {
         source: stackable_operator::client::Error,
     },
 
-    #[snafu(display("failed to build RBAC resources"))]
-    BuildRbacResources {
-        source: stackable_operator::commons::rbac::Error,
-    },
-
     #[snafu(display("failed to apply PodDisruptionBudget"))]
     ApplyPdb {
         source: stackable_operator::cluster_resources::Error,
@@ -541,7 +534,6 @@ impl ReconcilerError for Error {
             Error::ApplyServiceAccount { .. } => None,
             Error::ApplyRoleBinding { .. } => None,
             Error::ApplyStatus { .. } => None,
-            Error::BuildRbacResources { .. } => None,
             Error::ApplyPdb { .. } => None,
             Error::GetRequiredLabels { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
@@ -596,14 +588,11 @@ pub async fn reconcile_kafka(
 
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
 
-    let (rbac_sa, rbac_rolebinding) = build_rbac_resources(
-        kafka,
-        APP_NAME,
-        cluster_resources
-            .get_required_labels()
-            .context(GetRequiredLabelsSnafu)?,
-    )
-    .context(BuildRbacResourcesSnafu)?;
+    let required_labels = cluster_resources
+        .get_required_labels()
+        .context(GetRequiredLabelsSnafu)?;
+    let rbac_sa = build_rbac_service_account(&validated_cluster, required_labels.clone());
+    let rbac_rolebinding = build_rbac_role_binding(&validated_cluster, required_labels);
 
     let rbac_sa = cluster_resources
         .add(client, rbac_sa.clone())
