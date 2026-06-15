@@ -59,11 +59,12 @@ pub fn build_rolegroup_metrics_service(
     Service {
         metadata: ObjectMetaBuilder::new()
             .name_and_namespace(validated_cluster)
-            .name(metrics_service_name(
-                validated_cluster,
-                role,
-                role_group_name,
-            ))
+            .name(
+                validated_cluster
+                    .resource_names(role, role_group_name)
+                    .metrics_service_name()
+                    .to_string(),
+            )
             .ownerreference(ownerreference_from_resource(
                 validated_cluster,
                 None,
@@ -88,24 +89,6 @@ pub fn build_rolegroup_metrics_service(
         }),
         status: None,
     }
-}
-
-/// The metrics [`Service`] name, `<cluster>-<role>-<rolegroup>-metrics`.
-///
-/// [`ResourceNames`](stackable_operator::v2::role_group_utils::ResourceNames) has no metrics
-/// service helper, so the `-metrics` suffix is appended to the qualified role-group name (which is
-/// also the StatefulSet name).
-fn metrics_service_name(
-    validated_cluster: &ValidatedCluster,
-    role: &KafkaRole,
-    role_group_name: &RoleGroupName,
-) -> String {
-    format!(
-        "{qualified}-metrics",
-        qualified = validated_cluster
-            .resource_names(role, role_group_name)
-            .stateful_set_name()
-    )
 }
 
 fn metrics_ports() -> Vec<ServicePort> {
