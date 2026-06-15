@@ -21,8 +21,12 @@ use stackable_operator::{
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
     v2::{
-        config_overrides::KeyValueConfigOverrides, role_utils::JavaCommonConfig,
-        types::kubernetes::ConfigMapName,
+        config_overrides::KeyValueConfigOverrides,
+        role_utils::JavaCommonConfig,
+        types::{
+            common::Port,
+            kubernetes::{ConfigMapName, NamespaceName, ServiceName, StatefulSetName},
+        },
     },
     versioned::versioned,
 };
@@ -40,7 +44,7 @@ pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
 pub const FIELD_MANAGER: &str = "kafka-operator";
 // metrics
 pub const METRICS_PORT_NAME: &str = "metrics";
-pub const METRICS_PORT: u16 = 9606;
+pub const METRICS_PORT: Port = Port(9606);
 // env vars
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
@@ -350,16 +354,16 @@ impl v1alpha1::KafkaCluster {
 /// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
 ///
 /// Used for service discovery.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct KafkaPodDescriptor {
-    pub(crate) namespace: String,
-    pub(crate) role_group_statefulset_name: String,
-    pub(crate) role_group_service_name: String,
+    pub(crate) namespace: NamespaceName,
+    pub(crate) role_group_statefulset_name: StatefulSetName,
+    pub(crate) role_group_service_name: ServiceName,
     pub(crate) replica: u16,
     pub(crate) cluster_domain: DomainName,
     pub(crate) node_id: u32,
-    pub role: String,
-    pub client_port: u16,
+    pub role: KafkaRole,
+    pub client_port: Port,
 }
 
 impl KafkaPodDescriptor {

@@ -20,7 +20,7 @@ use stackable_operator::{
     crd::authentication::core,
     k8s_openapi::api::core::v1::Volume,
     shared::time::Duration,
-    v2::types::kubernetes::SecretClassName,
+    v2::types::{common::Port, kubernetes::SecretClassName},
 };
 
 use super::listener::KafkaListenerProtocol;
@@ -66,17 +66,17 @@ pub struct KafkaTlsSecurity {
 }
 
 impl KafkaTlsSecurity {
-    pub const BOOTSTRAP_PORT: u16 = 9094;
+    pub const BOOTSTRAP_PORT: Port = Port(9094);
     // bootstrap: we will have a single named port with different values for
     // secure (9095) and insecure (9094). The bootstrap listener is needed to
     // be able to expose principals for both the broker and bootstrap in the
     // JAAS configuration, so that clients can use both.
     pub const BOOTSTRAP_PORT_NAME: &'static str = "bootstrap";
-    pub const CLIENT_PORT: u16 = 9092;
+    pub const CLIENT_PORT: Port = Port(9092);
     // ports
     pub const CLIENT_PORT_NAME: &'static str = "kafka";
     // internal
-    pub const INTERNAL_PORT: u16 = 19092;
+    pub const INTERNAL_PORT: Port = Port(19092);
     // - TLS internal
     const INTER_BROKER_LISTENER_NAME: &'static str = "inter.broker.listener.name";
     // - TLS global
@@ -84,10 +84,10 @@ impl KafkaTlsSecurity {
     const OPA_TLS_MOUNT_PATH: &str = "/stackable/tls-opa";
     // opa
     const OPA_TLS_VOLUME_NAME: &str = "tls-opa";
-    pub const SECURE_BOOTSTRAP_PORT: u16 = 9095;
-    pub const SECURE_CLIENT_PORT: u16 = 9093;
+    pub const SECURE_BOOTSTRAP_PORT: Port = Port(9095);
+    pub const SECURE_CLIENT_PORT: Port = Port(9093);
     pub const SECURE_CLIENT_PORT_NAME: &'static str = "kafka-tls";
-    pub const SECURE_INTERNAL_PORT: u16 = 19093;
+    pub const SECURE_INTERNAL_PORT: Port = Port(19093);
     const SSL_STORE_PASSWORD: &'static str = "";
     const SSL_STORE_TYPE_PKCS12: &'static str = "PKCS12";
     const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &'static str = "/stackable/tls-kafka-internal";
@@ -222,7 +222,7 @@ impl KafkaTlsSecurity {
     }
 
     /// Return the Kafka (secure) client port depending on tls or authentication settings.
-    pub fn client_port(&self) -> u16 {
+    pub fn client_port(&self) -> Port {
         if self.tls_enabled() {
             Self::SECURE_CLIENT_PORT
         } else {
@@ -230,7 +230,7 @@ impl KafkaTlsSecurity {
         }
     }
 
-    pub fn bootstrap_port(&self) -> u16 {
+    pub fn bootstrap_port(&self) -> Port {
         if self.tls_enabled() {
             Self::SECURE_BOOTSTRAP_PORT
         } else {
@@ -252,7 +252,7 @@ impl KafkaTlsSecurity {
     }
 
     /// Return the Kafka (secure) internal port depending on tls settings.
-    pub fn internal_port(&self) -> u16 {
+    pub fn internal_port(&self) -> Port {
         if self.tls_internal_secret_class().is_some() {
             Self::SECURE_INTERNAL_PORT
         } else {

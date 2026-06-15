@@ -59,7 +59,7 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
 pub(crate) fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
     pod_descriptors
         .iter()
-        .filter(|pd| pd.role == KafkaRole::Controller.to_string())
+        .filter(|pd| pd.role == KafkaRole::Controller)
         .map(|desc| {
             format!(
                 "{fqdn}:{client_port}",

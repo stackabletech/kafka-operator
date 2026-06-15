@@ -191,20 +191,18 @@ impl ValidatedCluster {
 
                 if requested_kafka_role.is_none() || Some(role) == requested_kafka_role {
                     let resource_names = self.resource_names(role, role_group_name);
-                    let role_group_statefulset_name =
-                        resource_names.stateful_set_name().to_string();
-                    let role_group_service_name =
-                        resource_names.headless_service_name().to_string();
+                    let role_group_statefulset_name = resource_names.stateful_set_name();
+                    let role_group_service_name = resource_names.headless_service_name();
                     for replica in 0..validated_rg.replicas {
                         pod_descriptors.push(KafkaPodDescriptor {
-                            namespace: self.namespace.to_string(),
-                            role: role.to_string(),
+                            namespace: self.namespace.clone(),
                             role_group_service_name: role_group_service_name.clone(),
                             role_group_statefulset_name: role_group_statefulset_name.clone(),
                             replica,
                             cluster_domain: self.cluster_domain.clone(),
                             node_id: node_id_hash_offset + u32::from(replica),
-                            client_port,
+                            role: role.clone(),
+                            client_port: client_port.clone(),
                         });
                     }
                 }
