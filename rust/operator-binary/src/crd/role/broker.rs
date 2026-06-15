@@ -8,6 +8,7 @@ use stackable_operator::{
     k8s_openapi::apimachinery::pkg::api::resource::Quantity,
     product_logging::{self, spec::Logging},
     schemars::{self, JsonSchema},
+    v2::types::kubernetes::ListenerClassName,
 };
 use strum::{Display, EnumIter};
 
@@ -34,7 +35,7 @@ pub enum BrokerContainer {
     Kafka,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Fragment, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Fragment, JsonSchema)]
 #[fragment_attrs(
     derive(
         Clone,
@@ -53,10 +54,10 @@ pub struct BrokerConfig {
     pub common_config: CommonConfig,
 
     /// The ListenerClass used for bootstrapping new clients. Should use a stable ListenerClass to avoid unnecessary client restarts (such as `cluster-internal` or `external-stable`).
-    pub bootstrap_listener_class: String,
+    pub bootstrap_listener_class: ListenerClassName,
 
     /// The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
-    pub broker_listener_class: String,
+    pub broker_listener_class: ListenerClassName,
 
     #[fragment_attrs(serde(default))]
     pub logging: Logging<BrokerContainer>,
@@ -69,8 +70,16 @@ impl BrokerConfig {
     pub fn default_config(cluster_name: &str, role: &str) -> BrokerConfigFragment {
         BrokerConfigFragment {
             common_config: CommonConfig::default_config(cluster_name, role),
-            bootstrap_listener_class: Some("cluster-internal".to_string()),
-            broker_listener_class: Some("cluster-internal".to_string()),
+            bootstrap_listener_class: Some(
+                "cluster-internal"
+                    .parse()
+                    .expect("\"cluster-internal\" is a valid listener class name"),
+            ),
+            broker_listener_class: Some(
+                "cluster-internal"
+                    .parse()
+                    .expect("\"cluster-internal\" is a valid listener class name"),
+            ),
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {

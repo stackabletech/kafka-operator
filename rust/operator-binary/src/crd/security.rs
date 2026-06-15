@@ -20,6 +20,7 @@ use stackable_operator::{
     crd::authentication::core,
     k8s_openapi::api::core::v1::Volume,
     shared::time::Duration,
+    v2::types::kubernetes::SecretClassName,
 };
 
 use super::listener::KafkaListenerProtocol;
@@ -59,9 +60,9 @@ pub enum Error {
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
 pub struct KafkaTlsSecurity {
     resolved_authentication_classes: ResolvedAuthenticationClasses,
-    internal_secret_class: String,
-    server_secret_class: Option<String>,
-    opa_secret_class: Option<String>,
+    internal_secret_class: Option<SecretClassName>,
+    server_secret_class: Option<SecretClassName>,
+    opa_secret_class: Option<SecretClassName>,
 }
 
 impl KafkaTlsSecurity {
@@ -101,9 +102,9 @@ impl KafkaTlsSecurity {
     #[cfg(test)]
     pub fn new(
         resolved_authentication_classes: ResolvedAuthenticationClasses,
-        internal_secret_class: String,
-        server_secret_class: Option<String>,
-        opa_secret_class: Option<String>,
+        internal_secret_class: Option<SecretClassName>,
+        server_secret_class: Option<SecretClassName>,
+        opa_secret_class: Option<SecretClassName>,
     ) -> Self {
         Self {
             resolved_authentication_classes,
@@ -120,7 +121,7 @@ impl KafkaTlsSecurity {
     pub fn new_from_kafka_cluster(
         kafka: &v1alpha1::KafkaCluster,
         resolved_authentication_classes: ResolvedAuthenticationClasses,
-        opa_secret_class: Option<String>,
+        opa_secret_class: Option<SecretClassName>,
     ) -> Self {
         KafkaTlsSecurity {
             resolved_authentication_classes,
@@ -154,7 +155,7 @@ impl KafkaTlsSecurity {
 
     /// Retrieve an optional TLS secret class for external client -> server communications.
     pub fn tls_server_secret_class(&self) -> Option<&str> {
-        self.server_secret_class.as_deref()
+        self.server_secret_class.as_ref().map(|s| s.as_ref())
     }
 
     /// Retrieve an optional TLS `AuthenticationClass`.
@@ -163,13 +164,11 @@ impl KafkaTlsSecurity {
             .get_tls_authentication_class()
     }
 
-    /// Retrieve the mandatory internal `SecretClass`.
+    /// Retrieve the optional internal `SecretClass`.
+    ///
+    /// Returns `None` when internal TLS is disabled (a plaintext cluster).
     pub fn tls_internal_secret_class(&self) -> Option<&str> {
-        if !self.internal_secret_class.is_empty() {
-            Some(self.internal_secret_class.as_str())
-        } else {
-            None
-        }
+        self.internal_secret_class.as_ref().map(|s| s.as_ref())
     }
 
     pub fn has_kerberos_enabled(&self) -> bool {
@@ -724,16 +723,16 @@ impl KafkaTlsSecurity {
     }
 
     /// Returns the `SecretClass` provided in a `AuthenticationClass` for TLS.
-    fn get_tls_secret_class(&self) -> Option<&String> {
+    fn get_tls_secret_class(&self) -> Option<&str> {
         self.resolved_authentication_classes
             .get_tls_authentication_class()
             .and_then(|auth_class| match &auth_class.spec.provider {
                 core::v1alpha1::AuthenticationClassProvider::Tls(tls) => {
-                    tls.client_cert_secret_class.as_ref()
+                    tls.client_cert_secret_class.as_deref()
                 }
                 _ => None,
             })
-            .or(self.server_secret_class.as_ref())
+            .or_else(|| self.server_secret_class.as_ref().map(|s| s.as_ref()))
     }
 
     /// Creates ephemeral volumes to mount the `SecretClass` into the Pods for kcat client

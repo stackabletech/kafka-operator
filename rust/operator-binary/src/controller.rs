@@ -42,7 +42,7 @@ use stackable_operator::{
         kvp::label::{recommended_labels, role_group_selector},
         role_group_utils::ResourceNames,
         types::{
-            kubernetes::{NamespaceName, Uid},
+            kubernetes::{ConfigMapName, NamespaceName, Uid},
             operator::{ClusterName, ControllerName, OperatorName, ProductName, ProductVersion},
         },
     },
@@ -342,11 +342,11 @@ pub struct ValidatedClusterConfig {
     /// The discovery `ConfigMap` providing the ZooKeeper connection string, if the cluster
     /// is connected to a ZooKeeper ensemble. Resolved from the raw spec during validation so
     /// the build steps never have to read it.
-    pub zookeeper_config_map_name: Option<String>,
+    pub zookeeper_config_map_name: Option<ConfigMapName>,
 
     /// The `ConfigMap` mapping pods to broker ids, if the user supplied one. Resolved from the
     /// raw spec during validation so the build steps never have to read it.
-    pub broker_id_pod_config_map_name: Option<String>,
+    pub broker_id_pod_config_map_name: Option<ConfigMapName>,
 }
 
 impl ValidatedClusterConfig {

@@ -231,8 +231,8 @@ mod tests {
                     ),
                 },
             }]),
-            "internalTls".to_string(),
-            Some("tls".to_string()),
+            Some("internal-tls".parse().unwrap()),
+            Some("tls".parse().unwrap()),
             None,
         );
         let cluster_info = default_cluster_info();
@@ -296,8 +296,8 @@ mod tests {
 
         let kafka_security = KafkaTlsSecurity::new(
             ResolvedAuthenticationClasses::new(vec![]),
-            "tls".to_string(),
-            Some("tls".to_string()),
+            Some("tls".parse().unwrap()),
+            Some("tls".parse().unwrap()),
             None,
         );
         let config = get_kafka_listener_config(
@@ -357,12 +357,8 @@ mod tests {
             )
         );
 
-        let kafka_security = KafkaTlsSecurity::new(
-            ResolvedAuthenticationClasses::new(vec![]),
-            "".to_string(),
-            None,
-            None,
-        );
+        let kafka_security =
+            KafkaTlsSecurity::new(ResolvedAuthenticationClasses::new(vec![]), None, None, None);
 
         let config = get_kafka_listener_config(
             &validated,
@@ -456,8 +452,8 @@ mod tests {
                     ),
                 },
             }]),
-            "tls".to_string(),
-            Some("tls".to_string()),
+            Some("tls".parse().unwrap()),
+            Some("tls".parse().unwrap()),
             None,
         );
         let cluster_info = default_cluster_info();

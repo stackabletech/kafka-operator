@@ -9,7 +9,7 @@ use stackable_operator::{
     commons::resources::{NoRuntimeLimits, Resources},
     product_logging::spec::ContainerLogConfig,
     schemars::{self, JsonSchema},
-    v2::config_overrides::KeyValueConfigOverrides,
+    v2::{config_overrides::KeyValueConfigOverrides, types::kubernetes::ListenerClassName},
 };
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
@@ -147,7 +147,7 @@ impl AnyConfig {
         }
     }
 
-    pub fn listener_class(&self) -> Option<&String> {
+    pub fn listener_class(&self) -> Option<&ListenerClassName> {
         match self {
             AnyConfig::Broker(broker_config) => Some(&broker_config.broker_listener_class),
             AnyConfig::Controller(_) => None,

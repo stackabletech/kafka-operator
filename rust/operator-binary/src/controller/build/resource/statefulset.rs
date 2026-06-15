@@ -335,7 +335,7 @@ pub fn build_broker_rolegroup_statefulset(
         pod_builder
             .add_listener_volume_by_listener_class(
                 LISTENER_BROKER_VOLUME_NAME,
-                listener_class,
+                listener_class.as_ref(),
                 &recommended_labels,
             )
             .context(AddListenerVolumeSnafu)?;

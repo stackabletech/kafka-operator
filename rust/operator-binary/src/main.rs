@@ -217,9 +217,16 @@ fn references_config_map(
         return false;
     };
 
-    kafka.spec.cluster_config.zookeeper_config_map_name == Some(config_map.name_any())
+    let config_map_name = config_map.name_any();
+
+    kafka
+        .spec
+        .cluster_config
+        .zookeeper_config_map_name
+        .as_ref()
+        .is_some_and(|name| name.to_string() == config_map_name)
         || match &kafka.spec.cluster_config.authorization.opa {
-            Some(opa_config) => opa_config.config_map_name == config_map.name_any(),
+            Some(opa_config) => opa_config.config_map_name == config_map_name,
             None => false,
         }
 }

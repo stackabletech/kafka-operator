@@ -34,7 +34,7 @@ pub fn build_broker_rolegroup_bootstrap_listener(
             .with_labels(validated_cluster.recommended_labels(role, role_group_name))
             .build(),
         spec: listener::v1alpha1::ListenerSpec {
-            class_name: Some(merged_config.bootstrap_listener_class.clone()),
+            class_name: Some(merged_config.bootstrap_listener_class.to_string()),
             ports: Some(bootstrap_listener_ports(kafka_security)),
             ..listener::v1alpha1::ListenerSpec::default()
         },

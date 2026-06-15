@@ -105,11 +105,6 @@ pub enum Error {
         "the Vector aggregator discovery ConfigMap name is required when the Vector agent is enabled"
     ))]
     MissingVectorAggregatorConfigMapName,
-
-    #[snafu(display("the Vector aggregator discovery ConfigMap name is invalid"))]
-    ParseVectorAggregatorConfigMapName {
-        source: stackable_operator::v2::macros::attributed_string_type::Error,
-    },
 }
 
 /// Validated logging configuration for a Kafka role group's Kafka and (optional) Vector
@@ -224,17 +219,14 @@ pub fn validate(
 
     let cluster_id = kafka.cluster_id();
 
-    // The Vector aggregator discovery ConfigMap name, validated up-front so an invalid name
-    // fails reconciliation here rather than at resource-build time. It is only required (per
-    // role group) when the Vector agent is enabled; see [`validate_logging`].
+    // The Vector aggregator discovery ConfigMap name. Validity is enforced by the `ConfigMapName`
+    // type on the CRD field. It is only required (per role group) when the Vector agent is
+    // enabled; see [`validate_logging`].
     let vector_aggregator_config_map_name = kafka
         .spec
         .cluster_config
         .vector_aggregator_config_map_name
-        .as_deref()
-        .map(ConfigMapName::from_str)
-        .transpose()
-        .context(ParseVectorAggregatorConfigMapNameSnafu)?;
+        .clone();
 
     let mut role_group_configs: BTreeMap<
         KafkaRole,
