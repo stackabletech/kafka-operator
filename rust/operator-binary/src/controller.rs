@@ -27,7 +27,7 @@ use stackable_operator::{
     },
     kvp::Labels,
     logging::controller::ReconcilerError,
-    role_utils::{GenericRoleConfig, RoleGroupRef},
+    role_utils::GenericRoleConfig,
     shared::time::Duration,
     status::condition::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
@@ -437,22 +437,22 @@ pub enum Error {
         source: stackable_operator::cluster_resources::Error,
     },
 
-    #[snafu(display("failed to apply Service for {}", rolegroup))]
+    #[snafu(display("failed to apply Service for role group {role_group}"))]
     ApplyRoleGroupService {
         source: stackable_operator::cluster_resources::Error,
-        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
+        role_group: RoleGroupName,
     },
 
-    #[snafu(display("failed to apply ConfigMap for {}", rolegroup))]
+    #[snafu(display("failed to apply ConfigMap for role group {role_group}"))]
     ApplyRoleGroupConfig {
         source: stackable_operator::cluster_resources::Error,
-        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
+        role_group: RoleGroupName,
     },
 
-    #[snafu(display("failed to apply StatefulSet for {}", rolegroup))]
+    #[snafu(display("failed to apply StatefulSet for role group {role_group}"))]
     ApplyRoleGroupStatefulSet {
         source: stackable_operator::cluster_resources::Error,
-        rolegroup: RoleGroupRef<v1alpha1::KafkaCluster>,
+        role_group: RoleGroupName,
     },
 
     #[snafu(display("failed to build discovery ConfigMap"))]
@@ -605,10 +605,6 @@ pub async fn reconcile_kafka(
 
     for (kafka_role, rg_map) in &validated_cluster.role_group_configs {
         for (rolegroup_name, validated_rg) in rg_map {
-            // `rolegroup_ref` is a v1 `RoleGroupRef` retained only for the error context of the
-            // per-rolegroup apply calls below. All other identification uses the typed
-            // `kafka_role` / `rolegroup_name` (and `ValidatedCluster::resource_names`).
-            let rolegroup_ref = kafka.rolegroup_ref(kafka_role, rolegroup_name.to_string());
             // The Vector agent config is the static `vector.yaml`, added to the rolegroup
             // ConfigMap only when the Vector agent is enabled (resolved during validation).
             let vector_config = validated_rg
@@ -682,19 +678,19 @@ pub async fn reconcile_kafka(
                 .add(client, rg_headless_service)
                 .await
                 .with_context(|_| ApplyRoleGroupServiceSnafu {
-                    rolegroup: rolegroup_ref.clone(),
+                    role_group: rolegroup_name.clone(),
                 })?;
             cluster_resources
                 .add(client, rg_metrics_service)
                 .await
                 .with_context(|_| ApplyRoleGroupServiceSnafu {
-                    rolegroup: rolegroup_ref.clone(),
+                    role_group: rolegroup_name.clone(),
                 })?;
             cluster_resources
                 .add(client, rg_configmap)
                 .await
                 .with_context(|_| ApplyRoleGroupConfigSnafu {
-                    rolegroup: rolegroup_ref.clone(),
+                    role_group: rolegroup_name.clone(),
                 })?;
 
             // Note: The StatefulSet needs to be applied after all ConfigMaps and Secrets it mounts
@@ -705,7 +701,7 @@ pub async fn reconcile_kafka(
                     .add(client, rg_statefulset)
                     .await
                     .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
-                        rolegroup: rolegroup_ref.clone(),
+                        role_group: rolegroup_name.clone(),
                     })?,
             );
         }

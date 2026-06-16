@@ -41,8 +41,8 @@ const CONSOLE_CONVERSION_PATTERN_LOG4J2: &str = "%d{ISO8601} %p [%t] %c - %m%n";
 
 /// Get the role group ConfigMap data with the log4j/log4j2 logging configuration.
 ///
-/// The Vector agent config is built separately via [`build_vector_config`] (which needs a
-/// [`RoleGroupRef`]) and added by the caller.
+/// The Vector agent config (`vector.yaml`) is provided separately via
+/// [`vector_config_file_content`] and added by the caller.
 pub fn role_group_config_map_data(
     product_version: &str,
     merged_config: &AnyConfig,

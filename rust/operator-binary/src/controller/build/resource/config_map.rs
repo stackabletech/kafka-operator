@@ -58,9 +58,9 @@ pub enum Error {
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator.
 ///
-/// `vector_config` is the Vector agent config built by the caller (where a `RoleGroupRef` is
-/// available); it is `None` when the Vector agent is disabled. Resource naming and labels use the
-/// role (derived from `validated_rg.config`) and the typed `role_group_name`.
+/// `vector_config` is the static Vector agent config (`vector.yaml`) added by the caller; it is
+/// `None` when the Vector agent is disabled. Resource naming and labels use the role (derived
+/// from `validated_rg.config`) and the typed `role_group_name`.
 pub fn build_rolegroup_config_map(
     validated_cluster: &ValidatedCluster,
     role_group_name: &RoleGroupName,

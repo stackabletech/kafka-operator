@@ -17,7 +17,7 @@ use stackable_operator::{
     config::merge::Merge,
     deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
-    role_utils::{GenericRoleConfig, Role, RoleGroupRef},
+    role_utils::{GenericRoleConfig, Role},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
     v2::{
@@ -321,19 +321,6 @@ impl v1alpha1::KafkaCluster {
             })
     }
 
-    /// Metadata about a rolegroup
-    pub fn rolegroup_ref(
-        &self,
-        role: &KafkaRole,
-        group_name: impl Into<String>,
-    ) -> RoleGroupRef<Self> {
-        RoleGroupRef {
-            cluster: ObjectRef::from_obj(self),
-            role: role.to_string(),
-            role_group: group_name.into(),
-        }
-    }
-
     pub fn role_config(&self, role: &KafkaRole) -> Option<&GenericRoleConfig> {
         match role {
             KafkaRole::Broker => self.spec.brokers.as_ref().map(|b| &b.role_config),
@@ -344,12 +331,6 @@ impl v1alpha1::KafkaCluster {
     pub fn broker_role(&self) -> Result<&BrokerRole, Error> {
         self.spec.brokers.as_ref().context(MissingRoleSnafu {
             role: KafkaRole::Broker.to_string(),
-        })
-    }
-
-    pub fn controller_role(&self) -> Result<&ControllerRole, Error> {
-        self.spec.controllers.as_ref().context(MissingRoleSnafu {
-            role: KafkaRole::Controller.to_string(),
         })
     }
 }
