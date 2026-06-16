@@ -9,13 +9,11 @@ use stackable_operator::{
         self,
         spec::{ContainerLogConfig, ContainerLogConfigChoice},
     },
+    v2::product_logging::framework::STACKABLE_LOG_DIR,
 };
 
 use super::ConfigFileName;
-use crate::crd::{
-    STACKABLE_LOG_DIR,
-    role::{AnyConfig, broker::BrokerContainer, controller::ControllerContainer},
-};
+use crate::crd::role::{AnyConfig, broker::BrokerContainer, controller::ControllerContainer};
 
 /// The maximum size of a single Kafka log file before it is rotated.
 pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {

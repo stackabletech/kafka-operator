@@ -34,7 +34,9 @@ use stackable_operator::{
             },
         },
         jvm_argument_overrides::JvmArgumentOverrides,
-        product_logging::framework::{ValidatedContainerLogConfigChoice, vector_container},
+        product_logging::framework::{
+            STACKABLE_LOG_DIR, ValidatedContainerLogConfigChoice, vector_container,
+        },
         role_group_utils::ResourceNames,
         types::kubernetes::{ContainerName, ListenerName, PersistentVolumeClaimName, VolumeName},
     },
@@ -59,7 +61,7 @@ use crate::{
         BROKER_ID_POD_MAP_DIR, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
         LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
         STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_DIR,
+        STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
         role::{
             AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
