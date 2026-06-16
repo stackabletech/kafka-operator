@@ -110,9 +110,9 @@ pub enum Error {
 /// Validated logging configuration for a Kafka role group's Kafka and (optional) Vector
 /// containers.
 ///
-/// Produced up-front by [`validate_logging`] (mirroring the hive-/opensearch-operator) so that
-/// an invalid custom log `ConfigMap` name or a missing Vector aggregator discovery `ConfigMap`
-/// name fails reconciliation during validation rather than at resource-build time.
+/// Produced up-front by [`validate_logging`] so that an invalid custom log `ConfigMap` name or a
+/// missing Vector aggregator discovery `ConfigMap` name fails reconciliation during validation
+/// rather than at resource-build time.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedLogging {
     pub kafka_container: ValidatedContainerLogConfigChoice,

@@ -1,6 +1,6 @@
 //! Builds the cluster-wide RBAC resources (`ServiceAccount` and `RoleBinding`).
 //!
-//! The names come from the v2 [`ResourceNames`](stackable_operator::v2::role_utils::ResourceNames)
+//! The names come from [`ResourceNames`](stackable_operator::v2::role_utils::ResourceNames)
 //! and are identical to the previously used `commons::rbac::build_rbac_resources`
 //! (`<cluster>-serviceaccount`, `<cluster>-rolebinding`, `<product>-clusterrole`), so switching to
 //! this builder does not rename any RBAC objects.

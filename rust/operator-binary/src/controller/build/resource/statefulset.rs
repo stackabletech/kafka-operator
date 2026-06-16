@@ -765,12 +765,12 @@ fn add_common_pod_config(
     Ok(())
 }
 
-/// Adds the v2 Vector log-aggregation sidecar container, when the Vector agent is enabled.
+/// Adds the Vector log-aggregation sidecar container, when the Vector agent is enabled.
 ///
 /// Whether Vector is enabled, the per-container log config and the (validated) aggregator
 /// discovery `ConfigMap` name are resolved up-front in
 /// [`ValidatedLogging`](crate::controller::validate::ValidatedLogging). The container mounts the
-/// static `vector.yaml` from the `config` volume and is driven by the env vars the v2
+/// static `vector.yaml` from the `config` volume and is driven by the env vars the
 /// [`vector_container`] sets.
 fn add_vector_container(
     pod_builder: &mut PodBuilder,

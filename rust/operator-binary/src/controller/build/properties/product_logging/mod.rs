@@ -26,7 +26,7 @@ const KAFKA_LOG4J2_FILE: &str = "kafka.log4j2.xml";
 
 /// The static, env-driven Vector agent configuration (`vector.yaml`).
 ///
-/// The v2 [`vector_container`](stackable_operator::v2::product_logging::framework::vector_container)
+/// The [`vector_container`](stackable_operator::v2::product_logging::framework::vector_container)
 /// mounts this file and supplies its `${...}` values (`LOG_DIR`, `DATA_DIR`, `NAMESPACE`,
 /// `CLUSTER_NAME`, `ROLE_NAME`, `ROLE_GROUP_NAME`, `VECTOR_AGGREGATOR_ADDRESS`) as env vars.
 const VECTOR_CONFIG: &str = include_str!("vector.yaml");

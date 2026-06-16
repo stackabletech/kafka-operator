@@ -50,7 +50,7 @@ pub(crate) mod dereference;
 pub(crate) mod node_id_hasher;
 pub(crate) mod validate;
 
-/// The type-safe role-group name from stackable-operator's v2 module. Re-exported so the rest
+/// The type-safe role-group name from stackable-operator. Re-exported so the rest
 /// of the operator can refer to it as `controller::RoleGroupName`.
 pub use stackable_operator::v2::types::operator::{RoleGroupName, RoleName};
 
@@ -101,7 +101,6 @@ pub enum PodDescriptorsError {
 /// The cluster identity (`name`, `namespace`, `uid`) is captured here so that owner
 /// references for child objects can be built straight from this struct (via its
 /// [`Resource`] impl) without threading the raw [`v1alpha1::KafkaCluster`] around.
-/// This mirrors the hive-/opensearch-operator's `ValidatedCluster`.
 pub struct ValidatedCluster {
     /// `ObjectMeta` carrying `name`, `namespace` and `uid`, so this struct can act as the
     /// owner [`Resource`] for child objects.
