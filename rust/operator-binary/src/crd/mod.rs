@@ -321,13 +321,6 @@ impl v1alpha1::KafkaCluster {
             })
     }
 
-    pub fn role_config(&self, role: &KafkaRole) -> Option<&GenericRoleConfig> {
-        match role {
-            KafkaRole::Broker => self.spec.brokers.as_ref().map(|b| &b.role_config),
-            KafkaRole::Controller => self.spec.controllers.as_ref().map(|b| &b.role_config),
-        }
-    }
-
     pub fn broker_role(&self) -> Result<&BrokerRole, Error> {
         self.spec.brokers.as_ref().context(MissingRoleSnafu {
             role: KafkaRole::Broker.to_string(),

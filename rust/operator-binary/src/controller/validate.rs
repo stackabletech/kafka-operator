@@ -29,8 +29,8 @@ use stackable_operator::{
 
 use crate::{
     controller::{
-        RoleGroupName, ValidatedCluster, ValidatedClusterConfig, ValidatedRoleGroupConfig,
-        dereference::DereferencedObjects,
+        RoleGroupName, ValidatedCluster, ValidatedClusterConfig, ValidatedRoleConfig,
+        ValidatedRoleGroupConfig, dereference::DereferencedObjects,
     },
     crd::{
         self, CONTAINER_IMAGE_BASE_NAME,
@@ -228,6 +228,7 @@ pub fn validate(
         .vector_aggregator_config_map_name
         .clone();
 
+    let mut role_configs: BTreeMap<KafkaRole, ValidatedRoleConfig> = BTreeMap::new();
     let mut role_group_configs: BTreeMap<
         KafkaRole,
         BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>,
@@ -246,10 +247,16 @@ pub fn validate(
         validate_broker_logging,
         &vector_aggregator_config_map_name,
     )?;
+    role_configs.insert(
+        KafkaRole::Broker,
+        ValidatedRoleConfig {
+            pdb: broker_role.role_config.pod_disruption_budget.clone(),
+        },
+    );
     role_group_configs.insert(KafkaRole::Broker, broker_groups);
 
-    // Controllers are optional: ZooKeeper-mode clusters have none, and `controller_role()`
-    // errors when `controllers` is unset, which would stop their reconciliation.
+    // Controllers are optional: ZooKeeper-mode clusters have none, in which case they are simply
+    // absent from both maps and not reconciled.
     if let Some(controller_role) = kafka.spec.controllers.as_ref() {
         let controller_groups = validate_role_group_configs(
             controller_role,
@@ -260,6 +267,12 @@ pub fn validate(
             validate_controller_logging,
             &vector_aggregator_config_map_name,
         )?;
+        role_configs.insert(
+            KafkaRole::Controller,
+            ValidatedRoleConfig {
+                pdb: controller_role.role_config.pod_disruption_budget.clone(),
+            },
+        );
         role_group_configs.insert(KafkaRole::Controller, controller_groups);
     }
 
@@ -292,6 +305,7 @@ pub fn validate(
                 .broker_id_pod_config_map_name
                 .clone(),
         },
+        role_configs,
         role_group_configs,
     ))
 }

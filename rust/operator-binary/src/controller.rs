@@ -27,7 +27,6 @@ use stackable_operator::{
     },
     kvp::Labels,
     logging::controller::ReconcilerError,
-    role_utils::GenericRoleConfig,
     shared::time::Duration,
     status::condition::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
@@ -119,10 +118,13 @@ pub struct ValidatedCluster {
     /// value.
     pub product_version: ProductVersion,
     pub cluster_config: ValidatedClusterConfig,
+    /// Per-role configuration (e.g. the Pod disruption budget), keyed by role.
+    pub role_configs: BTreeMap<KafkaRole, ValidatedRoleConfig>,
     pub role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
 }
 
 impl ValidatedCluster {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: ClusterName,
         namespace: NamespaceName,
@@ -130,6 +132,7 @@ impl ValidatedCluster {
         cluster_domain: DomainName,
         image: ResolvedProductImage,
         cluster_config: ValidatedClusterConfig,
+        role_configs: BTreeMap<KafkaRole, ValidatedRoleConfig>,
         role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
     ) -> Self {
         // `app_version_label_value` is constructed to be a valid label value, so it is also a
@@ -150,6 +153,7 @@ impl ValidatedCluster {
             image,
             product_version,
             cluster_config,
+            role_configs,
             role_group_configs,
         }
     }
@@ -363,6 +367,15 @@ impl ValidatedClusterConfig {
             .as_ref()
             .map(|auth_config| auth_config.opa_connect.as_str())
     }
+}
+
+/// Per-role configuration extracted during validation.
+///
+/// Resolved from the raw [`v1alpha1::KafkaCluster`] spec during validation so the reconcile loop
+/// never has to read it. Kafka's `GenericRoleConfig` only carries the Pod disruption budget.
+#[derive(Clone, Debug)]
+pub struct ValidatedRoleConfig {
+    pub pdb: stackable_operator::commons::pdb::PdbConfig,
 }
 
 /// Lets [`ValidatedCluster`] act as the owner [`Resource`] for child objects, so owner
@@ -706,11 +719,8 @@ pub async fn reconcile_kafka(
             );
         }
 
-        let role_cfg = kafka.role_config(kafka_role);
-        if let Some(GenericRoleConfig {
-            pod_disruption_budget: pdb,
-        }) = role_cfg
-            && let Some(pdb) = build_pdb(pdb, &validated_cluster, kafka_role)
+        if let Some(role_config) = validated_cluster.role_configs.get(kafka_role)
+            && let Some(pdb) = build_pdb(&role_config.pdb, &validated_cluster, kafka_role)
         {
             cluster_resources
                 .add(client, pdb)
