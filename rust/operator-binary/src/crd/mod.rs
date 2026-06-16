@@ -56,12 +56,16 @@ pub const STACKABLE_LISTENER_BROKER_DIR: &str = "/stackable/listener-broker";
 pub const STACKABLE_LISTENER_BOOTSTRAP_DIR: &str = "/stackable/listener-bootstrap";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
+pub const STACKABLE_CONFIG_DIR_NAME: &str = "config";
 // kerberos
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
 pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 // logging
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
+pub const STACKABLE_LOG_CONFIG_DIR_NAME: &str = "log-config";
+pub const STACKABLE_LOG_DIR_NAME: &str = "log";
 pub const BROKER_ID_POD_MAP_DIR: &str = "/stackable/broker-id-pod-map";
+pub const BROKER_ID_POD_MAP_DIR_NAME: &str = "broker-id-pod-map-dir";
 
 #[derive(Snafu, Debug)]
 pub enum Error {

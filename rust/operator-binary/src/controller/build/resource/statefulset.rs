@@ -58,10 +58,11 @@ use crate::{
         validate::ValidatedLogging,
     },
     crd::{
-        BROKER_ID_POD_MAP_DIR, KAFKA_HEAP_OPTS, LISTENER_BOOTSTRAP_VOLUME_NAME,
-        LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME, METRICS_PORT, METRICS_PORT_NAME,
-        STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
+        BROKER_ID_POD_MAP_DIR, BROKER_ID_POD_MAP_DIR_NAME, KAFKA_HEAP_OPTS,
+        LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
+        METRICS_PORT, METRICS_PORT_NAME, STACKABLE_CONFIG_DIR, STACKABLE_CONFIG_DIR_NAME,
+        STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
+        STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_DIR_NAME,
         role::{
             AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
@@ -269,7 +270,7 @@ pub fn build_broker_rolegroup_statefulset(
         .add_container_ports(container_ports(kafka_security))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .context(AddVolumeMountSnafu)?
-        .add_volume_mount("config", STACKABLE_CONFIG_DIR)
+        .add_volume_mount(STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
         .context(AddVolumeMountSnafu)?
         .add_volume_mount(
             LISTENER_BOOTSTRAP_VOLUME_NAME,
@@ -278,9 +279,9 @@ pub fn build_broker_rolegroup_statefulset(
         .context(AddVolumeMountSnafu)?
         .add_volume_mount(LISTENER_BROKER_VOLUME_NAME, STACKABLE_LISTENER_BROKER_DIR)
         .context(AddVolumeMountSnafu)?
-        .add_volume_mount("log-config", STACKABLE_LOG_CONFIG_DIR)
+        .add_volume_mount(STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_CONFIG_DIR)
         .context(AddVolumeMountSnafu)?
-        .add_volume_mount("log", STACKABLE_LOG_DIR)
+        .add_volume_mount(STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
         .context(AddVolumeMountSnafu)?
         .resources(merged_config.resources().clone().into());
 
@@ -349,13 +350,13 @@ pub fn build_broker_rolegroup_statefulset(
     {
         pod_builder
             .add_volume(
-                VolumeBuilder::new("broker-id-pod-map-dir")
+                VolumeBuilder::new(BROKER_ID_POD_MAP_DIR_NAME)
                     .with_config_map(broker_id_config_map_name)
                     .build(),
             )
             .context(AddVolumeSnafu)?;
         cb_kafka
-            .add_volume_mount("broker-id-pod-map-dir", BROKER_ID_POD_MAP_DIR)
+            .add_volume_mount(BROKER_ID_POD_MAP_DIR_NAME, BROKER_ID_POD_MAP_DIR)
             .context(AddVolumeMountSnafu)?;
     }
 
@@ -533,11 +534,11 @@ pub fn build_controller_rolegroup_statefulset(
         .add_container_ports(container_ports(kafka_security))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .context(AddVolumeMountSnafu)?
-        .add_volume_mount("config", STACKABLE_CONFIG_DIR)
+        .add_volume_mount(STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
         .context(AddVolumeMountSnafu)?
-        .add_volume_mount("log-config", STACKABLE_LOG_CONFIG_DIR)
+        .add_volume_mount(STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_CONFIG_DIR)
         .context(AddVolumeMountSnafu)?
-        .add_volume_mount("log", STACKABLE_LOG_DIR)
+        .add_volume_mount(STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
         .context(AddVolumeMountSnafu)?
         .resources(merged_config.resources().clone().into())
         // TODO: improve probes
@@ -727,7 +728,7 @@ fn add_log_config_volume(
     };
     pod_builder
         .add_volume(
-            VolumeBuilder::new("log-config")
+            VolumeBuilder::new(STACKABLE_LOG_CONFIG_DIR_NAME)
                 .with_config_map(config_map)
                 .build(),
         )
@@ -744,7 +745,7 @@ fn add_common_pod_config(
 ) -> Result<(), Error> {
     pod_builder
         .add_volume(Volume {
-            name: "config".to_string(),
+            name: STACKABLE_CONFIG_DIR_NAME.to_string(),
             config_map: Some(ConfigMapVolumeSource {
                 name: resource_names.role_group_config_map().to_string(),
                 ..ConfigMapVolumeSource::default()
@@ -753,7 +754,7 @@ fn add_common_pod_config(
         })
         .context(AddVolumeSnafu)?
         .add_empty_dir_volume(
-            "log",
+            STACKABLE_LOG_DIR_NAME,
             Some(product_logging::framework::calculate_log_volume_size_limit(
                 &[MAX_KAFKA_LOG_FILES_SIZE],
             )),
