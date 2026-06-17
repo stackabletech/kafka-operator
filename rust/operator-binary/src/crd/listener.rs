@@ -7,6 +7,13 @@ use strum::EnumString;
 
 pub(crate) const LISTENER_LOCAL_ADDRESS: &str = "0.0.0.0";
 
+// Layout of the listener volume mounted by the listener operator: the default address is
+// exposed under `<dir>/default-address/address` and per-port values under
+// `<dir>/default-address/ports/<port-name>`.
+const LISTENER_DEFAULT_ADDRESS_DIR: &str = "default-address";
+const LISTENER_ADDRESS_FILE: &str = "address";
+const LISTENER_PORTS_DIR: &str = "ports";
+
 #[derive(strum::Display, Debug, EnumString)]
 pub enum KafkaListenerProtocol {
     /// Unencrypted and unauthenticated HTTP connections
@@ -178,17 +185,19 @@ impl Display for KafkaListener {
 }
 
 pub fn node_address_cmd_env(directory: &str) -> String {
-    format!("$(cat {directory}/default-address/address)")
+    format!("$(cat {directory}/{LISTENER_DEFAULT_ADDRESS_DIR}/{LISTENER_ADDRESS_FILE})")
 }
 
 pub fn node_port_cmd_env(directory: &str, port_name: &str) -> String {
-    format!("$(cat {directory}/default-address/ports/{port_name})")
+    format!("$(cat {directory}/{LISTENER_DEFAULT_ADDRESS_DIR}/{LISTENER_PORTS_DIR}/{port_name})")
 }
 
 pub fn node_address_cmd(directory: &str) -> String {
-    format!("${{file:UTF-8:{directory}/default-address/address}}")
+    format!("${{file:UTF-8:{directory}/{LISTENER_DEFAULT_ADDRESS_DIR}/{LISTENER_ADDRESS_FILE}}}")
 }
 
 pub fn node_port_cmd(directory: &str, port_name: &str) -> String {
-    format!("${{file:UTF-8:{directory}/default-address/ports/{port_name}}}")
+    format!(
+        "${{file:UTF-8:{directory}/{LISTENER_DEFAULT_ADDRESS_DIR}/{LISTENER_PORTS_DIR}/{port_name}}}"
+    )
 }

@@ -81,6 +81,11 @@ stackable_operator::constant!(VECTOR_CONTAINER_NAME: ContainerName = "vector");
 stackable_operator::constant!(VECTOR_CONFIG_VOLUME_NAME: VolumeName = "config");
 stackable_operator::constant!(VECTOR_LOG_VOLUME_NAME: VolumeName = "log");
 
+/// Name of both the env var and the ZooKeeper discovery ConfigMap key holding the
+/// ZooKeeper connection string.
+const ZOOKEEPER_ENV_VAR_NAME: &str = "ZOOKEEPER";
+const POD_MANAGEMENT_POLICY_PARALLEL: &str = "Parallel";
+
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("failed to add kerberos config"))]
@@ -212,11 +217,11 @@ pub fn build_broker_rolegroup_statefulset(
         &validated_cluster.cluster_config.zookeeper_config_map_name
     {
         env.push(EnvVar {
-            name: "ZOOKEEPER".to_string(),
+            name: ZOOKEEPER_ENV_VAR_NAME.to_string(),
             value_from: Some(EnvVarSource {
                 config_map_key_ref: Some(ConfigMapKeySelector {
                     name: zookeeper_config_map_name.to_string(),
-                    key: "ZOOKEEPER".to_string(),
+                    key: ZOOKEEPER_ENV_VAR_NAME.to_string(),
                     ..ConfigMapKeySelector::default()
                 }),
                 ..EnvVarSource::default()
@@ -410,7 +415,7 @@ pub fn build_broker_rolegroup_statefulset(
             .with_label(RESTART_CONTROLLER_ENABLED_LABEL.to_owned())
             .build(),
         spec: Some(StatefulSetSpec {
-            pod_management_policy: Some("Parallel".to_string()),
+            pod_management_policy: Some(POD_MANAGEMENT_POLICY_PARALLEL.to_string()),
             replicas: validated_rg.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
@@ -500,11 +505,11 @@ pub fn build_controller_rolegroup_statefulset(
         &validated_cluster.cluster_config.zookeeper_config_map_name
     {
         env.push(EnvVar {
-            name: "ZOOKEEPER".to_string(),
+            name: ZOOKEEPER_ENV_VAR_NAME.to_string(),
             value_from: Some(EnvVarSource {
                 config_map_key_ref: Some(ConfigMapKeySelector {
                     name: zookeeper_config_map_name.to_string(),
-                    key: "ZOOKEEPER".to_string(),
+                    key: ZOOKEEPER_ENV_VAR_NAME.to_string(),
                     ..ConfigMapKeySelector::default()
                 }),
                 ..EnvVarSource::default()
@@ -635,7 +640,7 @@ pub fn build_controller_rolegroup_statefulset(
             .with_label(RESTART_CONTROLLER_ENABLED_LABEL.to_owned())
             .build(),
         spec: Some(StatefulSetSpec {
-            pod_management_policy: Some("Parallel".to_string()),
+            pod_management_policy: Some(POD_MANAGEMENT_POLICY_PARALLEL.to_string()),
             update_strategy: Some(StatefulSetUpdateStrategy {
                 type_: Some("RollingUpdate".to_string()),
                 ..StatefulSetUpdateStrategy::default()

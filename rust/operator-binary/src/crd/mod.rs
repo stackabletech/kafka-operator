@@ -280,7 +280,7 @@ impl HasStatusCondition for v1alpha1::KafkaCluster {
 impl v1alpha1::KafkaCluster {
     pub fn effective_metadata_manager(&self) -> Result<MetadataManager, Error> {
         match &self.spec.cluster_config.metadata_manager {
-            Some(manager) => match manager.clone() {
+            Some(manager) => match manager {
                 MetadataManager::ZooKeeper => {
                     if !self.spec.image.product_version().starts_with("3.") {
                         Err(Error::Kafka4RequiresKraftMetadataManager)

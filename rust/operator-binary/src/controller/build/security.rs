@@ -42,6 +42,13 @@ const OPA_TLS_MOUNT_PATH: &str = "/stackable/tls-opa";
 const OPA_TLS_VOLUME_NAME: &str = "tls-opa";
 const SSL_STORE_PASSWORD: &str = "";
 const SSL_STORE_TYPE_PKCS12: &str = "PKCS12";
+const SSL_CLIENT_AUTH_REQUIRED: &str = "required";
+const SASL_MECHANISM_GSSAPI: &str = "GSSAPI";
+const STACKABLE_KCAT_BINARY: &str = "/stackable/kcat";
+const PROPERTY_SECURITY_PROTOCOL: &str = "security.protocol";
+const PROPERTY_SASL_ENABLED_MECHANISMS: &str = "sasl.enabled.mechanisms";
+const PROPERTY_SASL_KERBEROS_SERVICE_NAME: &str = "sasl.kerberos.service.name";
+const PROPERTY_SASL_INTER_BROKER_MECHANISM: &str = "sasl.mechanism.inter.broker.protocol";
 const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &str = "/stackable/tls-kafka-internal";
 const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &str = "tls-kafka-internal";
 const STACKABLE_TLS_KAFKA_SERVER_DIR: &str = "/stackable/tls-kafka-server";
@@ -91,7 +98,7 @@ pub fn kcat_prober_container_commands(security: &ValidatedKafkaSecurity) -> Vec<
     let port = security.client_port();
 
     if security.tls_client_authentication_class().is_some() {
-        args.push("/stackable/kcat".to_string());
+        args.push(STACKABLE_KCAT_BINARY.to_string());
         args.push("-b".to_string());
         args.push(format!("localhost:{}", port));
         args.extend(kcat_client_auth_ssl(STACKABLE_TLS_KCAT_DIR));
@@ -130,7 +137,7 @@ pub fn kcat_prober_container_commands(security: &ValidatedKafkaSecurity) -> Vec<
             )
             .to_string(),
         );
-        bash_args.push("/stackable/kcat".to_string());
+        bash_args.push(STACKABLE_KCAT_BINARY.to_string());
         bash_args.push("-b".to_string());
         bash_args.push("$POD_BROKER_LISTENER_ADDRESS:$POD_BROKER_LISTENER_PORT".to_string());
         bash_args.extend(kcat_client_sasl_ssl(STACKABLE_TLS_KCAT_DIR, service_name));
@@ -138,13 +145,13 @@ pub fn kcat_prober_container_commands(security: &ValidatedKafkaSecurity) -> Vec<
 
         args.push(bash_args.join(" "));
     } else if security.tls_server_secret_class().is_some() {
-        args.push("/stackable/kcat".to_string());
+        args.push(STACKABLE_KCAT_BINARY.to_string());
         args.push("-b".to_string());
         args.push(format!("localhost:{}", port));
         args.extend(kcat_client_ssl(STACKABLE_TLS_KCAT_DIR));
         args.push("-L".to_string());
     } else {
-        args.push("/stackable/kcat".to_string());
+        args.push(STACKABLE_KCAT_BINARY.to_string());
         args.push("-b".to_string());
         args.push(format!("localhost:{}", port));
         args.push("-L".to_string());
@@ -160,10 +167,13 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
 
     if security.tls_client_authentication_class().is_some() {
         props.push((
-            "security.protocol".to_string(),
+            PROPERTY_SECURITY_PROTOCOL.to_string(),
             Some(KafkaListenerProtocol::Ssl.to_string()),
         ));
-        props.push(("ssl.client.auth".to_string(), Some("required".to_string())));
+        props.push((
+            "ssl.client.auth".to_string(),
+            Some(SSL_CLIENT_AUTH_REQUIRED.to_string()),
+        ));
         push_client_ssl_stores(&mut props, STACKABLE_TLS_KAFKA_SERVER_DIR);
     } else if security.has_kerberos_enabled() {
         // TODO: to make this configuration file usable out of the box the operator needs to be
@@ -172,21 +182,21 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
         // This will simplify the code and the command lines lot.
         // It will also make the jaas files reusable by the Kafka shell scripts.
         props.push((
-            "security.protocol".to_string(),
+            PROPERTY_SECURITY_PROTOCOL.to_string(),
             Some(KafkaListenerProtocol::SaslSsl.to_string()),
         ));
         push_client_ssl_stores(&mut props, STACKABLE_TLS_KAFKA_SERVER_DIR);
         props.push((
-            "sasl.enabled.mechanisms".to_string(),
-            Some("GSSAPI".to_string()),
+            PROPERTY_SASL_ENABLED_MECHANISMS.to_string(),
+            Some(SASL_MECHANISM_GSSAPI.to_string()),
         ));
         props.push((
-            "sasl.kerberos.service.name".to_string(),
+            PROPERTY_SASL_KERBEROS_SERVICE_NAME.to_string(),
             Some(KafkaRole::Broker.kerberos_service_name().to_string()),
         ));
         props.push((
-            "sasl.mechanism.inter.broker.protocol".to_string(),
-            Some("GSSAPI".to_string()),
+            PROPERTY_SASL_INTER_BROKER_MECHANISM.to_string(),
+            Some(SASL_MECHANISM_GSSAPI.to_string()),
         ));
         props.push((
             "sasl.jaas.config".to_string(),
@@ -197,13 +207,13 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
                 realm="$KERBEROS_REALM"))));
     } else if security.tls_server_secret_class().is_some() {
         props.push((
-            "security.protocol".to_string(),
+            PROPERTY_SECURITY_PROTOCOL.to_string(),
             Some(KafkaListenerProtocol::Ssl.to_string()),
         ));
         push_client_ssl_truststore(&mut props, STACKABLE_TLS_KAFKA_SERVER_DIR);
     } else {
         props.push((
-            "security.protocol".to_string(),
+            PROPERTY_SECURITY_PROTOCOL.to_string(),
             Some(KafkaListenerProtocol::Plaintext.to_string()),
         ));
     }
@@ -417,7 +427,7 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
             // client auth required
             config.insert(
                 KafkaListenerName::Client.listener_ssl_client_auth(),
-                "required".to_string(),
+                SSL_CLIENT_AUTH_REQUIRED.to_string(),
             );
         }
     }
@@ -429,14 +439,17 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
             &KafkaListenerName::Bootstrap,
             STACKABLE_TLS_KAFKA_SERVER_DIR,
         );
-        config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
         config.insert(
-            "sasl.kerberos.service.name".to_string(),
+            PROPERTY_SASL_ENABLED_MECHANISMS.to_string(),
+            SASL_MECHANISM_GSSAPI.to_string(),
+        );
+        config.insert(
+            PROPERTY_SASL_KERBEROS_SERVICE_NAME.to_string(),
             KafkaRole::Broker.kerberos_service_name().to_string(),
         );
         config.insert(
-            "sasl.mechanism.inter.broker.protocol".to_string(),
-            "GSSAPI".to_string(),
+            PROPERTY_SASL_INTER_BROKER_MECHANISM.to_string(),
+            SASL_MECHANISM_GSSAPI.to_string(),
         );
         tracing::debug!("Kerberos configs added: [{:#?}]", config);
     }
@@ -458,7 +471,7 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
         // client auth required
         config.insert(
             KafkaListenerName::Internal.listener_ssl_client_auth(),
-            "required".to_string(),
+            SSL_CLIENT_AUTH_REQUIRED.to_string(),
         );
     }
 
@@ -518,21 +531,24 @@ pub fn controller_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap
             // client auth required
             config.insert(
                 KafkaListenerName::Controller.listener_ssl_client_auth(),
-                "required".to_string(),
+                SSL_CLIENT_AUTH_REQUIRED.to_string(),
             );
         }
     }
 
     // Kerberos
     if security.has_kerberos_enabled() {
-        config.insert("sasl.enabled.mechanisms".to_string(), "GSSAPI".to_string());
         config.insert(
-            "sasl.kerberos.service.name".to_string(),
+            PROPERTY_SASL_ENABLED_MECHANISMS.to_string(),
+            SASL_MECHANISM_GSSAPI.to_string(),
+        );
+        config.insert(
+            PROPERTY_SASL_KERBEROS_SERVICE_NAME.to_string(),
             KafkaRole::Controller.kerberos_service_name().to_string(),
         );
         config.insert(
-            "sasl.mechanism.inter.broker.protocol".to_string(),
-            "GSSAPI".to_string(),
+            PROPERTY_SASL_INTER_BROKER_MECHANISM.to_string(),
+            SASL_MECHANISM_GSSAPI.to_string(),
         );
         tracing::debug!("Kerberos configs added: [{:#?}]", config);
     }
@@ -631,7 +647,7 @@ fn kcat_client_sasl_ssl(cert_directory: &str, service_name: &str) -> Vec<String>
         "-X".to_string(),
         "sasl.kerberos.keytab=/stackable/kerberos/keytab".to_string(),
         "-X".to_string(),
-        "sasl.mechanism=GSSAPI".to_string(),
+        format!("sasl.mechanism={SASL_MECHANISM_GSSAPI}"),
         "-X".to_string(),
         format!("sasl.kerberos.service.name={service_name}"),
         "-X".to_string(),
