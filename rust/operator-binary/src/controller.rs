@@ -197,7 +197,9 @@ impl ValidatedCluster {
                     let resource_names = self.resource_names(role, role_group_name);
                     let role_group_statefulset_name = resource_names.stateful_set_name();
                     let role_group_service_name = resource_names.headless_service_name();
-                    for replica in 0..validated_rg.replicas {
+                    // Pods must be predicted from a concrete count (e.g. for KRaft quorum
+                    // voters), so an unset replica count falls back to 1.
+                    for replica in 0..validated_rg.replicas.unwrap_or(1) {
                         pod_descriptors.push(KafkaPodDescriptor {
                             namespace: self.namespace.clone(),
                             role_group_service_name: role_group_service_name.clone(),
@@ -409,26 +411,20 @@ impl Resource for ValidatedCluster {
     }
 }
 
-/// A validated, merged Kafka role-group config.
-///
-/// The merged config fragment is wrapped in [`AnyConfig`] and the merged
-/// `configOverrides` in [`AnyConfigOverrides`], so a single role-agnostic type carries
-/// both broker and controller role groups. Produced from the upstream
-/// [`stackable_operator::v2::role_utils::with_validated_config`] result in
-/// [`validate`](crate::controller::validate). `jvm_argument_overrides` is already merged
-/// (role <- role group) at validation time and applied as-is during build.
+/// The validated, merged per-role-group product config.
 #[derive(Clone, Debug, PartialEq)]
-pub struct ValidatedRoleGroupConfig {
-    pub replicas: u16,
+pub struct ValidatedKafkaConfig {
     pub config: AnyConfig,
-    pub config_overrides: AnyConfigOverrides,
-    pub env_overrides: stackable_operator::v2::builder::pod::container::EnvVarSet,
-    pub pod_overrides: stackable_operator::k8s_openapi::api::core::v1::PodTemplateSpec,
-    pub jvm_argument_overrides:
-        stackable_operator::v2::jvm_argument_overrides::JvmArgumentOverrides,
     /// Validated logging configuration (derived from `config.logging` during validation).
     pub logging: validate::ValidatedLogging,
 }
+
+/// A validated, merged Kafka role-group config.
+pub type ValidatedRoleGroupConfig = stackable_operator::v2::role_utils::RoleGroupConfig<
+    ValidatedKafkaConfig,
+    stackable_operator::v2::role_utils::JavaCommonConfig,
+    AnyConfigOverrides,
+>;
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -621,6 +617,7 @@ pub async fn reconcile_kafka(
             // The Vector agent config is the static `vector.yaml`, added to the rolegroup
             // ConfigMap only when the Vector agent is enabled (resolved during validation).
             let vector_config = validated_rg
+                .config
                 .logging
                 .vector_container
                 .is_some()
@@ -672,7 +669,7 @@ pub async fn reconcile_kafka(
                 .context(BuildStatefulsetSnafu)?,
             };
 
-            if let AnyConfig::Broker(broker_config) = &validated_rg.config {
+            if let AnyConfig::Broker(broker_config) = &validated_rg.config.config {
                 let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
                     &validated_cluster,
                     kafka_role,

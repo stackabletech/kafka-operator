@@ -71,11 +71,11 @@ pub fn build_rolegroup_config_map(
     listener_config: &KafkaListenerConfig,
     vector_config: Option<String>,
 ) -> Result<ConfigMap, Error> {
-    let role = validated_rg.config.kafka_role();
+    let role = validated_rg.config.config.kafka_role();
     let cluster_config = &validated_cluster.cluster_config;
     let kafka_security = &cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
-    let kafka_config_file_name = config_file_name(&validated_rg.config).to_string();
+    let kafka_config_file_name = config_file_name(&validated_rg.config.config).to_string();
     let config_overrides = validated_rg
         .config_overrides
         .config_file_overrides()
@@ -90,7 +90,7 @@ pub fn build_rolegroup_config_map(
         return NoKraftControllersFoundSnafu.fail();
     }
 
-    let kafka_config = match &validated_rg.config {
+    let kafka_config = match &validated_rg.config.config {
         AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
             cluster_config,
             listener_config,
@@ -177,7 +177,7 @@ pub fn build_rolegroup_config_map(
 
     let config_data = role_group_config_map_data(
         &resolved_product_image.product_version,
-        &validated_rg.config,
+        &validated_rg.config.config,
     );
     for (file_name, data) in config_data {
         if let Some(data) = data {

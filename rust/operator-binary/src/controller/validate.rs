@@ -29,8 +29,8 @@ use stackable_operator::{
 
 use crate::{
     controller::{
-        RoleGroupName, ValidatedCluster, ValidatedClusterConfig, ValidatedRoleConfig,
-        ValidatedRoleGroupConfig,
+        RoleGroupName, ValidatedCluster, ValidatedClusterConfig, ValidatedKafkaConfig,
+        ValidatedRoleConfig, ValidatedRoleGroupConfig,
         dereference::DereferencedObjects,
         security::{self, ValidatedKafkaSecurity},
     },
@@ -363,16 +363,20 @@ where
                 validate_logging(&merged.config.config, vector_aggregator_config_map_name)?;
 
             let validated = ValidatedRoleGroupConfig {
-                replicas: merged.replicas.unwrap_or(1),
-                config: wrap_config(merged.config.config),
+                // Passed through as-is (including `None`) so an unset replica count lets a
+                // horizontal autoscaler own the StatefulSet's `.spec.replicas`.
+                replicas: merged.replicas,
+                config: ValidatedKafkaConfig {
+                    config: wrap_config(merged.config.config),
+                    logging,
+                },
                 config_overrides: wrap_overrides(merged.config.config_overrides),
                 env_overrides,
+                // Kafka does not use CLI overrides; the field is carried (and merged upstream)
+                // but unused.
+                cli_overrides: merged.config.cli_overrides,
                 pod_overrides: merged.config.pod_overrides,
-                jvm_argument_overrides: merged
-                    .config
-                    .product_specific_common_config
-                    .jvm_argument_overrides,
-                logging,
+                product_specific_common_config: merged.config.product_specific_common_config,
             };
             let role_group_name = RoleGroupName::from_str(role_group_name).with_context(|_| {
                 ParseRoleGroupNameSnafu {

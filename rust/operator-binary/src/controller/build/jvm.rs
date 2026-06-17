@@ -102,7 +102,12 @@ mod tests {
             .get(&KafkaRole::Broker)
             .and_then(|groups| groups.get(&"default".parse().unwrap()))
             .expect("broker default role group should exist");
-        (rg.config.clone(), rg.jvm_argument_overrides.clone())
+        (
+            rg.config.config.clone(),
+            rg.product_specific_common_config
+                .jvm_argument_overrides
+                .clone(),
+        )
     }
 
     #[test]

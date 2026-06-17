@@ -64,7 +64,7 @@ mod tests {
             .role_group_configs
             .get(&role)
             .and_then(|groups| groups.get(&"default".parse().unwrap()))
-            .map(|rg| &rg.config)
+            .map(|rg| &rg.config.config)
             .expect("role group should exist");
 
         assert_eq!(

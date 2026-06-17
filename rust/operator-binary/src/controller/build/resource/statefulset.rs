@@ -146,7 +146,7 @@ pub fn build_broker_rolegroup_statefulset(
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
-    let merged_config = &validated_rg.config;
+    let merged_config = &validated_rg.config.config;
     let resource_names = validated_cluster.resource_names(kafka_role, role_group_name);
     let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
     // Used for PVC templates that cannot be modified once they are deployed
@@ -261,7 +261,9 @@ pub fn build_broker_rolegroup_statefulset(
     add_common_kafka_env(
         &mut cb_kafka,
         merged_config,
-        &validated_rg.jvm_argument_overrides,
+        &validated_rg
+            .product_specific_common_config
+            .jvm_argument_overrides,
         resolved_product_image,
         kafka_role,
         role_group_name,
@@ -334,7 +336,11 @@ pub fn build_broker_rolegroup_statefulset(
             ..Probe::default()
         });
 
-    add_log_config_volume(&mut pod_builder, &validated_rg.logging, &resource_names)?;
+    add_log_config_volume(
+        &mut pod_builder,
+        &validated_rg.config.logging,
+        &resource_names,
+    )?;
 
     let metadata = ObjectMetaBuilder::new()
         .with_labels(recommended_labels.clone())
@@ -377,7 +383,7 @@ pub fn build_broker_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        &validated_rg.logging,
+        &validated_rg.config.logging,
         resolved_product_image,
         &resource_names,
     );
@@ -407,7 +413,7 @@ pub fn build_broker_rolegroup_statefulset(
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some("Parallel".to_string()),
-            replicas: Some(i32::from(validated_rg.replicas)),
+            replicas: validated_rg.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
                     validated_cluster
@@ -435,7 +441,7 @@ pub fn build_controller_rolegroup_statefulset(
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
-    let merged_config = &validated_rg.config;
+    let merged_config = &validated_rg.config.config;
     let resource_names = validated_cluster.resource_names(kafka_role, role_group_name);
     let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
 
@@ -529,7 +535,9 @@ pub fn build_controller_rolegroup_statefulset(
     add_common_kafka_env(
         &mut cb_kafka,
         merged_config,
-        &validated_rg.jvm_argument_overrides,
+        &validated_rg
+            .product_specific_common_config
+            .jvm_argument_overrides,
         resolved_product_image,
         kafka_role,
         role_group_name,
@@ -569,7 +577,11 @@ pub fn build_controller_rolegroup_statefulset(
             ..Probe::default()
         });
 
-    add_log_config_volume(&mut pod_builder, &validated_rg.logging, &resource_names)?;
+    add_log_config_volume(
+        &mut pod_builder,
+        &validated_rg.config.logging,
+        &resource_names,
+    )?;
 
     let metadata = ObjectMetaBuilder::new()
         .with_labels(recommended_labels.clone())
@@ -600,7 +612,7 @@ pub fn build_controller_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        &validated_rg.logging,
+        &validated_rg.config.logging,
         resolved_product_image,
         &resource_names,
     );
@@ -630,7 +642,7 @@ pub fn build_controller_rolegroup_statefulset(
                 type_: Some("RollingUpdate".to_string()),
                 ..StatefulSetUpdateStrategy::default()
             }),
-            replicas: Some(i32::from(validated_rg.replicas)),
+            replicas: validated_rg.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
                     validated_cluster
