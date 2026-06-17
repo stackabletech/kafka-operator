@@ -812,3 +812,92 @@ pub(crate) mod test_support {
         .expect("validate should succeed for the test fixture")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::{
+        PodDescriptorsError,
+        test_support::{minimal_kafka, validated_cluster},
+    };
+    use crate::crd::role::KafkaRole;
+
+    /// Two broker role groups whose names hash to the same node-id offset must be
+    /// rejected: a collision would hand two pods the same Kafka `node.id`. `rg865`
+    /// and `rg1400` are a known colliding pair for the `broker` role (see
+    /// [`node_id_hash32_offset`](super::node_id_hasher::node_id_hash32_offset)).
+    #[test]
+    fn pod_descriptors_rejects_node_id_hash_collision() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  rg865:
+                    replicas: 1
+                  rg1400:
+                    replicas: 1
+            "#,
+        );
+        let validated = validated_cluster(&kafka);
+
+        match validated.pod_descriptors(None) {
+            Err(PodDescriptorsError::KafkaNodeIdHashCollision {
+                role,
+                colliding_role,
+                ..
+            }) => {
+                assert_eq!(role, KafkaRole::Broker);
+                assert_eq!(colliding_role, KafkaRole::Broker);
+            }
+            other => panic!("expected a node-id hash collision error, got {other:?}"),
+        }
+    }
+
+    /// Non-colliding role groups expand to one descriptor per replica, each with a
+    /// unique `node_id`.
+    #[test]
+    fn pod_descriptors_assigns_unique_node_ids() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 2
+                  other:
+                    replicas: 1
+            "#,
+        );
+        let validated = validated_cluster(&kafka);
+
+        let descriptors = validated
+            .pod_descriptors(None)
+            .expect("non-colliding role groups must not error");
+
+        assert_eq!(descriptors.len(), 3);
+        let node_ids: BTreeSet<u32> = descriptors.iter().map(|d| d.node_id).collect();
+        assert_eq!(node_ids.len(), 3, "node ids must be unique: {node_ids:?}");
+    }
+}

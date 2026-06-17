@@ -656,3 +656,312 @@ fn kcat_client_sasl_ssl(cert_directory: &str, service_name: &str) -> Vec<String>
         ),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use stackable_operator::{
+        builder::meta::ObjectMetaBuilder,
+        crd::authentication::{core, kerberos, tls},
+    };
+
+    use super::*;
+    use crate::crd::authentication::ResolvedAuthenticationClasses;
+
+    fn tls_auth_class() -> core::v1alpha1::AuthenticationClass {
+        core::v1alpha1::AuthenticationClass {
+            metadata: ObjectMetaBuilder::new().name("tls-auth").build(),
+            spec: core::v1alpha1::AuthenticationClassSpec {
+                provider: core::v1alpha1::AuthenticationClassProvider::Tls(
+                    tls::v1alpha1::AuthenticationProvider {
+                        client_cert_secret_class: Some("client-auth-secret-class".to_string()),
+                    },
+                ),
+            },
+        }
+    }
+
+    fn kerberos_auth_class() -> core::v1alpha1::AuthenticationClass {
+        core::v1alpha1::AuthenticationClass {
+            metadata: ObjectMetaBuilder::new().name("kerberos-auth").build(),
+            spec: core::v1alpha1::AuthenticationClassSpec {
+                provider: core::v1alpha1::AuthenticationClassProvider::Kerberos(
+                    kerberos::v1alpha1::AuthenticationProvider {
+                        kerberos_secret_class: "kerberos-secret-class".to_string(),
+                    },
+                ),
+            },
+        }
+    }
+
+    fn no_auth() -> ResolvedAuthenticationClasses {
+        ResolvedAuthenticationClasses::new(vec![])
+    }
+
+    /// Plaintext: no TLS, no authentication, no OPA.
+    fn plaintext() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(no_auth(), None, None, None)
+    }
+
+    /// Server TLS only (encryption without client authentication).
+    fn server_tls() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(no_auth(), None, Some("tls".parse().unwrap()), None)
+    }
+
+    /// Mutual TLS (client-certificate authentication).
+    fn client_auth_tls() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![tls_auth_class()]),
+            None,
+            Some("tls".parse().unwrap()),
+            None,
+        )
+    }
+
+    /// Kerberos, which also requires server and internal TLS.
+    fn kerberos() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![kerberos_auth_class()]),
+            Some("tls".parse().unwrap()),
+            Some("tls".parse().unwrap()),
+            None,
+        )
+    }
+
+    /// Internal TLS only (broker/controller encryption without client TLS).
+    fn internal_tls() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(no_auth(), Some("tls".parse().unwrap()), None, None)
+    }
+
+    /// OPA authorization with a TLS truststore (internal + server TLS also enabled).
+    fn opa() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            Some("tls".parse().unwrap()),
+            Some("tls".parse().unwrap()),
+            Some("opa-tls".parse().unwrap()),
+        )
+    }
+
+    fn as_str_vec(commands: &[String]) -> Vec<&str> {
+        commands.iter().map(String::as_str).collect()
+    }
+
+    fn as_map(props: Vec<(String, Option<String>)>) -> BTreeMap<String, Option<String>> {
+        props.into_iter().collect()
+    }
+
+    // ---- kcat_prober_container_commands ----
+
+    #[test]
+    fn kcat_prober_plaintext_targets_insecure_client_port() {
+        let commands = kcat_prober_container_commands(&plaintext());
+        assert_eq!(
+            as_str_vec(&commands),
+            vec!["/stackable/kcat", "-b", "localhost:9092", "-L"]
+        );
+    }
+
+    #[test]
+    fn kcat_prober_server_tls_trusts_ca_without_client_key() {
+        let commands = kcat_prober_container_commands(&server_tls());
+        let commands = as_str_vec(&commands);
+
+        assert_eq!(commands[0], "/stackable/kcat");
+        assert_eq!(commands[2], "localhost:9093");
+        assert_eq!(commands[commands.len() - 1], "-L");
+        assert!(
+            commands
+                .iter()
+                .any(|a| a.contains("ssl.ca.location=/stackable/tls-kcat/ca.crt"))
+        );
+        assert!(!commands.iter().any(|a| a.contains("ssl.key.location")));
+    }
+
+    #[test]
+    fn kcat_prober_client_auth_presents_client_key() {
+        let commands = kcat_prober_container_commands(&client_auth_tls());
+        let commands = as_str_vec(&commands);
+
+        assert_eq!(commands[0], "/stackable/kcat");
+        assert_eq!(commands[2], "localhost:9093");
+        assert!(
+            commands
+                .iter()
+                .any(|a| a.contains("ssl.key.location=/stackable/tls-kcat/tls.key"))
+        );
+    }
+
+    #[test]
+    fn kcat_prober_kerberos_wraps_command_in_bash() {
+        let commands = kcat_prober_container_commands(&kerberos());
+        let commands = as_str_vec(&commands);
+
+        assert_eq!(commands[0], "/bin/bash");
+        assert_eq!(commands[4], "-c");
+        assert_eq!(commands.len(), 6);
+
+        let script = commands[5];
+        assert!(script.contains("KERBEROS_REALM"));
+        assert!(script.contains("/stackable/kcat"));
+        assert!(script.contains("sasl.mechanism=GSSAPI"));
+        assert!(script.contains("sasl.kerberos.service.name=kafka"));
+    }
+
+    // ---- copy_opa_tls_cert_command ----
+
+    #[test]
+    fn copy_opa_tls_cert_command_imports_ca_when_opa_enabled() {
+        let command = copy_opa_tls_cert_command(&opa());
+        assert!(command.contains("keytool -importcert"));
+        assert!(command.contains("-alias opa-ca"));
+        assert!(command.contains("/stackable/tls-opa/ca.crt"));
+    }
+
+    #[test]
+    fn copy_opa_tls_cert_command_empty_without_opa() {
+        assert_eq!(copy_opa_tls_cert_command(&plaintext()), "");
+    }
+
+    // ---- client_properties ----
+
+    #[test]
+    fn client_properties_plaintext() {
+        let props = as_map(client_properties(&plaintext()));
+        assert_eq!(
+            props.get("security.protocol"),
+            Some(&Some("PLAINTEXT".to_string()))
+        );
+        assert_eq!(props.len(), 1);
+    }
+
+    #[test]
+    fn client_properties_server_tls_uses_truststore_only() {
+        let props = as_map(client_properties(&server_tls()));
+        assert_eq!(
+            props.get("security.protocol"),
+            Some(&Some("SSL".to_string()))
+        );
+        assert!(props.contains_key("ssl.truststore.location"));
+        assert!(!props.contains_key("ssl.keystore.location"));
+    }
+
+    #[test]
+    fn client_properties_client_auth_requires_keystore_and_client_auth() {
+        let props = as_map(client_properties(&client_auth_tls()));
+        assert_eq!(
+            props.get("security.protocol"),
+            Some(&Some("SSL".to_string()))
+        );
+        assert_eq!(
+            props.get("ssl.client.auth"),
+            Some(&Some("required".to_string()))
+        );
+        assert!(props.contains_key("ssl.keystore.location"));
+    }
+
+    #[test]
+    fn client_properties_kerberos_uses_sasl_ssl() {
+        let props = as_map(client_properties(&kerberos()));
+        assert_eq!(
+            props.get("security.protocol"),
+            Some(&Some("SASL_SSL".to_string()))
+        );
+        assert_eq!(
+            props.get("sasl.enabled.mechanisms"),
+            Some(&Some("GSSAPI".to_string()))
+        );
+        assert_eq!(
+            props.get("sasl.kerberos.service.name"),
+            Some(&Some("kafka".to_string()))
+        );
+        assert!(props.contains_key("sasl.jaas.config"));
+    }
+
+    // ---- broker_config_settings ----
+
+    #[test]
+    fn broker_config_plaintext_only_sets_inter_broker_listener() {
+        let config = broker_config_settings(&plaintext());
+        assert_eq!(
+            config.get("inter.broker.listener.name"),
+            Some(&"INTERNAL".to_string())
+        );
+        assert_eq!(config.len(), 1);
+    }
+
+    #[test]
+    fn broker_config_client_auth_requires_client_auth() {
+        let config = broker_config_settings(&client_auth_tls());
+        assert_eq!(
+            config.get("listener.name.client.ssl.client.auth"),
+            Some(&"required".to_string())
+        );
+        assert!(config.contains_key("listener.name.client.ssl.keystore.location"));
+    }
+
+    #[test]
+    fn broker_config_kerberos_adds_sasl_and_bootstrap_stores() {
+        let config = broker_config_settings(&kerberos());
+        assert_eq!(
+            config.get("sasl.enabled.mechanisms"),
+            Some(&"GSSAPI".to_string())
+        );
+        assert_eq!(
+            config.get("sasl.kerberos.service.name"),
+            Some(&"kafka".to_string())
+        );
+        assert_eq!(
+            config.get("sasl.mechanism.inter.broker.protocol"),
+            Some(&"GSSAPI".to_string())
+        );
+        assert!(config.contains_key("listener.name.bootstrap.ssl.keystore.location"));
+    }
+
+    #[test]
+    fn broker_config_internal_tls_covers_internal_and_controller() {
+        let config = broker_config_settings(&internal_tls());
+        assert!(config.contains_key("listener.name.internal.ssl.keystore.location"));
+        assert!(config.contains_key("listener.name.controller.ssl.keystore.location"));
+        assert_eq!(
+            config.get("listener.name.internal.ssl.client.auth"),
+            Some(&"required".to_string())
+        );
+    }
+
+    #[test]
+    fn broker_config_opa_adds_authorizer_truststore() {
+        let config = broker_config_settings(&opa());
+        assert!(config.contains_key("opa.authorizer.truststore.path"));
+        assert!(config.contains_key("opa.authorizer.truststore.password"));
+        assert!(config.contains_key("opa.authorizer.truststore.type"));
+    }
+
+    // ---- controller_config_settings ----
+
+    #[test]
+    fn controller_config_plaintext_is_empty() {
+        assert!(controller_config_settings(&plaintext()).is_empty());
+    }
+
+    #[test]
+    fn controller_config_internal_tls_covers_controller_and_internal() {
+        let config = controller_config_settings(&internal_tls());
+        assert!(config.contains_key("listener.name.controller.ssl.keystore.location"));
+        assert!(config.contains_key("listener.name.internal.ssl.keystore.location"));
+    }
+
+    #[test]
+    fn controller_config_kerberos_adds_sasl() {
+        let config = controller_config_settings(&kerberos());
+        assert_eq!(
+            config.get("sasl.enabled.mechanisms"),
+            Some(&"GSSAPI".to_string())
+        );
+        assert_eq!(
+            config.get("sasl.kerberos.service.name"),
+            Some(&"kafka".to_string())
+        );
+    }
+}

@@ -227,3 +227,25 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::jaas_config_file;
+
+    #[test]
+    fn jaas_config_file_empty_without_kerberos() {
+        assert_eq!(jaas_config_file(false), "");
+    }
+
+    #[test]
+    fn jaas_config_file_renders_bootstrap_and_client_sections_with_kerberos() {
+        let jaas = jaas_config_file(true);
+        assert!(jaas.contains("bootstrap.KafkaServer"));
+        assert!(jaas.contains("client.KafkaServer"));
+        assert!(jaas.contains("Krb5LoginModule"));
+        assert!(jaas.contains("${env:KERBEROS_REALM}"));
+        // The bootstrap and client principals embed distinct listener addresses.
+        assert!(jaas.contains("/stackable/listener-bootstrap"));
+        assert!(jaas.contains("/stackable/listener-broker"));
+    }
+}
