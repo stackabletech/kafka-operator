@@ -28,25 +28,25 @@ customConfig:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-broker-automatic-log-0" &&
+        .pod == "test-kafka-broker-automatic-log-config-0" &&
         .container == "kafka"
     filteredAutomaticLogConfigBrokerVector:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-broker-automatic-log-0" &&
+        .pod == "test-kafka-broker-automatic-log-config-0" &&
         .container == "vector"
     filteredCustomLogConfigBrokerKafka:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-broker-custom-log-0" &&
+        .pod == "test-kafka-broker-custom-log-config-0" &&
         .container == "kafka"
     filteredCustomLogConfigBrokerVector:
       type: filter
       inputs: [validEvents]
       condition: >-
-        .pod == "test-kafka-broker-custom-log-0" &&
+        .pod == "test-kafka-broker-custom-log-config-0" &&
         .container == "vector"
     filteredInvalidEvents:
       type: filter

@@ -6,6 +6,6 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
   - script: |
-      kubectl patch kafkacluster test-kafka -n $NAMESPACE --type merge -p '{"spec":{"brokers":{"roleGroups":{"automatic-log":{"replicas":0}, "custom-log":{"replicas":0}}}}}'
+      kubectl patch kafkacluster test-kafka -n $NAMESPACE --type merge -p '{"spec":{"brokers":{"roleGroups":{"automatic-log-config":{"replicas":0}, "custom-log-config":{"replicas":0}}}}}'
   - script: |
       kubectl wait --for=delete pod -l app.kubernetes.io/instance=test-kafka -n $NAMESPACE --timeout=300s
