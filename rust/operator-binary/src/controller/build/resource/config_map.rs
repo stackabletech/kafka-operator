@@ -13,8 +13,11 @@ use stackable_operator::{
 use crate::{
     controller::{
         RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
-        build::properties::{
-            ConfigFileName, config_file_name, product_logging::role_group_config_map_data,
+        build::{
+            properties::{
+                ConfigFileName, config_file_name, product_logging::role_group_config_map_data,
+            },
+            security::client_properties,
         },
     },
     crd::{
@@ -152,8 +155,7 @@ pub fn build_rolegroup_config_map(
         .add_data(
             ConfigFileName::Client.to_string(),
             to_java_properties_string(
-                kafka_security
-                    .client_properties()
+                client_properties(kafka_security)
                     .iter()
                     .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
             )

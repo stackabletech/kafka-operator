@@ -6,3 +6,4 @@ pub mod jvm;
 pub mod kerberos;
 pub mod properties;
 pub mod resource;
+pub mod security;

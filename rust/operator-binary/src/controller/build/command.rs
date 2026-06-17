@@ -9,7 +9,7 @@ use stackable_operator::{
 
 use super::properties::ConfigFileName;
 use crate::{
-    controller::security::ValidatedKafkaSecurity,
+    controller::{build::security::copy_opa_tls_cert_command, security::ValidatedKafkaSecurity},
     crd::{
         BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, STACKABLE_CONFIG_DIR,
         STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LOG_CONFIG_DIR,
@@ -64,7 +64,7 @@ pub fn broker_kafka_container_commands(
             true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})"),
             false => "".to_string(),
         },
-        import_opa_tls_cert = kafka_security.copy_opa_tls_cert_command(),
+        import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
         broker_start_command = broker_start_command(kraft_mode, controller_descriptors, product_version),
     }
 }

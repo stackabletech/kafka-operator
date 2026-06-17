@@ -3,7 +3,11 @@ use std::collections::BTreeMap;
 use super::kraft_controllers;
 use crate::{
     controller::{
-        ValidatedClusterConfig, build::graceful_shutdown::graceful_shutdown_config_properties,
+        ValidatedClusterConfig,
+        build::{
+            graceful_shutdown::graceful_shutdown_config_properties,
+            security::controller_config_settings,
+        },
     },
     crd::{
         KafkaPodDescriptor,
@@ -65,7 +69,7 @@ pub fn build(
         );
     }
 
-    result.extend(cluster_config.kafka_security.controller_config_settings());
+    result.extend(controller_config_settings(&cluster_config.kafka_security));
     result.extend(graceful_shutdown_config_properties());
     result.extend(overrides);
 

@@ -53,6 +53,10 @@ use crate::{
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::add_kerberos_pod_config,
             properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
+            security::{
+                add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
+                kcat_prober_container_commands,
+            },
         },
         node_id_hasher::node_id_hash32_offset,
         security::ValidatedKafkaSecurity,
@@ -91,7 +95,7 @@ pub enum Error {
 
     #[snafu(display("failed to add Secret Volumes and VolumeMounts"))]
     AddVolumesAndVolumeMounts {
-        source: crate::controller::security::Error,
+        source: crate::controller::build::security::Error,
     },
 
     #[snafu(display("failed to add needed volumeMount"))]
@@ -168,14 +172,14 @@ pub fn build_broker_rolegroup_statefulset(
         .deref()
         .requested_secret_lifetime
         .context(MissingSecretLifetimeSnafu)?;
-    kafka_security
-        .add_broker_volume_and_volume_mounts(
-            &mut pod_builder,
-            &mut cb_kcat_prober,
-            &mut cb_kafka,
-            &requested_secret_lifetime,
-        )
-        .context(AddVolumesAndVolumeMountsSnafu)?;
+    add_broker_volume_and_volume_mounts(
+        kafka_security,
+        &mut pod_builder,
+        &mut cb_kcat_prober,
+        &mut cb_kafka,
+        &requested_secret_lifetime,
+    )
+    .context(AddVolumesAndVolumeMountsSnafu)?;
 
     let mut pvcs = merged_config.resources().storage.build_pvcs();
 
@@ -323,7 +327,7 @@ pub fn build_broker_rolegroup_statefulset(
         .readiness_probe(Probe {
             exec: Some(ExecAction {
                 // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(kafka_security.kcat_prober_container_commands()),
+                command: Some(kcat_prober_container_commands(kafka_security)),
             }),
             timeout_seconds: Some(5),
             period_seconds: Some(2),
@@ -576,13 +580,13 @@ pub fn build_controller_rolegroup_statefulset(
         .deref()
         .requested_secret_lifetime
         .context(MissingSecretLifetimeSnafu)?;
-    kafka_security
-        .add_controller_volume_and_volume_mounts(
-            &mut pod_builder,
-            &mut cb_kafka,
-            &requested_secret_lifetime,
-        )
-        .context(AddVolumesAndVolumeMountsSnafu)?;
+    add_controller_volume_and_volume_mounts(
+        kafka_security,
+        &mut pod_builder,
+        &mut cb_kafka,
+        &requested_secret_lifetime,
+    )
+    .context(AddVolumesAndVolumeMountsSnafu)?;
 
     let kafka_container = cb_kafka.build();
 
