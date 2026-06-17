@@ -55,6 +55,7 @@ use crate::{
             properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
         },
         node_id_hasher::node_id_hash32_offset,
+        security::ValidatedKafkaSecurity,
         validate::ValidatedLogging,
     },
     crd::{
@@ -67,7 +68,6 @@ use crate::{
             AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
         },
-        security::KafkaTlsSecurity,
     },
 };
 
@@ -90,7 +90,9 @@ pub enum Error {
     },
 
     #[snafu(display("failed to add Secret Volumes and VolumeMounts"))]
-    AddVolumesAndVolumeMounts { source: crate::crd::security::Error },
+    AddVolumesAndVolumeMounts {
+        source: crate::controller::security::Error,
+    },
 
     #[snafu(display("failed to add needed volumeMount"))]
     AddVolumeMount {
@@ -643,7 +645,7 @@ pub fn build_controller_rolegroup_statefulset(
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
-fn container_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ContainerPort> {
+fn container_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<ContainerPort> {
     let mut ports = vec![
         ContainerPort {
             name: Some(METRICS_PORT_NAME.to_string()),

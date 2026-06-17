@@ -8,9 +8,12 @@ use stackable_operator::{
 };
 
 use super::properties::ConfigFileName;
-use crate::crd::{
-    BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
-    STACKABLE_LOG_CONFIG_DIR, security::KafkaTlsSecurity,
+use crate::{
+    controller::security::ValidatedKafkaSecurity,
+    crd::{
+        BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, STACKABLE_CONFIG_DIR,
+        STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LOG_CONFIG_DIR,
+    },
 };
 
 /// The JVM options selecting the Kafka log4j/log4j2 config file. Kafka 3.x uses log4j,
@@ -38,7 +41,7 @@ pub fn kafka_log_opts_env_var() -> String {
 pub fn broker_kafka_container_commands(
     kraft_mode: bool,
     controller_descriptors: Vec<KafkaPodDescriptor>,
-    kafka_security: &KafkaTlsSecurity,
+    kafka_security: &ValidatedKafkaSecurity,
     product_version: &str,
 ) -> String {
     formatdoc! {"

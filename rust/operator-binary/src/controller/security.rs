@@ -23,12 +23,13 @@ use stackable_operator::{
     v2::types::{common::Port, kubernetes::SecretClassName},
 };
 
-use super::listener::KafkaListenerProtocol;
 use crate::crd::{
     LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_KRB5_PATH,
     STACKABLE_LISTENER_BROKER_DIR,
     authentication::ResolvedAuthenticationClasses,
-    listener::{self, KafkaListenerName, node_address_cmd_env, node_port_cmd_env},
+    listener::{
+        self, KafkaListenerName, KafkaListenerProtocol, node_address_cmd_env, node_port_cmd_env,
+    },
     role::KafkaRole,
     tls, v1alpha1,
 };
@@ -58,14 +59,14 @@ pub enum Error {
 }
 
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
-pub struct KafkaTlsSecurity {
+pub struct ValidatedKafkaSecurity {
     resolved_authentication_classes: ResolvedAuthenticationClasses,
     internal_secret_class: Option<SecretClassName>,
     server_secret_class: Option<SecretClassName>,
     opa_secret_class: Option<SecretClassName>,
 }
 
-impl KafkaTlsSecurity {
+impl ValidatedKafkaSecurity {
     pub const BOOTSTRAP_PORT: Port = Port(9094);
     // bootstrap: we will have a single named port with different values for
     // secure (9095) and insecure (9094). The bootstrap listener is needed to
@@ -114,7 +115,7 @@ impl KafkaTlsSecurity {
         }
     }
 
-    /// Build a [`KafkaTlsSecurity`] from already-resolved authentication classes.
+    /// Build a [`ValidatedKafkaSecurity`] from already-resolved authentication classes.
     ///
     /// The async retrieval of [`ResolvedAuthenticationClasses`] now happens in the dereference
     /// step of the controller; this constructor only reads TLS settings from the spec.
@@ -123,7 +124,7 @@ impl KafkaTlsSecurity {
         resolved_authentication_classes: ResolvedAuthenticationClasses,
         opa_secret_class: Option<SecretClassName>,
     ) -> Self {
-        KafkaTlsSecurity {
+        ValidatedKafkaSecurity {
             resolved_authentication_classes,
             internal_secret_class: kafka
                 .spec

@@ -48,6 +48,7 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 pub(crate) mod build;
 pub(crate) mod dereference;
 pub(crate) mod node_id_hasher;
+pub(crate) mod security;
 pub(crate) mod validate;
 
 /// The type-safe role-group name from stackable-operator. Re-exported so the rest
@@ -69,12 +70,12 @@ use crate::{
             },
         },
         node_id_hasher::node_id_hash32_offset,
+        security::ValidatedKafkaSecurity,
     },
     crd::{
         APP_NAME, KafkaClusterStatus, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
         authorization::KafkaAuthorizationConfig,
         role::{AnyConfig, AnyConfigOverrides, KafkaRole},
-        security::KafkaTlsSecurity,
         v1alpha1,
     },
 };
@@ -334,7 +335,7 @@ pub(crate) fn controller_name() -> ControllerName {
 /// Everything the build steps need is resolved here so they never have to read the
 /// raw [`v1alpha1::KafkaCluster`] spec.
 pub struct ValidatedClusterConfig {
-    pub kafka_security: KafkaTlsSecurity,
+    pub kafka_security: ValidatedKafkaSecurity,
     pub authorization_config: Option<KafkaAuthorizationConfig>,
     pub metadata_manager: MetadataManager,
 

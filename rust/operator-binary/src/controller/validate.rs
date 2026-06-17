@@ -30,7 +30,9 @@ use stackable_operator::{
 use crate::{
     controller::{
         RoleGroupName, ValidatedCluster, ValidatedClusterConfig, ValidatedRoleConfig,
-        ValidatedRoleGroupConfig, dereference::DereferencedObjects,
+        ValidatedRoleGroupConfig,
+        dereference::DereferencedObjects,
+        security::{self, ValidatedKafkaSecurity},
     },
     crd::{
         self, CONTAINER_IMAGE_BASE_NAME,
@@ -40,7 +42,6 @@ use crate::{
             broker::{BrokerConfig, BrokerContainer},
             controller::{ControllerConfig, ControllerContainer},
         },
-        security::{self, KafkaTlsSecurity},
         v1alpha1,
     },
 };
@@ -210,8 +211,11 @@ pub fn validate(
         .as_ref()
         .and_then(|cfg| cfg.secret_class.clone());
 
-    let kafka_security =
-        KafkaTlsSecurity::new_from_kafka_cluster(kafka, authentication_classes, opa_secret_class);
+    let kafka_security = ValidatedKafkaSecurity::new_from_kafka_cluster(
+        kafka,
+        authentication_classes,
+        opa_secret_class,
+    );
 
     kafka_security
         .validate_authentication_methods()

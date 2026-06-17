@@ -4,11 +4,8 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{RoleGroupName, ValidatedCluster},
-    crd::{
-        role::{KafkaRole, broker::BrokerConfig},
-        security::KafkaTlsSecurity,
-    },
+    controller::{RoleGroupName, ValidatedCluster, security::ValidatedKafkaSecurity},
+    crd::role::{KafkaRole, broker::BrokerConfig},
 };
 
 /// Kafka clients will use the load-balanced bootstrap listener to get a list of broker addresses and will use those to
@@ -43,7 +40,7 @@ pub fn build_broker_rolegroup_bootstrap_listener(
 }
 
 fn bootstrap_listener_ports(
-    kafka_security: &KafkaTlsSecurity,
+    kafka_security: &ValidatedKafkaSecurity,
 ) -> Vec<listener::v1alpha1::ListenerPort> {
     vec![if kafka_security.has_kerberos_enabled() {
         listener::v1alpha1::ListenerPort {

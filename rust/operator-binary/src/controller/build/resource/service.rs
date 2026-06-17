@@ -6,8 +6,8 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{RoleGroupName, ValidatedCluster},
-    crd::{METRICS_PORT, METRICS_PORT_NAME, role::KafkaRole, security::KafkaTlsSecurity},
+    controller::{RoleGroupName, ValidatedCluster, security::ValidatedKafkaSecurity},
+    crd::{METRICS_PORT, METRICS_PORT_NAME, role::KafkaRole},
 };
 
 /// The rolegroup [`Service`] is a headless service that allows direct access to the instances of a certain rolegroup
@@ -17,7 +17,7 @@ pub fn build_rolegroup_headless_service(
     validated_cluster: &ValidatedCluster,
     role: &KafkaRole,
     role_group_name: &RoleGroupName,
-    kafka_security: &KafkaTlsSecurity,
+    kafka_security: &ValidatedKafkaSecurity,
 ) -> Service {
     Service {
         metadata: ObjectMetaBuilder::new()
@@ -100,7 +100,7 @@ fn metrics_ports() -> Vec<ServicePort> {
     }]
 }
 
-fn headless_ports(kafka_security: &KafkaTlsSecurity) -> Vec<ServicePort> {
+fn headless_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<ServicePort> {
     vec![ServicePort {
         name: Some(kafka_security.client_port_name().into()),
         port: kafka_security.client_port().into(),

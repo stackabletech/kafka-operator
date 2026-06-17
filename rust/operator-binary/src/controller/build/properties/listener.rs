@@ -11,7 +11,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{RoleGroupName, ValidatedCluster},
+    controller::{RoleGroupName, ValidatedCluster, security::ValidatedKafkaSecurity},
     crd::{
         STACKABLE_LISTENER_BROKER_DIR,
         listener::{
@@ -19,13 +19,12 @@ use crate::{
             LISTENER_LOCAL_ADDRESS, node_address_cmd, node_port_cmd,
         },
         role::KafkaRole,
-        security::KafkaTlsSecurity,
     },
 };
 
 pub fn get_kafka_listener_config(
     validated_cluster: &ValidatedCluster,
-    kafka_security: &KafkaTlsSecurity,
+    kafka_security: &ValidatedKafkaSecurity,
     role: &KafkaRole,
     role_group_name: &RoleGroupName,
     cluster_info: &KubernetesClusterInfo,
@@ -49,7 +48,7 @@ pub fn get_kafka_listener_config(
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: KafkaTlsSecurity::SECURE_CLIENT_PORT.to_string(),
+            port: ValidatedKafkaSecurity::SECURE_CLIENT_PORT.to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
@@ -85,7 +84,7 @@ pub fn get_kafka_listener_config(
         listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: KafkaTlsSecurity::CLIENT_PORT.to_string(),
+            port: ValidatedKafkaSecurity::CLIENT_PORT.to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Client,
@@ -106,12 +105,12 @@ pub fn get_kafka_listener_config(
         listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: KafkaTlsSecurity::SECURE_INTERNAL_PORT.to_string(),
+            port: ValidatedKafkaSecurity::SECURE_INTERNAL_PORT.to_string(),
         });
         advertised_listeners.push(KafkaListener {
             name: KafkaListenerName::Internal,
             host: pod_fqdn.to_string(),
-            port: KafkaTlsSecurity::SECURE_INTERNAL_PORT.to_string(),
+            port: ValidatedKafkaSecurity::SECURE_INTERNAL_PORT.to_string(),
         });
         listener_security_protocol_map
             .insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
@@ -220,7 +219,7 @@ mod tests {
         "#;
         let kafka = minimal_kafka(kafka_cluster);
         let validated = validated_cluster(&kafka);
-        let kafka_security = KafkaTlsSecurity::new(
+        let kafka_security = ValidatedKafkaSecurity::new(
             ResolvedAuthenticationClasses::new(vec![core::v1alpha1::AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),
                 spec: core::v1alpha1::AuthenticationClassSpec {
@@ -294,7 +293,7 @@ mod tests {
             )
         );
 
-        let kafka_security = KafkaTlsSecurity::new(
+        let kafka_security = ValidatedKafkaSecurity::new(
             ResolvedAuthenticationClasses::new(vec![]),
             Some("tls".parse().unwrap()),
             Some("tls".parse().unwrap()),
@@ -357,8 +356,12 @@ mod tests {
             )
         );
 
-        let kafka_security =
-            KafkaTlsSecurity::new(ResolvedAuthenticationClasses::new(vec![]), None, None, None);
+        let kafka_security = ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![]),
+            None,
+            None,
+            None,
+        );
 
         let config = get_kafka_listener_config(
             &validated,
@@ -441,7 +444,7 @@ mod tests {
         "#;
         let kafka = minimal_kafka(kafka_cluster);
         let validated = validated_cluster(&kafka);
-        let kafka_security = KafkaTlsSecurity::new(
+        let kafka_security = ValidatedKafkaSecurity::new(
             ResolvedAuthenticationClasses::new(vec![core::v1alpha1::AuthenticationClass {
                 metadata: ObjectMetaBuilder::new().name("auth-class").build(),
                 spec: core::v1alpha1::AuthenticationClassSpec {

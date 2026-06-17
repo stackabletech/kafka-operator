@@ -3,7 +3,6 @@ pub mod authentication;
 pub mod authorization;
 pub mod listener;
 pub mod role;
-pub mod security;
 pub mod tls;
 
 use authentication::KafkaAuthentication;
