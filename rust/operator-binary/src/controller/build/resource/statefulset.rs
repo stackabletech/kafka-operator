@@ -38,7 +38,7 @@ use stackable_operator::{
             STACKABLE_LOG_DIR, ValidatedContainerLogConfigChoice, vector_container,
         },
         role_group_utils::ResourceNames,
-        types::kubernetes::{ContainerName, ListenerName, PersistentVolumeClaimName, VolumeName},
+        types::kubernetes::{ContainerName, PersistentVolumeClaimName, VolumeName},
     },
 };
 
@@ -185,10 +185,8 @@ pub fn build_broker_rolegroup_statefulset(
 
     // bootstrap listener should be persistent,
     // main broker listener is an ephemeral PVC instead
-    let bootstrap_listener_name = ListenerName::from_str(
-        &validated_cluster.bootstrap_listener_name(kafka_role, role_group_name),
-    )
-    .expect("the bootstrap listener name is a valid Listener name");
+    let bootstrap_listener_name =
+        validated_cluster.bootstrap_listener_name(kafka_role, role_group_name);
     let bootstrap_pvc_name = PersistentVolumeClaimName::from_str(LISTENER_BOOTSTRAP_VOLUME_NAME)
         .expect("the bootstrap listener volume name is a valid PVC name");
     pvcs.push(listener_operator_volume_source_builder_build_pvc(

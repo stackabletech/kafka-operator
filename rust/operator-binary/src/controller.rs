@@ -38,7 +38,7 @@ use stackable_operator::{
         kvp::label::{recommended_labels, role_group_selector},
         role_group_utils::ResourceNames,
         types::{
-            kubernetes::{ConfigMapName, NamespaceName, Uid},
+            kubernetes::{ConfigMapName, ListenerName, NamespaceName, Uid},
             operator::{ClusterName, ControllerName, OperatorName, ProductName, ProductVersion},
         },
     },
@@ -242,12 +242,13 @@ impl ValidatedCluster {
         &self,
         role: &KafkaRole,
         role_group_name: &RoleGroupName,
-    ) -> String {
-        format!(
+    ) -> ListenerName {
+        ListenerName::from_str(&format!(
             "{}-bootstrap",
             self.resource_names(role, role_group_name)
                 .stateful_set_name()
-        )
+        ))
+        .expect("the bootstrap listener name is a valid Listener name")
     }
 
     /// Recommended labels for a role-group resource, using the given product version.
