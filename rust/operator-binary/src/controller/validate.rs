@@ -316,7 +316,7 @@ pub fn validate(
 
 /// Validates every role group of a role into a map keyed by role group name.
 ///
-/// Each role group is merged and validated via the upstream
+/// Each role group is merged and validated via
 /// [`with_validated_config`], which folds the config fragment (default <- role <-
 /// role group) plus the `configOverrides`, `envOverrides`, `podOverrides` and
 /// `jvmArgumentOverrides` (role group wins) into a single
@@ -350,7 +350,7 @@ where
             >(role_group, role, &default_config)
             .context(ValidateRoleGroupConfigSnafu)?;
 
-            // The upstream merge returns env overrides as a HashMap. Convert to an
+            // The merge returns env overrides as a HashMap. Convert to an
             // EnvVarSet (validating names early), then inject KAFKA_CLUSTER_ID.
             let mut env_overrides = EnvVarSet::new();
             for (name, value) in merged.config.env_overrides {
