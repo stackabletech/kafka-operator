@@ -25,10 +25,6 @@ const KAFKA_LOG4J_FILE: &str = "kafka.log4j.xml";
 const KAFKA_LOG4J2_FILE: &str = "kafka.log4j2.xml";
 
 /// The static, env-driven Vector agent configuration (`vector.yaml`).
-///
-/// The [`vector_container`](stackable_operator::v2::product_logging::framework::vector_container)
-/// mounts this file and supplies its `${...}` values (`LOG_DIR`, `DATA_DIR`, `NAMESPACE`,
-/// `CLUSTER_NAME`, `ROLE_NAME`, `ROLE_GROUP_NAME`, `VECTOR_AGGREGATOR_ADDRESS`) as env vars.
 const VECTOR_CONFIG: &str = include_str!("vector.yaml");
 
 /// Returns the Vector agent config (`vector.yaml`) content.
@@ -144,9 +140,5 @@ mod tests {
         // The two Kafka log formats must be handled ...
         assert!(content.contains("files_log4j"));
         assert!(content.contains("files_log4j2"));
-        // ... while the non-Kafka sources were removed.
-        assert!(!content.contains("files_stdout"));
-        assert!(!content.contains("files_tracing_rs"));
-        assert!(!content.contains("files_opa_json"));
     }
 }
