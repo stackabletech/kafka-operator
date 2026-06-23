@@ -9,7 +9,7 @@ data:
   kafka.rego: |
     package authz
 
-    # FQDNs of the brokers as regular expressions
+    # FQDN of the brokers as regular expressions
     brokers_fqdn := [
       `local`,
       `cluster`,
@@ -22,7 +22,7 @@ data:
     domain_components = [concat("", [`DC=`, dc]) | some dc in brokers_fqdn]
     common_name = `CN=generated certificate for pod`
     subject_dn_fields = array.concat(domain_components, [common_name])
-    brokers_subject_dn_pattern := concat(",", subject_dn_fields)
+    brokers_subject_dn_pattern := concat("", ["^", concat(",", subject_dn_fields), "$"])
 
     default allow := false
 
