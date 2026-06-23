@@ -9616,7 +9616,7 @@ rec {
       "stackable-kafka-operator" = rec {
         crateName = "stackable-kafka-operator";
         version = "0.0.0-dev";
-        edition = "2021";
+        edition = "2024";
         crateBin = [
           {
             name = "stackable-kafka-operator";

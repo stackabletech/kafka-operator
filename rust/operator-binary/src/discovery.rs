@@ -10,8 +10,8 @@ use stackable_operator::{
 };
 
 use crate::{
+    controller::KAFKA_CONTROLLER_NAME,
     crd::{role::KafkaRole, security::KafkaTlsSecurity, v1alpha1},
-    kafka_controller::KAFKA_CONTROLLER_NAME,
     utils::build_recommended_labels,
 };
 
@@ -92,7 +92,7 @@ pub fn build_discovery_configmap(
 fn listener_hosts(
     listeners: &[listener::v1alpha1::Listener],
     port_name: &str,
-) -> Result<impl IntoIterator<Item = (String, u16)>, Error> {
+) -> Result<impl IntoIterator<Item = (String, u16)> + use<>, Error> {
     listeners
         .iter()
         .flat_map(|listener| {

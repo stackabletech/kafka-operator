@@ -2,8 +2,10 @@
 // This is a separate file, since it is used by both the direct Kafka documentation, and the overarching
 // Stackable Platform documentation.
 
-* 4.1.1 (experimental) - Requires KRaft, please read on the xref:kafka:usage-guide/kraft-controller.adoc[Kraft migration guide].
-* 3.9.1 (LTS)
+* 4.2.1 (experimental, deprecated) - Requires KRaft, please read on the xref:kafka:usage-guide/kraft-controller.adoc[Kraft migration guide].
+* 4.1.1 (experimental, deprecated) - Requires KRaft, please read on the xref:kafka:usage-guide/kraft-controller.adoc[Kraft migration guide].
+* 3.9.2 (LTS)
+* 3.9.1 (deprecated)
 
 Support for clusters running in Kraft mode (which includes Apache Kafka 4.x.x) is experimental because it has not been thoroughly tested in production environments yet.
 

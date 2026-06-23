@@ -13,7 +13,7 @@ metadata:
   namespace: mm-migration
 spec:
   image:
-    productVersion: 3.9.4
+    productVersion: 3.9.5
     pullPolicy: IfNotPresent
   servers:
     roleGroups:
@@ -71,7 +71,7 @@ metadata:
   namespace: mm-migration
 spec:
   image:
-    productVersion: 3.9.1
+    productVersion: 3.9.2
     pullPolicy: IfNotPresent
   clusterConfig:
     metadataManager: zookeeper

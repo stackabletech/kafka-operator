@@ -1,0 +1,316 @@
+{# Templating flags used throughout this file. #}
+{% set use_client_tls = test_scenario['values']['use-client-tls'] == 'true' %}
+{% set vector_enabled = lookup('env', 'VECTOR_AGGREGATOR') | length > 0 %}
+---
+# Declarative shape assertions for every kafka-managed resource in the smoke test
+# except ConfigMap *.data* (covered in 34-assert.yaml.j2).
+#
+# kuttl performs subset matching: any field omitted here is not checked, and the
+# live object may carry additional keys/labels. We therefore omit fields that are
+# random per install (uids, resourceVersion, clusterIP, dynamic selector labels
+# on the bootstrap Service, container `env` because the operator emits a random
+# NODE_ID_OFFSET and kuttl matches array elements positionally).
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 600
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+  generation: 1 # There should be no unneeded Pod restarts
+  labels:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/managed-by: kafka.stackable.tech_kafkacluster
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/role-group: default
+    restarter.stackable.tech/enabled: "true"
+    stackable.tech/vendor: Stackable
+  ownerReferences:
+    - apiVersion: kafka.stackable.tech/v1alpha1
+      controller: true
+      kind: KafkaCluster
+      name: test-kafka
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: broker
+      app.kubernetes.io/instance: test-kafka
+      app.kubernetes.io/name: kafka
+      app.kubernetes.io/role-group: default
+  serviceName: test-kafka-broker-default-headless
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: broker
+        app.kubernetes.io/instance: test-kafka
+        app.kubernetes.io/managed-by: kafka.stackable.tech_kafkacluster
+        app.kubernetes.io/name: kafka
+        app.kubernetes.io/role-group: default
+        stackable.tech/vendor: Stackable
+    spec:
+      serviceAccount: test-kafka-serviceaccount
+      serviceAccountName: test-kafka-serviceaccount
+      terminationGracePeriodSeconds: 1800
+      containers:
+        - name: kafka
+          resources:
+            limits:
+              cpu: 1100m # From podOverrides
+              memory: 2Gi
+            requests:
+              cpu: 300m # From podOverrides
+              memory: 2Gi
+        - name: kcat-prober
+          resources:
+            limits:
+              cpu: 200m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+{% if vector_enabled %}
+        - name: vector
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 250m
+              memory: 128Mi
+{% endif %}
+      volumes:
+{% if use_client_tls %}
+        - name: tls-kcat
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/backend.autotls.cert.lifetime: 7d
+        - name: tls-kafka-server
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/backend.autotls.cert.lifetime: 7d
+{% endif %}
+        - name: tls-kafka-internal
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                annotations:
+                  secrets.stackable.tech/backend.autotls.cert.lifetime: 7d
+        - name: log-config
+        - name: listener-broker
+        - name: config
+        - name: log
+status:
+  readyReplicas: 1
+  replicas: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-broker-default-bootstrap
+  labels:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/instance: test-kafka-broker-default-bootstrap
+    app.kubernetes.io/managed-by: listeners.stackable.tech_listener
+    app.kubernetes.io/name: listener
+    app.kubernetes.io/role-group: default
+    stackable.tech/vendor: Stackable
+  ownerReferences:
+    - apiVersion: listeners.stackable.tech/v1alpha1
+      controller: true
+      kind: Listener
+      name: test-kafka-broker-default-bootstrap
+spec:
+  # selector is intentionally not asserted: it contains a per-install
+  # `listener.stackable.tech/mnt.<UID>` label.
+  ports:
+{% if use_client_tls %}
+    - name: kafka-tls
+      port: 9093
+      protocol: TCP
+      targetPort: 9093
+{% else %}
+    - name: kafka
+      port: 9092
+      protocol: TCP
+      targetPort: 9092
+{% endif %}
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-broker-default-headless
+  labels:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/managed-by: kafka.stackable.tech_kafkacluster
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/role-group: default
+    stackable.tech/vendor: Stackable
+  ownerReferences:
+    - apiVersion: kafka.stackable.tech/v1alpha1
+      controller: true
+      kind: KafkaCluster
+      name: test-kafka
+spec:
+  clusterIP: None
+  ports:
+{% if use_client_tls %}
+    - name: kafka-tls
+      port: 9093
+      protocol: TCP
+      targetPort: 9093
+{% else %}
+    - name: kafka
+      port: 9092
+      protocol: TCP
+      targetPort: 9092
+{% endif %}
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/role-group: default
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-kafka-broker-default-metrics
+  annotations:
+    prometheus.io/path: /metrics
+    prometheus.io/port: "9606"
+    prometheus.io/scheme: http
+    prometheus.io/scrape: "true"
+  labels:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/managed-by: kafka.stackable.tech_kafkacluster
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/role-group: default
+    prometheus.io/scrape: "true"
+    stackable.tech/vendor: Stackable
+  ownerReferences:
+    - apiVersion: kafka.stackable.tech/v1alpha1
+      controller: true
+      kind: KafkaCluster
+      name: test-kafka
+spec:
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: 9606
+      protocol: TCP
+      targetPort: 9606
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/role-group: default
+  type: ClusterIP
+---
+apiVersion: listeners.stackable.tech/v1alpha1
+kind: Listener
+metadata:
+  name: test-kafka-broker-default-bootstrap
+  labels:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/managed-by: kafka.stackable.tech_kafkacluster
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/role-group: default
+    stackable.tech/vendor: Stackable
+  ownerReferences:
+    - apiVersion: kafka.stackable.tech/v1alpha1
+      controller: true
+      kind: KafkaCluster
+      name: test-kafka
+spec:
+  className: cluster-internal
+  ports:
+{% if use_client_tls %}
+    - name: kafka-tls
+      port: 9093
+      protocol: TCP
+{% else %}
+    - name: kafka
+      port: 9092
+      protocol: TCP
+{% endif %}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: test-kafka-broker
+  labels:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/managed-by: kafka.stackable.tech_kafkacluster
+    app.kubernetes.io/name: kafka
+  ownerReferences:
+    - apiVersion: kafka.stackable.tech/v1alpha1
+      controller: true
+      kind: KafkaCluster
+      name: test-kafka
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: broker
+      app.kubernetes.io/instance: test-kafka
+      app.kubernetes.io/name: kafka
+status:
+  currentHealthy: 1
+  disruptionsAllowed: 1
+  expectedPods: 1
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test-kafka-serviceaccount
+  labels:
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/managed-by: kafka.stackable.tech_kafkacluster
+    app.kubernetes.io/name: kafka
+  ownerReferences:
+    - apiVersion: kafka.stackable.tech/v1alpha1
+      controller: true
+      kind: KafkaCluster
+      name: test-kafka
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: test-kafka-rolebinding
+  labels:
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/managed-by: kafka.stackable.tech_kafkacluster
+    app.kubernetes.io/name: kafka
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kafka-clusterrole
+subjects:
+  - kind: ServiceAccount
+    name: test-kafka-serviceaccount
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: log-dirs-test-kafka-broker-default-0
+spec:
+  resources:
+    requests:
+      storage: 2Gi
+status:
+  phase: Bound
