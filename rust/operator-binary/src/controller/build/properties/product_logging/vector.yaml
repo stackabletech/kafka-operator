@@ -237,11 +237,17 @@ transforms:
       }
       . |= parse_regex!(.file, r'^${LOG_DIR}/(?P<container>.*?)/(?P<file>.*?)$')
 
+  # Filters the logs of the Vector agent according to the defined log level
   filtered_logs_vector:
     inputs:
       - vector
     type: filter
-    condition: '!includes(["TRACE", "DEBUG"], .metadata.level)'
+    condition: >
+      (.metadata.level == "TRACE" && "${VECTOR_FILE_LOG_LEVEL}" == "trace") ||
+      (.metadata.level == "DEBUG" && includes(["trace", "debug"], "${VECTOR_FILE_LOG_LEVEL}")) ||
+      (.metadata.level == "INFO" && includes(["trace", "debug", "info"], "${VECTOR_FILE_LOG_LEVEL}")) ||
+      (.metadata.level == "WARN" && includes(["trace", "debug", "info", "warn"], "${VECTOR_FILE_LOG_LEVEL}")) ||
+      (.metadata.level == "ERROR" && includes(["trace", "debug", "info", "warn", "error"], "${VECTOR_FILE_LOG_LEVEL}"))
 
   extended_logs_vector:
     inputs:
