@@ -75,7 +75,6 @@ use crate::{
     },
 };
 
-stackable_operator::constant!(VECTOR_CONTAINER_NAME: ContainerName = "vector");
 // The Vector container reads its `vector.yaml` from the `config` volume (the rolegroup
 // ConfigMap) and tails product logs from the `log` volume.
 stackable_operator::constant!(VECTOR_CONFIG_VOLUME_NAME: VolumeName = "config");
@@ -386,6 +385,7 @@ pub fn build_broker_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
+        &container_name(BrokerContainer::Vector),
         &validated_rg.config.logging,
         resolved_product_image,
         &resource_names,
@@ -615,6 +615,7 @@ pub fn build_controller_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
+        &container_name(ControllerContainer::Vector),
         &validated_rg.config.logging,
         resolved_product_image,
         &resource_names,
@@ -793,8 +794,16 @@ fn add_common_pod_config(
 /// [`ValidatedLogging`]. The container mounts the
 /// static `vector.yaml` from the `config` volume and is driven by the env vars the
 /// [`vector_container`] sets.
+/// The [`ContainerName`] for a role container, derived from its `Display` name so the
+/// Vector sidecar's container name always matches that container's logging-config key.
+fn container_name(container: impl std::fmt::Display) -> ContainerName {
+    ContainerName::from_str(&container.to_string())
+        .expect("a container enum variant is always a valid ContainerName")
+}
+
 fn add_vector_container(
     pod_builder: &mut PodBuilder,
+    vector_container_name: &ContainerName,
     logging: &ValidatedLogging,
     resolved_product_image: &ResolvedProductImage,
     resource_names: &ResourceNames,
@@ -802,7 +811,7 @@ fn add_vector_container(
     // Add vector container after kafka container to keep the defaulting into kafka container
     if let Some(vector_container_log_config) = &logging.vector_container {
         pod_builder.add_container(vector_container(
-            &VECTOR_CONTAINER_NAME,
+            vector_container_name,
             resolved_product_image,
             vector_container_log_config,
             resource_names,
