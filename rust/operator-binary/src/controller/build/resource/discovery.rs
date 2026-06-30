@@ -28,7 +28,7 @@ pub enum Error {
 }
 
 /// Build a discovery [`ConfigMap`] containing information about how to connect to a certain
-/// [`v1alpha1::KafkaCluster`].
+/// `v1alpha1::KafkaCluster`.
 pub fn build_discovery_configmap(
     validated_cluster: &ValidatedCluster,
     listeners: &[listener::v1alpha1::Listener],
