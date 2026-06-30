@@ -10,7 +10,7 @@ use stackable_operator::{
     v2::types::{common::Port, kubernetes::SecretClassName},
 };
 
-use crate::crd::{authentication::ResolvedAuthenticationClasses, tls, v1alpha1};
+use crate::crd::{authentication::ResolvedAuthenticationClasses, v1alpha1};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -21,7 +21,7 @@ pub enum Error {
 /// Helper struct combining TLS settings for server and internal with the resolved AuthenticationClasses
 pub struct ValidatedKafkaSecurity {
     resolved_authentication_classes: ResolvedAuthenticationClasses,
-    internal_secret_class: Option<SecretClassName>,
+    internal_secret_class: SecretClassName,
     server_secret_class: Option<SecretClassName>,
     opa_secret_class: Option<SecretClassName>,
 }
@@ -36,8 +36,6 @@ impl ValidatedKafkaSecurity {
     pub const CLIENT_PORT: Port = Port(9092);
     // ports
     pub const CLIENT_PORT_NAME: &'static str = "kafka";
-    // internal
-    pub const INTERNAL_PORT: Port = Port(19092);
     pub const SECURE_BOOTSTRAP_PORT: Port = Port(9095);
     pub const SECURE_CLIENT_PORT: Port = Port(9093);
     pub const SECURE_CLIENT_PORT_NAME: &'static str = "kafka-tls";
@@ -46,7 +44,7 @@ impl ValidatedKafkaSecurity {
     #[cfg(test)]
     pub fn new(
         resolved_authentication_classes: ResolvedAuthenticationClasses,
-        internal_secret_class: Option<SecretClassName>,
+        internal_secret_class: SecretClassName,
         server_secret_class: Option<SecretClassName>,
         opa_secret_class: Option<SecretClassName>,
     ) -> Self {
@@ -64,18 +62,13 @@ impl ValidatedKafkaSecurity {
     /// step of the controller; this constructor only reads TLS settings from the spec.
     pub fn new_from_kafka_cluster(
         kafka: &v1alpha1::KafkaCluster,
+        internal_secret_class: SecretClassName,
         resolved_authentication_classes: ResolvedAuthenticationClasses,
         opa_secret_class: Option<SecretClassName>,
     ) -> Self {
         ValidatedKafkaSecurity {
             resolved_authentication_classes,
-            internal_secret_class: kafka
-                .spec
-                .cluster_config
-                .tls
-                .as_ref()
-                .map(|tls| tls.internal_secret_class.clone())
-                .unwrap_or_else(tls::internal_tls_default),
+            internal_secret_class,
             server_secret_class: kafka
                 .spec
                 .cluster_config
@@ -108,11 +101,10 @@ impl ValidatedKafkaSecurity {
             .get_tls_authentication_class()
     }
 
-    /// Retrieve the optional internal `SecretClass`.
-    ///
-    /// Returns `None` when internal TLS is disabled (a plaintext cluster).
-    pub fn tls_internal_secret_class(&self) -> Option<&str> {
-        self.internal_secret_class.as_ref().map(|s| s.as_ref())
+    /// Retrieve the internal `SecretClass`. Internal (inter-broker) TLS is mandatory, so this is
+    /// always set (defaults to `tls`).
+    pub fn tls_internal_secret_class(&self) -> &str {
+        self.internal_secret_class.as_ref()
     }
 
     pub fn has_kerberos_enabled(&self) -> bool {
@@ -170,6 +162,12 @@ impl ValidatedKafkaSecurity {
         }
     }
 
+    /// The internal (inter-broker / broker–controller) listener port. Internal traffic is always
+    /// TLS-secured, so this is always [`Self::SECURE_INTERNAL_PORT`] — there is no insecure variant.
+    pub fn internal_port(&self) -> Port {
+        Self::SECURE_INTERNAL_PORT
+    }
+
     pub fn bootstrap_port_name(&self) -> &str {
         Self::BOOTSTRAP_PORT_NAME
     }
@@ -180,15 +178,6 @@ impl ValidatedKafkaSecurity {
             Self::SECURE_CLIENT_PORT_NAME
         } else {
             Self::CLIENT_PORT_NAME
-        }
-    }
-
-    /// Return the Kafka (secure) internal port depending on tls settings.
-    pub fn internal_port(&self) -> Port {
-        if self.tls_internal_secret_class().is_some() {
-            Self::SECURE_INTERNAL_PORT
-        } else {
-            Self::INTERNAL_PORT
         }
     }
 }

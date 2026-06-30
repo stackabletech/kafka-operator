@@ -422,7 +422,7 @@ mod tests {
             .and_then(|tls| tls.server_secret_class.clone())
     }
 
-    fn get_internal_secret_class(kafka: &v1alpha1::KafkaCluster) -> Option<SecretClassName> {
+    fn get_internal_secret_class(kafka: &v1alpha1::KafkaCluster) -> SecretClassName {
         kafka
             .spec
             .cluster_config
@@ -518,8 +518,8 @@ mod tests {
             serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            get_internal_secret_class(&kafka).map(|s| s.to_string()),
-            Some("simple-kafka-internal-tls".to_string())
+            get_internal_secret_class(&kafka).to_string(),
+            "simple-kafka-internal-tls".to_string()
         );
     }
 
@@ -561,8 +561,8 @@ mod tests {
             serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            get_internal_secret_class(&kafka).map(|s| s.to_string()),
-            Some("simple-kafka-internal-tls".to_string())
+            get_internal_secret_class(&kafka).to_string(),
+            "simple-kafka-internal-tls".to_string()
         );
 
         let input = r#"

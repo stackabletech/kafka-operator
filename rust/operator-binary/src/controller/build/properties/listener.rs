@@ -99,44 +99,20 @@ pub fn get_kafka_listener_config(
     }
 
     // INTERNAL / CONTROLLER
-    if kafka_security.has_kerberos_enabled() || kafka_security.tls_internal_secret_class().is_some()
-    {
-        // 5) & 6) Kerberos and TLS authentication classes are mutually exclusive but both require internal tls to be used
-        listeners.push(KafkaListener {
-            name: KafkaListenerName::Internal,
-            host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: ValidatedKafkaSecurity::SECURE_INTERNAL_PORT.to_string(),
-        });
-        advertised_listeners.push(KafkaListener {
-            name: KafkaListenerName::Internal,
-            host: pod_fqdn.to_string(),
-            port: ValidatedKafkaSecurity::SECURE_INTERNAL_PORT.to_string(),
-        });
-        listener_security_protocol_map
-            .insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
-        listener_security_protocol_map
-            .insert(KafkaListenerName::Controller, KafkaListenerProtocol::Ssl);
-    } else {
-        // 7) If no internal tls is required we expose INTERNAL as PLAINTEXT
-        listeners.push(KafkaListener {
-            name: KafkaListenerName::Internal,
-            host: LISTENER_LOCAL_ADDRESS.to_string(),
-            port: kafka_security.internal_port().to_string(),
-        });
-        advertised_listeners.push(KafkaListener {
-            name: KafkaListenerName::Internal,
-            host: pod_fqdn.to_string(),
-            port: kafka_security.internal_port().to_string(),
-        });
-        listener_security_protocol_map.insert(
-            KafkaListenerName::Internal,
-            KafkaListenerProtocol::Plaintext,
-        );
-        listener_security_protocol_map.insert(
-            KafkaListenerName::Controller,
-            KafkaListenerProtocol::Plaintext,
-        );
-    }
+    // 5) & 6) Kerberos and TLS authentication classes are mutually exclusive but both require internal tls to be used
+    listeners.push(KafkaListener {
+        name: KafkaListenerName::Internal,
+        host: LISTENER_LOCAL_ADDRESS.to_string(),
+        port: kafka_security.internal_port().to_string(),
+    });
+    advertised_listeners.push(KafkaListener {
+        name: KafkaListenerName::Internal,
+        host: pod_fqdn.to_string(),
+        port: kafka_security.internal_port().to_string(),
+    });
+    listener_security_protocol_map.insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
+    listener_security_protocol_map
+        .insert(KafkaListenerName::Controller, KafkaListenerProtocol::Ssl);
 
     // BOOTSTRAP
     if kafka_security.has_kerberos_enabled() {
@@ -230,7 +206,7 @@ mod tests {
                     ),
                 },
             }]),
-            Some("internal-tls".parse().unwrap()),
+            "internal-tls".parse().unwrap(),
             Some("tls".parse().unwrap()),
             None,
         );
@@ -295,7 +271,7 @@ mod tests {
 
         let kafka_security = ValidatedKafkaSecurity::new(
             ResolvedAuthenticationClasses::new(vec![]),
-            Some("tls".parse().unwrap()),
+            "tls".parse().unwrap(),
             Some("tls".parse().unwrap()),
             None,
         );
@@ -358,7 +334,7 @@ mod tests {
 
         let kafka_security = ValidatedKafkaSecurity::new(
             ResolvedAuthenticationClasses::new(vec![]),
-            None,
+            "tls".parse().unwrap(),
             None,
             None,
         );
@@ -414,9 +390,9 @@ mod tests {
                 name = KafkaListenerName::Client,
                 protocol = KafkaListenerProtocol::Plaintext,
                 internal_name = KafkaListenerName::Internal,
-                internal_protocol = KafkaListenerProtocol::Plaintext,
+                internal_protocol = KafkaListenerProtocol::Ssl,
                 controller_name = KafkaListenerName::Controller,
-                controller_protocol = KafkaListenerProtocol::Plaintext,
+                controller_protocol = KafkaListenerProtocol::Ssl,
             )
         );
     }
@@ -455,7 +431,7 @@ mod tests {
                     ),
                 },
             }]),
-            Some("tls".parse().unwrap()),
+            "tls".parse().unwrap(),
             Some("tls".parse().unwrap()),
             None,
         );

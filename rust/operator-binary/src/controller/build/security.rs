@@ -259,21 +259,19 @@ pub fn add_broker_volume_and_volume_mounts(
             .context(AddVolumeMountSnafu)?;
     }
 
-    if let Some(tls_internal_secret_class) = security.tls_internal_secret_class() {
-        pod_builder
-            .add_volume(create_tls_keystore_volume(
-                STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
-                tls_internal_secret_class,
-                requested_secret_lifetime,
-            )?)
-            .context(AddVolumeSnafu)?;
-        cb_kafka
-            .add_volume_mount(
-                STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
-                STACKABLE_TLS_KAFKA_INTERNAL_DIR,
-            )
-            .context(AddVolumeMountSnafu)?;
-    }
+    pod_builder
+        .add_volume(create_tls_keystore_volume(
+            STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
+            security.tls_internal_secret_class(),
+            requested_secret_lifetime,
+        )?)
+        .context(AddVolumeSnafu)?;
+    cb_kafka
+        .add_volume_mount(
+            STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
+            STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+        )
+        .context(AddVolumeMountSnafu)?;
 
     if let Some(secret_class) = security.opa_secret_class() {
         cb_kafka
@@ -308,33 +306,31 @@ pub fn add_controller_volume_and_volume_mounts(
     cb_kafka: &mut ContainerBuilder,
     requested_secret_lifetime: &Duration,
 ) -> Result<(), Error> {
-    if let Some(tls_internal_secret_class) = security.tls_internal_secret_class() {
-        pod_builder
-            .add_volume(
-                VolumeBuilder::new(STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME)
-                    .ephemeral(
-                        SecretOperatorVolumeSourceBuilder::new(
-                            tls_internal_secret_class,
-                            // Kafka needs both the public certificate and the private key for
-                            // the internal communication.
-                            SecretClassVolumeProvisionParts::PublicPrivate,
-                        )
-                        .with_pod_scope()
-                        .with_format(SecretFormat::TlsPkcs12)
-                        .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
-                        .build()
-                        .context(SecretVolumeBuildSnafu)?,
+    pod_builder
+        .add_volume(
+            VolumeBuilder::new(STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME)
+                .ephemeral(
+                    SecretOperatorVolumeSourceBuilder::new(
+                        security.tls_internal_secret_class(),
+                        // Kafka needs both the public certificate and the private key for
+                        // the internal communication.
+                        SecretClassVolumeProvisionParts::PublicPrivate,
                     )
-                    .build(),
-            )
-            .context(AddVolumeSnafu)?;
-        cb_kafka
-            .add_volume_mount(
-                STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
-                STACKABLE_TLS_KAFKA_INTERNAL_DIR,
-            )
-            .context(AddVolumeMountSnafu)?;
-    }
+                    .with_pod_scope()
+                    .with_format(SecretFormat::TlsPkcs12)
+                    .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+                    .build()
+                    .context(SecretVolumeBuildSnafu)?,
+                )
+                .build(),
+        )
+        .context(AddVolumeSnafu)?;
+    cb_kafka
+        .add_volume_mount(
+            STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
+            STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+        )
+        .context(AddVolumeMountSnafu)?;
 
     Ok(())
 }
@@ -455,25 +451,23 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
     }
 
     // Internal TLS
-    if security.tls_internal_secret_class().is_some() {
-        // BROKERS
-        insert_listener_ssl_stores(
-            &mut config,
-            &KafkaListenerName::Internal,
-            STACKABLE_TLS_KAFKA_INTERNAL_DIR,
-        );
-        // CONTROLLERS
-        insert_listener_ssl_stores(
-            &mut config,
-            &KafkaListenerName::Controller,
-            STACKABLE_TLS_KAFKA_INTERNAL_DIR,
-        );
-        // client auth required
-        config.insert(
-            KafkaListenerName::Internal.listener_ssl_client_auth(),
-            SSL_CLIENT_AUTH_REQUIRED.to_string(),
-        );
-    }
+    // BROKERS
+    insert_listener_ssl_stores(
+        &mut config,
+        &KafkaListenerName::Internal,
+        STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+    );
+    // CONTROLLERS
+    insert_listener_ssl_stores(
+        &mut config,
+        &KafkaListenerName::Controller,
+        STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+    );
+    // client auth required
+    config.insert(
+        KafkaListenerName::Internal.listener_ssl_client_auth(),
+        SSL_CLIENT_AUTH_REQUIRED.to_string(),
+    );
 
     //OPA Tls
     if security.opa_secret_class().is_some() {
@@ -508,32 +502,28 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
 pub fn controller_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<String, String> {
     let mut config = BTreeMap::new();
 
-    if security.tls_client_authentication_class().is_some()
-        || security.tls_internal_secret_class().is_some()
-    {
-        insert_listener_ssl_stores(
-            &mut config,
-            &KafkaListenerName::Controller,
-            STACKABLE_TLS_KAFKA_INTERNAL_DIR,
-        );
+    insert_listener_ssl_stores(
+        &mut config,
+        &KafkaListenerName::Controller,
+        STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+    );
 
-        // The TLS properties for the internal broker listener are needed by the Kraft controllers
-        // too during metadata migration from ZooKeeper to Kraft mode.
-        insert_listener_ssl_stores(
-            &mut config,
-            &KafkaListenerName::Internal,
-            STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+    // The TLS properties for the internal broker listener are needed by the Kraft controllers
+    // too during metadata migration from ZooKeeper to Kraft mode.
+    insert_listener_ssl_stores(
+        &mut config,
+        &KafkaListenerName::Internal,
+        STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+    );
+    // We set either client tls with authentication or client tls without authentication
+    // If authentication is explicitly required we do not want to have any other CAs to
+    // be trusted.
+    if security.tls_client_authentication_class().is_some() {
+        // client auth required
+        config.insert(
+            KafkaListenerName::Controller.listener_ssl_client_auth(),
+            SSL_CLIENT_AUTH_REQUIRED.to_string(),
         );
-        // We set either client tls with authentication or client tls without authentication
-        // If authentication is explicitly required we do not want to have any other CAs to
-        // be trusted.
-        if security.tls_client_authentication_class().is_some() {
-            // client auth required
-            config.insert(
-                KafkaListenerName::Controller.listener_ssl_client_auth(),
-                SSL_CLIENT_AUTH_REQUIRED.to_string(),
-            );
-        }
     }
 
     // Kerberos
@@ -659,11 +649,12 @@ fn kcat_client_sasl_ssl(cert_directory: &str, service_name: &str) -> Vec<String>
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, str::FromStr};
 
     use stackable_operator::{
         builder::meta::ObjectMetaBuilder,
         crd::authentication::{core, kerberos, tls},
+        v2::types::kubernetes::SecretClassName,
     };
 
     use super::*;
@@ -701,19 +692,29 @@ mod tests {
 
     /// Plaintext: no TLS, no authentication, no OPA.
     fn plaintext() -> ValidatedKafkaSecurity {
-        ValidatedKafkaSecurity::new(no_auth(), None, None, None)
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            None,
+            None,
+        )
     }
 
     /// Server TLS only (encryption without client authentication).
     fn server_tls() -> ValidatedKafkaSecurity {
-        ValidatedKafkaSecurity::new(no_auth(), None, Some("tls".parse().unwrap()), None)
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            Some("tls".parse().unwrap()),
+            None,
+        )
     }
 
     /// Mutual TLS (client-certificate authentication).
     fn client_auth_tls() -> ValidatedKafkaSecurity {
         ValidatedKafkaSecurity::new(
             ResolvedAuthenticationClasses::new(vec![tls_auth_class()]),
-            None,
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
             Some("tls".parse().unwrap()),
             None,
         )
@@ -723,7 +724,7 @@ mod tests {
     fn kerberos() -> ValidatedKafkaSecurity {
         ValidatedKafkaSecurity::new(
             ResolvedAuthenticationClasses::new(vec![kerberos_auth_class()]),
-            Some("tls".parse().unwrap()),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
             Some("tls".parse().unwrap()),
             None,
         )
@@ -731,14 +732,19 @@ mod tests {
 
     /// Internal TLS only (broker/controller encryption without client TLS).
     fn internal_tls() -> ValidatedKafkaSecurity {
-        ValidatedKafkaSecurity::new(no_auth(), Some("tls".parse().unwrap()), None, None)
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            None,
+            None,
+        )
     }
 
     /// OPA authorization with a TLS truststore (internal + server TLS also enabled).
     fn opa() -> ValidatedKafkaSecurity {
         ValidatedKafkaSecurity::new(
             no_auth(),
-            Some("tls".parse().unwrap()),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
             Some("tls".parse().unwrap()),
             Some("opa-tls".parse().unwrap()),
         )
@@ -882,13 +888,21 @@ mod tests {
     // ---- broker_config_settings ----
 
     #[test]
-    fn broker_config_plaintext_only_sets_inter_broker_listener() {
+    fn broker_config_plaintext_still_configures_internal_tls() {
+        // Internal (inter-broker) TLS is mandatory, so even a plaintext cluster (no client TLS or
+        // authentication) still carries the internal + controller SSL stores and the inter-broker
+        // listener — while the CLIENT listener stays plaintext.
         let config = broker_config_settings(&plaintext());
         assert_eq!(
-            config.get("inter.broker.listener.name"),
+            config.get(INTER_BROKER_LISTENER_NAME),
             Some(&"INTERNAL".to_string())
         );
-        assert_eq!(config.len(), 1);
+        assert!(config.contains_key(&KafkaListenerName::Internal.listener_ssl_keystore_location()));
+        assert!(config.contains_key(&KafkaListenerName::Internal.listener_ssl_client_auth()));
+        assert!(
+            config.contains_key(&KafkaListenerName::Controller.listener_ssl_keystore_location())
+        );
+        assert!(!config.contains_key(&KafkaListenerName::Client.listener_ssl_keystore_location()));
     }
 
     #[test]
@@ -941,8 +955,16 @@ mod tests {
     // ---- controller_config_settings ----
 
     #[test]
-    fn controller_config_plaintext_is_empty() {
-        assert!(controller_config_settings(&plaintext()).is_empty());
+    fn controller_config_plaintext_has_internal_tls() {
+        // Internal TLS is mandatory, so the controller config is non-empty even for a plaintext
+        // cluster: it carries the controller + internal SSL stores, but no client-cert auth
+        // (there is no client authentication class).
+        let config = controller_config_settings(&plaintext());
+        assert!(
+            config.contains_key(&KafkaListenerName::Controller.listener_ssl_keystore_location())
+        );
+        assert!(config.contains_key(&KafkaListenerName::Internal.listener_ssl_keystore_location()));
+        assert!(!config.contains_key(&KafkaListenerName::Controller.listener_ssl_client_auth()));
     }
 
     #[test]

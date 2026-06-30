@@ -42,7 +42,7 @@ use crate::{
             broker::{BrokerConfig, BrokerContainer},
             controller::{ControllerConfig, ControllerContainer},
         },
-        v1alpha1,
+        tls, v1alpha1,
     },
 };
 
@@ -213,8 +213,17 @@ pub fn validate(
         .as_ref()
         .and_then(|cfg| cfg.secret_class.clone());
 
+    let internal_secret_class = kafka
+        .spec
+        .cluster_config
+        .tls
+        .as_ref()
+        .map(|tls| tls.internal_secret_class.clone())
+        .unwrap_or_else(tls::internal_tls_default);
+
     let kafka_security = ValidatedKafkaSecurity::new_from_kafka_cluster(
         kafka,
+        internal_secret_class,
         authentication_classes,
         opa_secret_class,
     );

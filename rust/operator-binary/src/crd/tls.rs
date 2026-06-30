@@ -17,10 +17,9 @@ pub struct KafkaTls {
     /// - Which cert the brokers should use to authenticate themselves against other brokers
     /// - Which ca.crt to use when validating the other brokers
     ///
-    /// Defaults to `tls`
-    /// Set to `null` to disable internal TLS (resulting in a plaintext cluster).
+    /// Defaults to `tls`. Internal (inter-broker) TLS is mandatory, so this is always set.
     #[serde(default = "internal_tls_default")]
-    pub internal_secret_class: Option<SecretClassName>,
+    pub internal_secret_class: SecretClassName,
     /// The [SecretClass](DOCS_BASE_URL_PLACEHOLDER/secret-operator/secretclass.html) to use for
     /// client connections. This setting controls:
     /// - If TLS encryption is used at all
@@ -50,8 +49,8 @@ fn default_secret_class() -> SecretClassName {
 }
 
 /// Helper methods to provide defaults in the CRDs and tests
-pub fn internal_tls_default() -> Option<SecretClassName> {
-    Some(default_secret_class())
+pub fn internal_tls_default() -> SecretClassName {
+    default_secret_class()
 }
 
 /// Helper methods to provide defaults in the CRDs and tests
