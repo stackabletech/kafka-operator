@@ -388,3 +388,27 @@ commands:
         exit 1
       fi
       rm -f "$expected_file" "$actual_file"
+---
+# The `.data` snapshot above covers the discovery ConfigMap's contents; assert its
+# metadata (labels + ownerReferences) here too. `app.kubernetes.io/version` must be the
+# full image label value (`<product-version>-stackable<image-version>`), NOT the bare
+# product version - this brings Kafka in line with other products.
+# kuttl partial-matches, so volatile fields (uid/resourceVersion/timestamps/
+# managedFields) are ignored automatically.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-kafka
+  labels:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/managed-by: kafka.stackable.tech_kafkacluster
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/role-group: discovery
+    app.kubernetes.io/version: "{{ test_scenario['values']['kafka'].split(',')[0] }}-stackable0.0.0-dev"
+    stackable.tech/vendor: Stackable
+  ownerReferences:
+    - apiVersion: kafka.stackable.tech/v1alpha1
+      controller: true
+      kind: KafkaCluster
+      name: test-kafka

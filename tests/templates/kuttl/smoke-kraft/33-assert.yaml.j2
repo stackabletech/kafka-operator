@@ -1,0 +1,56 @@
+---
+# Snapshot the discovery ConfigMap `test-kafka` in KRaft mode: both its `.data` (the KAFKA
+# bootstrap-server list) and its metadata (labels + ownerReferences). The KRaft counterpart
+# of the smoke test's 34-assert.
+#
+# The `.data` heredoc is quoted (`<<'YAMLEOF'`) so shell substitution is disabled; only
+# `__NAMESPACE__` is substituted via `sed`, because kuttl runs in a randomized namespace.
+# Both sides are normalized to canonical JSON via `yq -o=json`. The three broker role groups
+# appear in the bootstrap list in alphabetical order (operator stores role groups in a
+# BTreeMap), on the TLS client port 9093 (smoke-kraft always sets serverSecretClass: tls).
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+commands:
+  - script: |
+      expected=$(cat <<'YAMLEOF' | sed "s|__NAMESPACE__|$NAMESPACE|g" | yq -o=json
+      KAFKA: test-kafka-broker-automatic-log-config-bootstrap.__NAMESPACE__.svc.cluster.local:9093,test-kafka-broker-custom-log-config-bootstrap.__NAMESPACE__.svc.cluster.local:9093,test-kafka-broker-default-bootstrap.__NAMESPACE__.svc.cluster.local:9093
+
+      YAMLEOF
+      )
+      actual=$(kubectl -n $NAMESPACE get cm test-kafka -o yaml | yq -o=json '.data')
+      expected_file=$(mktemp) && actual_file=$(mktemp)
+      printf '%s\n' "$expected" > "$expected_file"
+      printf '%s\n' "$actual" > "$actual_file"
+      if ! diff_out=$(diff -u "$expected_file" "$actual_file"); then
+        echo "ERROR: ConfigMap test-kafka data drifted from snapshot."
+        printf '%s\n' "$diff_out"
+        rm -f "$expected_file" "$actual_file"
+        exit 1
+      fi
+      rm -f "$expected_file" "$actual_file"
+---
+# Assert the discovery ConfigMap's metadata (labels + ownerReferences).
+# `app.kubernetes.io/version` must be the full image label value
+# (`<product-version>-stackable<image-version>`), NOT the bare product version.
+# kuttl partial-matches, so volatile fields
+# (uid/resourceVersion/timestamps/managedFields) are ignored automatically.
+# The discovery ConfigMap is built by the same broker/`discovery` code path
+# in both modes, so its labels match the smoke test's.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-kafka
+  labels:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/instance: test-kafka
+    app.kubernetes.io/managed-by: kafka.stackable.tech_kafkacluster
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/role-group: discovery
+    app.kubernetes.io/version: "{{ test_scenario['values']['kafka-kraft'].split(',')[0] }}-stackable0.0.0-dev"
+    stackable.tech/vendor: Stackable
+  ownerReferences:
+    - apiVersion: kafka.stackable.tech/v1alpha1
+      controller: true
+      kind: KafkaCluster
+      name: test-kafka
