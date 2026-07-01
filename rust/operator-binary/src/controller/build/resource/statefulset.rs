@@ -5,8 +5,11 @@ use stackable_operator::{
     builder::{
         meta::ObjectMetaBuilder,
         pod::{
-            PodBuilder, container::ContainerBuilder, resources::ResourceRequirementsBuilder,
-            security::PodSecurityContextBuilder, volume::VolumeBuilder,
+            PodBuilder,
+            container::{ContainerBuilder, FieldPathEnvVar},
+            resources::ResourceRequirementsBuilder,
+            security::PodSecurityContextBuilder,
+            volume::VolumeBuilder,
         },
     },
     commons::product_image_selection::ResolvedProductImage,
@@ -16,9 +19,8 @@ use stackable_operator::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec, StatefulSetUpdateStrategy},
             core::v1::{
-                ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource,
-                ExecAction, ObjectFieldSelector, PodSpec, Probe, ServiceAccount, TCPSocketAction,
-                Volume,
+                ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource, ExecAction,
+                ObjectFieldSelector, PodSpec, Probe, ServiceAccount, TCPSocketAction, Volume,
             },
         },
         apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
@@ -29,7 +31,7 @@ use stackable_operator::{
         builder::{
             meta::ownerreference_from_resource,
             pod::{
-                container::EnvVarSet,
+                container::{EnvVarName, EnvVarSet},
                 volume::{ListenerReference, listener_operator_volume_source_builder_build_pvc},
             },
         },
@@ -38,7 +40,7 @@ use stackable_operator::{
             STACKABLE_LOG_DIR, ValidatedContainerLogConfigChoice, vector_container,
         },
         role_group_utils::ResourceNames,
-        types::kubernetes::{ContainerName, PersistentVolumeClaimName, VolumeName},
+        types::kubernetes::{ConfigMapKey, ContainerName, PersistentVolumeClaimName, VolumeName},
     },
 };
 
@@ -84,6 +86,46 @@ stackable_operator::constant!(VECTOR_LOG_VOLUME_NAME: VolumeName = "log");
 /// Name of both the env var and the ZooKeeper discovery ConfigMap key holding the
 /// ZooKeeper connection string.
 const ZOOKEEPER_ENV_VAR_NAME: &str = "ZOOKEEPER";
+
+/// Parses a compile-time-known env var name; panics only on a programming error (a malformed
+/// literal in this file).
+fn env_var_name(name: &str) -> EnvVarName {
+    EnvVarName::from_str(name).expect("a static env var name is valid")
+}
+
+/// Environment variables the operator sets on the Kafka container that are common to broker and
+/// controller role groups.
+///
+/// These form the base; the caller merges the user's `envOverrides` on top (see
+/// [`build_broker_rolegroup_statefulset`] and [`build_controller_rolegroup_statefulset`]), so a
+/// user override wins on a name collision. Using an [`EnvVarSet`] (a name-keyed map) makes that
+/// precedence explicit and de-duplicates by name, rather than relying on append order.
+fn common_operator_env_vars(
+    validated_cluster: &ValidatedCluster,
+    kafka_security: &ValidatedKafkaSecurity,
+) -> EnvVarSet {
+    let mut env = EnvVarSet::new()
+        .with_field_path(&env_var_name("POD_NAME"), &FieldPathEnvVar::Name)
+        .with_value(
+            &env_var_name("KAFKA_CLIENT_PORT"),
+            kafka_security.client_port().to_string(),
+        );
+
+    // Present in ZooKeeper mode only: brokers use it to connect, controllers for migration.
+    if let Some(zookeeper_config_map_name) =
+        &validated_cluster.cluster_config.zookeeper_config_map_name
+    {
+        env = env.with_config_map_key_ref(
+            &env_var_name(ZOOKEEPER_ENV_VAR_NAME),
+            zookeeper_config_map_name,
+            &ConfigMapKey::from_str(ZOOKEEPER_ENV_VAR_NAME)
+                .expect("a static config map key is valid"),
+        );
+    }
+
+    env
+}
+
 const POD_MANAGEMENT_POLICY_PARALLEL: &str = "Parallel";
 
 #[derive(Snafu, Debug)]
@@ -212,36 +254,10 @@ pub fn build_broker_rolegroup_statefulset(
         .context(AddKerberosConfigSnafu)?;
     }
 
-    let mut env = Vec::<EnvVar>::from(validated_rg.env_overrides.clone());
-
-    if let Some(zookeeper_config_map_name) =
-        &validated_cluster.cluster_config.zookeeper_config_map_name
-    {
-        env.push(EnvVar {
-            name: ZOOKEEPER_ENV_VAR_NAME.to_string(),
-            value_from: Some(EnvVarSource {
-                config_map_key_ref: Some(ConfigMapKeySelector {
-                    name: zookeeper_config_map_name.to_string(),
-                    key: ZOOKEEPER_ENV_VAR_NAME.to_string(),
-                    ..ConfigMapKeySelector::default()
-                }),
-                ..EnvVarSource::default()
-            }),
-            ..EnvVar::default()
-        })
-    };
-
-    env.push(EnvVar {
-        name: "POD_NAME".to_string(),
-        value_from: Some(EnvVarSource {
-            field_ref: Some(ObjectFieldSelector {
-                api_version: Some("v1".to_string()),
-                field_path: "metadata.name".to_string(),
-            }),
-            ..EnvVarSource::default()
-        }),
-        ..EnvVar::default()
-    });
+    // Operator-set env vars first; the user's `envOverrides` are merged on top and win.
+    let env: Vec<EnvVar> = common_operator_env_vars(validated_cluster, kafka_security)
+        .merge(validated_rg.env_overrides.clone())
+        .into();
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -274,10 +290,6 @@ pub fn build_broker_rolegroup_statefulset(
     )?;
 
     cb_kafka
-        .add_env_var(
-            "KAFKA_CLIENT_PORT".to_string(),
-            kafka_security.client_port().to_string(),
-        )
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
@@ -458,67 +470,21 @@ pub fn build_controller_rolegroup_statefulset(
 
     let mut pod_builder = PodBuilder::new();
 
-    let mut env = Vec::<EnvVar>::from(validated_rg.env_overrides.clone());
-
-    env.push(EnvVar {
-        name: "NAMESPACE".to_string(),
-        value_from: Some(EnvVarSource {
-            field_ref: Some(ObjectFieldSelector {
-                api_version: Some("v1".to_string()),
-                field_path: "metadata.namespace".to_string(),
-            }),
-            ..EnvVarSource::default()
-        }),
-        ..EnvVar::default()
-    });
-
-    env.push(EnvVar {
-        name: "POD_NAME".to_string(),
-        value_from: Some(EnvVarSource {
-            field_ref: Some(ObjectFieldSelector {
-                api_version: Some("v1".to_string()),
-                field_path: "metadata.name".to_string(),
-            }),
-            ..EnvVarSource::default()
-        }),
-        ..EnvVar::default()
-    });
-
-    env.push(EnvVar {
-        name: "ROLEGROUP_HEADLESS_SERVICE_NAME".to_string(),
-        value: Some(resource_names.headless_service_name().to_string()),
-        ..EnvVar::default()
-    });
-
-    env.push(EnvVar {
-        name: "CLUSTER_DOMAIN".to_string(),
-        value: Some(validated_cluster.cluster_domain.to_string()),
-        ..EnvVar::default()
-    });
-
-    env.push(EnvVar {
-        name: "KAFKA_CLIENT_PORT".to_string(),
-        value: Some(kafka_security.client_port().to_string()),
-        ..EnvVar::default()
-    });
-
-    // Controllers need the ZooKeeper connection string for migration
-    if let Some(zookeeper_config_map_name) =
-        &validated_cluster.cluster_config.zookeeper_config_map_name
-    {
-        env.push(EnvVar {
-            name: ZOOKEEPER_ENV_VAR_NAME.to_string(),
-            value_from: Some(EnvVarSource {
-                config_map_key_ref: Some(ConfigMapKeySelector {
-                    name: zookeeper_config_map_name.to_string(),
-                    key: ZOOKEEPER_ENV_VAR_NAME.to_string(),
-                    ..ConfigMapKeySelector::default()
-                }),
-                ..EnvVarSource::default()
-            }),
-            ..EnvVar::default()
-        })
-    };
+    // Operator-set env vars first (common + controller-specific); the user's `envOverrides`
+    // are merged on top and win.
+    let env: Vec<EnvVar> = common_operator_env_vars(validated_cluster, kafka_security)
+        .with_field_path(&env_var_name("NAMESPACE"), &FieldPathEnvVar::Namespace)
+        .with_value(
+            &env_var_name("ROLEGROUP_HEADLESS_SERVICE_NAME"),
+            resource_names.headless_service_name().to_string(),
+        )
+        .with_value(
+            &env_var_name("CLUSTER_DOMAIN"),
+            validated_cluster.cluster_domain.to_string(),
+        )
+        .with_value(&env_var_name("PRE_STOP_CONTROLLER_SLEEP_SECONDS"), "10")
+        .merge(validated_rg.env_overrides.clone())
+        .into();
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -534,8 +500,7 @@ pub fn build_controller_rolegroup_statefulset(
                 .pod_descriptors(Some(kafka_role))
                 .context(BuildPodDescriptorsSnafu)?,
             &resolved_product_image.product_version,
-        )])
-        .add_env_var("PRE_STOP_CONTROLLER_SLEEP_SECONDS", "10");
+        )]);
 
     add_common_kafka_env(
         &mut cb_kafka,
