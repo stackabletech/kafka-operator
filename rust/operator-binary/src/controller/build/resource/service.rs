@@ -8,7 +8,9 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{RoleGroupName, ValidatedCluster, security::ValidatedKafkaSecurity},
+    controller::{
+        RoleGroupName, ValidatedCluster, build::labels, security::ValidatedKafkaSecurity,
+    },
     crd::{METRICS_PORT, METRICS_PORT_NAME, role::KafkaRole},
 };
 
@@ -35,15 +37,17 @@ pub fn build_rolegroup_headless_service(
                 None,
                 Some(true),
             ))
-            .with_labels(validated_cluster.recommended_labels(role, role_group_name))
+            .with_labels(labels::recommended_labels(
+                validated_cluster,
+                role,
+                role_group_name,
+            ))
             .build(),
         spec: Some(ServiceSpec {
             cluster_ip: Some("None".to_string()),
             ports: Some(headless_ports(kafka_security)),
             selector: Some(
-                validated_cluster
-                    .role_group_selector(role, role_group_name)
-                    .into(),
+                labels::role_group_selector(validated_cluster, role, role_group_name).into(),
             ),
             publish_not_ready_addresses: Some(true),
             ..ServiceSpec::default()
@@ -72,7 +76,11 @@ pub fn build_rolegroup_metrics_service(
                 None,
                 Some(true),
             ))
-            .with_labels(validated_cluster.recommended_labels(role, role_group_name))
+            .with_labels(labels::recommended_labels(
+                validated_cluster,
+                role,
+                role_group_name,
+            ))
             .with_labels(prometheus_labels(&Scraping::Enabled))
             .with_annotations(prometheus_annotations(
                 &Scraping::Enabled,
@@ -87,9 +95,7 @@ pub fn build_rolegroup_metrics_service(
             cluster_ip: Some("None".to_string()),
             ports: Some(metrics_ports()),
             selector: Some(
-                validated_cluster
-                    .role_group_selector(role, role_group_name)
-                    .into(),
+                labels::role_group_selector(validated_cluster, role, role_group_name).into(),
             ),
             publish_not_ready_addresses: Some(true),
             ..ServiceSpec::default()

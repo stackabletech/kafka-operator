@@ -9,7 +9,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{RoleGroupName, ValidatedCluster},
+    controller::{RoleGroupName, ValidatedCluster, build::labels},
     crd::role::KafkaRole,
 };
 
@@ -57,13 +57,12 @@ pub fn build_discovery_configmap(
                     None,
                     Some(true),
                 ))
-                .with_labels(
-                    validated_cluster.recommended_labels(
-                        &KafkaRole::Broker,
-                        &RoleGroupName::from_str("discovery")
-                            .expect("'discovery' is a valid role group name"),
-                    ),
-                )
+                .with_labels(labels::recommended_labels(
+                    validated_cluster,
+                    &KafkaRole::Broker,
+                    &RoleGroupName::from_str("discovery")
+                        .expect("'discovery' is a valid role group name"),
+                ))
                 .build(),
         )
         .add_data("KAFKA", bootstrap_servers)

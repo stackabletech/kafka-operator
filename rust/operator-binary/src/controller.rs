@@ -25,7 +25,6 @@ use stackable_operator::{
         core::{DeserializeGuard, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
     },
-    kvp::Labels,
     logging::controller::ReconcilerError,
     shared::time::Duration,
     status::condition::{
@@ -35,7 +34,6 @@ use stackable_operator::{
     v2::{
         HasName, HasUid, NameIsValidLabelValue,
         cluster_resources::cluster_resources_new,
-        kvp::label::{recommended_labels, role_group_selector},
         role_group_utils::ResourceNames,
         types::{
             kubernetes::{ConfigMapName, ListenerName, NamespaceName, Uid},
@@ -249,53 +247,6 @@ impl ValidatedCluster {
                 .stateful_set_name()
         ))
         .expect("the bootstrap listener name is a valid Listener name")
-    }
-
-    /// Recommended labels for a role-group resource, using the given product version.
-    fn recommended_labels_for(
-        &self,
-        product_version: &ProductVersion,
-        role: &KafkaRole,
-        role_group_name: &RoleGroupName,
-    ) -> Labels {
-        recommended_labels(
-            self,
-            &product_name(),
-            product_version,
-            &operator_name(),
-            &controller_name(),
-            &Self::role_name(role),
-            role_group_name,
-        )
-    }
-
-    /// Recommended labels for a role-group resource.
-    pub fn recommended_labels(&self, role: &KafkaRole, role_group_name: &RoleGroupName) -> Labels {
-        self.recommended_labels_for(&self.product_version, role, role_group_name)
-    }
-
-    /// Recommended labels without a version, for PVC templates that cannot be modified once
-    /// deployed.
-    pub fn unversioned_recommended_labels(
-        &self,
-        role: &KafkaRole,
-        role_group_name: &RoleGroupName,
-    ) -> Labels {
-        // A version value is required, and we do want to use the "recommended" format for the
-        // other desired labels.
-        let none_version =
-            ProductVersion::from_str("none").expect("'none' is a valid product version");
-        self.recommended_labels_for(&none_version, role, role_group_name)
-    }
-
-    /// Selector labels matching the pods of a role group.
-    pub fn role_group_selector(&self, role: &KafkaRole, role_group_name: &RoleGroupName) -> Labels {
-        role_group_selector(
-            self,
-            &product_name(),
-            &Self::role_name(role),
-            role_group_name,
-        )
     }
 }
 

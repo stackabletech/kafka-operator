@@ -52,6 +52,7 @@ use crate::{
             },
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::add_kerberos_pod_config,
+            labels,
             properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
             security::{
                 add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
@@ -152,10 +153,11 @@ pub fn build_broker_rolegroup_statefulset(
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.config.config;
     let resource_names = validated_cluster.resource_names(kafka_role, role_group_name);
-    let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
+    let recommended_labels =
+        labels::recommended_labels(validated_cluster, kafka_role, role_group_name);
     // Used for PVC templates that cannot be modified once they are deployed
     let unversioned_recommended_labels =
-        validated_cluster.unversioned_recommended_labels(kafka_role, role_group_name);
+        labels::unversioned_recommended_labels(validated_cluster, kafka_role, role_group_name);
 
     let kcat_prober_container_name = BrokerContainer::KcatProber.to_string();
     let mut cb_kcat_prober =
@@ -419,8 +421,7 @@ pub fn build_broker_rolegroup_statefulset(
             replicas: validated_rg.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
-                    validated_cluster
-                        .role_group_selector(kafka_role, role_group_name)
+                    labels::role_group_selector(validated_cluster, kafka_role, role_group_name)
                         .into(),
                 ),
                 ..LabelSelector::default()
@@ -446,7 +447,8 @@ pub fn build_controller_rolegroup_statefulset(
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.config.config;
     let resource_names = validated_cluster.resource_names(kafka_role, role_group_name);
-    let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
+    let recommended_labels =
+        labels::recommended_labels(validated_cluster, kafka_role, role_group_name);
 
     let kafka_container_name = ControllerContainer::Kafka.to_string();
     let mut cb_kafka =
@@ -649,8 +651,7 @@ pub fn build_controller_rolegroup_statefulset(
             replicas: validated_rg.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
-                    validated_cluster
-                        .role_group_selector(kafka_role, role_group_name)
+                    labels::role_group_selector(validated_cluster, kafka_role, role_group_name)
                         .into(),
                 ),
                 ..LabelSelector::default()
