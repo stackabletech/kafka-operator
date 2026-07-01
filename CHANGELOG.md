@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - BREAKING: Removed product-config machinery which is a breaking change in terms of configuration.
 ￼ Users relying on the product-config `properties.yaml` file have to set these properties via the CRD.
   Config and environment overrides are now merged directly from the CRD into the validated cluster.
+  Version labels now include the tag or hash (previously just the version).
   The `--product-config` CLI flag is now a no-op ([#976]).
 
 [#953]: https://github.com/stackabletech/kafka-operator/pull/953
