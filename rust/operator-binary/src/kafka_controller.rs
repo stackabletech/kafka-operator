@@ -321,13 +321,45 @@ pub async fn reconcile_kafka(
         )
         .context(ResolveProductImageSnafu)?;
 
-    // When the cluster is being stopped and has KRaft controllers, we need to sequence
-    // the shutdown: brokers must stop before controllers, because brokers depend on
-    // controllers for the controlled shutdown protocol. Without this, brokers hang
-    // waiting for controller responses until terminationGracePeriodSeconds expires.
-    let stopped = kafka.spec.cluster_operation.stopped;
+    // When KRaft controllers are being scaled to 0, we must ensure brokers stop first,
+    // because brokers depend on controllers for the controlled shutdown protocol.
+    // Without this, brokers hang waiting for controller responses until
+    // terminationGracePeriodSeconds expires.
+    //
+    // This applies both when using clusterOperation.stopped and when manually setting
+    // controller replicas to 0. In either case, we prevent controllers from scaling
+    // down until all broker pods are gone.
+    //
+    // TODO: A validating webhook would provide better UX by rejecting invalid
+    // configurations (e.g. controllers=0 while brokers>0) at admission time
+    // rather than silently keeping controllers running.
     let has_controllers = kafka.spec.controllers.is_some();
-    let sequenced_shutdown = stopped && has_controllers;
+    let stopped = kafka.spec.cluster_operation.stopped;
+
+    let all_controllers_zero = has_controllers
+        && kafka
+            .extract_rolegroup_replicas(&KafkaRole::Controller)
+            .unwrap_or_default()
+            .values()
+            .all(|r| *r == 0);
+    let all_brokers_zero = kafka
+        .extract_rolegroup_replicas(&KafkaRole::Broker)
+        .unwrap_or_default()
+        .values()
+        .all(|r| *r == 0);
+
+    // Sequenced shutdown is needed when controllers are going to 0, either via
+    // clusterOperation.stopped or by manually setting all controller replicas to 0.
+    let sequenced_shutdown = has_controllers && (stopped || all_controllers_zero);
+
+    // If controllers are set to 0 but brokers aren't, warn and keep controllers
+    // running to avoid breaking the cluster.
+    if all_controllers_zero && !all_brokers_zero && !stopped {
+        tracing::warn!(
+            "Controller replicas are set to 0 but broker replicas are non-zero. \
+             Controllers will not be scaled down until all brokers are stopped."
+        );
+    }
 
     // Use Default instead of ClusterStopped because ClusterStopped zeroes all
     // StatefulSet replicas unconditionally via maybe_mutate(). We need to control
@@ -433,11 +465,17 @@ pub async fn reconcile_kafka(
             // statefulsets) won't be added to cluster_resources, so they will be
             // deleted as orphans by delete_orphaned_resources(). They get recreated
             // when replicas go back above 0.
+            //
+            // Exception: during sequenced shutdown, controller rolegroups must keep
+            // running until all brokers are gone, even if their spec says 0 replicas.
             let replicas = kafka_role
                 .replicas(kafka, &rolegroup_ref.role_group)
                 .context(FailedToResolveConfigSnafu)?
                 .unwrap_or(0);
-            if replicas == 0 {
+            let keep_controllers_running = sequenced_shutdown
+                && kafka_role == KafkaRole::Controller
+                && !brokers_stopped;
+            if replicas == 0 && !keep_controllers_running {
                 continue;
             }
 
@@ -472,6 +510,15 @@ pub async fn reconcile_kafka(
                     kafka_security.client_port(),
                 )
                 .context(BuildPodDescriptorsSnafu)?;
+
+            tracing::warn!(
+                rolegroup = %rolegroup_ref,
+                role = %kafka_role,
+                total_pod_descriptors = pod_descriptors.len(),
+                controller_descriptors = pod_descriptors.iter().filter(|pd| pd.role == KafkaRole::Controller.to_string()).count(),
+                broker_descriptors = pod_descriptors.iter().filter(|pd| pd.role == KafkaRole::Broker.to_string()).count(),
+                "Building configmap for rolegroup",
+            );
 
             let rg_configmap = build_rolegroup_config_map(
                 kafka,
@@ -514,15 +561,39 @@ pub async fn reconcile_kafka(
             };
 
             if sequenced_shutdown {
-                let should_stop = match kafka_role {
-                    // Always stop brokers first.
-                    KafkaRole::Broker => true,
-                    // Only stop controllers after all brokers are gone.
-                    KafkaRole::Controller => brokers_stopped,
-                };
-                if should_stop {
-                    if let Some(spec) = rg_statefulset.spec.as_mut() {
-                        spec.replicas = Some(0);
+                match kafka_role {
+                    KafkaRole::Broker => {
+                        // Always stop brokers first.
+                        if let Some(spec) = rg_statefulset.spec.as_mut() {
+                            spec.replicas = Some(0);
+                        }
+                    }
+                    KafkaRole::Controller => {
+                        if brokers_stopped {
+                            // All brokers are gone, safe to stop controllers now.
+                            if let Some(spec) = rg_statefulset.spec.as_mut() {
+                                spec.replicas = Some(0);
+                            }
+                        } else if replicas == 0 {
+                            // Controller replicas are set to 0 in the spec, but
+                            // brokers are still running. Preserve the current
+                            // running replica count so controllers stay up.
+                            let current = client
+                                .get::<StatefulSet>(
+                                    &rg_statefulset.name_any(),
+                                    rg_statefulset
+                                        .namespace()
+                                        .as_deref()
+                                        .unwrap_or_default(),
+                                )
+                                .await
+                                .ok()
+                                .and_then(|sts| sts.spec)
+                                .and_then(|spec| spec.replicas);
+                            if let Some(spec) = rg_statefulset.spec.as_mut() {
+                                spec.replicas = current;
+                            }
+                        }
                     }
                 }
             }

@@ -465,7 +465,7 @@ impl v1alpha1::KafkaCluster {
         Ok(pod_descriptors)
     }
 
-    fn extract_rolegroup_replicas(
+    pub fn extract_rolegroup_replicas(
         &self,
         kafka_role: &KafkaRole,
     ) -> Result<BTreeMap<String, u16>, Error> {
