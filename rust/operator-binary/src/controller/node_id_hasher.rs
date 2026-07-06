@@ -1,6 +1,4 @@
-use stackable_operator::role_utils::RoleGroupRef;
-
-use crate::crd::v1alpha1::KafkaCluster;
+use crate::crd::role::KafkaRole;
 
 /// The Kafka node.id needs to be unique across the Kafka cluster.
 /// This function generates an integer that is stable for a given role group
@@ -8,12 +6,8 @@ use crate::crd::v1alpha1::KafkaCluster;
 /// This integer is then added to the pod index to compute the final node.id
 /// The node.id is only set and used in Kraft mode.
 /// Warning: this is not safe from collisions.
-pub fn node_id_hash32_offset(rolegroup_ref: &RoleGroupRef<KafkaCluster>) -> u32 {
-    let hash = fnv_hash32(&format!(
-        "{role}-{rolegroup}",
-        role = rolegroup_ref.role,
-        rolegroup = rolegroup_ref.role_group
-    ));
+pub fn node_id_hash32_offset(role: &KafkaRole, role_group: &str) -> u32 {
+    let hash = fnv_hash32(&format!("{role}-{role_group}"));
     let range = hash & 0x0000FFFF;
     // Kafka uses signed integer
     range * 0x00007FFF

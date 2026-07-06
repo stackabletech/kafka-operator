@@ -32,7 +32,10 @@ mod tests {
         },
     };
 
-    use crate::crd::{KafkaRole, v1alpha1};
+    use crate::{
+        controller::test_support::{minimal_kafka, validated_cluster},
+        crd::KafkaRole,
+    };
 
     #[rstest]
     #[case(KafkaRole::Broker)]
@@ -42,6 +45,8 @@ mod tests {
         kind: KafkaCluster
         metadata:
           name: simple-kafka
+          namespace: default
+          uid: 12345678-1234-1234-1234-123456789012
         spec:
           image:
             productVersion: 3.9.2
@@ -53,9 +58,14 @@ mod tests {
                 replicas: 1
         "#;
 
-        let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
-        let merged_config = role.merged_config(&kafka, "default").unwrap();
+        let kafka = minimal_kafka(input);
+        let validated = validated_cluster(&kafka);
+        let merged_config = validated
+            .role_group_configs
+            .get(&role)
+            .and_then(|groups| groups.get(&"default".parse().unwrap()))
+            .map(|rg| &rg.config.config)
+            .expect("role group should exist");
 
         assert_eq!(
             merged_config.affinity,

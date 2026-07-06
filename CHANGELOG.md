@@ -19,6 +19,11 @@ All notable changes to this project will be documented in this file.
 - Bump `stackable-operator` to 0.111.1 and snafu to 0.9 ([#960], [#961]).
 - Internal operator refactoring: introduce dereference() and validate() steps in the reconciler ([#968]).
 - test: Bump vector-aggregator to 0.55.0, replace /graphql call with gRPC call ([#971]).
+- BREAKING: Removed product-config machinery which is a breaking change in terms of configuration.
+￼ Users relying on the product-config `properties.yaml` file have to set these properties via the CRD.
+  Config and environment overrides are now merged directly from the CRD into the validated cluster.
+  Version labels now include the tag or hash (previously just the version).
+  The `--product-config` CLI flag is now a no-op ([#976]).
 
 [#953]: https://github.com/stackabletech/kafka-operator/pull/953
 [#960]: https://github.com/stackabletech/kafka-operator/pull/960
@@ -26,6 +31,7 @@ All notable changes to this project will be documented in this file.
 [#968]: https://github.com/stackabletech/kafka-operator/pull/968
 [#971]: https://github.com/stackabletech/kafka-operator/pull/971
 [#973]: https://github.com/stackabletech/kafka-operator/pull/973
+[#976]: https://github.com/stackabletech/kafka-operator/pull/976
 
 ## [26.3.0] - 2026-03-16
 

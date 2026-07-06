@@ -1,14 +1,11 @@
-use serde::Serialize;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     memory::{BinaryMultiple, MemoryQuantity},
-    role_utils::{self, GenericRoleConfig, JavaCommonConfig, JvmArgumentOverrides, Role},
-    schemars::JsonSchema,
+    v2::jvm_argument_overrides::JvmArgumentOverrides,
 };
 
-use crate::crd::{
-    JVM_SECURITY_PROPERTIES_FILE, METRICS_PORT, STACKABLE_CONFIG_DIR, role::AnyConfig,
-};
+use super::properties::ConfigFileName;
+use crate::crd::{METRICS_PORT, STACKABLE_CONFIG_DIR, role::AnyConfig};
 
 const JAVA_HEAP_FACTOR: f32 = 0.8;
 
@@ -21,20 +18,14 @@ pub enum Error {
     InvalidMemoryConfig {
         source: stackable_operator::memory::Error,
     },
-
-    #[snafu(display("failed to merge jvm argument overrides"))]
-    MergeJvmArgumentOverrides { source: role_utils::Error },
 }
 
-/// All JVM arguments.
-fn construct_jvm_args<ConfigFragment, ConfigOverrides>(
+/// All JVM arguments: operator-generated base args with the already-merged
+/// (role <- role group) `jvmArgumentOverrides` applied on top.
+fn construct_jvm_args(
     merged_config: &AnyConfig,
-    role: &Role<ConfigFragment, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
-    role_group: &str,
-) -> Result<Vec<String>, Error>
-where
-    ConfigOverrides: Default + JsonSchema + Serialize,
-{
+    jvm_argument_overrides: &JvmArgumentOverrides,
+) -> Result<Vec<String>, Error> {
     let heap_size = MemoryQuantity::try_from(
         merged_config
             .resources()
@@ -51,52 +42,37 @@ where
         .context(InvalidMemoryConfigSnafu)?;
 
     let jvm_args = vec![
-        // Heap settings
         format!("-Xmx{java_heap}"),
         format!("-Xms{java_heap}"),
-        format!("-Djava.security.properties={STACKABLE_CONFIG_DIR}/{JVM_SECURITY_PROPERTIES_FILE}"),
+        format!(
+            "-Djava.security.properties={STACKABLE_CONFIG_DIR}/{security}",
+            security = ConfigFileName::Security
+        ),
         format!(
             "-javaagent:/stackable/jmx/jmx_prometheus_javaagent.jar={METRICS_PORT}:/stackable/jmx/server.yaml"
         ),
     ];
 
-    let operator_generated = JvmArgumentOverrides::new_with_only_additions(jvm_args);
-    let merged = role
-        .get_merged_jvm_argument_overrides(role_group, &operator_generated)
-        .context(MergeJvmArgumentOverridesSnafu)?;
-    Ok(merged
-        .effective_jvm_config_after_merging()
-        // Sorry for the clone, that's how operator-rs is currently modelled :P
-        .clone())
+    Ok(jvm_argument_overrides.apply_to(jvm_args))
 }
 
-/// Arguments that go into `EXTRA_ARGS`, so *not* the heap settings (which you can get using
-/// [`construct_heap_jvm_args`]).
-pub fn construct_non_heap_jvm_args<ConfigFragment, ConfigOverrides>(
+/// Arguments that go into `EXTRA_ARGS` (everything except heap settings).
+pub fn construct_non_heap_jvm_args(
     merged_config: &AnyConfig,
-    role: &Role<ConfigFragment, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
-    role_group: &str,
-) -> Result<String, Error>
-where
-    ConfigOverrides: Default + JsonSchema + Serialize,
-{
-    let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
+    jvm_argument_overrides: &JvmArgumentOverrides,
+) -> Result<String, Error> {
+    let mut jvm_args = construct_jvm_args(merged_config, jvm_argument_overrides)?;
     jvm_args.retain(|arg| !is_heap_jvm_argument(arg));
 
     Ok(jvm_args.join(" "))
 }
 
-/// Arguments that go into `KAFKA_HEAP_OPTS`.
-/// You can get the normal JVM arguments using [`construct_non_heap_jvm_args`].
-pub fn construct_heap_jvm_args<ConfigFragment, ConfigOverrides>(
+/// Arguments that go into `KAFKA_HEAP_OPTS` (only the heap settings).
+pub fn construct_heap_jvm_args(
     merged_config: &AnyConfig,
-    role: &Role<ConfigFragment, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
-    role_group: &str,
-) -> Result<String, Error>
-where
-    ConfigOverrides: Default + JsonSchema + Serialize,
-{
-    let mut jvm_args = construct_jvm_args(merged_config, role, role_group)?;
+    jvm_argument_overrides: &JvmArgumentOverrides,
+) -> Result<String, Error> {
+    let mut jvm_args = construct_jvm_args(merged_config, jvm_argument_overrides)?;
     jvm_args.retain(|arg| is_heap_jvm_argument(arg));
 
     Ok(jvm_args.join(" "))
@@ -111,7 +87,28 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{BrokerRole, role::KafkaRole, v1alpha1};
+    use crate::{
+        controller::test_support::{minimal_kafka, validated_cluster},
+        crd::role::KafkaRole,
+    };
+
+    /// Pulls the broker `default` role group's merged config + merged JVM overrides out of
+    /// a validated cluster built from the given YAML.
+    fn broker_default(yaml: &str) -> (AnyConfig, JvmArgumentOverrides) {
+        let kafka = minimal_kafka(yaml);
+        let validated = validated_cluster(&kafka);
+        let rg = validated
+            .role_group_configs
+            .get(&KafkaRole::Broker)
+            .and_then(|groups| groups.get(&"default".parse().unwrap()))
+            .expect("broker default role group should exist");
+        (
+            rg.config.config.clone(),
+            rg.product_specific_common_config
+                .jvm_argument_overrides
+                .clone(),
+        )
+    }
 
     #[test]
     fn test_construct_jvm_arguments_defaults() {
@@ -120,6 +117,8 @@ mod tests {
         kind: KafkaCluster
         metadata:
           name: simple-kafka
+          namespace: default
+          uid: 12345678-1234-1234-1234-123456789012
         spec:
           image:
             productVersion: 3.9.2
@@ -130,10 +129,9 @@ mod tests {
               default:
                 replicas: 1
         "#;
-        let (kafka_role, role, merged_config) = construct_boilerplate(input);
-        let non_heap_jvm_args =
-            construct_non_heap_jvm_args(&kafka_role, &role, &merged_config).unwrap();
-        let heap_jvm_args = construct_heap_jvm_args(&kafka_role, &role, &merged_config).unwrap();
+        let (merged_config, jvm) = broker_default(input);
+        let non_heap_jvm_args = construct_non_heap_jvm_args(&merged_config, &jvm).unwrap();
+        let heap_jvm_args = construct_heap_jvm_args(&merged_config, &jvm).unwrap();
 
         assert_eq!(
             non_heap_jvm_args,
@@ -150,6 +148,8 @@ mod tests {
         kind: KafkaCluster
         metadata:
           name: simple-kafka
+          namespace: default
+          uid: 12345678-1234-1234-1234-123456789012
         spec:
           image:
             productVersion: 3.9.2
@@ -177,10 +177,9 @@ mod tests {
                     - -Xmx40000m
                     - -Dhttps.proxyPort=1234
         "#;
-        let (merged_config, role, role_group) = construct_boilerplate(input);
-        let non_heap_jvm_args =
-            construct_non_heap_jvm_args(&merged_config, &role, &role_group).unwrap();
-        let heap_jvm_args = construct_heap_jvm_args(&merged_config, &role, &role_group).unwrap();
+        let (merged_config, jvm) = broker_default(input);
+        let non_heap_jvm_args = construct_non_heap_jvm_args(&merged_config, &jvm).unwrap();
+        let heap_jvm_args = construct_heap_jvm_args(&merged_config, &jvm).unwrap();
 
         assert_eq!(
             non_heap_jvm_args,
@@ -191,19 +190,5 @@ mod tests {
             -Dhttps.proxyPort=1234"
         );
         assert_eq!(heap_jvm_args, "-Xms34406m -Xmx40000m");
-    }
-
-    fn construct_boilerplate(kafka_cluster: &str) -> (AnyConfig, BrokerRole, String) {
-        let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(kafka_cluster).expect("illegal test input");
-
-        let kafka_role = KafkaRole::Broker;
-        let rolegroup_ref = kafka.rolegroup_ref(&kafka_role, "default");
-        let merged_config = kafka_role
-            .merged_config(&kafka, &rolegroup_ref.role_group)
-            .unwrap();
-        let role = kafka.spec.brokers.unwrap();
-
-        (merged_config, role, "default".to_owned())
     }
 }

@@ -5,27 +5,19 @@ pub mod controller;
 use std::{borrow::Cow, ops::Deref};
 
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     commons::resources::{NoRuntimeLimits, Resources},
-    config::{
-        fragment::{self, ValidationError},
-        merge::Merge,
-    },
-    k8s_openapi::api::core::v1::PodTemplateSpec,
-    kube::{ResourceExt, runtime::reflector::ObjectRef},
     product_logging::spec::ContainerLogConfig,
-    role_utils::RoleGroupRef,
     schemars::{self, JsonSchema},
+    v2::{config_overrides::KeyValueConfigOverrides, types::kubernetes::ListenerClassName},
 };
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
 use crate::{
-    config::jvm::{construct_heap_jvm_args, construct_non_heap_jvm_args},
     crd::role::{
-        broker::{BROKER_PROPERTIES_FILE, BrokerConfig},
+        broker::BrokerConfig,
         commons::{CommonConfig, Storage},
-        controller::{CONTROLLER_PROPERTIES_FILE, ControllerConfig},
+        controller::ControllerConfig,
     },
     v1alpha1,
 };
@@ -71,24 +63,6 @@ pub const KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: &str = "listener.security.protoc
 /// For example: localhost:9092,localhost:9093,localhost:9094.
 pub const KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS: &str = "controller.quorum.bootstrap.servers";
 
-#[derive(Snafu, Debug)]
-pub enum Error {
-    #[snafu(display("fragment validation failure"))]
-    FragmentValidationFailure { source: ValidationError },
-
-    #[snafu(display("the Kafka role [{role}] is missing from spec"))]
-    MissingRole {
-        source: crate::crd::Error,
-        role: String,
-    },
-
-    #[snafu(display("missing role group {rolegroup:?} for role {role:?}"))]
-    MissingRoleGroup { role: String, rolegroup: String },
-
-    #[snafu(display("failed to construct JVM arguments"))]
-    ConstructJvmArguments { source: crate::config::jvm::Error },
-}
-
 #[derive(
     Clone,
     Debug,
@@ -98,7 +72,9 @@ pub enum Error {
     Eq,
     Hash,
     JsonSchema,
+    Ord,
     PartialEq,
+    PartialOrd,
     Serialize,
     EnumString,
 )]
@@ -119,265 +95,15 @@ impl KafkaRole {
         roles
     }
 
-    /// Metadata about a rolegroup
-    pub fn rolegroup_ref(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-        group_name: impl Into<String>,
-    ) -> RoleGroupRef<v1alpha1::KafkaCluster> {
-        RoleGroupRef {
-            cluster: ObjectRef::from_obj(kafka),
-            role: self.to_string(),
-            role_group: group_name.into(),
-        }
-    }
-
     /// A Kerberos principal has three parts, with the form username/fully.qualified.domain.name@YOUR-REALM.COM.
     /// but is similar to HBase).
     pub fn kerberos_service_name(&self) -> &'static str {
         "kafka"
     }
-
-    /// Merge the [Broker|Controller]ConfigFragment defaults, role and role group settings.
-    /// The priority is: default < role config < role_group config
-    pub fn merged_config(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-        rolegroup: &str,
-    ) -> Result<AnyConfig, Error> {
-        match self {
-            Self::Broker => {
-                // Initialize the result with all default values as baseline
-                let default_config =
-                    BrokerConfig::default_config(&kafka.name_any(), &self.to_string());
-
-                // Retrieve role resource config
-                let role = kafka.broker_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?;
-
-                let mut role_config = role.config.config.clone();
-                // Retrieve rolegroup specific resource config
-                let mut role_group_config = role
-                    .role_groups
-                    .get(rolegroup)
-                    .with_context(|| MissingRoleGroupSnafu {
-                        role: self.to_string(),
-                        rolegroup: rolegroup.to_string(),
-                    })?
-                    .config
-                    .config
-                    .clone();
-
-                // Merge more specific configs into default config
-                // Hierarchy is:
-                // 1. RoleGroup
-                // 2. Role
-                // 3. Default
-                role_config.merge(&default_config);
-                role_group_config.merge(&role_config);
-                Ok(AnyConfig::Broker(
-                    fragment::validate::<BrokerConfig>(role_group_config)
-                        .context(FragmentValidationFailureSnafu)?,
-                ))
-            }
-            Self::Controller => {
-                // Initialize the result with all default values as baseline
-                let default_config =
-                    ControllerConfig::default_config(&kafka.name_any(), &self.to_string());
-
-                // Retrieve role resource config
-                let role = kafka.controller_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?;
-
-                let mut role_config = role.config.config.clone();
-                // Retrieve rolegroup specific resource config
-                let mut role_group_config = role
-                    .role_groups
-                    .get(rolegroup)
-                    .with_context(|| MissingRoleGroupSnafu {
-                        role: self.to_string(),
-                        rolegroup: rolegroup.to_string(),
-                    })?
-                    .config
-                    .config
-                    .clone();
-
-                // Merge more specific configs into default config
-                // Hierarchy is:
-                // 1. RoleGroup
-                // 2. Role
-                // 3. Default
-                role_config.merge(&default_config);
-                role_group_config.merge(&role_config);
-                Ok(AnyConfig::Controller(
-                    fragment::validate::<ControllerConfig>(role_group_config)
-                        .context(FragmentValidationFailureSnafu)?,
-                ))
-            }
-        }
-    }
-
-    pub fn construct_non_heap_jvm_args(
-        &self,
-        merged_config: &AnyConfig,
-        kafka: &v1alpha1::KafkaCluster,
-        rolegroup: &str,
-    ) -> Result<String, Error> {
-        match self {
-            Self::Broker => construct_non_heap_jvm_args(
-                merged_config,
-                kafka.broker_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?,
-                rolegroup,
-            )
-            .context(ConstructJvmArgumentsSnafu),
-            Self::Controller => construct_non_heap_jvm_args(
-                merged_config,
-                kafka.controller_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?,
-                rolegroup,
-            )
-            .context(ConstructJvmArgumentsSnafu),
-        }
-    }
-
-    pub fn construct_heap_jvm_args(
-        &self,
-        merged_config: &AnyConfig,
-        kafka: &v1alpha1::KafkaCluster,
-        rolegroup: &str,
-    ) -> Result<String, Error> {
-        match self {
-            Self::Broker => construct_heap_jvm_args(
-                merged_config,
-                kafka.broker_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?,
-                rolegroup,
-            )
-            .context(ConstructJvmArgumentsSnafu),
-            Self::Controller => construct_heap_jvm_args(
-                merged_config,
-                kafka.controller_role().with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?,
-                rolegroup,
-            )
-            .context(ConstructJvmArgumentsSnafu),
-        }
-    }
-
-    pub fn role_pod_overrides(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-    ) -> Result<PodTemplateSpec, Error> {
-        let pod_overrides = match self {
-            Self::Broker => kafka
-                .broker_role()
-                .with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?
-                .config
-                .pod_overrides
-                .clone(),
-            Self::Controller => kafka
-                .controller_role()
-                .with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?
-                .config
-                .pod_overrides
-                .clone(),
-        };
-
-        Ok(pod_overrides)
-    }
-
-    pub fn role_group_pod_overrides(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-        rolegroup: &str,
-    ) -> Result<PodTemplateSpec, Error> {
-        let pod_overrides = match self {
-            Self::Broker => kafka
-                .broker_role()
-                .with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?
-                .role_groups
-                .get(rolegroup)
-                .with_context(|| MissingRoleGroupSnafu {
-                    role: self.to_string(),
-                    rolegroup: rolegroup.to_string(),
-                })?
-                .config
-                .pod_overrides
-                .clone(),
-            Self::Controller => kafka
-                .controller_role()
-                .with_context(|_| MissingRoleSnafu {
-                    role: self.to_string(),
-                })?
-                .role_groups
-                .get(rolegroup)
-                .with_context(|| MissingRoleGroupSnafu {
-                    role: self.to_string(),
-                    rolegroup: rolegroup.to_string(),
-                })?
-                .config
-                .pod_overrides
-                .clone(),
-        };
-
-        Ok(pod_overrides)
-    }
-
-    pub fn replicas(
-        &self,
-        kafka: &v1alpha1::KafkaCluster,
-        rolegroup: &str,
-    ) -> Result<Option<u16>, Error> {
-        let replicas = match self {
-            Self::Broker => {
-                kafka
-                    .broker_role()
-                    .with_context(|_| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?
-                    .role_groups
-                    .get(rolegroup)
-                    .with_context(|| MissingRoleGroupSnafu {
-                        role: self.to_string(),
-                        rolegroup: rolegroup.to_string(),
-                    })?
-                    .replicas
-            }
-            Self::Controller => {
-                kafka
-                    .controller_role()
-                    .with_context(|_| MissingRoleSnafu {
-                        role: self.to_string(),
-                    })?
-                    .role_groups
-                    .get(rolegroup)
-                    .with_context(|| MissingRoleGroupSnafu {
-                        role: self.to_string(),
-                        rolegroup: rolegroup.to_string(),
-                    })?
-                    .replicas
-            }
-        };
-
-        Ok(replicas)
-    }
 }
 
 /// Configuration for a role and rolegroup of an unknown type.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AnyConfig {
     Broker(BrokerConfig),
     Controller(ControllerConfig),
@@ -395,6 +121,14 @@ impl Deref for AnyConfig {
 }
 
 impl AnyConfig {
+    /// The [`KafkaRole`] this config belongs to.
+    pub fn kafka_role(&self) -> KafkaRole {
+        match self {
+            AnyConfig::Broker(_) => KafkaRole::Broker,
+            AnyConfig::Controller(_) => KafkaRole::Controller,
+        }
+    }
+
     pub fn resources(&self) -> &Resources<Storage, NoRuntimeLimits> {
         match self {
             AnyConfig::Broker(broker_config) => &broker_config.resources,
@@ -413,37 +147,40 @@ impl AnyConfig {
         }
     }
 
-    pub fn vector_logging(&'_ self) -> Cow<'_, ContainerLogConfig> {
-        match &self {
-            AnyConfig::Broker(broker_config) => broker_config
-                .logging
-                .for_container(&broker::BrokerContainer::Vector),
-            AnyConfig::Controller(controller_config) => controller_config
-                .logging
-                .for_container(&controller::ControllerContainer::Vector),
-        }
-    }
-
-    pub fn vector_logging_enabled(&self) -> bool {
-        match self {
-            AnyConfig::Broker(broker_config) => broker_config.logging.enable_vector_agent,
-            AnyConfig::Controller(controller_config) => {
-                controller_config.logging.enable_vector_agent
-            }
-        }
-    }
-
-    pub fn listener_class(&self) -> Option<&String> {
+    pub fn listener_class(&self) -> Option<&ListenerClassName> {
         match self {
             AnyConfig::Broker(broker_config) => Some(&broker_config.broker_listener_class),
             AnyConfig::Controller(_) => None,
         }
     }
+}
 
-    pub fn config_file_name(&self) -> &str {
+/// Merged role/role-group `configOverrides` for a role group of an unknown type.
+///
+/// Mirrors [`AnyConfig`] for the override side: broker and controller use distinct
+/// override structs, so this enum lets the build layer carry the typed, merged
+/// overrides through a single role-agnostic `RoleGroupConfig`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AnyConfigOverrides {
+    Broker(v1alpha1::KafkaBrokerConfigOverrides),
+    Controller(v1alpha1::KafkaControllerConfigOverrides),
+}
+
+impl AnyConfigOverrides {
+    /// The merged product config-file overrides (`broker.properties` for brokers,
+    /// `controller.properties` for controllers).
+    pub fn config_file_overrides(&self) -> &KeyValueConfigOverrides {
         match self {
-            AnyConfig::Broker(_) => BROKER_PROPERTIES_FILE,
-            AnyConfig::Controller(_) => CONTROLLER_PROPERTIES_FILE,
+            AnyConfigOverrides::Broker(o) => &o.broker_properties,
+            AnyConfigOverrides::Controller(o) => &o.controller_properties,
+        }
+    }
+
+    /// The merged `security.properties` overrides (shared by both roles).
+    pub fn security_properties(&self) -> &KeyValueConfigOverrides {
+        match self {
+            AnyConfigOverrides::Broker(o) => &o.security_properties,
+            AnyConfigOverrides::Controller(o) => &o.security_properties,
         }
     }
 }

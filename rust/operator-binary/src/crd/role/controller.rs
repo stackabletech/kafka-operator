@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
     commons::resources::{
@@ -8,18 +6,12 @@ use stackable_operator::{
     },
     config::{fragment::Fragment, merge::Merge},
     k8s_openapi::apimachinery::pkg::api::resource::Quantity,
-    product_config_utils::Configuration,
     product_logging::{self, spec::Logging},
     schemars::{self, JsonSchema},
 };
 use strum::{Display, EnumIter};
 
-use crate::crd::{
-    role::commons::{CommonConfig, Storage, StorageFragment},
-    v1alpha1,
-};
-
-pub const CONTROLLER_PROPERTIES_FILE: &str = "controller.properties";
+use crate::crd::role::commons::{CommonConfig, Storage, StorageFragment};
 
 #[derive(
     Clone,
@@ -41,7 +33,7 @@ pub enum ControllerContainer {
     Kafka,
 }
 
-#[derive(Debug, Default, PartialEq, Fragment, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Fragment, JsonSchema)]
 #[fragment_attrs(
     derive(
         Clone,
@@ -89,41 +81,5 @@ impl ControllerConfig {
                 },
             },
         }
-    }
-}
-
-impl Configuration for ControllerConfigFragment {
-    type Configurable = v1alpha1::KafkaCluster;
-
-    fn compute_env(
-        &self,
-        resource: &Self::Configurable,
-        _role_name: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
-    {
-        let mut result = BTreeMap::new();
-        if let Some(cluster_id) = resource.cluster_id() {
-            result.insert("KAFKA_CLUSTER_ID".to_string(), Some(cluster_id.to_string()));
-        }
-        Ok(result)
-    }
-
-    fn compute_cli(
-        &self,
-        _resource: &Self::Configurable,
-        _role_name: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
-    {
-        Ok(BTreeMap::new())
-    }
-
-    fn compute_files(
-        &self,
-        _resource: &Self::Configurable,
-        _role_name: &str,
-        _file: &str,
-    ) -> Result<BTreeMap<String, Option<String>>, stackable_operator::product_config_utils::Error>
-    {
-        Ok(BTreeMap::new())
     }
 }

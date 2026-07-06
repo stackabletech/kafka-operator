@@ -40,15 +40,8 @@ use crate::{
     webhooks::conversion::create_webhook_server,
 };
 
-mod config;
 mod controller;
 mod crd;
-mod discovery;
-mod kerberos;
-mod operations;
-mod product_logging;
-mod resource;
-mod utils;
 mod webhooks;
 
 mod built_info {
@@ -80,9 +73,9 @@ async fn main() -> anyhow::Result<()> {
                 RunArguments {
                     operator_environment,
                     watch_namespace,
-                    product_config,
                     maintenance,
                     common,
+                    ..
                 },
             ..
         }) => {
@@ -126,11 +119,6 @@ async fn main() -> anyhow::Result<()> {
             let webhook_server = webhook_server
                 .run(sigterm_watcher.handle())
                 .map_err(|err| anyhow!(err).context("failed to run webhook server"));
-
-            let product_config = product_config.load(&[
-                "deploy/config-spec/properties.yaml",
-                "/etc/stackable/kafka-operator/config-spec/properties.yaml",
-            ])?;
 
             let event_recorder = Arc::new(Recorder::new(
                 client.as_kube_client(),
@@ -188,7 +176,6 @@ async fn main() -> anyhow::Result<()> {
                     Arc::new(controller::Ctx {
                         client: client.clone(),
                         operator_environment,
-                        product_config,
                     }),
                 )
                 // We can let the reporting happen in the background
@@ -230,9 +217,16 @@ fn references_config_map(
         return false;
     };
 
-    kafka.spec.cluster_config.zookeeper_config_map_name == Some(config_map.name_any())
+    let config_map_name = config_map.name_any();
+
+    kafka
+        .spec
+        .cluster_config
+        .zookeeper_config_map_name
+        .as_ref()
+        .is_some_and(|name| name.to_string() == config_map_name)
         || match &kafka.spec.cluster_config.authorization.opa {
-            Some(opa_config) => opa_config.config_map_name == config_map.name_any(),
+            Some(opa_config) => opa_config.config_map_name == config_map_name,
             None => false,
         }
 }

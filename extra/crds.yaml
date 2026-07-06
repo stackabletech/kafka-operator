@@ -79,11 +79,17 @@ spec:
                         type: object
                       bootstrapListenerClass:
                         description: The ListenerClass used for bootstrapping new clients. Should use a stable ListenerClass to avoid unnecessary client restarts (such as `cluster-internal` or `external-stable`).
+                        maxLength: 253
+                        minLength: 1
                         nullable: true
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                         type: string
                       brokerListenerClass:
                         description: The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
+                        maxLength: 253
+                        minLength: 1
                         nullable: true
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                         type: string
                       gracefulShutdownTimeout:
                         description: Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
@@ -98,86 +104,6 @@ spec:
                           containers:
                             description: Log configuration per container.
                             properties:
-                              get-service:
-                                anyOf:
-                                - required:
-                                  - custom
-                                - {}
-                                - {}
-                                description: Log configuration of the container
-                                properties:
-                                  console:
-                                    description: Configuration for the console appender
-                                    nullable: true
-                                    properties:
-                                      level:
-                                        description: |-
-                                          The log level threshold.
-                                          Log events with a lower log level are discarded.
-                                        enum:
-                                        - TRACE
-                                        - DEBUG
-                                        - INFO
-                                        - WARN
-                                        - ERROR
-                                        - FATAL
-                                        - NONE
-                                        - null
-                                        nullable: true
-                                        type: string
-                                    type: object
-                                  custom:
-                                    description: Log configuration provided in a ConfigMap
-                                    properties:
-                                      configMap:
-                                        description: ConfigMap containing the log configuration files
-                                        nullable: true
-                                        type: string
-                                    type: object
-                                  file:
-                                    description: Configuration for the file appender
-                                    nullable: true
-                                    properties:
-                                      level:
-                                        description: |-
-                                          The log level threshold.
-                                          Log events with a lower log level are discarded.
-                                        enum:
-                                        - TRACE
-                                        - DEBUG
-                                        - INFO
-                                        - WARN
-                                        - ERROR
-                                        - FATAL
-                                        - NONE
-                                        - null
-                                        nullable: true
-                                        type: string
-                                    type: object
-                                  loggers:
-                                    additionalProperties:
-                                      description: Configuration of a logger
-                                      properties:
-                                        level:
-                                          description: |-
-                                            The log level threshold.
-                                            Log events with a lower log level are discarded.
-                                          enum:
-                                          - TRACE
-                                          - DEBUG
-                                          - INFO
-                                          - WARN
-                                          - ERROR
-                                          - FATAL
-                                          - NONE
-                                          - null
-                                          nullable: true
-                                          type: string
-                                      type: object
-                                    default: {}
-                                    description: Configuration per logger
-                                    type: object
-                                type: object
                               kafka:
                                 anyOf:
                                 - required:
@@ -542,22 +468,14 @@ spec:
                       broker.properties:
                         additionalProperties:
                           type: string
-                        description: |-
-                          Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                          This is backwards-compatible with the existing flat key-value YAML format
-                          used by `HashMap<String, String>`.
-                        nullable: true
+                        default: {}
+                        description: Flat key-value overrides for `*.properties`, Hadoop XML, etc.
                         type: object
                       security.properties:
                         additionalProperties:
                           type: string
-                        description: |-
-                          Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                          This is backwards-compatible with the existing flat key-value YAML format
-                          used by `HashMap<String, String>`.
-                        nullable: true
+                        default: {}
+                        description: Flat key-value overrides for `*.properties`, Hadoop XML, etc.
                         type: object
                     type: object
                   envOverrides:
@@ -696,11 +614,17 @@ spec:
                               type: object
                             bootstrapListenerClass:
                               description: The ListenerClass used for bootstrapping new clients. Should use a stable ListenerClass to avoid unnecessary client restarts (such as `cluster-internal` or `external-stable`).
+                              maxLength: 253
+                              minLength: 1
                               nullable: true
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                               type: string
                             brokerListenerClass:
                               description: The ListenerClass used for connecting to brokers. Should use a direct connection ListenerClass to minimize cost and minimize performance overhead (such as `cluster-internal` or `external-unstable`).
+                              maxLength: 253
+                              minLength: 1
                               nullable: true
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                               type: string
                             gracefulShutdownTimeout:
                               description: Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
@@ -715,86 +639,6 @@ spec:
                                 containers:
                                   description: Log configuration per container.
                                   properties:
-                                    get-service:
-                                      anyOf:
-                                      - required:
-                                        - custom
-                                      - {}
-                                      - {}
-                                      description: Log configuration of the container
-                                      properties:
-                                        console:
-                                          description: Configuration for the console appender
-                                          nullable: true
-                                          properties:
-                                            level:
-                                              description: |-
-                                                The log level threshold.
-                                                Log events with a lower log level are discarded.
-                                              enum:
-                                              - TRACE
-                                              - DEBUG
-                                              - INFO
-                                              - WARN
-                                              - ERROR
-                                              - FATAL
-                                              - NONE
-                                              - null
-                                              nullable: true
-                                              type: string
-                                          type: object
-                                        custom:
-                                          description: Log configuration provided in a ConfigMap
-                                          properties:
-                                            configMap:
-                                              description: ConfigMap containing the log configuration files
-                                              nullable: true
-                                              type: string
-                                          type: object
-                                        file:
-                                          description: Configuration for the file appender
-                                          nullable: true
-                                          properties:
-                                            level:
-                                              description: |-
-                                                The log level threshold.
-                                                Log events with a lower log level are discarded.
-                                              enum:
-                                              - TRACE
-                                              - DEBUG
-                                              - INFO
-                                              - WARN
-                                              - ERROR
-                                              - FATAL
-                                              - NONE
-                                              - null
-                                              nullable: true
-                                              type: string
-                                          type: object
-                                        loggers:
-                                          additionalProperties:
-                                            description: Configuration of a logger
-                                            properties:
-                                              level:
-                                                description: |-
-                                                  The log level threshold.
-                                                  Log events with a lower log level are discarded.
-                                                enum:
-                                                - TRACE
-                                                - DEBUG
-                                                - INFO
-                                                - WARN
-                                                - ERROR
-                                                - FATAL
-                                                - NONE
-                                                - null
-                                                nullable: true
-                                                type: string
-                                            type: object
-                                          default: {}
-                                          description: Configuration per logger
-                                          type: object
-                                      type: object
                                     kafka:
                                       anyOf:
                                       - required:
@@ -1159,22 +1003,14 @@ spec:
                             broker.properties:
                               additionalProperties:
                                 type: string
-                              description: |-
-                                Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                                This is backwards-compatible with the existing flat key-value YAML format
-                                used by `HashMap<String, String>`.
-                              nullable: true
+                              default: {}
+                              description: Flat key-value overrides for `*.properties`, Hadoop XML, etc.
                               type: object
                             security.properties:
                               additionalProperties:
                                 type: string
-                              description: |-
-                                Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                                This is backwards-compatible with the existing flat key-value YAML format
-                                used by `HashMap<String, String>`.
-                              nullable: true
+                              default: {}
+                              description: Flat key-value overrides for `*.properties`, Hadoop XML, etc.
                               type: object
                           type: object
                         envOverrides:
@@ -1329,7 +1165,10 @@ spec:
                       ```
                       This is necessary when migrating from ZooKeeper to Kraft mode to retain existing broker IDs
                       because previously broker ids were generated by Kafka and not the operator.
+                    maxLength: 253
+                    minLength: 1
                     nullable: true
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                     type: string
                   metadataManager:
                     description: |-
@@ -1379,7 +1218,10 @@ spec:
                           - Which cert the brokers should use to authenticate themselves against other brokers
                           - Which ca.crt to use when validating the other brokers
 
-                          Defaults to `tls`
+                          Defaults to `tls`. Internal (inter-broker) TLS is mandatory, so this is always set.
+                        maxLength: 253
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                         type: string
                       serverSecretClass:
                         default: tls
@@ -1390,7 +1232,10 @@ spec:
                           - Which cert the servers should use to authenticate themselves against the client
 
                           Defaults to `tls`.
+                        maxLength: 253
+                        minLength: 1
                         nullable: true
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                         type: string
                     type: object
                   vectorAggregatorConfigMapName:
@@ -1399,7 +1244,10 @@ spec:
                       It must contain the key `ADDRESS` with the address of the Vector aggregator.
                       Follow the [logging tutorial](https://docs.stackable.tech/home/nightly/tutorials/logging-vector-aggregator)
                       to learn how to configure log aggregation with Vector.
+                    maxLength: 253
+                    minLength: 1
                     nullable: true
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                     type: string
                   zookeeperConfigMapName:
                     description: |-
@@ -1408,7 +1256,10 @@ spec:
                       to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
                       This can only be used up to Kafka version 3.9.x. Since Kafka 4.0.0, ZooKeeper support was dropped.
                       Please use the 'controller' role instead.
+                    maxLength: 253
+                    minLength: 1
                     nullable: true
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                     type: string
                 type: object
               clusterOperation:
@@ -1787,22 +1638,14 @@ spec:
                       controller.properties:
                         additionalProperties:
                           type: string
-                        description: |-
-                          Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                          This is backwards-compatible with the existing flat key-value YAML format
-                          used by `HashMap<String, String>`.
-                        nullable: true
+                        default: {}
+                        description: Flat key-value overrides for `*.properties`, Hadoop XML, etc.
                         type: object
                       security.properties:
                         additionalProperties:
                           type: string
-                        description: |-
-                          Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                          This is backwards-compatible with the existing flat key-value YAML format
-                          used by `HashMap<String, String>`.
-                        nullable: true
+                        default: {}
+                        description: Flat key-value overrides for `*.properties`, Hadoop XML, etc.
                         type: object
                     type: object
                   envOverrides:
@@ -2236,22 +2079,14 @@ spec:
                             controller.properties:
                               additionalProperties:
                                 type: string
-                              description: |-
-                                Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                                This is backwards-compatible with the existing flat key-value YAML format
-                                used by `HashMap<String, String>`.
-                              nullable: true
+                              default: {}
+                              description: Flat key-value overrides for `*.properties`, Hadoop XML, etc.
                               type: object
                             security.properties:
                               additionalProperties:
                                 type: string
-                              description: |-
-                                Flat key-value overrides for `*.properties`, Hadoop XML, etc.
-
-                                This is backwards-compatible with the existing flat key-value YAML format
-                                used by `HashMap<String, String>`.
-                              nullable: true
+                              default: {}
+                              description: Flat key-value overrides for `*.properties`, Hadoop XML, etc.
                               type: object
                           type: object
                         envOverrides:

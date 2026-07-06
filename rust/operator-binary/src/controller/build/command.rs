@@ -4,22 +4,44 @@ use stackable_operator::{
         create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
     },
     utils::COMMON_BASH_TRAP_FUNCTIONS,
+    v2::product_logging::framework::STACKABLE_LOG_DIR,
 };
 
+use super::properties::ConfigFileName;
 use crate::{
+    controller::{build::security::copy_opa_tls_cert_command, security::ValidatedKafkaSecurity},
     crd::{
-        KafkaPodDescriptor, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
-        role::{broker::BROKER_PROPERTIES_FILE, controller::CONTROLLER_PROPERTIES_FILE},
-        security::KafkaTlsSecurity,
+        BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, STACKABLE_CONFIG_DIR,
+        STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LOG_CONFIG_DIR,
     },
-    product_logging::{BROKER_ID_POD_MAP_DIR, STACKABLE_LOG_DIR},
 };
+
+/// The JVM options selecting the Kafka log4j/log4j2 config file. Kafka 3.x uses log4j,
+/// Kafka 4.0 and higher use log4j2.
+pub fn kafka_log_opts(product_version: &str) -> String {
+    if super::properties::uses_legacy_log4j(product_version) {
+        format!(
+            "-Dlog4j.configuration=file:{STACKABLE_LOG_CONFIG_DIR}/{log4j}",
+            log4j = ConfigFileName::Log4j
+        )
+    } else {
+        format!(
+            "-Dlog4j2.configurationFile=file:{STACKABLE_LOG_CONFIG_DIR}/{log4j2}",
+            log4j2 = ConfigFileName::Log4j2
+        )
+    }
+}
+
+/// The env var carrying the Kafka log4j options (see [`kafka_log_opts`]).
+pub fn kafka_log_opts_env_var() -> String {
+    "KAFKA_LOG4J_OPTS".to_string()
+}
 
 /// Returns the commands to start the main Kafka container
 pub fn broker_kafka_container_commands(
     kraft_mode: bool,
     controller_descriptors: Vec<KafkaPodDescriptor>,
-    kafka_security: &KafkaTlsSecurity,
+    kafka_security: &ValidatedKafkaSecurity,
     product_version: &str,
 ) -> String {
     formatdoc! {"
@@ -42,7 +64,7 @@ pub fn broker_kafka_container_commands(
             true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})"),
             false => "".to_string(),
         },
-        import_opa_tls_cert = kafka_security.copy_opa_tls_cert_command(),
+        import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
         broker_start_command = broker_start_command(kraft_mode, controller_descriptors, product_version),
     }
 }
@@ -63,12 +85,13 @@ fn broker_start_command(
             cp {config_dir}/{properties_file} /tmp/{properties_file}
             config-utils template /tmp/{properties_file}
 
-            cp {config_dir}/jaas.properties /tmp/jaas.properties
-            config-utils template /tmp/jaas.properties
+            cp {config_dir}/{jaas_file} /tmp/{jaas_file}
+            config-utils template /tmp/{jaas_file}
         ",
     broker_id_pod_map_dir = BROKER_ID_POD_MAP_DIR,
     config_dir = STACKABLE_CONFIG_DIR,
-    properties_file = BROKER_PROPERTIES_FILE,
+    properties_file = ConfigFileName::BrokerProperties,
+    jaas_file = ConfigFileName::Jaas,
     };
 
     if kraft_mode {
@@ -78,7 +101,7 @@ fn broker_start_command(
             bin/kafka-storage.sh format --cluster-id \"$KAFKA_CLUSTER_ID\" --config /tmp/{properties_file} --ignore-formatted {initial_controller_command}
             bin/kafka-server-start.sh /tmp/{properties_file} &
         ",
-        properties_file = BROKER_PROPERTIES_FILE,
+        properties_file = ConfigFileName::BrokerProperties,
         initial_controller_command = initial_controllers_command(&controller_descriptors, product_version),
         }
     } else {
@@ -86,7 +109,7 @@ fn broker_start_command(
             {common_command}
 
             bin/kafka-server-start.sh /tmp/{properties_file} &",
-        properties_file = BROKER_PROPERTIES_FILE,
+        properties_file = ConfigFileName::BrokerProperties,
         }
     }
 }
@@ -158,7 +181,7 @@ pub fn controller_kafka_container_command(
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         config_dir = STACKABLE_CONFIG_DIR,
-        properties_file = CONTROLLER_PROPERTIES_FILE,
+        properties_file = ConfigFileName::ControllerProperties,
         initial_controller_command = initial_controllers_command(&controller_descriptors, product_version),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
     }
