@@ -14,9 +14,12 @@ use stackable_operator::{
     commons::secret_class::SecretClassVolumeProvisionParts,
 };
 
-use crate::crd::{
-    LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_DIR,
-    STACKABLE_KERBEROS_KRB5_PATH, role::KafkaRole, security::KafkaTlsSecurity,
+use crate::{
+    controller::security::ValidatedKafkaSecurity,
+    crd::{
+        LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_DIR,
+        STACKABLE_KERBEROS_KRB5_PATH, role::KafkaRole,
+    },
 };
 
 #[derive(Snafu, Debug)]
@@ -36,7 +39,7 @@ pub enum Error {
 }
 
 pub fn add_kerberos_pod_config(
-    kafka_security: &KafkaTlsSecurity,
+    kafka_security: &ValidatedKafkaSecurity,
     role: &KafkaRole,
     cb_kcat_prober: &mut ContainerBuilder,
     cb_kafka: &mut ContainerBuilder,

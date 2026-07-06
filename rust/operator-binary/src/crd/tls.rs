@@ -1,5 +1,10 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
-use stackable_operator::schemars::{self, JsonSchema};
+use stackable_operator::{
+    schemars::{self, JsonSchema},
+    v2::types::kubernetes::SecretClassName,
+};
 
 const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
 
@@ -12,9 +17,9 @@ pub struct KafkaTls {
     /// - Which cert the brokers should use to authenticate themselves against other brokers
     /// - Which ca.crt to use when validating the other brokers
     ///
-    /// Defaults to `tls`
+    /// Defaults to `tls`. Internal (inter-broker) TLS is mandatory, so this is always set.
     #[serde(default = "internal_tls_default")]
-    pub internal_secret_class: String,
+    pub internal_secret_class: SecretClassName,
     /// The [SecretClass](DOCS_BASE_URL_PLACEHOLDER/secret-operator/secretclass.html) to use for
     /// client connections. This setting controls:
     /// - If TLS encryption is used at all
@@ -25,7 +30,7 @@ pub struct KafkaTls {
         default = "server_tls_default",
         skip_serializing_if = "Option::is_none"
     )]
-    pub server_secret_class: Option<String>,
+    pub server_secret_class: Option<SecretClassName>,
 }
 
 /// Default TLS settings.
@@ -37,12 +42,18 @@ pub fn default_kafka_tls() -> Option<KafkaTls> {
     })
 }
 
-/// Helper methods to provide defaults in the CRDs and tests
-pub fn internal_tls_default() -> String {
-    TLS_DEFAULT_SECRET_CLASS.into()
+/// The `tls` default secret class as a typed name.
+fn default_secret_class() -> SecretClassName {
+    SecretClassName::from_str(TLS_DEFAULT_SECRET_CLASS)
+        .expect("the default secret class name is valid")
 }
 
 /// Helper methods to provide defaults in the CRDs and tests
-pub fn server_tls_default() -> Option<String> {
-    Some(TLS_DEFAULT_SECRET_CLASS.into())
+pub fn internal_tls_default() -> SecretClassName {
+    default_secret_class()
+}
+
+/// Helper methods to provide defaults in the CRDs and tests
+pub fn server_tls_default() -> Option<SecretClassName> {
+    Some(default_secret_class())
 }

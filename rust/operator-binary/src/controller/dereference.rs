@@ -9,7 +9,7 @@
 //! and stays here as-is.
 
 use snafu::{ResultExt, Snafu};
-use stackable_operator::client::Client;
+use stackable_operator::{client::Client, utils::cluster_info::KubernetesClusterInfo};
 
 use crate::crd::{
     authentication::{self, ResolvedAuthenticationClasses},
@@ -33,6 +33,7 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 pub struct DereferencedObjects {
     pub authentication_classes: ResolvedAuthenticationClasses,
     pub authorization_config: Option<KafkaAuthorizationConfig>,
+    pub kubernetes_cluster_info: KubernetesClusterInfo,
 }
 
 /// Fetches all Kubernetes objects referenced from the [`v1alpha1::KafkaCluster`] spec.
@@ -59,5 +60,6 @@ pub async fn dereference(
     Ok(DereferencedObjects {
         authentication_classes,
         authorization_config,
+        kubernetes_cluster_info: client.kubernetes_cluster_info.clone(),
     })
 }

@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
@@ -5,6 +7,7 @@ use stackable_operator::{
     commons::opa::{OpaApiVersion, OpaConfig},
     k8s_openapi::api::core::v1::ConfigMap,
     schemars::{self, JsonSchema},
+    v2::types::kubernetes::SecretClassName,
 };
 
 use crate::crd::v1alpha1;
@@ -23,6 +26,11 @@ pub enum Error {
         source: stackable_operator::commons::opa::Error,
     },
 
+    #[snafu(display("the OPA TLS secret class name (key `OPA_SECRET_CLASS`) is invalid"))]
+    ParseOpaSecretClass {
+        source: stackable_operator::v2::macros::attributed_string_type::Error,
+    },
+
     #[snafu(display("object defines no namespace"))]
     ObjectHasNoNamespace,
 }
@@ -36,7 +44,7 @@ pub struct KafkaAuthorization {
 
 pub struct KafkaAuthorizationConfig {
     pub opa_connect: String,
-    pub secret_class: Option<String>,
+    pub secret_class: Option<SecretClassName>,
 }
 
 impl KafkaAuthorization {
@@ -60,7 +68,10 @@ impl KafkaAuthorization {
                     namespace,
                 })?
                 .data
-                .and_then(|mut data| data.remove("OPA_SECRET_CLASS"));
+                .and_then(|mut data| data.remove("OPA_SECRET_CLASS"))
+                .map(|secret_class| SecretClassName::from_str(&secret_class))
+                .transpose()
+                .context(ParseOpaSecretClassSnafu)?;
             let opa_connect = opa
                 .full_document_url_from_config_map(client, kafka, Some("allow"), &OpaApiVersion::V1)
                 .await

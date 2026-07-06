@@ -3,10 +3,7 @@ pub mod authentication;
 pub mod authorization;
 pub mod listener;
 pub mod role;
-pub mod security;
 pub mod tls;
-
-use std::collections::{BTreeMap, HashMap};
 
 use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
@@ -16,24 +13,28 @@ use stackable_operator::{
         cluster_operation::ClusterOperation, networking::DomainName,
         product_image_selection::ProductImage,
     },
-    config_overrides::{KeyValueConfigOverrides, KeyValueOverridesProvider},
+    config::merge::Merge,
     deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
-    role_utils::{GenericRoleConfig, JavaCommonConfig, Role, RoleGroupRef},
+    role_utils::{GenericRoleConfig, Role},
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
-    utils::cluster_info::KubernetesClusterInfo,
+    v2::{
+        config_overrides::KeyValueConfigOverrides,
+        role_utils::JavaCommonConfig,
+        types::{
+            common::Port,
+            kubernetes::{ConfigMapName, NamespaceName, ServiceName, StatefulSetName},
+        },
+    },
     versioned::versioned,
 };
 use strum::{Display, EnumIter, EnumString};
 
-use crate::{
-    config::node_id_hasher::node_id_hash32_offset,
-    crd::{
-        authorization::KafkaAuthorization,
-        role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
-        tls::KafkaTls,
-    },
+use crate::crd::{
+    authorization::KafkaAuthorization,
+    role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
+    tls::KafkaTls,
 };
 
 pub const CONTAINER_IMAGE_BASE_NAME: &str = "kafka";
@@ -42,9 +43,7 @@ pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
 pub const FIELD_MANAGER: &str = "kafka-operator";
 // metrics
 pub const METRICS_PORT_NAME: &str = "metrics";
-pub const METRICS_PORT: u16 = 9606;
-// config files
-pub const JVM_SECURITY_PROPERTIES_FILE: &str = "security.properties";
+pub const METRICS_PORT: Port = Port(9606);
 // env vars
 pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
 // server_properties
@@ -56,9 +55,16 @@ pub const STACKABLE_LISTENER_BROKER_DIR: &str = "/stackable/listener-broker";
 pub const STACKABLE_LISTENER_BOOTSTRAP_DIR: &str = "/stackable/listener-bootstrap";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
+pub const STACKABLE_CONFIG_DIR_NAME: &str = "config";
 // kerberos
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
 pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
+// logging
+pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
+pub const STACKABLE_LOG_CONFIG_DIR_NAME: &str = "log-config";
+pub const STACKABLE_LOG_DIR_NAME: &str = "log";
+pub const BROKER_ID_POD_MAP_DIR: &str = "/stackable/broker-id-pod-map";
+pub const BROKER_ID_POD_MAP_DIR_NAME: &str = "broker-id-pod-map-dir";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -70,9 +76,6 @@ pub enum Error {
     #[snafu(display("The Kafka role [{role}] is missing from spec"))]
     MissingRole { role: String },
 
-    #[snafu(display("Object has no namespace associated"))]
-    NoNamespace,
-
     #[snafu(display(
         "Kafka version 4 and higher requires a Kraft controller (configured via `spec.controller`)"
     ))]
@@ -82,16 +85,6 @@ pub enum Error {
         "Kraft controller (`spec.controller`) and ZooKeeper (`spec.clusterConfig.zookeeperConfigMapName`) are configured. Please only choose one"
     ))]
     KraftAndZookeeperConfigured,
-
-    #[snafu(display(
-        "Could not calculate 'node.id' hash offset for role '{role}' and rolegroup '{rolegroup}' which collides with role '{coliding_role}' and rolegroup '{colliding_rolegroup}'. Please try to rename one of the rolegroups."
-    ))]
-    KafkaNodeIdHashCollision {
-        role: KafkaRole,
-        rolegroup: String,
-        coliding_role: KafkaRole,
-        colliding_rolegroup: String,
-    },
 }
 
 pub type BrokerRole = Role<
@@ -123,6 +116,7 @@ pub mod versioned {
     /// Find more information on how to use it and the resources that the operator generates in the
     /// [operator documentation](DOCS_BASE_URL_PLACEHOLDER/kafka/).
     #[versioned(crd(
+        doc = "A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.",
         group = "kafka.stackable.tech",
         plural = "kafkaclusters",
         status = "KafkaClusterStatus",
@@ -179,14 +173,14 @@ pub mod versioned {
         /// Follow the [logging tutorial](DOCS_BASE_URL_PLACEHOLDER/tutorials/logging-vector-aggregator)
         /// to learn how to configure log aggregation with Vector.
         #[serde(skip_serializing_if = "Option::is_none")]
-        pub vector_aggregator_config_map_name: Option<String>,
+        pub vector_aggregator_config_map_name: Option<ConfigMapName>,
 
         /// Provide the name of the ZooKeeper [discovery ConfigMap](DOCS_BASE_URL_PLACEHOLDER/concepts/service_discovery)
         /// here. When using the [Stackable operator for Apache ZooKeeper](DOCS_BASE_URL_PLACEHOLDER/zookeeper/)
         /// to deploy a ZooKeeper cluster, this will simply be the name of your ZookeeperCluster resource.
         /// This can only be used up to Kafka version 3.9.x. Since Kafka 4.0.0, ZooKeeper support was dropped.
         /// Please use the 'controller' role instead.
-        pub zookeeper_config_map_name: Option<String>,
+        pub zookeeper_config_map_name: Option<ConfigMapName>,
 
         /// Metadata manager to use for the Kafka cluster.
         ///
@@ -237,43 +231,27 @@ pub mod versioned {
         /// because previously broker ids were generated by Kafka and not the operator.
         ///
         #[serde(skip_serializing_if = "Option::is_none")]
-        pub broker_id_pod_config_map_name: Option<String>,
+        pub broker_id_pod_config_map_name: Option<ConfigMapName>,
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Merge, PartialEq, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct KafkaBrokerConfigOverrides {
-        #[serde(
-            default,
-            rename = "broker.properties",
-            skip_serializing_if = "Option::is_none"
-        )]
-        pub broker_properties: Option<KeyValueConfigOverrides>,
+        #[serde(default, rename = "broker.properties")]
+        pub broker_properties: KeyValueConfigOverrides,
 
-        #[serde(
-            default,
-            rename = "security.properties",
-            skip_serializing_if = "Option::is_none"
-        )]
-        pub security_properties: Option<KeyValueConfigOverrides>,
+        #[serde(default, rename = "security.properties")]
+        pub security_properties: KeyValueConfigOverrides,
     }
 
-    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Merge, PartialEq, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct KafkaControllerConfigOverrides {
-        #[serde(
-            default,
-            rename = "controller.properties",
-            skip_serializing_if = "Option::is_none"
-        )]
-        pub controller_properties: Option<KeyValueConfigOverrides>,
+        #[serde(default, rename = "controller.properties")]
+        pub controller_properties: KeyValueConfigOverrides,
 
-        #[serde(
-            default,
-            rename = "security.properties",
-            skip_serializing_if = "Option::is_none"
-        )]
-        pub security_properties: Option<KeyValueConfigOverrides>,
+        #[serde(default, rename = "security.properties")]
+        pub security_properties: KeyValueConfigOverrides,
     }
 }
 
@@ -291,32 +269,6 @@ impl Default for v1alpha1::KafkaClusterConfig {
     }
 }
 
-impl KeyValueOverridesProvider for v1alpha1::KafkaBrokerConfigOverrides {
-    fn get_key_value_overrides(&self, file: &str) -> BTreeMap<String, Option<String>> {
-        let field = match file {
-            role::broker::BROKER_PROPERTIES_FILE => self.broker_properties.as_ref(),
-            JVM_SECURITY_PROPERTIES_FILE => self.security_properties.as_ref(),
-            _ => None,
-        };
-        field
-            .map(KeyValueConfigOverrides::as_product_config_overrides)
-            .unwrap_or_default()
-    }
-}
-
-impl KeyValueOverridesProvider for v1alpha1::KafkaControllerConfigOverrides {
-    fn get_key_value_overrides(&self, file: &str) -> BTreeMap<String, Option<String>> {
-        let field = match file {
-            role::controller::CONTROLLER_PROPERTIES_FILE => self.controller_properties.as_ref(),
-            JVM_SECURITY_PROPERTIES_FILE => self.security_properties.as_ref(),
-            _ => None,
-        };
-        field
-            .map(KeyValueConfigOverrides::as_product_config_overrides)
-            .unwrap_or_default()
-    }
-}
-
 impl HasStatusCondition for v1alpha1::KafkaCluster {
     fn conditions(&self) -> Vec<ClusterCondition> {
         match &self.status {
@@ -329,7 +281,7 @@ impl HasStatusCondition for v1alpha1::KafkaCluster {
 impl v1alpha1::KafkaCluster {
     pub fn effective_metadata_manager(&self) -> Result<MetadataManager, Error> {
         match &self.spec.cluster_config.metadata_manager {
-            Some(manager) => match manager.clone() {
+            Some(manager) => match manager {
                 MetadataManager::ZooKeeper => {
                     if !self.spec.image.product_version().starts_with("3.") {
                         Err(Error::Kafka4RequiresKraftMetadataManager)
@@ -369,126 +321,9 @@ impl v1alpha1::KafkaCluster {
             })
     }
 
-    /// The name of the load-balanced Kubernetes Service providing the bootstrap address. Kafka clients will use this
-    /// to get a list of broker addresses and will use those to transmit data to the correct broker.
-    pub fn bootstrap_service_name(&self, rolegroup: &RoleGroupRef<Self>) -> String {
-        format!("{}-bootstrap", rolegroup.object_name())
-    }
-
-    /// Metadata about a rolegroup
-    pub fn rolegroup_ref(
-        &self,
-        role: &KafkaRole,
-        group_name: impl Into<String>,
-    ) -> RoleGroupRef<Self> {
-        RoleGroupRef {
-            cluster: ObjectRef::from_obj(self),
-            role: role.to_string(),
-            role_group: group_name.into(),
-        }
-    }
-
-    pub fn role_config(&self, role: &KafkaRole) -> Option<&GenericRoleConfig> {
-        match role {
-            KafkaRole::Broker => self.spec.brokers.as_ref().map(|b| &b.role_config),
-            KafkaRole::Controller => self.spec.controllers.as_ref().map(|b| &b.role_config),
-        }
-    }
-
     pub fn broker_role(&self) -> Result<&BrokerRole, Error> {
         self.spec.brokers.as_ref().context(MissingRoleSnafu {
             role: KafkaRole::Broker.to_string(),
-        })
-    }
-
-    pub fn controller_role(&self) -> Result<&ControllerRole, Error> {
-        self.spec.controllers.as_ref().context(MissingRoleSnafu {
-            role: KafkaRole::Controller.to_string(),
-        })
-    }
-
-    /// List pod descriptors for a given role and all its rolegroups.
-    /// If no role is provided, pod descriptors for all roles (and all groups) are listed.
-    /// We try to predict the pods here rather than looking at the current cluster state in order to
-    /// avoid instance churn.
-    pub fn pod_descriptors(
-        &self,
-        requested_kafka_role: Option<&KafkaRole>,
-        cluster_info: &KubernetesClusterInfo,
-        client_port: u16,
-    ) -> Result<Vec<KafkaPodDescriptor>, Error> {
-        let namespace = self.metadata.namespace.clone().context(NoNamespaceSnafu)?;
-        let mut pod_descriptors = Vec::new();
-        let mut seen_hashes = HashMap::<u32, (KafkaRole, String)>::new();
-
-        for current_role in KafkaRole::roles() {
-            let rolegroup_replicas = self.extract_rolegroup_replicas(&current_role)?;
-            for (rolegroup, replicas) in rolegroup_replicas {
-                let rolegroup_ref = self.rolegroup_ref(&current_role, &rolegroup);
-                let node_id_hash_offset = node_id_hash32_offset(&rolegroup_ref);
-
-                // check collisions
-                match seen_hashes.get(&node_id_hash_offset) {
-                    Some((coliding_role, coliding_rolegroup)) => {
-                        return KafkaNodeIdHashCollisionSnafu {
-                            role: current_role.clone(),
-                            rolegroup: rolegroup.clone(),
-                            coliding_role: coliding_role.clone(),
-                            colliding_rolegroup: coliding_rolegroup.to_string(),
-                        }
-                        .fail();
-                    }
-                    None => {
-                        seen_hashes.insert(node_id_hash_offset, (current_role.clone(), rolegroup))
-                    }
-                };
-
-                // If no specific role is requested, or the current role matches the requested one, add pod descriptors
-                if requested_kafka_role.is_none() || Some(&current_role) == requested_kafka_role {
-                    for replica in 0..replicas {
-                        pod_descriptors.push(KafkaPodDescriptor {
-                            namespace: namespace.clone(),
-                            role: current_role.to_string(),
-                            role_group_service_name: rolegroup_ref
-                                .rolegroup_headless_service_name(),
-                            role_group_statefulset_name: rolegroup_ref.object_name(),
-                            replica,
-                            cluster_domain: cluster_info.cluster_domain.clone(),
-                            node_id: node_id_hash_offset + u32::from(replica),
-                            client_port,
-                        });
-                    }
-                }
-            }
-        }
-
-        Ok(pod_descriptors)
-    }
-
-    fn extract_rolegroup_replicas(
-        &self,
-        kafka_role: &KafkaRole,
-    ) -> Result<BTreeMap<String, u16>, Error> {
-        Ok(match kafka_role {
-            KafkaRole::Broker => self
-                .broker_role()
-                .iter()
-                .flat_map(|role| &role.role_groups)
-                .flat_map(|(rolegroup_name, rolegroup)| {
-                    std::iter::once((rolegroup_name.to_string(), rolegroup.replicas.unwrap_or(0)))
-                })
-                // Order rolegroups consistently, to avoid spurious downstream rewrites
-                .collect::<BTreeMap<_, _>>(),
-
-            KafkaRole::Controller => self
-                .controller_role()
-                .iter()
-                .flat_map(|role| &role.role_groups)
-                .flat_map(|(rolegroup_name, rolegroup)| {
-                    std::iter::once((rolegroup_name.to_string(), rolegroup.replicas.unwrap_or(0)))
-                })
-                // Order rolegroups consistently, to avoid spurious downstream rewrites
-                .collect::<BTreeMap<_, _>>(),
         })
     }
 }
@@ -496,16 +331,16 @@ impl v1alpha1::KafkaCluster {
 /// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
 ///
 /// Used for service discovery.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct KafkaPodDescriptor {
-    namespace: String,
-    role_group_statefulset_name: String,
-    role_group_service_name: String,
-    replica: u16,
-    cluster_domain: DomainName,
-    node_id: u32,
-    pub role: String,
-    pub client_port: u16,
+    pub(crate) namespace: NamespaceName,
+    pub(crate) role_group_statefulset_name: StatefulSetName,
+    pub(crate) role_group_service_name: ServiceName,
+    pub(crate) replica: u16,
+    pub(crate) cluster_domain: DomainName,
+    pub(crate) node_id: u32,
+    pub role: KafkaRole,
+    pub client_port: Port,
 }
 
 impl KafkaPodDescriptor {
@@ -542,15 +377,6 @@ impl KafkaPodDescriptor {
             fqdn = self.fqdn(),
         )
     }
-
-    pub fn as_quorum_voter(&self) -> String {
-        format!(
-            "{node_id}@{fqdn}:{port}",
-            node_id = self.node_id,
-            port = self.client_port,
-            fqdn = self.fqdn(),
-        )
-    }
 }
 
 #[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -582,11 +408,13 @@ pub enum MetadataManager {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
-    use stackable_operator::versioned::test_utils::RoundtripTestData;
+    use stackable_operator::{
+        v2::types::kubernetes::SecretClassName, versioned::test_utils::RoundtripTestData,
+    };
 
     use super::*;
 
-    fn get_server_secret_class(kafka: &v1alpha1::KafkaCluster) -> Option<String> {
+    fn get_server_secret_class(kafka: &v1alpha1::KafkaCluster) -> Option<SecretClassName> {
         kafka
             .spec
             .cluster_config
@@ -595,7 +423,7 @@ mod tests {
             .and_then(|tls| tls.server_secret_class.clone())
     }
 
-    fn get_internal_secret_class(kafka: &v1alpha1::KafkaCluster) -> String {
+    fn get_internal_secret_class(kafka: &v1alpha1::KafkaCluster) -> SecretClassName {
         kafka
             .spec
             .cluster_config
@@ -644,8 +472,8 @@ mod tests {
         let kafka: v1alpha1::KafkaCluster =
             serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(
-            get_server_secret_class(&kafka).unwrap(),
-            "simple-kafka-server-tls".to_string()
+            get_server_secret_class(&kafka).unwrap().to_string(),
+            "simple-kafka-server-tls"
         );
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -691,7 +519,7 @@ mod tests {
             serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            get_internal_secret_class(&kafka),
+            get_internal_secret_class(&kafka).to_string(),
             "simple-kafka-internal-tls".to_string()
         );
     }
@@ -734,7 +562,7 @@ mod tests {
             serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
-            get_internal_secret_class(&kafka),
+            get_internal_secret_class(&kafka).to_string(),
             "simple-kafka-internal-tls".to_string()
         );
 
@@ -754,7 +582,7 @@ mod tests {
         let kafka: v1alpha1::KafkaCluster =
             serde_yaml::from_str(input).expect("illegal test input");
         assert_eq!(
-            get_server_secret_class(&kafka),
+            get_server_secret_class(&kafka).map(|s| s.to_string()),
             Some("simple-kafka-server-tls".to_string())
         );
         assert_eq!(
