@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
   Previously, arbitrary file names were silently accepted and ignored ([#960]).
 - Bump `stackable-operator` to 0.111.1 and snafu to 0.9 ([#960], [#961]).
 - Internal operator refactoring: introduce dereference() and validate() steps in the reconciler ([#968]).
+- BREAKING: Extend the subject DNs of TLS certificates with the FQDNs of the Kafka pods ([#972]).
 - test: Bump vector-aggregator to 0.55.0, replace /graphql call with gRPC call ([#971]).
 - BREAKING: Removed product-config machinery which is a breaking change in terms of configuration.
 ￼ Users relying on the product-config `properties.yaml` file have to set these properties via the CRD.
@@ -30,6 +31,7 @@ All notable changes to this project will be documented in this file.
 [#961]: https://github.com/stackabletech/kafka-operator/pull/961
 [#968]: https://github.com/stackabletech/kafka-operator/pull/968
 [#971]: https://github.com/stackabletech/kafka-operator/pull/971
+[#972]: https://github.com/stackabletech/kafka-operator/pull/972
 [#973]: https://github.com/stackabletech/kafka-operator/pull/973
 [#976]: https://github.com/stackabletech/kafka-operator/pull/976
 

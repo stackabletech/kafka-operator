@@ -319,6 +319,7 @@ pub fn add_controller_volume_and_volume_mounts(
                     .with_pod_scope()
                     .with_format(SecretFormat::TlsPkcs12)
                     .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+                    .with_auto_tls_cert_domain_components_in_subject_dn(true)
                     .build()
                     .context(SecretVolumeBuildSnafu)?,
                 )
@@ -576,6 +577,7 @@ fn create_kcat_tls_volume(
             .with_pod_scope()
             .with_format(SecretFormat::TlsPem)
             .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+            .with_auto_tls_cert_domain_components_in_subject_dn(true)
             .build()
             .context(SecretVolumeBuildSnafu)?,
         )
@@ -600,6 +602,7 @@ fn create_tls_keystore_volume(
             .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
             .with_format(SecretFormat::TlsPkcs12)
             .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+            .with_auto_tls_cert_domain_components_in_subject_dn(true)
             .build()
             .context(SecretVolumeBuildSnafu)?,
         )

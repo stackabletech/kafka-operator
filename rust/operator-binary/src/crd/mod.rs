@@ -116,6 +116,7 @@ pub mod versioned {
     /// Find more information on how to use it and the resources that the operator generates in the
     /// [operator documentation](DOCS_BASE_URL_PLACEHOLDER/kafka/).
     #[versioned(crd(
+        doc = "A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.",
         group = "kafka.stackable.tech",
         plural = "kafkaclusters",
         status = "KafkaClusterStatus",

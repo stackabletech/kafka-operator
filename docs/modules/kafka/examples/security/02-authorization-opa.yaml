@@ -1,0 +1,63 @@
+---
+apiVersion: opa.stackable.tech/v1alpha1
+kind: OpaCluster
+metadata:
+  name: simple-opa
+spec:
+  image:
+    productVersion: 1.16.2
+  servers:
+    config:
+      logging:
+        containers:
+          opa:
+            loggers:
+              decision:
+                level: INFO
+    roleGroups:
+      default: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-rego-rules
+  labels:
+    opa.stackable.tech/bundle: "true"
+data:
+  kafka.rego: |
+    package kafka
+
+    is_internal_request if input.requestContext.listenerName == "INTERNAL"
+    is_external_request if not is_internal_request
+
+    # FQDNs of the brokers as regular expressions
+    brokers_fqdn := [
+      `local`,                                 # cluster domain
+      `cluster`,                               # cluster domain
+      `svc`,
+      `default`,                               # namespace
+      `simple-kafka-broker-default-headless`,  # Pod subdomain
+      `simple-kafka-broker-default-[0-9]+`,    # Pod name
+    ]
+
+    domain_components = [concat("", [`DC=`, dc]) | some dc in brokers_fqdn]
+    common_name = `CN=generated certificate for pod`
+    subject_dn_fields = array.concat(domain_components, [common_name])
+    brokers_subject_dn_pattern := concat("", ["^", concat(",", subject_dn_fields), "$"])
+
+    default allow := false
+
+    allow if {
+      is_internal_request
+
+      regex.match(
+        brokers_subject_dn_pattern,
+        input.requestContext.principal.name,
+      )
+    }
+
+    allow if {
+      is_external_request
+
+      # TODO Add your own rules
+    }

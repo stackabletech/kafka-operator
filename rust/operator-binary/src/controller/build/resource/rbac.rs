@@ -67,7 +67,7 @@ pub fn build_rbac_role_binding(
             .with_labels(labels)
             .build(),
         role_ref: RoleRef {
-            api_group: "rbac.authorization.k8s.io".to_string(),
+            api_group: Some("rbac.authorization.k8s.io".to_owned()),
             kind: "ClusterRole".to_string(),
             name: resource_names.cluster_role_name().to_string(),
         },

@@ -1,0 +1,23 @@
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  image:
+    productVersion: 3.9.2
+  clusterConfig:
+    authorization:
+      opa:
+        configMapName: simple-opa
+        package: kafka
+    zookeeperConfigMapName: simple-kafka-znode
+  brokers:
+    configOverrides:
+      broker.properties:
+        opa.authorizer.cache.initial.capacity: "100"
+        opa.authorizer.cache.maximum.size: "100"
+        opa.authorizer.cache.expire.after.seconds: "10"
+    roleGroups:
+      default:
+        replicas: 1
