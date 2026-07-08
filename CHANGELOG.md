@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Bump stackable-operator to 0.113.3 ([#984]).
 - Document Helm deployed RBAC permissions and remove unnecessary permissions ([#953]).
 - BREAKING: `configOverrides` now only accepts the known config files (`broker.properties` and
   `security.properties` for brokers and `controller.properties` and `security.properties` for
@@ -34,6 +35,7 @@ All notable changes to this project will be documented in this file.
 [#972]: https://github.com/stackabletech/kafka-operator/pull/972
 [#973]: https://github.com/stackabletech/kafka-operator/pull/973
 [#976]: https://github.com/stackabletech/kafka-operator/pull/976
+[#984]: https://github.com/stackabletech/kafka-operator/pull/984
 
 ## [26.3.0] - 2026-03-16
 
