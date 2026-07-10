@@ -158,3 +158,149 @@ pub fn build(
         pod_disruption_budgets,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use stackable_operator::kube::Resource;
+
+    use super::build;
+    use crate::controller::{
+        ValidatedCluster,
+        test_support::{minimal_kafka, validated_cluster},
+    };
+
+    /// Sorted `metadata.name`s of the given resources, for order-independent assertions.
+    fn sorted_names(resources: &[impl Resource]) -> Vec<&str> {
+        let mut names: Vec<&str> = resources
+            .iter()
+            .filter_map(|resource| resource.meta().name.as_deref())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// A KRaft cluster with one `broker` and one `controller` role group, resolved through the real
+    /// validate step (mirroring the other build fixtures), since [`ValidatedCluster`] carries
+    /// several resolved types that are impractical to construct by hand.
+    fn kraft_cluster() -> ValidatedCluster {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+        validated_cluster(&kafka)
+    }
+
+    /// A ZooKeeper-mode cluster with a single `broker` role group (no controllers).
+    fn zookeeper_cluster() -> ValidatedCluster {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+        validated_cluster(&kafka)
+    }
+
+    #[test]
+    fn build_produces_expected_resource_names() {
+        let cluster = kraft_cluster();
+        let resources = build(&cluster, "simple-kafka-serviceaccount").expect("build succeeds");
+
+        // One StatefulSet per role group.
+        assert_eq!(
+            sorted_names(&resources.stateful_sets),
+            [
+                "simple-kafka-broker-default",
+                "simple-kafka-controller-default"
+            ]
+        );
+        // One rolegroup ConfigMap per role group.
+        assert_eq!(
+            sorted_names(&resources.config_maps),
+            [
+                "simple-kafka-broker-default",
+                "simple-kafka-controller-default"
+            ]
+        );
+        // One headless and one metrics Service per role group.
+        assert_eq!(
+            sorted_names(&resources.services),
+            [
+                "simple-kafka-broker-default-headless",
+                "simple-kafka-broker-default-metrics",
+                "simple-kafka-controller-default-headless",
+                "simple-kafka-controller-default-metrics",
+            ]
+        );
+        // Only broker role groups get a bootstrap Listener.
+        assert_eq!(
+            sorted_names(&resources.listeners),
+            ["simple-kafka-broker-default-bootstrap"]
+        );
+        // A default PodDisruptionBudget per role.
+        assert_eq!(
+            sorted_names(&resources.pod_disruption_budgets),
+            ["simple-kafka-broker", "simple-kafka-controller"]
+        );
+    }
+
+    /// ZooKeeper mode has no `controller` role, so `build()` emits no controller resources while
+    /// still producing the broker's bootstrap Listener.
+    #[test]
+    fn build_zookeeper_mode_has_no_controller_resources() {
+        let cluster = zookeeper_cluster();
+        let resources = build(&cluster, "simple-kafka-serviceaccount").expect("build succeeds");
+
+        assert_eq!(
+            sorted_names(&resources.stateful_sets),
+            ["simple-kafka-broker-default"]
+        );
+        assert_eq!(
+            sorted_names(&resources.services),
+            [
+                "simple-kafka-broker-default-headless",
+                "simple-kafka-broker-default-metrics",
+            ]
+        );
+        assert_eq!(
+            sorted_names(&resources.listeners),
+            ["simple-kafka-broker-default-bootstrap"]
+        );
+        assert_eq!(
+            sorted_names(&resources.pod_disruption_budgets),
+            ["simple-kafka-broker"]
+        );
+    }
+}
