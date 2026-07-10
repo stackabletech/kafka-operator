@@ -6,9 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use stackable_operator::{
-    utils::cluster_info::KubernetesClusterInfo, v2::types::kubernetes::NamespaceName,
-};
+use stackable_operator::{commons::networking::DomainName, v2::types::kubernetes::NamespaceName};
 
 use crate::{
     controller::{RoleGroupName, ValidatedCluster, security::ValidatedKafkaSecurity},
@@ -27,7 +25,6 @@ pub fn get_kafka_listener_config(
     kafka_security: &ValidatedKafkaSecurity,
     role: &KafkaRole,
     role_group_name: &RoleGroupName,
-    cluster_info: &KubernetesClusterInfo,
 ) -> KafkaListenerConfig {
     let headless_service_name = validated_cluster
         .resource_names(role, role_group_name)
@@ -35,7 +32,7 @@ pub fn get_kafka_listener_config(
     let pod_fqdn = pod_fqdn(
         &validated_cluster.namespace,
         headless_service_name.as_ref(),
-        cluster_info,
+        &validated_cluster.cluster_domain,
     );
     let mut listeners = vec![];
     let mut advertised_listeners = vec![];
@@ -143,12 +140,9 @@ pub fn get_kafka_listener_config(
 pub(crate) fn pod_fqdn(
     namespace: &NamespaceName,
     sts_service_name: &str,
-    cluster_info: &KubernetesClusterInfo,
+    cluster_domain: &DomainName,
 ) -> String {
-    format!(
-        "${{env:POD_NAME}}.{sts_service_name}.{namespace}.svc.{cluster_domain}",
-        cluster_domain = cluster_info.cluster_domain
-    )
+    format!("${{env:POD_NAME}}.{sts_service_name}.{namespace}.svc.{cluster_domain}")
 }
 
 #[cfg(test)]
@@ -157,6 +151,7 @@ mod tests {
         builder::meta::ObjectMetaBuilder,
         commons::networking::DomainName,
         crd::authentication::{core, kerberos, tls},
+        utils::cluster_info::KubernetesClusterInfo,
     };
 
     use super::*;
@@ -217,7 +212,6 @@ mod tests {
             &kafka_security,
             &KafkaRole::Broker,
             &role_group_name,
-            &cluster_info,
         );
 
         assert_eq!(
@@ -250,7 +244,7 @@ mod tests {
                         .resource_names(&KafkaRole::Broker, &role_group_name)
                         .headless_service_name()
                         .as_ref(),
-                    &cluster_info
+                    &cluster_info.cluster_domain
                 ),
                 internal_port = kafka_security.internal_port(),
             )
@@ -280,7 +274,6 @@ mod tests {
             &kafka_security,
             &KafkaRole::Broker,
             &role_group_name,
-            &cluster_info,
         );
 
         assert_eq!(
@@ -313,7 +306,7 @@ mod tests {
                         .resource_names(&KafkaRole::Broker, &role_group_name)
                         .headless_service_name()
                         .as_ref(),
-                    &cluster_info
+                    &cluster_info.cluster_domain
                 ),
                 internal_port = kafka_security.internal_port(),
             )
@@ -344,7 +337,6 @@ mod tests {
             &kafka_security,
             &KafkaRole::Broker,
             &role_group_name,
-            &cluster_info,
         );
 
         assert_eq!(
@@ -377,7 +369,7 @@ mod tests {
                         .resource_names(&KafkaRole::Broker, &role_group_name)
                         .headless_service_name()
                         .as_ref(),
-                    &cluster_info
+                    &cluster_info.cluster_domain
                 ),
                 internal_port = kafka_security.internal_port(),
             )
@@ -442,7 +434,6 @@ mod tests {
             &kafka_security,
             &KafkaRole::Broker,
             &role_group_name,
-            &cluster_info,
         );
 
         assert_eq!(
@@ -478,7 +469,7 @@ mod tests {
                         .resource_names(&KafkaRole::Broker, &role_group_name)
                         .headless_service_name()
                         .as_ref(),
-                    &cluster_info
+                    &cluster_info.cluster_domain
                 ),
                 internal_port = kafka_security.internal_port(),
                 bootstrap_name = KafkaListenerName::Bootstrap,

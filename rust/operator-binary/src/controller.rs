@@ -593,7 +593,6 @@ pub async fn reconcile_kafka(
                 &validated_cluster.cluster_config.kafka_security,
                 kafka_role,
                 rolegroup_name,
-                &client.kubernetes_cluster_info,
             );
 
             let rg_configmap = build::resource::config_map::build_rolegroup_config_map(
