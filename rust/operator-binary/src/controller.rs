@@ -20,7 +20,7 @@ use stackable_operator::{
     commons::{networking::DomainName, product_image_selection::ResolvedProductImage},
     crd::listener,
     kube::{
-        Resource,
+        Resource, ResourceExt,
         api::{DynamicObject, ObjectMeta},
         core::{DeserializeGuard, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
@@ -557,6 +557,9 @@ pub async fn reconcile_kafka(
         .add(client, rbac_sa.clone())
         .await
         .context(ApplyServiceAccountSnafu)?;
+    // The ServiceAccount name is deterministic, so the statefulset builders only need the name,
+    // not the applied object.
+    let service_account_name = rbac_sa.name_any();
     cluster_resources
         .add(client, rbac_rolebinding)
         .await
@@ -608,7 +611,7 @@ pub async fn reconcile_kafka(
                     rolegroup_name,
                     &validated_cluster,
                     validated_rg,
-                    &rbac_sa,
+                    &service_account_name,
                 )
                 .context(BuildStatefulsetSnafu)?,
                 KafkaRole::Controller => build_controller_rolegroup_statefulset(
@@ -616,7 +619,7 @@ pub async fn reconcile_kafka(
                     rolegroup_name,
                     &validated_cluster,
                     validated_rg,
-                    &rbac_sa,
+                    &service_account_name,
                 )
                 .context(BuildStatefulsetSnafu)?,
             };

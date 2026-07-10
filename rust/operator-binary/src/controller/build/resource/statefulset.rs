@@ -20,12 +20,11 @@ use stackable_operator::{
             apps::v1::{StatefulSet, StatefulSetSpec, StatefulSetUpdateStrategy},
             core::v1::{
                 ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource, ExecAction,
-                ObjectFieldSelector, PodSpec, Probe, ServiceAccount, TCPSocketAction, Volume,
+                ObjectFieldSelector, PodSpec, Probe, TCPSocketAction, Volume,
             },
         },
         apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
     },
-    kube::ResourceExt,
     product_logging,
     v2::{
         builder::{
@@ -189,7 +188,7 @@ pub fn build_broker_rolegroup_statefulset(
     role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
     validated_rg: &ValidatedRoleGroupConfig,
-    service_account: &ServiceAccount,
+    service_account_name: &str,
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
@@ -395,7 +394,7 @@ pub fn build_broker_rolegroup_statefulset(
         .add_container(cb_kcat_prober.build())
         .affinity(&merged_config.affinity);
 
-    add_common_pod_config(&mut pod_builder, &resource_names, service_account)?;
+    add_common_pod_config(&mut pod_builder, &resource_names, service_account_name)?;
 
     add_vector_container(
         &mut pod_builder,
@@ -453,7 +452,7 @@ pub fn build_controller_rolegroup_statefulset(
     role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
     validated_rg: &ValidatedRoleGroupConfig,
-    service_account: &ServiceAccount,
+    service_account_name: &str,
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
@@ -578,7 +577,7 @@ pub fn build_controller_rolegroup_statefulset(
         .add_container(kafka_container)
         .affinity(&merged_config.affinity);
 
-    add_common_pod_config(&mut pod_builder, &resource_names, service_account)?;
+    add_common_pod_config(&mut pod_builder, &resource_names, service_account_name)?;
 
     add_vector_container(
         &mut pod_builder,
@@ -729,7 +728,7 @@ fn add_log_config_volume(
 fn add_common_pod_config(
     pod_builder: &mut PodBuilder,
     resource_names: &ResourceNames,
-    service_account: &ServiceAccount,
+    service_account_name: &str,
 ) -> Result<(), Error> {
     pod_builder
         .add_volume(Volume {
@@ -748,7 +747,7 @@ fn add_common_pod_config(
             )),
         )
         .context(AddVolumeSnafu)?
-        .service_account_name(service_account.name_any())
+        .service_account_name(service_account_name)
         .security_context(PodSecurityContextBuilder::new().fs_group(1000).build());
     Ok(())
 }
