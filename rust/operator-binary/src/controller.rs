@@ -19,8 +19,13 @@ use stackable_operator::{
     cluster_resources::ClusterResourceApplyStrategy,
     commons::{networking::DomainName, product_image_selection::ResolvedProductImage},
     crd::listener,
+    k8s_openapi::api::{
+        apps::v1::StatefulSet,
+        core::v1::{ConfigMap, Service},
+        policy::v1::PodDisruptionBudget,
+    },
     kube::{
-        Resource,
+        Resource, ResourceExt,
         api::{DynamicObject, ObjectMeta},
         core::{DeserializeGuard, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
@@ -55,18 +60,7 @@ pub use stackable_operator::v2::types::operator::{RoleGroupName, RoleName};
 
 use crate::{
     controller::{
-        build::{
-            properties::listener::get_kafka_listener_config,
-            resource::{
-                listener::build_broker_rolegroup_bootstrap_listener,
-                pdb::build_pdb,
-                rbac::{build_rbac_role_binding, build_rbac_service_account},
-                service::{build_rolegroup_headless_service, build_rolegroup_metrics_service},
-                statefulset::{
-                    build_broker_rolegroup_statefulset, build_controller_rolegroup_statefulset,
-                },
-            },
-        },
+        build::resource::rbac::{build_rbac_role_binding, build_rbac_service_account},
         node_id_hasher::node_id_hash32_offset,
         security::ValidatedKafkaSecurity,
     },
@@ -92,6 +86,19 @@ pub enum PodDescriptorsError {
         colliding_role: KafkaRole,
         colliding_role_group: RoleGroupName,
     },
+}
+
+/// Every Kubernetes resource produced by the [`build`] step.
+///
+/// The discovery `ConfigMap` is not part of this: it depends on the applied bootstrap
+/// [`Listener`](listener)s' status and is therefore built in [`reconcile_kafka`] after they are
+/// applied.
+pub struct KubernetesResources {
+    pub stateful_sets: Vec<StatefulSet>,
+    pub services: Vec<Service>,
+    pub listeners: Vec<listener::v1alpha1::Listener>,
+    pub config_maps: Vec<ConfigMap>,
+    pub pod_disruption_budgets: Vec<PodDisruptionBudget>,
 }
 
 /// The validated cluster. Carries everything the build steps need, resolved once
@@ -393,27 +400,12 @@ pub enum Error {
     #[snafu(display("failed to validate cluster"))]
     ValidateCluster { source: validate::Error },
 
-    #[snafu(display("failed to apply bootstrap Listener"))]
-    ApplyBootstrapListener {
-        source: stackable_operator::cluster_resources::Error,
-    },
+    #[snafu(display("failed to build the Kubernetes resources"))]
+    BuildResources { source: build::Error },
 
-    #[snafu(display("failed to apply Service for role group {role_group}"))]
-    ApplyRoleGroupService {
+    #[snafu(display("failed to apply Kubernetes resource"))]
+    ApplyResource {
         source: stackable_operator::cluster_resources::Error,
-        role_group: RoleGroupName,
-    },
-
-    #[snafu(display("failed to apply ConfigMap for role group {role_group}"))]
-    ApplyRoleGroupConfig {
-        source: stackable_operator::cluster_resources::Error,
-        role_group: RoleGroupName,
-    },
-
-    #[snafu(display("failed to apply StatefulSet for role group {role_group}"))]
-    ApplyRoleGroupStatefulSet {
-        source: stackable_operator::cluster_resources::Error,
-        role_group: RoleGroupName,
     },
 
     #[snafu(display("failed to build discovery ConfigMap"))]
@@ -446,11 +438,6 @@ pub enum Error {
         source: stackable_operator::client::Error,
     },
 
-    #[snafu(display("failed to apply PodDisruptionBudget"))]
-    ApplyPdb {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
     #[snafu(display("failed to get required Labels"))]
     GetRequiredLabels {
         source:
@@ -460,16 +447,6 @@ pub enum Error {
     #[snafu(display("KafkaCluster object is invalid"))]
     InvalidKafkaCluster {
         source: error_boundary::InvalidObject,
-    },
-
-    #[snafu(display("failed to build statefulset"))]
-    BuildStatefulset {
-        source: crate::controller::build::resource::statefulset::Error,
-    },
-
-    #[snafu(display("failed to build configmap"))]
-    BuildConfigMap {
-        source: crate::controller::build::resource::config_map::Error,
     },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -483,21 +460,16 @@ impl ReconcilerError for Error {
         match self {
             Error::Dereference { .. } => None,
             Error::ValidateCluster { .. } => None,
-            Error::ApplyBootstrapListener { .. } => None,
-            Error::ApplyRoleGroupService { .. } => None,
-            Error::ApplyRoleGroupConfig { .. } => None,
-            Error::ApplyRoleGroupStatefulSet { .. } => None,
+            Error::BuildResources { .. } => None,
+            Error::ApplyResource { .. } => None,
             Error::BuildDiscoveryConfig { .. } => None,
             Error::ApplyDiscoveryConfig { .. } => None,
             Error::DeleteOrphans { .. } => None,
             Error::ApplyServiceAccount { .. } => None,
             Error::ApplyRoleBinding { .. } => None,
             Error::ApplyStatus { .. } => None,
-            Error::ApplyPdb { .. } => None,
             Error::GetRequiredLabels { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
-            Error::BuildStatefulset { .. } => None,
-            Error::BuildConfigMap { .. } => None,
         }
     }
 }
@@ -557,127 +529,67 @@ pub async fn reconcile_kafka(
         .add(client, rbac_sa.clone())
         .await
         .context(ApplyServiceAccountSnafu)?;
+    // The ServiceAccount name is deterministic, so the statefulset builders only need the name,
+    // not the applied object.
+    let service_account_name = rbac_sa.name_any();
     cluster_resources
         .add(client, rbac_rolebinding)
         .await
         .context(ApplyRoleBindingSnafu)?;
 
-    let mut bootstrap_listeners = Vec::<listener::v1alpha1::Listener>::new();
+    // Build every Kubernetes resource up front (client-free). The discovery ConfigMap is not part
+    // of this, as it depends on the applied bootstrap Listeners' status (see below).
+    let resources =
+        build::build(&validated_cluster, &service_account_name).context(BuildResourcesSnafu)?;
 
-    for (kafka_role, rg_map) in &validated_cluster.role_group_configs {
-        for (rolegroup_name, validated_rg) in rg_map {
-            // The Vector agent config is the static `vector.yaml`, added to the rolegroup
-            // ConfigMap only when the Vector agent is enabled (resolved during validation).
-            let vector_config = validated_rg
-                .config
-                .logging
-                .vector_container
-                .is_some()
-                .then(build::properties::product_logging::vector_config_file_content);
-
-            let rg_headless_service = build_rolegroup_headless_service(
-                &validated_cluster,
-                kafka_role,
-                rolegroup_name,
-                &validated_cluster.cluster_config.kafka_security,
-            );
-
-            let rg_metrics_service =
-                build_rolegroup_metrics_service(&validated_cluster, kafka_role, rolegroup_name);
-
-            let kafka_listeners = get_kafka_listener_config(
-                &validated_cluster,
-                &validated_cluster.cluster_config.kafka_security,
-                kafka_role,
-                rolegroup_name,
-                &client.kubernetes_cluster_info,
-            );
-
-            let rg_configmap = build::resource::config_map::build_rolegroup_config_map(
-                &validated_cluster,
-                rolegroup_name,
-                validated_rg,
-                &kafka_listeners,
-                vector_config,
-            )
-            .context(BuildConfigMapSnafu)?;
-
-            let rg_statefulset = match kafka_role {
-                KafkaRole::Broker => build_broker_rolegroup_statefulset(
-                    kafka_role,
-                    rolegroup_name,
-                    &validated_cluster,
-                    validated_rg,
-                    &rbac_sa,
-                )
-                .context(BuildStatefulsetSnafu)?,
-                KafkaRole::Controller => build_controller_rolegroup_statefulset(
-                    kafka_role,
-                    rolegroup_name,
-                    &validated_cluster,
-                    validated_rg,
-                    &rbac_sa,
-                )
-                .context(BuildStatefulsetSnafu)?,
-            };
-
-            if let AnyConfig::Broker(broker_config) = &validated_rg.config.config {
-                let rg_bootstrap_listener = build_broker_rolegroup_bootstrap_listener(
-                    &validated_cluster,
-                    kafka_role,
-                    rolegroup_name,
-                    broker_config,
-                );
-                bootstrap_listeners.push(
-                    cluster_resources
-                        .add(client, rg_bootstrap_listener)
-                        .await
-                        .context(ApplyBootstrapListenerSnafu)?,
-                );
-            }
-
-            cluster_resources
-                .add(client, rg_headless_service)
-                .await
-                .with_context(|_| ApplyRoleGroupServiceSnafu {
-                    role_group: rolegroup_name.clone(),
-                })?;
-            cluster_resources
-                .add(client, rg_metrics_service)
-                .await
-                .with_context(|_| ApplyRoleGroupServiceSnafu {
-                    role_group: rolegroup_name.clone(),
-                })?;
-            cluster_resources
-                .add(client, rg_configmap)
-                .await
-                .with_context(|_| ApplyRoleGroupConfigSnafu {
-                    role_group: rolegroup_name.clone(),
-                })?;
-
-            // Note: The StatefulSet needs to be applied after all ConfigMaps and Secrets it mounts
-            // to prevent unnecessary Pod restarts.
-            // See https://github.com/stackabletech/commons-operator/issues/111 for details.
-            ss_cond_builder.add(
-                cluster_resources
-                    .add(client, rg_statefulset)
-                    .await
-                    .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
-                        role_group: rolegroup_name.clone(),
-                    })?,
-            );
-        }
-
-        if let Some(role_config) = validated_cluster.role_configs.get(kafka_role)
-            && let Some(pdb) = build_pdb(&role_config.pdb, &validated_cluster, kafka_role)
-        {
-            cluster_resources
-                .add(client, pdb)
-                .await
-                .context(ApplyPdbSnafu)?;
-        }
+    // Apply order: Services, then Listeners (collecting the applied bootstrap Listeners for the
+    // discovery ConfigMap), then ConfigMaps, then PodDisruptionBudgets, and finally the
+    // StatefulSets. The StatefulSets must be applied after all ConfigMaps and Secrets they mount to
+    // prevent unnecessary Pod restarts.
+    // See https://github.com/stackabletech/commons-operator/issues/111 for details.
+    for service in resources.services {
+        cluster_resources
+            .add(client, service)
+            .await
+            .context(ApplyResourceSnafu)?;
     }
 
+    let mut bootstrap_listeners = Vec::<listener::v1alpha1::Listener>::new();
+    for rg_listener in resources.listeners {
+        bootstrap_listeners.push(
+            cluster_resources
+                .add(client, rg_listener)
+                .await
+                .context(ApplyResourceSnafu)?,
+        );
+    }
+
+    for config_map in resources.config_maps {
+        cluster_resources
+            .add(client, config_map)
+            .await
+            .context(ApplyResourceSnafu)?;
+    }
+
+    for pdb in resources.pod_disruption_budgets {
+        cluster_resources
+            .add(client, pdb)
+            .await
+            .context(ApplyResourceSnafu)?;
+    }
+
+    for stateful_set in resources.stateful_sets {
+        ss_cond_builder.add(
+            cluster_resources
+                .add(client, stateful_set)
+                .await
+                .context(ApplyResourceSnafu)?,
+        );
+    }
+
+    // The discovery ConfigMap reports the bootstrap Listeners' ingress addresses, which are only
+    // populated on the applied Listener objects (by the Listener operator), so it is built here
+    // rather than in the client-free build() step.
     let discovery_cm = build::resource::discovery::build_discovery_configmap(
         &validated_cluster,
         &bootstrap_listeners,
