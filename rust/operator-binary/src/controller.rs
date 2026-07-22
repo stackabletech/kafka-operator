@@ -174,8 +174,7 @@ impl ValidatedCluster {
     /// node-id hash offsets must be unique across the whole cluster, so collisions are detected
     /// across all role groups regardless of `requested_kafka_role`.
     ///
-    /// Resource names reuse [`Self::resource_names`] (the canonical
-    /// `<cluster>-<role>-<role-group>` naming) so they stay in sync with the StatefulSet and
+    /// Resource names reuse resource names so they stay in sync with the StatefulSet and
     /// headless Service this descriptor refers to.
     pub fn pod_descriptors(
         &self,
