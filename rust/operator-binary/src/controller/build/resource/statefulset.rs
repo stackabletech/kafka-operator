@@ -191,7 +191,7 @@ pub fn build_broker_rolegroup_statefulset(
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.config.config;
-    let resource_names = validated_cluster.resource_names(kafka_role, role_group_name);
+    let resource_names = validated_cluster.role_group_resource_names(kafka_role, role_group_name);
     let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
     // Used for PVC templates that cannot be modified once they are deployed
     let unversioned_recommended_labels =
@@ -395,7 +395,7 @@ pub fn build_broker_rolegroup_statefulset(
         &mut pod_builder,
         &resource_names,
         validated_cluster
-            .rbac_resource_names()
+            .cluster_resource_names()
             .service_account_name()
             .as_ref(),
     )?;
@@ -461,7 +461,7 @@ pub fn build_controller_rolegroup_statefulset(
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.config.config;
-    let resource_names = validated_cluster.resource_names(kafka_role, role_group_name);
+    let resource_names = validated_cluster.role_group_resource_names(kafka_role, role_group_name);
     let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
 
     let kafka_container_name = ControllerContainer::Kafka.to_string();
@@ -584,7 +584,7 @@ pub fn build_controller_rolegroup_statefulset(
         &mut pod_builder,
         &resource_names,
         validated_cluster
-            .rbac_resource_names()
+            .cluster_resource_names()
             .service_account_name()
             .as_ref(),
     )?;

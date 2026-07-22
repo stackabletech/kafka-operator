@@ -27,7 +27,7 @@ pub fn get_kafka_listener_config(
     role_group_name: &RoleGroupName,
 ) -> KafkaListenerConfig {
     let headless_service_name = validated_cluster
-        .resource_names(role, role_group_name)
+        .role_group_resource_names(role, role_group_name)
         .headless_service_name();
     let pod_fqdn = pod_fqdn(
         &validated_cluster.namespace,
@@ -241,7 +241,7 @@ mod tests {
                 internal_host = pod_fqdn(
                     &validated.namespace,
                     validated
-                        .resource_names(&KafkaRole::Broker, &role_group_name)
+                        .role_group_resource_names(&KafkaRole::Broker, &role_group_name)
                         .headless_service_name()
                         .as_ref(),
                     &cluster_info.cluster_domain
@@ -303,7 +303,7 @@ mod tests {
                 internal_host = pod_fqdn(
                     &validated.namespace,
                     validated
-                        .resource_names(&KafkaRole::Broker, &role_group_name)
+                        .role_group_resource_names(&KafkaRole::Broker, &role_group_name)
                         .headless_service_name()
                         .as_ref(),
                     &cluster_info.cluster_domain
@@ -366,7 +366,7 @@ mod tests {
                 internal_host = pod_fqdn(
                     &validated.namespace,
                     validated
-                        .resource_names(&KafkaRole::Broker, &role_group_name)
+                        .role_group_resource_names(&KafkaRole::Broker, &role_group_name)
                         .headless_service_name()
                         .as_ref(),
                     &cluster_info.cluster_domain
@@ -466,7 +466,7 @@ mod tests {
                 internal_host = pod_fqdn(
                     &validated.namespace,
                     validated
-                        .resource_names(&KafkaRole::Broker, &role_group_name)
+                        .role_group_resource_names(&KafkaRole::Broker, &role_group_name)
                         .headless_service_name()
                         .as_ref(),
                     &cluster_info.cluster_domain

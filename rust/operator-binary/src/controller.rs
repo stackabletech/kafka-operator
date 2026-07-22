@@ -204,7 +204,7 @@ impl ValidatedCluster {
                 seen_hashes.insert(node_id_hash_offset, (role.clone(), role_group_name.clone()));
 
                 if requested_kafka_role.is_none() || Some(role) == requested_kafka_role {
-                    let resource_names = self.resource_names(role, role_group_name);
+                    let resource_names = self.role_group_resource_names(role, role_group_name);
                     let role_group_statefulset_name = resource_names.stateful_set_name();
                     let role_group_service_name = resource_names.headless_service_name();
                     // Pods must be predicted from a concrete count (e.g. for KRaft quorum
@@ -235,7 +235,7 @@ impl ValidatedCluster {
 
     /// Type-safe names for the per-cluster RBAC resources: the ServiceAccount shared by all
     /// Pods, its (namespaced) RoleBinding, and the operator-deployed ClusterRole it binds.
-    pub fn rbac_resource_names(&self) -> role_utils::ResourceNames {
+    pub fn cluster_resource_names(&self) -> role_utils::ResourceNames {
         role_utils::ResourceNames {
             cluster_name: self.name.clone(),
             product_name: product_name(),
@@ -243,7 +243,7 @@ impl ValidatedCluster {
     }
 
     /// Type-safe names for the resources of a given role group.
-    pub(crate) fn resource_names(
+    pub(crate) fn role_group_resource_names(
         &self,
         role: &KafkaRole,
         role_group_name: &RoleGroupName,
@@ -319,7 +319,7 @@ impl ValidatedCluster {
     ) -> ListenerName {
         ListenerName::from_str(&format!(
             "{}-bootstrap",
-            self.resource_names(role, role_group_name)
+            self.role_group_resource_names(role, role_group_name)
                 .stateful_set_name()
         ))
         .expect("the bootstrap listener name is a valid Listener name")
@@ -723,8 +723,10 @@ pub(crate) mod test_support {
 mod tests {
     use std::collections::BTreeSet;
 
+    use strum::IntoEnumIterator;
+
     use super::{
-        PodDescriptorsError,
+        PodDescriptorsError, ValidatedCluster,
         test_support::{minimal_kafka, validated_cluster},
     };
     use crate::crd::role::KafkaRole;
@@ -805,5 +807,14 @@ mod tests {
         assert_eq!(descriptors.len(), 3);
         let node_ids: BTreeSet<u32> = descriptors.iter().map(|d| d.node_id).collect();
         assert_eq!(node_ids.len(), 3, "node ids must be unique: {node_ids:?}");
+    }
+
+    /// Locks the invariant behind the `expect` in [`ValidatedCluster::role_name`]: every
+    /// `KafkaRole` variant (present and future) must serialise to a valid `RoleName`.
+    #[test]
+    fn every_kafka_role_serialises_to_a_valid_role_name() {
+        for role in KafkaRole::iter() {
+            ValidatedCluster::role_name(&role);
+        }
     }
 }
