@@ -167,8 +167,8 @@ pub enum AnyConfigOverrides {
 }
 
 impl AnyConfigOverrides {
-    /// The merged product config-file overrides (`broker.properties` for brokers,
-    /// `controller.properties` for controllers).
+    /// The merged config file overrides (`broker.properties` for brokers, `controller.properties`
+    /// for controllers).
     pub fn config_file_overrides(&self) -> &KeyValueConfigOverrides {
         match self {
             AnyConfigOverrides::Broker(o) => &o.broker_properties,
