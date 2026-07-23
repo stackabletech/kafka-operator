@@ -156,7 +156,6 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources, Error> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-
     use stackable_operator::kube::Resource;
 
     use super::build;
