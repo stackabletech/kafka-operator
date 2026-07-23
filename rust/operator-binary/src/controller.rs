@@ -370,7 +370,7 @@ impl Resource for ValidatedCluster {
     }
 }
 
-/// The validated, merged per-role-group product config.
+/// The validated, merged per-role-group config.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedKafkaConfig {
     pub config: AnyConfig,

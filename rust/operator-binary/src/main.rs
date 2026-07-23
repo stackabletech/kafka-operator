@@ -75,7 +75,6 @@ async fn main() -> anyhow::Result<()> {
                     watch_namespace,
                     maintenance,
                     common,
-                    ..
                 },
             ..
         }) => {

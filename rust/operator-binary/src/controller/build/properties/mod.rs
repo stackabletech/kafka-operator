@@ -37,8 +37,8 @@ pub enum ConfigFileName {
     Log4j2,
 }
 
-/// The product config-file name for a role group, derived from its role
-/// (`broker.properties` for brokers, `controller.properties` for controllers).
+/// The config file name for a role group, derived from its role (`broker.properties` for brokers,
+/// `controller.properties` for controllers).
 pub fn config_file_name(config: &AnyConfig) -> ConfigFileName {
     match config {
         AnyConfig::Broker(_) => ConfigFileName::BrokerProperties,
