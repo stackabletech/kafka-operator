@@ -5002,7 +5002,7 @@ rec {
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
-          url = "https://github.com/stackabletech//operator-rs.git";
+          url = "https://github.com/stackabletech/operator-rs.git";
           rev = "ee66b8d66fe10c216acfed0f81070b362604b392";
           sha256 = "1v6slybgc0xqsmh3bxyid6xjvmz8ps41nfmmc6csgyzqs2v0wzxj";
         };
@@ -9592,9 +9592,9 @@ rec {
       };
       "spin" = rec {
         crateName = "spin";
-        version = "0.9.8";
+        version = "0.9.9";
         edition = "2015";
-        sha256 = "0rvam5r0p3a6qhc18scqpvpgb3ckzyqxpgdfyjnghh8ja7byi039";
+        sha256 = "03psal0vh1xdxp7agphw09p7kf50v3bj1zshijq1s5bkdd7jcqrp";
         authors = [
           "Mathijs van de Nes <git@mathijs.vd-nes.nl>"
           "John Ericson <git@JohnEricson.me>"
@@ -9666,7 +9666,7 @@ rec {
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
-          url = "https://github.com/stackabletech//operator-rs.git";
+          url = "https://github.com/stackabletech/operator-rs.git";
           rev = "ee66b8d66fe10c216acfed0f81070b362604b392";
           sha256 = "1v6slybgc0xqsmh3bxyid6xjvmz8ps41nfmmc6csgyzqs2v0wzxj";
         };
@@ -9857,7 +9857,7 @@ rec {
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
-          url = "https://github.com/stackabletech//operator-rs.git";
+          url = "https://github.com/stackabletech/operator-rs.git";
           rev = "ee66b8d66fe10c216acfed0f81070b362604b392";
           sha256 = "1v6slybgc0xqsmh3bxyid6xjvmz8ps41nfmmc6csgyzqs2v0wzxj";
         };
@@ -10052,7 +10052,7 @@ rec {
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
-          url = "https://github.com/stackabletech//operator-rs.git";
+          url = "https://github.com/stackabletech/operator-rs.git";
           rev = "ee66b8d66fe10c216acfed0f81070b362604b392";
           sha256 = "1v6slybgc0xqsmh3bxyid6xjvmz8ps41nfmmc6csgyzqs2v0wzxj";
         };
@@ -10087,7 +10087,7 @@ rec {
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
-          url = "https://github.com/stackabletech//operator-rs.git";
+          url = "https://github.com/stackabletech/operator-rs.git";
           rev = "ee66b8d66fe10c216acfed0f81070b362604b392";
           sha256 = "1v6slybgc0xqsmh3bxyid6xjvmz8ps41nfmmc6csgyzqs2v0wzxj";
         };
@@ -10168,7 +10168,7 @@ rec {
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
-          url = "https://github.com/stackabletech//operator-rs.git";
+          url = "https://github.com/stackabletech/operator-rs.git";
           rev = "ee66b8d66fe10c216acfed0f81070b362604b392";
           sha256 = "1v6slybgc0xqsmh3bxyid6xjvmz8ps41nfmmc6csgyzqs2v0wzxj";
         };
@@ -10278,7 +10278,7 @@ rec {
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
-          url = "https://github.com/stackabletech//operator-rs.git";
+          url = "https://github.com/stackabletech/operator-rs.git";
           rev = "ee66b8d66fe10c216acfed0f81070b362604b392";
           sha256 = "1v6slybgc0xqsmh3bxyid6xjvmz8ps41nfmmc6csgyzqs2v0wzxj";
         };
@@ -10328,7 +10328,7 @@ rec {
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
-          url = "https://github.com/stackabletech//operator-rs.git";
+          url = "https://github.com/stackabletech/operator-rs.git";
           rev = "ee66b8d66fe10c216acfed0f81070b362604b392";
           sha256 = "1v6slybgc0xqsmh3bxyid6xjvmz8ps41nfmmc6csgyzqs2v0wzxj";
         };
@@ -10396,7 +10396,7 @@ rec {
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
-          url = "https://github.com/stackabletech//operator-rs.git";
+          url = "https://github.com/stackabletech/operator-rs.git";
           rev = "ee66b8d66fe10c216acfed0f81070b362604b392";
           sha256 = "1v6slybgc0xqsmh3bxyid6xjvmz8ps41nfmmc6csgyzqs2v0wzxj";
         };
