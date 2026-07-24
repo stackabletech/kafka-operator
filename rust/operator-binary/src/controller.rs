@@ -21,15 +21,17 @@ use stackable_operator::{
     crd::listener,
     k8s_openapi::api::{
         apps::v1::StatefulSet,
-        core::v1::{ConfigMap, Service},
+        core::v1::{ConfigMap, Service, ServiceAccount},
         policy::v1::PodDisruptionBudget,
+        rbac::v1::RoleBinding,
     },
     kube::{
-        Resource, ResourceExt,
+        Resource,
         api::{DynamicObject, ObjectMeta},
         core::{DeserializeGuard, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
     },
+    kvp::Labels,
     logging::controller::ReconcilerError,
     shared::time::Duration,
     status::condition::{
@@ -39,7 +41,9 @@ use stackable_operator::{
     v2::{
         HasName, HasUid, NameIsValidLabelValue,
         cluster_resources::cluster_resources_new,
+        kvp::label::{recommended_labels, role_group_selector},
         role_group_utils::ResourceNames,
+        role_utils,
         types::{
             kubernetes::{ConfigMapName, ListenerName, NamespaceName, Uid},
             operator::{ClusterName, ControllerName, OperatorName, ProductName, ProductVersion},
@@ -59,11 +63,7 @@ pub(crate) mod validate;
 pub use stackable_operator::v2::types::operator::{RoleGroupName, RoleName};
 
 use crate::{
-    controller::{
-        build::resource::rbac::{build_rbac_role_binding, build_rbac_service_account},
-        node_id_hasher::node_id_hash32_offset,
-        security::ValidatedKafkaSecurity,
-    },
+    controller::{node_id_hasher::node_id_hash32_offset, security::ValidatedKafkaSecurity},
     crd::{
         APP_NAME, KafkaClusterStatus, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
         authorization::KafkaAuthorizationConfig,
@@ -74,6 +74,9 @@ use crate::{
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
 pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.', OPERATOR_NAME);
+
+// Placeholder version label value for resources whose labels must not change after deployment.
+stackable_operator::constant!(UNVERSIONED_PRODUCT_VERSION: ProductVersion = "none");
 
 #[derive(Snafu, Debug)]
 pub enum PodDescriptorsError {
@@ -99,6 +102,8 @@ pub struct KubernetesResources {
     pub listeners: Vec<listener::v1alpha1::Listener>,
     pub config_maps: Vec<ConfigMap>,
     pub pod_disruption_budgets: Vec<PodDisruptionBudget>,
+    pub service_accounts: Vec<ServiceAccount>,
+    pub role_bindings: Vec<RoleBinding>,
 }
 
 /// The validated cluster. Carries everything the build steps need, resolved once
@@ -169,8 +174,7 @@ impl ValidatedCluster {
     /// node-id hash offsets must be unique across the whole cluster, so collisions are detected
     /// across all role groups regardless of `requested_kafka_role`.
     ///
-    /// Resource names reuse [`Self::resource_names`] (the canonical
-    /// `<cluster>-<role>-<role-group>` naming) so they stay in sync with the StatefulSet and
+    /// Resource names reuse resource names so they stay in sync with the StatefulSet and
     /// headless Service this descriptor refers to.
     pub fn pod_descriptors(
         &self,
@@ -199,7 +203,7 @@ impl ValidatedCluster {
                 seen_hashes.insert(node_id_hash_offset, (role.clone(), role_group_name.clone()));
 
                 if requested_kafka_role.is_none() || Some(role) == requested_kafka_role {
-                    let resource_names = self.resource_names(role, role_group_name);
+                    let resource_names = self.role_group_resource_names(role, role_group_name);
                     let role_group_statefulset_name = resource_names.stateful_set_name();
                     let role_group_service_name = resource_names.headless_service_name();
                     // Pods must be predicted from a concrete count (e.g. for KRaft quorum
@@ -224,21 +228,72 @@ impl ValidatedCluster {
     }
 
     /// The given [`KafkaRole`] as a type-safe [`RoleName`].
-    pub fn role_name(role: &KafkaRole) -> RoleName {
-        RoleName::from_str(&role.to_string()).expect("a KafkaRole is a valid role name")
+    /// Type-safe names for the per-cluster RBAC resources: the ServiceAccount shared by all
+    /// Pods, its (namespaced) RoleBinding, and the operator-deployed ClusterRole it binds.
+    pub fn cluster_resource_names(&self) -> role_utils::ResourceNames {
+        role_utils::ResourceNames {
+            cluster_name: self.name.clone(),
+            product_name: product_name(),
+        }
     }
 
     /// Type-safe names for the resources of a given role group.
-    pub(crate) fn resource_names(
+    pub(crate) fn role_group_resource_names(
         &self,
         role: &KafkaRole,
         role_group_name: &RoleGroupName,
     ) -> ResourceNames {
         ResourceNames {
             cluster_name: self.name.clone(),
-            role_name: Self::role_name(role),
+            role_name: role.into(),
             role_group_name: role_group_name.clone(),
         }
+    }
+
+    /// Recommended labels for a role-group resource.
+    pub fn recommended_labels(&self, role: &KafkaRole, role_group_name: &RoleGroupName) -> Labels {
+        self.recommended_labels_for(&role.into(), role_group_name)
+    }
+
+    /// Recommended labels for a resource that is not tied to a concrete [`KafkaRole`], using a free-form role/role-group label value.
+    pub fn recommended_labels_for(
+        &self,
+        role_name: &RoleName,
+        role_group_name: &RoleGroupName,
+    ) -> Labels {
+        self.recommended_labels_with(&self.product_version, role_name, role_group_name)
+    }
+
+    /// Recommended labels with the constant [`UNVERSIONED_PRODUCT_VERSION`], for PVC templates
+    /// that cannot be modified after deployment (keeps the labels stable across version upgrades).
+    pub fn unversioned_recommended_labels(
+        &self,
+        role: &KafkaRole,
+        role_group_name: &RoleGroupName,
+    ) -> Labels {
+        self.recommended_labels_with(&UNVERSIONED_PRODUCT_VERSION, &role.into(), role_group_name)
+    }
+
+    fn recommended_labels_with(
+        &self,
+        product_version: &ProductVersion,
+        role_name: &RoleName,
+        role_group_name: &RoleGroupName,
+    ) -> Labels {
+        recommended_labels(
+            self,
+            &product_name(),
+            product_version,
+            &operator_name(),
+            &controller_name(),
+            role_name,
+            role_group_name,
+        )
+    }
+
+    /// Selector labels matching the pods of a role group.
+    pub fn role_group_selector(&self, role: &KafkaRole, role_group_name: &RoleGroupName) -> Labels {
+        role_group_selector(self, &product_name(), &role.into(), role_group_name)
     }
 
     /// The name of the broker rolegroup's bootstrap [`Listener`](stackable_operator::crd::listener),
@@ -250,7 +305,7 @@ impl ValidatedCluster {
     ) -> ListenerName {
         ListenerName::from_str(&format!(
             "{}-bootstrap",
-            self.resource_names(role, role_group_name)
+            self.role_group_resource_names(role, role_group_name)
                 .stateful_set_name()
         ))
         .expect("the bootstrap listener name is a valid Listener name")
@@ -423,25 +478,9 @@ pub enum Error {
         source: stackable_operator::cluster_resources::Error,
     },
 
-    #[snafu(display("failed to patch service account"))]
-    ApplyServiceAccount {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to patch role binding"))]
-    ApplyRoleBinding {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
     #[snafu(display("failed to update status"))]
     ApplyStatus {
         source: stackable_operator::client::Error,
-    },
-
-    #[snafu(display("failed to get required Labels"))]
-    GetRequiredLabels {
-        source:
-            stackable_operator::kvp::KeyValuePairError<stackable_operator::kvp::LabelValueError>,
     },
 
     #[snafu(display("KafkaCluster object is invalid"))]
@@ -465,10 +504,7 @@ impl ReconcilerError for Error {
             Error::BuildDiscoveryConfig { .. } => None,
             Error::ApplyDiscoveryConfig { .. } => None,
             Error::DeleteOrphans { .. } => None,
-            Error::ApplyServiceAccount { .. } => None,
-            Error::ApplyRoleBinding { .. } => None,
             Error::ApplyStatus { .. } => None,
-            Error::GetRequiredLabels { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
         }
     }
@@ -519,34 +555,27 @@ pub async fn reconcile_kafka(
 
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
 
-    let required_labels = cluster_resources
-        .get_required_labels()
-        .context(GetRequiredLabelsSnafu)?;
-    let rbac_sa = build_rbac_service_account(&validated_cluster, required_labels.clone());
-    let rbac_rolebinding = build_rbac_role_binding(&validated_cluster, required_labels);
-
-    let rbac_sa = cluster_resources
-        .add(client, rbac_sa.clone())
-        .await
-        .context(ApplyServiceAccountSnafu)?;
-    // The ServiceAccount name is deterministic, so the statefulset builders only need the name,
-    // not the applied object.
-    let service_account_name = rbac_sa.name_any();
-    cluster_resources
-        .add(client, rbac_rolebinding)
-        .await
-        .context(ApplyRoleBindingSnafu)?;
-
     // Build every Kubernetes resource up front (client-free). The discovery ConfigMap is not part
     // of this, as it depends on the applied bootstrap Listeners' status (see below).
-    let resources =
-        build::build(&validated_cluster, &service_account_name).context(BuildResourcesSnafu)?;
+    let resources = build::build(&validated_cluster).context(BuildResourcesSnafu)?;
 
     // Apply order: Services, then Listeners (collecting the applied bootstrap Listeners for the
     // discovery ConfigMap), then ConfigMaps, then PodDisruptionBudgets, and finally the
     // StatefulSets. The StatefulSets must be applied after all ConfigMaps and Secrets they mount to
     // prevent unnecessary Pod restarts.
     // See https://github.com/stackabletech/commons-operator/issues/111 for details.
+    for service_account in resources.service_accounts {
+        cluster_resources
+            .add(client, service_account)
+            .await
+            .context(ApplyResourceSnafu)?;
+    }
+    for role_binding in resources.role_bindings {
+        cluster_resources
+            .add(client, role_binding)
+            .await
+            .context(ApplyResourceSnafu)?;
+    }
     for service in resources.services {
         cluster_resources
             .add(client, service)
@@ -680,6 +709,9 @@ pub(crate) mod test_support {
 mod tests {
     use std::collections::BTreeSet;
 
+    use stackable_operator::v2::types::operator::RoleName;
+    use strum::IntoEnumIterator;
+
     use super::{
         PodDescriptorsError,
         test_support::{minimal_kafka, validated_cluster},
@@ -762,5 +794,15 @@ mod tests {
         assert_eq!(descriptors.len(), 3);
         let node_ids: BTreeSet<u32> = descriptors.iter().map(|d| d.node_id).collect();
         assert_eq!(node_ids.len(), 3, "node ids must be unique: {node_ids:?}");
+    }
+
+    /// Locks the invariant behind the `expect` in the `From<KafkaRole> for RoleName` impls:
+    /// every `KafkaRole` variant (present and future) must serialise to a valid `RoleName`.
+    #[test]
+    fn every_kafka_role_serialises_to_a_valid_role_name() {
+        for role in KafkaRole::iter() {
+            let _: RoleName = (&role).into();
+            let _: RoleName = role.into();
+        }
     }
 }

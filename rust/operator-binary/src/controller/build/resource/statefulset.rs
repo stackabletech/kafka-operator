@@ -53,7 +53,6 @@ use crate::{
             },
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::add_kerberos_pod_config,
-            labels,
             properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
             security::{
                 add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
@@ -188,17 +187,15 @@ pub fn build_broker_rolegroup_statefulset(
     role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
     validated_rg: &ValidatedRoleGroupConfig,
-    service_account_name: &str,
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.config.config;
-    let resource_names = validated_cluster.resource_names(kafka_role, role_group_name);
-    let recommended_labels =
-        labels::recommended_labels(validated_cluster, kafka_role, role_group_name);
+    let resource_names = validated_cluster.role_group_resource_names(kafka_role, role_group_name);
+    let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
     // Used for PVC templates that cannot be modified once they are deployed
     let unversioned_recommended_labels =
-        labels::unversioned_recommended_labels(validated_cluster, kafka_role, role_group_name);
+        validated_cluster.unversioned_recommended_labels(kafka_role, role_group_name);
 
     let kcat_prober_container_name = BrokerContainer::KcatProber.to_string();
     let mut cb_kcat_prober =
@@ -394,7 +391,14 @@ pub fn build_broker_rolegroup_statefulset(
         .add_container(cb_kcat_prober.build())
         .affinity(&merged_config.affinity);
 
-    add_common_pod_config(&mut pod_builder, &resource_names, service_account_name)?;
+    add_common_pod_config(
+        &mut pod_builder,
+        &resource_names,
+        validated_cluster
+            .cluster_resource_names()
+            .service_account_name()
+            .as_ref(),
+    )?;
 
     add_vector_container(
         &mut pod_builder,
@@ -432,7 +436,8 @@ pub fn build_broker_rolegroup_statefulset(
             replicas: validated_rg.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
-                    labels::role_group_selector(validated_cluster, kafka_role, role_group_name)
+                    validated_cluster
+                        .role_group_selector(kafka_role, role_group_name)
                         .into(),
                 ),
                 ..LabelSelector::default()
@@ -452,14 +457,12 @@ pub fn build_controller_rolegroup_statefulset(
     role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
     validated_rg: &ValidatedRoleGroupConfig,
-    service_account_name: &str,
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.config.config;
-    let resource_names = validated_cluster.resource_names(kafka_role, role_group_name);
-    let recommended_labels =
-        labels::recommended_labels(validated_cluster, kafka_role, role_group_name);
+    let resource_names = validated_cluster.role_group_resource_names(kafka_role, role_group_name);
+    let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
 
     let kafka_container_name = ControllerContainer::Kafka.to_string();
     let mut cb_kafka =
@@ -577,7 +580,14 @@ pub fn build_controller_rolegroup_statefulset(
         .add_container(kafka_container)
         .affinity(&merged_config.affinity);
 
-    add_common_pod_config(&mut pod_builder, &resource_names, service_account_name)?;
+    add_common_pod_config(
+        &mut pod_builder,
+        &resource_names,
+        validated_cluster
+            .cluster_resource_names()
+            .service_account_name()
+            .as_ref(),
+    )?;
 
     add_vector_container(
         &mut pod_builder,
@@ -615,7 +625,8 @@ pub fn build_controller_rolegroup_statefulset(
             replicas: validated_rg.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
-                    labels::role_group_selector(validated_cluster, kafka_role, role_group_name)
+                    validated_cluster
+                        .role_group_selector(kafka_role, role_group_name)
                         .into(),
                 ),
                 ..LabelSelector::default()
