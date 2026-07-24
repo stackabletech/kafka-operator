@@ -55,10 +55,6 @@ pub enum Error {
 /// The discovery `ConfigMap` is intentionally excluded: it reports the applied bootstrap
 /// `Listener`s' ingress addresses (populated by the Listener operator only after apply), so it is
 /// built in the reconcile step once those `Listener`s exist.
-///
-/// `service_account_name` is the name of the RBAC `ServiceAccount` the role-group Pods run under.
-/// The RBAC resources are built and applied separately, in the reconcile step; the name is
-/// deterministic, so the build step does not depend on the applied `ServiceAccount`.
 pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources, Error> {
     let mut stateful_sets = vec![];
     let mut services = vec![];

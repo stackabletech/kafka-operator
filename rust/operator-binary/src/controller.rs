@@ -228,10 +228,6 @@ impl ValidatedCluster {
     }
 
     /// The given [`KafkaRole`] as a type-safe [`RoleName`].
-    pub fn role_name(role: &KafkaRole) -> RoleName {
-        RoleName::from_str(&role.to_string()).expect("a KafkaRole is a valid role name")
-    }
-
     /// Type-safe names for the per-cluster RBAC resources: the ServiceAccount shared by all
     /// Pods, its (namespaced) RoleBinding, and the operator-deployed ClusterRole it binds.
     pub fn cluster_resource_names(&self) -> role_utils::ResourceNames {
@@ -249,14 +245,14 @@ impl ValidatedCluster {
     ) -> ResourceNames {
         ResourceNames {
             cluster_name: self.name.clone(),
-            role_name: Self::role_name(role),
+            role_name: role.into(),
             role_group_name: role_group_name.clone(),
         }
     }
 
     /// Recommended labels for a role-group resource.
     pub fn recommended_labels(&self, role: &KafkaRole, role_group_name: &RoleGroupName) -> Labels {
-        self.recommended_labels_for(&Self::role_name(role), role_group_name)
+        self.recommended_labels_for(&role.into(), role_group_name)
     }
 
     /// Recommended labels for a resource that is not tied to a concrete [`KafkaRole`], using a free-form role/role-group label value.
@@ -275,11 +271,7 @@ impl ValidatedCluster {
         role: &KafkaRole,
         role_group_name: &RoleGroupName,
     ) -> Labels {
-        self.recommended_labels_with(
-            &UNVERSIONED_PRODUCT_VERSION,
-            &Self::role_name(role),
-            role_group_name,
-        )
+        self.recommended_labels_with(&UNVERSIONED_PRODUCT_VERSION, &role.into(), role_group_name)
     }
 
     fn recommended_labels_with(
@@ -301,12 +293,7 @@ impl ValidatedCluster {
 
     /// Selector labels matching the pods of a role group.
     pub fn role_group_selector(&self, role: &KafkaRole, role_group_name: &RoleGroupName) -> Labels {
-        role_group_selector(
-            self,
-            &product_name(),
-            &Self::role_name(role),
-            role_group_name,
-        )
+        role_group_selector(self, &product_name(), &role.into(), role_group_name)
     }
 
     /// The name of the broker rolegroup's bootstrap [`Listener`](stackable_operator::crd::listener),
@@ -722,10 +709,11 @@ pub(crate) mod test_support {
 mod tests {
     use std::collections::BTreeSet;
 
+    use stackable_operator::v2::types::operator::RoleName;
     use strum::IntoEnumIterator;
 
     use super::{
-        PodDescriptorsError, ValidatedCluster,
+        PodDescriptorsError,
         test_support::{minimal_kafka, validated_cluster},
     };
     use crate::crd::role::KafkaRole;
@@ -808,12 +796,13 @@ mod tests {
         assert_eq!(node_ids.len(), 3, "node ids must be unique: {node_ids:?}");
     }
 
-    /// Locks the invariant behind the `expect` in [`ValidatedCluster::role_name`]: every
-    /// `KafkaRole` variant (present and future) must serialise to a valid `RoleName`.
+    /// Locks the invariant behind the `expect` in the `From<KafkaRole> for RoleName` impls:
+    /// every `KafkaRole` variant (present and future) must serialise to a valid `RoleName`.
     #[test]
     fn every_kafka_role_serialises_to_a_valid_role_name() {
         for role in KafkaRole::iter() {
-            ValidatedCluster::role_name(&role);
+            let _: RoleName = (&role).into();
+            let _: RoleName = role.into();
         }
     }
 }

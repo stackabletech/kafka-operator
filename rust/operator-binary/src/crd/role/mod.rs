@@ -2,14 +2,17 @@ pub mod broker;
 pub mod commons;
 pub mod controller;
 
-use std::{borrow::Cow, ops::Deref};
+use std::{borrow::Cow, ops::Deref, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
     commons::resources::{NoRuntimeLimits, Resources},
     product_logging::spec::ContainerLogConfig,
     schemars::{self, JsonSchema},
-    v2::{config_overrides::KeyValueConfigOverrides, types::kubernetes::ListenerClassName},
+    v2::{
+        config_overrides::KeyValueConfigOverrides,
+        types::{kubernetes::ListenerClassName, operator::RoleName},
+    },
 };
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
@@ -83,6 +86,18 @@ pub enum KafkaRole {
     Broker,
     #[strum(serialize = "controller")]
     Controller,
+}
+
+impl From<KafkaRole> for RoleName {
+    fn from(value: KafkaRole) -> Self {
+        RoleName::from_str(&value.to_string()).expect("a KafkaRole is a valid role name")
+    }
+}
+
+impl From<&KafkaRole> for RoleName {
+    fn from(value: &KafkaRole) -> Self {
+        RoleName::from_str(&value.to_string()).expect("a KafkaRole is a valid role name")
+    }
 }
 
 impl KafkaRole {
