@@ -672,6 +672,18 @@ pub(crate) mod test_support {
     use super::{ValidatedCluster, dereference::DereferencedObjects, validate::validate};
     use crate::crd::{authentication::ResolvedAuthenticationClasses, v1alpha1};
 
+    /// The expected `app.kubernetes.io/version` label value for the given product version.
+    ///
+    /// The `-stackable` suffix carries the operator's own version, which is `0.0.0-dev` on main
+    /// but rewritten by the release process — so tests must derive it rather than hardcode it,
+    /// or they fail on release branches.
+    pub fn app_version_label(product_version: &str) -> String {
+        format!(
+            "{product_version}-stackable{}",
+            crate::built_info::PKG_VERSION
+        )
+    }
+
     pub fn minimal_kafka(yaml: &str) -> v1alpha1::KafkaCluster {
         yaml_from_str_singleton_map(yaml).expect("invalid test KafkaCluster YAML")
     }
