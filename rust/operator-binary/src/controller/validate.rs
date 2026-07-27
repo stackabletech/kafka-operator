@@ -35,7 +35,7 @@ use crate::{
         security::{self, ValidatedKafkaSecurity},
     },
     crd::{
-        self, CONTAINER_IMAGE_BASE_NAME,
+        CONTAINER_IMAGE_BASE_NAME,
         authentication::{self},
         role::{
             AnyConfig, AnyConfigOverrides, KafkaRole,
@@ -61,9 +61,6 @@ pub enum Error {
 
     #[snafu(display("failed to validate authentication method"))]
     FailedToValidateAuthenticationMethod { source: security::Error },
-
-    #[snafu(display("cluster object defines no '{role}' role"))]
-    MissingKafkaRole { source: crd::Error, role: KafkaRole },
 
     #[snafu(display("failed to merge and validate the role group config"))]
     ValidateRoleGroupConfig {
@@ -249,10 +246,8 @@ pub fn validate(
         BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>,
     > = BTreeMap::new();
 
-    // Brokers always exist.
-    let broker_role = kafka.broker_role().context(MissingKafkaRoleSnafu {
-        role: KafkaRole::Broker,
-    })?;
+    // The broker role is required by the CRD.
+    let broker_role = &kafka.spec.brokers;
     let broker_groups = validate_role_group_configs(
         broker_role,
         BrokerConfig::default_config(&kafka.name_any(), &KafkaRole::Broker.to_string()),

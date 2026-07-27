@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - Bump stackable-operator to 0.114.0 ([#994]).
 - The RBAC ServiceAccount and RoleBinding are now built with the operator-rs `v2::rbac`
   functions and carry the full set of recommended labels ([#990]).
+- BREAKING: The `brokers` role is now required by the CRD; a KafkaCluster without it was
+  previously accepted by the API server but failed reconciliation ([#990]).
 
 [#985]: https://github.com/stackabletech/kafka-operator/pull/985
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990
