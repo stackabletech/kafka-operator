@@ -414,13 +414,108 @@ fn inject_cluster_id(env_overrides: EnvVarSet, cluster_id: Option<&str>) -> Resu
 mod tests {
     use std::str::FromStr;
 
-    use stackable_operator::v2::builder::pod::container::{EnvVarName, EnvVarSet};
+    use stackable_operator::v2::{
+        builder::pod::container::{EnvVarName, EnvVarSet},
+        types::operator::RoleGroupName,
+    };
 
     use super::{KAFKA_CLUSTER_ID_ENV, inject_cluster_id};
+    use crate::{
+        controller::test_support::{app_version_label, minimal_kafka, validated_cluster},
+        crd::role::KafkaRole,
+    };
 
     fn cluster_id_value(env: &EnvVarSet) -> Option<String> {
         let name = EnvVarName::from_str(KAFKA_CLUSTER_ID_ENV).unwrap();
         env.get(&name).and_then(|var| var.value.clone())
+    }
+
+    /// Locks every value the validate step itself derives from the minimal KRaft fixture — so a
+    /// validation regression fails here, with a validate-shaped message, instead of surfacing as
+    /// a confusing build-test failure downstream.
+    ///
+    /// The merged per-role-group config (resources, affinity, logging defaults, …) is produced by
+    /// `with_validated_config` and the config defaults, whose contracts are tested in operator-rs;
+    /// only the values this module derives on top are re-asserted here.
+    #[test]
+    fn validate_ok_derives_expected_values() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+        let cluster = validated_cluster(&kafka);
+
+        assert_eq!(cluster.name.to_string(), "simple-kafka");
+        assert_eq!(cluster.namespace.to_string(), "default");
+        assert_eq!(
+            cluster.uid.to_string(),
+            "12345678-1234-1234-1234-123456789012"
+        );
+        assert_eq!(cluster.cluster_domain.to_string(), "cluster.local");
+        assert_eq!(
+            cluster.image.image,
+            format!("oci.example.org/kafka:{}", app_version_label("3.9.2"))
+        );
+        assert_eq!(cluster.image.product_version, "3.9.2");
+        assert_eq!(
+            cluster.product_version.to_string(),
+            app_version_label("3.9.2")
+        );
+
+        // KRaft mode: no ZooKeeper ConfigMap; no user-supplied broker-id map or authorization.
+        let cluster_config = &cluster.cluster_config;
+        assert!(cluster_config.is_kraft_mode());
+        assert_eq!(cluster_config.zookeeper_config_map_name, None);
+        assert_eq!(cluster_config.broker_id_pod_config_map_name, None);
+        assert!(cluster_config.authorization_config.is_none());
+
+        // TLS defaults: server and internal both use the `tls` SecretClass; no Kerberos or OPA.
+        let security = &cluster_config.kafka_security;
+        assert!(security.tls_enabled());
+        assert_eq!(security.tls_server_secret_class(), Some("tls"));
+        assert_eq!(security.tls_internal_secret_class(), "tls");
+        assert!(!security.has_kerberos_enabled());
+        assert_eq!(security.opa_secret_class(), None);
+
+        // Both roles are present, with default (enabled) PDB configs.
+        let roles: Vec<_> = cluster.role_configs.keys().collect();
+        assert_eq!(roles, [&KafkaRole::Broker, &KafkaRole::Controller]);
+        for role_config in cluster.role_configs.values() {
+            assert!(role_config.pdb.enabled);
+            assert_eq!(role_config.pdb.max_unavailable, None);
+        }
+
+        // One `default` role group per role. The KRaft cluster id (derived from the cluster
+        // name) is injected into every role group's env overrides.
+        let default_rg = RoleGroupName::from_str("default").expect("valid role group name");
+        for role in [KafkaRole::Broker, KafkaRole::Controller] {
+            let role_group = &cluster.role_group_configs[&role][&default_rg];
+            assert_eq!(role_group.replicas, Some(3));
+            assert_eq!(
+                cluster_id_value(&role_group.env_overrides),
+                Some("simple-kafka".to_string())
+            );
+            assert_eq!(role_group.config.logging.vector_container, None);
+        }
     }
 
     #[test]
