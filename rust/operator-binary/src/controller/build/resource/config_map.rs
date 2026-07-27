@@ -14,7 +14,6 @@ use crate::{
     controller::{
         RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
         build::{
-            labels,
             properties::{
                 ConfigFileName, config_file_name, product_logging::role_group_config_map_data,
             },
@@ -125,7 +124,7 @@ pub fn build_rolegroup_config_map(
                 .name_and_namespace(validated_cluster)
                 .name(
                     validated_cluster
-                        .resource_names(&role, role_group_name)
+                        .role_group_resource_names(&role, role_group_name)
                         .role_group_config_map()
                         .to_string(),
                 )
@@ -134,11 +133,7 @@ pub fn build_rolegroup_config_map(
                     None,
                     Some(true),
                 ))
-                .with_labels(labels::recommended_labels(
-                    validated_cluster,
-                    &role,
-                    role_group_name,
-                ))
+                .with_labels(validated_cluster.recommended_labels(&role, role_group_name))
                 .build(),
         )
         .add_data(

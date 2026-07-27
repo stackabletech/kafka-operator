@@ -7,7 +7,7 @@ pub mod tls;
 
 use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, Snafu};
+use snafu::Snafu;
 use stackable_operator::{
     commons::{
         cluster_operation::ClusterOperation, networking::DomainName,
@@ -73,9 +73,6 @@ pub enum Error {
     ))]
     Kafka4RequiresKraftMetadataManager,
 
-    #[snafu(display("The Kafka role [{role}] is missing from spec"))]
-    MissingRole { role: String },
-
     #[snafu(display(
         "Kafka version 4 and higher requires a Kraft controller (configured via `spec.controller`)"
     ))]
@@ -130,7 +127,7 @@ pub mod versioned {
         pub image: ProductImage,
 
         // no doc - docs in Role struct.
-        pub brokers: Option<BrokerRole>,
+        pub brokers: BrokerRole,
 
         // no doc - docs in Role struct.
         pub controllers: Option<ControllerRole>,
@@ -320,12 +317,6 @@ impl v1alpha1::KafkaCluster {
                 _ => None,
             })
     }
-
-    pub fn broker_role(&self) -> Result<&BrokerRole, Error> {
-        self.spec.brokers.as_ref().context(MissingRoleSnafu {
-            role: KafkaRole::Broker.to_string(),
-        })
-    }
 }
 
 /// Reference to a single `Pod` that is a component of a [`KafkaCluster`]
@@ -444,6 +435,10 @@ mod tests {
         spec:
           image:
             productVersion: 3.9.2
+          brokers:
+            roleGroups:
+              default:
+                replicas: 1
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -463,6 +458,10 @@ mod tests {
         spec:
           image:
             productVersion: 3.9.2
+          brokers:
+            roleGroups:
+              default:
+                replicas: 1
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls
@@ -488,6 +487,10 @@ mod tests {
         spec:
           image:
             productVersion: 3.9.2
+          brokers:
+            roleGroups:
+              default:
+                replicas: 1
           clusterConfig:
             tls:
               serverSecretClass: null
@@ -509,7 +512,10 @@ mod tests {
         spec:
           image:
             productVersion: 3.9.2
-          zookeeperConfigMapName: xyz
+          brokers:
+            roleGroups:
+              default:
+                replicas: 1
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls
@@ -534,6 +540,10 @@ mod tests {
         spec:
           image:
             productVersion: 3.9.2
+          brokers:
+            roleGroups:
+              default:
+                replicas: 1
           clusterConfig:
             zookeeperConfigMapName: xyz
         "#;
@@ -553,6 +563,10 @@ mod tests {
         spec:
           image:
             productVersion: 3.9.2
+          brokers:
+            roleGroups:
+              default:
+                replicas: 1
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls
@@ -574,6 +588,10 @@ mod tests {
         spec:
           image:
             productVersion: 3.9.2
+          brokers:
+            roleGroups:
+              default:
+                replicas: 1
           clusterConfig:
             tls:
               serverSecretClass: simple-kafka-server-tls

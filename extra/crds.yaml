@@ -35,7 +35,6 @@ spec:
                   at role level, the `roleConfig`.
                   You can learn more about this in the
                   [Roles and role group concept documentation](https://docs.stackable.tech/home/nightly/concepts/roles-and-role-groups).
-                nullable: true
                 properties:
                   cliOverrides:
                     additionalProperties:
@@ -2260,6 +2259,7 @@ spec:
                   x-kubernetes-preserve-unknown-fields: true
                 type: array
             required:
+            - brokers
             - image
             type: object
           status:

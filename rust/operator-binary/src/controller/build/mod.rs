@@ -13,6 +13,7 @@ use crate::{
                 config_map::build_rolegroup_config_map,
                 listener::build_broker_rolegroup_bootstrap_listener,
                 pdb::build_pdb,
+                rbac::{build_role_binding, build_service_account},
                 service::{build_rolegroup_headless_service, build_rolegroup_metrics_service},
                 statefulset::{
                     build_broker_rolegroup_statefulset, build_controller_rolegroup_statefulset,
@@ -27,7 +28,6 @@ pub mod command;
 pub mod graceful_shutdown;
 pub mod jvm;
 pub mod kerberos;
-pub mod labels;
 pub mod properties;
 pub mod resource;
 pub mod security;
@@ -55,14 +55,7 @@ pub enum Error {
 /// The discovery `ConfigMap` is intentionally excluded: it reports the applied bootstrap
 /// `Listener`s' ingress addresses (populated by the Listener operator only after apply), so it is
 /// built in the reconcile step once those `Listener`s exist.
-///
-/// `service_account_name` is the name of the RBAC `ServiceAccount` the role-group Pods run under.
-/// The RBAC resources are built and applied separately, in the reconcile step; the name is
-/// deterministic, so the build step does not depend on the applied `ServiceAccount`.
-pub fn build(
-    cluster: &ValidatedCluster,
-    service_account_name: &str,
-) -> Result<KubernetesResources, Error> {
+pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources, Error> {
     let mut stateful_sets = vec![];
     let mut services = vec![];
     let mut listeners = vec![];
@@ -118,19 +111,14 @@ pub fn build(
             );
 
             let stateful_set = match role {
-                KafkaRole::Broker => build_broker_rolegroup_statefulset(
-                    role,
-                    role_group_name,
-                    cluster,
-                    validated_rg,
-                    service_account_name,
-                ),
+                KafkaRole::Broker => {
+                    build_broker_rolegroup_statefulset(role, role_group_name, cluster, validated_rg)
+                }
                 KafkaRole::Controller => build_controller_rolegroup_statefulset(
                     role,
                     role_group_name,
                     cluster,
                     validated_rg,
-                    service_account_name,
                 ),
             }
             .context(StatefulSetSnafu {
@@ -156,6 +144,8 @@ pub fn build(
         listeners,
         config_maps,
         pod_disruption_budgets,
+        service_accounts: vec![build_service_account(cluster)],
+        role_bindings: vec![build_role_binding(cluster)],
     })
 }
 
@@ -236,7 +226,7 @@ mod tests {
     #[test]
     fn build_produces_expected_resource_names() {
         let cluster = kraft_cluster();
-        let resources = build(&cluster, "simple-kafka-serviceaccount").expect("build succeeds");
+        let resources = build(&cluster).expect("build succeeds");
 
         // One StatefulSet per role group.
         assert_eq!(
@@ -274,6 +264,15 @@ mod tests {
             sorted_names(&resources.pod_disruption_budgets),
             ["simple-kafka-broker", "simple-kafka-controller"]
         );
+        // The cluster-shared RBAC pair.
+        assert_eq!(
+            sorted_names(&resources.service_accounts),
+            ["simple-kafka-serviceaccount"]
+        );
+        assert_eq!(
+            sorted_names(&resources.role_bindings),
+            ["simple-kafka-rolebinding"]
+        );
     }
 
     /// ZooKeeper mode has no `controller` role, so `build()` emits no controller resources while
@@ -281,7 +280,7 @@ mod tests {
     #[test]
     fn build_zookeeper_mode_has_no_controller_resources() {
         let cluster = zookeeper_cluster();
-        let resources = build(&cluster, "simple-kafka-serviceaccount").expect("build succeeds");
+        let resources = build(&cluster).expect("build succeeds");
 
         assert_eq!(
             sorted_names(&resources.stateful_sets),
