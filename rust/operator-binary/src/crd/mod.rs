@@ -516,7 +516,6 @@ mod tests {
             roleGroups:
               default:
                 replicas: 1
-          zookeeperConfigMapName: xyz
           clusterConfig:
             tls:
               internalSecretClass: simple-kafka-internal-tls
