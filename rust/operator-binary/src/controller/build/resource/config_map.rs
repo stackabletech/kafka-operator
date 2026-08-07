@@ -218,12 +218,16 @@ fn jaas_config_file(is_kerberos_enabled: bool, role: &KafkaRole) -> String {
         }
     };
 
+    // Unlike the bootstrap/client sections below, this context is used for BOTH sides of every
+    // CONTROLLER-listener connection: brokers connect out to controllers, and controllers also
+    // connect to each other for Raft. So this is the only listener in this operator where the
+    // process must be able to act as a GSSAPI initiator as well as an acceptor, hence
+    // `isInitiator` is intentionally left at its default (`true`) here.
     let controller_section = formatdoc! {"
         controller.KafkaServer {{
             com.sun.security.auth.module.Krb5LoginModule required
             useKeyTab=true
             storeKey=true
-            isInitiator=false
             keyTab=\"/stackable/kerberos/keytab\"
             principal=\"kafka/{controller_principal_address}@${{env:KERBEROS_REALM}}\";
         }};
@@ -302,5 +306,16 @@ mod tests {
         // must not appear in their JAAS file.
         assert!(!jaas.contains("bootstrap.KafkaServer"));
         assert!(!jaas.contains("client.KafkaServer"));
+
+        // The controller.KafkaServer section must NOT set isInitiator=false: it is used both
+        // when brokers connect to controllers and when controllers connect to each other for
+        // Raft, so the process needs to be able to act as a GSSAPI initiator on this listener.
+        // Scope the check to the controller section itself (rather than a global absence check)
+        // so that a future broker-side isInitiator=false stays fine.
+        let controller_section_start = jaas
+            .find("controller.KafkaServer {")
+            .expect("controller.KafkaServer section must be present");
+        let controller_section = &jaas[controller_section_start..];
+        assert!(!controller_section.contains("isInitiator=false"));
     }
 }

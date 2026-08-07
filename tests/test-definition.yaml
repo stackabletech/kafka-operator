@@ -91,7 +91,6 @@ tests:
       - kerberos-backend
       - openshift
       - broker-listener-class
-      - bootstrap-listener-class
   - name: smoke
     dimensions:
       - kafka

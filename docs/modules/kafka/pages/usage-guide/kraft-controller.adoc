@@ -78,6 +78,17 @@ controllers:
 
 The configuration of overrides, JVM arguments etc. is similar to the Broker and documented on the xref:concepts:overrides.adoc[concepts page].
 
+== Kerberos
+
+Kerberos authentication is supported for KRaft clusters: enabling a Kerberos `AuthenticationClass`
+secures the `CLIENT`, `BOOTSTRAP` and `CONTROLLER` listeners with GSSAPI, including
+controller-to-controller and broker-to-controller Raft RPC traffic on the `CONTROLLER` listener.
+The `INTERNAL` inter-broker listener continues to use mutual TLS and is unaffected by Kerberos.
+
+NOTE: SASL/SCRAM is not supported for the controller listener by Apache Kafka itself
+(https://issues.apache.org/jira/browse/KAFKA-15513[KAFKA-15513]); this does not affect Kerberos
+(GSSAPI), which authenticates against the external KDC rather than Kafka-internal credential storage.
+
 == Internal operator details
 
 KRaft mode requires major configuration changes compared to ZooKeeper:
@@ -91,16 +102,6 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 
 * Automatic migration from Apache ZooKeeper to KRaft is not supported.
 * Scaling controller replicas might lead to unstable clusters.
-
-=== Kerberos
-
-Kerberos authentication is supported for KRaft clusters: enabling a Kerberos `AuthenticationClass`
-secures the `CLIENT`, `INTERNAL` and `CONTROLLER` listeners alike, including controller-to-controller
-and broker-to-controller Raft RPC traffic.
-
-NOTE: SASL/SCRAM is not supported for the controller listener by Apache Kafka itself
-(https://issues.apache.org/jira/browse/KAFKA-15513[KAFKA-15513]); this does not affect Kerberos
-(GSSAPI), which authenticates against the external KDC rather than Kafka-internal credential storage.
 
 == Troubleshooting
 

@@ -13,3 +13,4 @@ Also there are some known issues such as:
 
 * Controller scaling is not reliable.
 * Service exposition is not definitive.
+* Kerberos authentication for KRaft is implemented and unit-tested, but end-to-end verification against a live cluster is still pending.
