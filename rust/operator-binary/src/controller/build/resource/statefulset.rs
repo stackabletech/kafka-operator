@@ -572,6 +572,17 @@ pub fn build_controller_rolegroup_statefulset(
     )
     .context(AddVolumesAndVolumeMountsSnafu)?;
 
+    if kafka_security.has_kerberos_enabled() {
+        add_kerberos_pod_config(
+            kafka_security,
+            kafka_role,
+            None,
+            &mut cb_kafka,
+            &mut pod_builder,
+        )
+        .context(AddKerberosConfigSnafu)?;
+    }
+
     let kafka_container = cb_kafka.build();
 
     pod_builder
@@ -795,5 +806,194 @@ fn add_vector_container(
             &VECTOR_LOG_VOLUME_NAME,
             EnvVarSet::new(),
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use stackable_operator::{
+        builder::meta::ObjectMetaBuilder,
+        crd::authentication::{core, kerberos},
+    };
+
+    use super::*;
+    use crate::{
+        controller::test_support::{minimal_kafka, validated_cluster},
+        crd::authentication::ResolvedAuthenticationClasses,
+    };
+
+    /// A Kerberos-enabled [`ValidatedKafkaSecurity`], mirroring the fixture used by
+    /// `add_kerberos_pod_config`'s own tests (`controller/build/kerberos.rs`).
+    fn kerberos_security() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![core::v1alpha1::AuthenticationClass {
+                metadata: ObjectMetaBuilder::new().name("kerberos-auth").build(),
+                spec: core::v1alpha1::AuthenticationClassSpec {
+                    provider: core::v1alpha1::AuthenticationClassProvider::Kerberos(
+                        kerberos::v1alpha1::AuthenticationProvider {
+                            kerberos_secret_class: "kerberos-secret-class".to_string(),
+                        },
+                    ),
+                },
+            }]),
+            "tls".parse().unwrap(),
+            Some("tls".parse().unwrap()),
+            None,
+        )
+    }
+
+    /// A KRaft cluster with one `controller` and one `broker` role group, resolved through the
+    /// real validate step (mirroring the fixtures in `controller/build/mod.rs`'s tests). The
+    /// `kafka_security` is swapped for a Kerberos-enabled one afterwards, since `validate()`
+    /// only resolves auth classes that are actually referenced from the cluster spec, and both
+    /// `ValidatedCluster::cluster_config` and `ValidatedKafkaSecurity` fields are public.
+    fn kraft_cluster_with_kerberos() -> ValidatedCluster {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+        let mut cluster = validated_cluster(&kafka);
+        cluster.cluster_config.kafka_security = kerberos_security();
+        cluster
+    }
+
+    #[test]
+    fn controller_statefulset_mounts_kerberos_when_enabled() {
+        let cluster = kraft_cluster_with_kerberos();
+        let role_group_name: RoleGroupName = "default".parse().unwrap();
+        let validated_rg = cluster
+            .role_group_configs
+            .get(&KafkaRole::Controller)
+            .expect("controller role group configs")
+            .get(&role_group_name)
+            .expect("default controller role group");
+
+        let sts = build_controller_rolegroup_statefulset(
+            &KafkaRole::Controller,
+            &role_group_name,
+            &cluster,
+            validated_rg,
+        )
+        .expect("controller statefulset build");
+
+        let kafka_container = sts
+            .spec
+            .expect("statefulset spec")
+            .template
+            .spec
+            .expect("pod spec")
+            .containers
+            .into_iter()
+            .find(|c| c.name == "kafka")
+            .expect("kafka container");
+
+        let env_names: Vec<_> = kafka_container
+            .env
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert!(env_names.contains(&"KRB5_CONFIG".to_string()));
+        assert!(env_names.contains(&"KAFKA_OPTS".to_string()));
+
+        let mount_names: Vec<_> = kafka_container
+            .volume_mounts
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
+        assert!(mount_names.contains(&"kerberos".to_string()));
+    }
+
+    /// Non-Kerberos controller StatefulSets must be unaffected: no `kerberos` volume mount and
+    /// no Kerberos env vars on the `kafka` container.
+    #[test]
+    fn controller_statefulset_has_no_kerberos_when_disabled() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+        let cluster = validated_cluster(&kafka);
+        let role_group_name: RoleGroupName = "default".parse().unwrap();
+        let validated_rg = cluster
+            .role_group_configs
+            .get(&KafkaRole::Controller)
+            .expect("controller role group configs")
+            .get(&role_group_name)
+            .expect("default controller role group");
+
+        let sts = build_controller_rolegroup_statefulset(
+            &KafkaRole::Controller,
+            &role_group_name,
+            &cluster,
+            validated_rg,
+        )
+        .expect("controller statefulset build");
+
+        let kafka_container = sts
+            .spec
+            .expect("statefulset spec")
+            .template
+            .spec
+            .expect("pod spec")
+            .containers
+            .into_iter()
+            .find(|c| c.name == "kafka")
+            .expect("kafka container");
+
+        let env_names: Vec<_> = kafka_container
+            .env
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert!(!env_names.contains(&"KRB5_CONFIG".to_string()));
+        assert!(!env_names.contains(&"KAFKA_OPTS".to_string()));
+
+        let mount_names: Vec<_> = kafka_container
+            .volume_mounts
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
+        assert!(!mount_names.contains(&"kerberos".to_string()));
     }
 }
