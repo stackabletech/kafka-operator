@@ -243,7 +243,7 @@ pub fn build_broker_rolegroup_statefulset(
         add_kerberos_pod_config(
             kafka_security,
             kafka_role,
-            &mut cb_kcat_prober,
+            Some(&mut cb_kcat_prober),
             &mut cb_kafka,
             &mut pod_builder,
         )
