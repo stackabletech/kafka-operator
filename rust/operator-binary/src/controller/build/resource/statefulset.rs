@@ -498,6 +498,7 @@ pub fn build_controller_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![controller_kafka_container_command(
+            kafka_security,
             validated_cluster
                 .pod_descriptors(Some(kafka_role))
                 .context(BuildPodDescriptorsSnafu)?,
