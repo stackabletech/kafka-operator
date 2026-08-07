@@ -6,7 +6,6 @@ metadata:
 spec:
   group: kafka.stackable.tech
   names:
-    categories: []
     kind: KafkaCluster
     plural: kafkaclusters
     shortNames:
@@ -14,8 +13,7 @@ spec:
     singular: kafkacluster
   scope: Namespaced
   versions:
-  - additionalPrinterColumns: []
-    name: v1alpha1
+  - name: v1alpha1
     schema:
       openAPIV3Schema:
         description: A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.

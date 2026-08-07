@@ -759,7 +759,11 @@ fn add_common_pod_config(
         )
         .context(AddVolumeSnafu)?
         .service_account_name(service_account_name)
-        .security_context(PodSecurityContextBuilder::new().fs_group(1000).build());
+        .security_context(
+            PodSecurityContextBuilder::with_stackable_defaults()
+                .fs_group(1000)
+                .build(),
+        );
     Ok(())
 }
 
