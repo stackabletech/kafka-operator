@@ -13,4 +13,4 @@ Also there are some known issues such as:
 
 * Controller scaling is not reliable.
 * Service exposition is not definitive.
-* Kerberos authentication for KRaft is implemented and unit-tested, but end-to-end verification against a live cluster is still pending.
+* Kerberos authentication for KRaft is implemented, unit-tested, and has been verified end-to-end against a live cluster (Kafka 4.2.1, 3 controller replicas); it has not yet been exercised across all supported versions in CI.
