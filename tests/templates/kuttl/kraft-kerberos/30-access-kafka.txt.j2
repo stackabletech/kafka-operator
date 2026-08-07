@@ -105,9 +105,18 @@ data:
 
     echo Sent message: \"$sent_message\"
 
+    # Explicit numeric offset (not "-o stored"/"auto.offset.reset=beginning"): the bundled kcat's
+    # librdkafka (1.7.0) mis-detects broker feature support against Kafka >=4.0 brokers, which
+    # dropped old low-numbered API versions (KIP-896). It matches ApiVersions by exact version
+    # instead of range, so it wrongly reports the ListOffsets logical-offset query as unsupported
+    # ("Failed to query logical offset BEGINNING: Local: Required feature not supported by
+    # broker") even though the broker supports it fine -- see
+    # https://github.com/confluentinc/librdkafka/issues/4948. This is unrelated to SASL/Kerberos:
+    # authentication succeeds either way. The topic is freshly created and this is the only
+    # message ever produced to it, so offset 0 is always the message we just sent.
     received_message=$(kcat \
       -G $CONSUMER_GROUP \
-      -o stored \
+      -o 0 \
       -e \
       $TOPIC)
 
