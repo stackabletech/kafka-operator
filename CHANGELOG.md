@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Kerberos authentication now works with KRaft controllers (`spec.controllers`), securing the
+  `CONTROLLER` listener used for broker/controller and controller/controller Raft RPC traffic ([#TBD]).
+
 ### Changed
 
 - Internal operator refactoring: introduce a build() step in the reconciler that
