@@ -1,12 +1,40 @@
+use std::str::FromStr;
+
 use stackable_operator::{
-    builder::meta::ObjectMetaBuilder, crd::listener,
-    v2::builder::meta::ownerreference_from_resource,
+    builder::meta::ObjectMetaBuilder,
+    crd::listener,
+    v2::{
+        builder::meta::ownerreference_from_resource,
+        role_group_utils::ResourceNames,
+        types::{kubernetes::ListenerName, operator::ClusterName},
+    },
 };
 
 use crate::{
     controller::{RoleGroupName, ValidatedCluster, security::ValidatedKafkaSecurity},
     crd::role::{KafkaRole, broker::BrokerConfig},
 };
+
+/// The name of a broker role group's bootstrap [`Listener`](listener::v1alpha1::Listener),
+/// `<cluster>-<role>-<role-group>-bootstrap`.
+///
+/// A free function (rather than only a [`ValidatedCluster`] method) so the dereference step can
+/// compute the name from the raw cluster identity when fetching the stored `Listener`s that the
+/// discovery `ConfigMap` is built from.
+pub fn bootstrap_listener_name(
+    cluster_name: &ClusterName,
+    role: &KafkaRole,
+    role_group_name: &RoleGroupName,
+) -> ListenerName {
+    let resource_names = ResourceNames {
+        cluster_name: cluster_name.clone(),
+        role_name: role.into(),
+        role_group_name: role_group_name.clone(),
+    };
+
+    ListenerName::from_str(&format!("{}-bootstrap", resource_names.stateful_set_name()))
+        .expect("the bootstrap listener name is a valid Listener name")
+}
 
 /// Kafka clients will use the load-balanced bootstrap listener to get a list of broker addresses and will use those to
 /// transmit data to the correct broker.

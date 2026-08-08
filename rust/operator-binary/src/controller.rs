@@ -8,6 +8,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
+    marker::PhantomData,
     str::FromStr,
     sync::Arc,
 };
@@ -34,13 +35,8 @@ use stackable_operator::{
     kvp::Labels,
     logging::controller::ReconcilerError,
     shared::time::Duration,
-    status::condition::{
-        compute_conditions, operations::ClusterOperationsConditionBuilder,
-        statefulset::StatefulSetConditionBuilder,
-    },
     v2::{
         HasName, HasUid, NameIsValidLabelValue,
-        cluster_resources::cluster_resources_new,
         kvp::label::{recommended_labels, role_group_selector},
         role_group_utils::ResourceNames,
         role_utils,
@@ -52,10 +48,12 @@ use stackable_operator::{
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
+pub(crate) mod apply;
 pub(crate) mod build;
 pub(crate) mod dereference;
 pub(crate) mod node_id_hasher;
 pub(crate) mod security;
+pub(crate) mod update_status;
 pub(crate) mod validate;
 
 /// The type-safe role-group name from stackable-operator. Re-exported so the rest
@@ -63,9 +61,12 @@ pub(crate) mod validate;
 pub use stackable_operator::v2::types::operator::{RoleGroupName, RoleName};
 
 use crate::{
-    controller::{node_id_hasher::node_id_hash32_offset, security::ValidatedKafkaSecurity},
+    controller::{
+        apply::Applier, node_id_hasher::node_id_hash32_offset, security::ValidatedKafkaSecurity,
+        update_status::update_status,
+    },
     crd::{
-        APP_NAME, KafkaClusterStatus, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
+        APP_NAME, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
         authorization::KafkaAuthorizationConfig,
         role::{AnyConfig, AnyConfigOverrides, KafkaRole},
         v1alpha1,
@@ -91,12 +92,18 @@ pub enum PodDescriptorsError {
     },
 }
 
+/// Marker for prepared Kubernetes resources which are not applied yet.
+pub struct Prepared;
+
+/// Marker for applied Kubernetes resources.
+pub struct Applied;
+
 /// Every Kubernetes resource produced by the [`build`] step.
 ///
-/// The discovery `ConfigMap` is not part of this: it depends on the applied bootstrap
-/// [`Listener`](listener)s' status and is therefore built in [`reconcile_kafka`] after they are
-/// applied.
-pub struct KubernetesResources {
+/// This includes the discovery `ConfigMap` (in [`Self::config_maps`]): it is built from the
+/// bootstrap [`Listener`](listener)s as fetched in the dereference step, and is absent while
+/// they have no ingress addresses yet.
+pub struct KubernetesResources<T> {
     pub stateful_sets: Vec<StatefulSet>,
     pub services: Vec<Service>,
     pub listeners: Vec<listener::v1alpha1::Listener>,
@@ -104,6 +111,7 @@ pub struct KubernetesResources {
     pub pod_disruption_budgets: Vec<PodDisruptionBudget>,
     pub service_accounts: Vec<ServiceAccount>,
     pub role_bindings: Vec<RoleBinding>,
+    pub status: PhantomData<T>,
 }
 
 /// The validated cluster. Carries everything the build steps need, resolved once
@@ -131,6 +139,11 @@ pub struct ValidatedCluster {
     /// Per-role configuration (e.g. the Pod disruption budget), keyed by role.
     pub role_configs: BTreeMap<KafkaRole, ValidatedRoleConfig>,
     pub role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
+    /// The broker role groups' bootstrap `Listener`s as currently stored in the cluster (fetched
+    /// in the dereference step), from which the discovery `ConfigMap` is built. Missing or still
+    /// address-less around the first reconcile runs; the listener-operator populates the ingress
+    /// addresses and the `Listener` watch triggers a new run once it does.
+    pub bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
 }
 
 impl ValidatedCluster {
@@ -144,6 +157,7 @@ impl ValidatedCluster {
         cluster_config: ValidatedClusterConfig,
         role_configs: BTreeMap<KafkaRole, ValidatedRoleConfig>,
         role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
+        bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
     ) -> Self {
         // `app_version_label_value` is constructed to be a valid label value, so it is also a
         // valid `ProductVersion`.
@@ -165,6 +179,7 @@ impl ValidatedCluster {
             cluster_config,
             role_configs,
             role_group_configs,
+            bootstrap_listeners,
         }
     }
 
@@ -303,12 +318,7 @@ impl ValidatedCluster {
         role: &KafkaRole,
         role_group_name: &RoleGroupName,
     ) -> ListenerName {
-        ListenerName::from_str(&format!(
-            "{}-bootstrap",
-            self.role_group_resource_names(role, role_group_name)
-                .stateful_set_name()
-        ))
-        .expect("the bootstrap listener name is a valid Listener name")
+        build::resource::listener::bootstrap_listener_name(&self.name, role, role_group_name)
     }
 }
 
@@ -449,6 +459,12 @@ pub struct Ctx {
 #[strum_discriminants(derive(IntoStaticStr))]
 #[allow(clippy::enum_variant_names)]
 pub enum Error {
+    #[snafu(display("failed to apply the Kubernetes resources"))]
+    ApplyResources { source: apply::Error },
+
+    #[snafu(display("failed to update the cluster status"))]
+    UpdateStatus { source: update_status::Error },
+
     #[snafu(display("failed to dereference resources"))]
     Dereference { source: dereference::Error },
 
@@ -457,31 +473,6 @@ pub enum Error {
 
     #[snafu(display("failed to build the Kubernetes resources"))]
     BuildResources { source: build::Error },
-
-    #[snafu(display("failed to apply Kubernetes resource"))]
-    ApplyResource {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to build discovery ConfigMap"))]
-    BuildDiscoveryConfig {
-        source: build::resource::discovery::Error,
-    },
-
-    #[snafu(display("failed to apply discovery ConfigMap"))]
-    ApplyDiscoveryConfig {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to delete orphaned resources"))]
-    DeleteOrphans {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to update status"))]
-    ApplyStatus {
-        source: stackable_operator::client::Error,
-    },
 
     #[snafu(display("KafkaCluster object is invalid"))]
     InvalidKafkaCluster {
@@ -500,11 +491,8 @@ impl ReconcilerError for Error {
             Error::Dereference { .. } => None,
             Error::ValidateCluster { .. } => None,
             Error::BuildResources { .. } => None,
-            Error::ApplyResource { .. } => None,
-            Error::BuildDiscoveryConfig { .. } => None,
-            Error::ApplyDiscoveryConfig { .. } => None,
-            Error::DeleteOrphans { .. } => None,
-            Error::ApplyStatus { .. } => None,
+            Error::ApplyResources { .. } => None,
+            Error::UpdateStatus { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
         }
     }
@@ -534,17 +522,6 @@ pub async fn reconcile_kafka(
         validate::validate(kafka, dereferenced_objects, &ctx.operator_environment)
             .context(ValidateClusterSnafu)?;
 
-    let mut cluster_resources = cluster_resources_new(
-        &product_name(),
-        &operator_name(),
-        &controller_name(),
-        &validated_cluster.name,
-        &validated_cluster.namespace,
-        &validated_cluster.uid,
-        ClusterResourceApplyStrategy::from(&kafka.spec.cluster_operation),
-        &kafka.spec.object_overrides,
-    );
-
     tracing::debug!(
         kerberos_enabled = validated_cluster.cluster_config.kafka_security.has_kerberos_enabled(),
         kerberos_secret_class = ?validated_cluster.cluster_config.kafka_security.kerberos_secret_class(),
@@ -553,99 +530,25 @@ pub async fn reconcile_kafka(
         "The following security settings are used"
     );
 
-    let mut ss_cond_builder = StatefulSetConditionBuilder::default();
-
-    // Build every Kubernetes resource up front (client-free). The discovery ConfigMap is not part
-    // of this, as it depends on the applied bootstrap Listeners' status (see below).
+    // build (no client required)
     let resources = build::build(&validated_cluster).context(BuildResourcesSnafu)?;
 
-    // Apply order: Services, then Listeners (collecting the applied bootstrap Listeners for the
-    // discovery ConfigMap), then ConfigMaps, then PodDisruptionBudgets, and finally the
-    // StatefulSets. The StatefulSets must be applied after all ConfigMaps and Secrets they mount to
-    // prevent unnecessary Pod restarts.
-    // See https://github.com/stackabletech/commons-operator/issues/111 for details.
-    for service_account in resources.service_accounts {
-        cluster_resources
-            .add(client, service_account)
-            .await
-            .context(ApplyResourceSnafu)?;
-    }
-    for role_binding in resources.role_bindings {
-        cluster_resources
-            .add(client, role_binding)
-            .await
-            .context(ApplyResourceSnafu)?;
-    }
-    for service in resources.services {
-        cluster_resources
-            .add(client, service)
-            .await
-            .context(ApplyResourceSnafu)?;
-    }
-
-    let mut bootstrap_listeners = Vec::<listener::v1alpha1::Listener>::new();
-    for rg_listener in resources.listeners {
-        bootstrap_listeners.push(
-            cluster_resources
-                .add(client, rg_listener)
-                .await
-                .context(ApplyResourceSnafu)?,
-        );
-    }
-
-    for config_map in resources.config_maps {
-        cluster_resources
-            .add(client, config_map)
-            .await
-            .context(ApplyResourceSnafu)?;
-    }
-
-    for pdb in resources.pod_disruption_budgets {
-        cluster_resources
-            .add(client, pdb)
-            .await
-            .context(ApplyResourceSnafu)?;
-    }
-
-    for stateful_set in resources.stateful_sets {
-        ss_cond_builder.add(
-            cluster_resources
-                .add(client, stateful_set)
-                .await
-                .context(ApplyResourceSnafu)?,
-        );
-    }
-
-    // The discovery ConfigMap reports the bootstrap Listeners' ingress addresses, which are only
-    // populated on the applied Listener objects (by the Listener operator), so it is built here
-    // rather than in the client-free build() step.
-    let discovery_cm = build::resource::discovery::build_discovery_configmap(
+    // apply (client required)
+    let applier = Applier::new(
+        client,
         &validated_cluster,
-        &bootstrap_listeners,
-    )
-    .context(BuildDiscoveryConfigSnafu)?;
-
-    cluster_resources
-        .add(client, discovery_cm)
+        ClusterResourceApplyStrategy::from(&kafka.spec.cluster_operation),
+        &kafka.spec.object_overrides,
+    );
+    let applied = applier
+        .apply(resources)
         .await
-        .context(ApplyDiscoveryConfigSnafu)?;
+        .context(ApplyResourcesSnafu)?;
 
-    let cluster_operation_cond_builder =
-        ClusterOperationsConditionBuilder::new(&kafka.spec.cluster_operation);
-
-    let status = KafkaClusterStatus {
-        conditions: compute_conditions(kafka, &[&ss_cond_builder, &cluster_operation_cond_builder]),
-    };
-
-    cluster_resources
-        .delete_orphaned_resources(client)
+    // update status (client required)
+    update_status(client, kafka, &applied)
         .await
-        .context(DeleteOrphansSnafu)?;
-
-    client
-        .apply_patch_status(OPERATOR_NAME, kafka, &status)
-        .await
-        .context(ApplyStatusSnafu)?;
+        .context(UpdateStatusSnafu)?;
 
     Ok(Action::await_change())
 }
@@ -710,6 +613,7 @@ pub(crate) mod test_support {
                 authentication_classes: ResolvedAuthenticationClasses::new(Vec::new()),
                 authorization_config: None,
                 kubernetes_cluster_info: cluster_info(),
+                bootstrap_listeners: Vec::new(),
             },
             &operator_environment(),
         )

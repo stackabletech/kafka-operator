@@ -317,6 +317,7 @@ pub fn validate(
         },
         role_configs,
         role_group_configs,
+        dereferenced_objects.bootstrap_listeners,
     ))
 }
 

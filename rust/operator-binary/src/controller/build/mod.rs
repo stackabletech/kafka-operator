@@ -1,16 +1,19 @@
 //! Builders that assemble Kubernetes resources for kafka rolegroups.
 
+use std::marker::PhantomData;
+
 use snafu::{ResultExt, Snafu};
 
 use crate::{
     controller::{
-        KubernetesResources, RoleGroupName, ValidatedCluster,
+        KubernetesResources, Prepared, RoleGroupName, ValidatedCluster,
         build::{
             properties::{
                 listener::get_kafka_listener_config, product_logging::vector_config_file_content,
             },
             resource::{
                 config_map::build_rolegroup_config_map,
+                discovery::build_discovery_configmap,
                 listener::build_broker_rolegroup_bootstrap_listener,
                 pdb::build_pdb,
                 rbac::{build_role_binding, build_service_account},
@@ -45,6 +48,9 @@ pub enum Error {
         source: resource::statefulset::Error,
         role_group: RoleGroupName,
     },
+
+    #[snafu(display("failed to build discovery ConfigMap"))]
+    DiscoveryConfigMap { source: resource::discovery::Error },
 }
 
 /// Builds every Kubernetes resource for the given validated cluster.
@@ -52,10 +58,11 @@ pub enum Error {
 /// Does not need a Kubernetes client: every external reference is already dereferenced and
 /// validated by this point, so the only errors are resource-assembly failures.
 ///
-/// The discovery `ConfigMap` is intentionally excluded: it reports the applied bootstrap
-/// `Listener`s' ingress addresses (populated by the Listener operator only after apply), so it is
-/// built in the reconcile step once those `Listener`s exist.
-pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources, Error> {
+/// This includes the discovery `ConfigMap`, built from the bootstrap `Listener`s fetched in the
+/// dereference step. It is skipped while no `Listener` has an ingress address yet (only the
+/// listener-operator writes them); the `Listener` watch triggers a new reconcile run once the
+/// addresses are set.
+pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>, Error> {
     let mut stateful_sets = vec![];
     let mut services = vec![];
     let mut listeners = vec![];
@@ -138,6 +145,12 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources, Error> {
         }
     }
 
+    if let Some(discovery_cm) =
+        build_discovery_configmap(cluster).context(DiscoveryConfigMapSnafu)?
+    {
+        config_maps.push(discovery_cm);
+    }
+
     Ok(KubernetesResources {
         stateful_sets,
         services,
@@ -146,6 +159,7 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources, Error> {
         pod_disruption_budgets,
         service_accounts: vec![build_service_account(cluster)],
         role_bindings: vec![build_role_binding(cluster)],
+        status: PhantomData,
     })
 }
 
@@ -272,6 +286,48 @@ mod tests {
         assert_eq!(
             sorted_names(&resources.role_bindings),
             ["simple-kafka-rolebinding"]
+        );
+    }
+
+    /// Once a bootstrap Listener (fetched in the dereference step) carries an ingress address,
+    /// `build()` emits the discovery ConfigMap, named after the cluster, alongside the rolegroup
+    /// ConfigMaps. The other tests run without bootstrap Listeners and therefore prove the
+    /// skip path (no `simple-kafka` entry in their `config_maps` assertions).
+    #[test]
+    fn build_emits_the_discovery_configmap_once_a_listener_has_an_address() {
+        use std::collections::BTreeMap;
+
+        use stackable_operator::crd::listener;
+
+        let mut cluster = kraft_cluster();
+        let port_name = cluster
+            .cluster_config
+            .kafka_security
+            .client_port_name()
+            .to_owned();
+        cluster.bootstrap_listeners = vec![listener::v1alpha1::Listener {
+            metadata: Default::default(),
+            spec: Default::default(),
+            status: Some(listener::v1alpha1::ListenerStatus {
+                service_name: None,
+                ingress_addresses: Some(vec![listener::v1alpha1::ListenerIngress {
+                    address: "host1".to_owned(),
+                    address_type: listener::v1alpha1::AddressType::Hostname,
+                    ports: BTreeMap::from([(port_name, 9093)]),
+                }]),
+                node_ports: None,
+            }),
+        }];
+
+        let resources = build(&cluster).expect("build succeeds");
+
+        assert_eq!(
+            sorted_names(&resources.config_maps),
+            [
+                "simple-kafka",
+                "simple-kafka-broker-default",
+                "simple-kafka-controller-default"
+            ]
         );
     }
 
