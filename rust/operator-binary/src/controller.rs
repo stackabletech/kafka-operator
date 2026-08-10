@@ -100,9 +100,13 @@ pub struct Applied;
 
 /// Every Kubernetes resource produced by the [`build`] step.
 ///
-/// This includes the discovery `ConfigMap` (in [`Self::config_maps`]): it is built from the
-/// bootstrap [`Listener`](listener)s as fetched in the dereference step, and is absent while
-/// they have no ingress addresses yet.
+/// `T` is a marker that indicates if these resources are only [`Prepared`] or already [`Applied`].
+/// The marker is useful e.g. to ensure that the cluster status is updated based on the applied
+/// resources.
+///
+/// The discovery `ConfigMap` is part of [`Self::config_maps`], but absent while no bootstrap
+/// [`Listener`](listener) has a usable ingress address; see
+/// [`build::resource::discovery::build_discovery_configmap`].
 pub struct KubernetesResources<T> {
     pub stateful_sets: Vec<StatefulSet>,
     pub services: Vec<Service>,

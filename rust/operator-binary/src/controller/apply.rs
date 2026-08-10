@@ -65,6 +65,11 @@ impl<'a> Applier<'a> {
         }
     }
 
+    /// Applies the given Kubernetes resources, deletes resources from earlier reconcile runs
+    /// that were not applied in this one, and marks the resources as applied.
+    ///
+    /// Consumes the applier: a resource applied after the orphan deletion would itself be
+    /// treated as an orphan and deleted by the next reconcile run.
     pub async fn apply(
         mut self,
         resources: KubernetesResources<Prepared>,

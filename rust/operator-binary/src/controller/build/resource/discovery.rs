@@ -1,6 +1,6 @@
 use std::{num::TryFromIntError, str::FromStr};
 
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
     crd::listener,
@@ -15,9 +15,6 @@ use crate::{
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("could not find service port with name {}", port_name))]
-    NoServicePort { port_name: String },
-
     #[snafu(display("nodePort was out of range"))]
     InvalidNodePort { source: TryFromIntError },
 
@@ -32,11 +29,12 @@ pub enum Error {
 ///
 /// The bootstrap servers are read from the bootstrap `Listener`s' ingress addresses (carried on
 /// [`ValidatedCluster::bootstrap_listeners`], fetched in the dereference step), which only the
-/// listener-operator writes. Around the first reconcile runs no address exists yet; `Ok(None)` is
-/// returned then instead of failing the run -- the `Listener` watch triggers a new run once the
-/// addresses are set. In that window a previously tracked discovery `ConfigMap` would be deleted
-/// as an orphan and re-created later, but the window only occurs while no address (and therefore
-/// no usable `ConfigMap` content) exists at all.
+/// listener-operator writes. `Ok(None)` is returned instead of failing the run while no usable
+/// address exists: around the first reconcile runs no address exists yet, and after a TLS or
+/// Kerberos toggle the stored addresses carry the old port name until the listener-operator has
+/// reconciled the new `Listener` spec. The `Listener` watch triggers a new run once the
+/// addresses are usable. In that window a previously tracked discovery `ConfigMap` is deleted as
+/// an orphan and re-created later.
 pub fn build_discovery_configmap(
     validated_cluster: &ValidatedCluster,
 ) -> Result<Option<ConfigMap>, Error> {
@@ -51,7 +49,8 @@ pub fn build_discovery_configmap(
     let hosts = listener_hosts(&validated_cluster.bootstrap_listeners, port_name)?;
     if hosts.is_empty() {
         tracing::debug!(
-            "no bootstrap Listener has an ingress address yet, skipping the discovery ConfigMap"
+            "no bootstrap Listener has an ingress address with the expected client port yet, \
+             skipping the discovery ConfigMap"
         );
         return Ok(None);
     }
@@ -101,16 +100,25 @@ fn listener_hosts(
                 .and_then(|s| s.ingress_addresses.as_deref())
         })
         .flatten()
-        .map(|addr| {
-            Ok((
-                addr.address.clone(),
-                addr.ports
-                    .get(port_name)
-                    .copied()
-                    .context(NoServicePortSnafu { port_name })?
-                    .try_into()
-                    .context(InvalidNodePortSnafu)?,
-            ))
+        .filter_map(|addr| {
+            let Some(&port) = addr.ports.get(port_name) else {
+                // The stored Listener status is stale, e.g. a TLS or Kerberos toggle changed the
+                // expected port name and the listener-operator has not reconciled the new
+                // Listener spec yet. Failing the build instead would abort the run before the
+                // apply step, so the new spec would never reach the listener-operator.
+                tracing::debug!(
+                    address = addr.address,
+                    port_name,
+                    "skipping ingress address without the expected client port"
+                );
+                return None;
+            };
+
+            Some(
+                u16::try_from(port)
+                    .context(InvalidNodePortSnafu)
+                    .map(|port| (addr.address.clone(), port)),
+            )
         })
         .collect::<Result<Vec<_>, _>>()
 }
@@ -238,8 +246,14 @@ mod tests {
         );
     }
 
+    /// A stored `Listener` whose ingress ports do not (yet) contain the expected client port
+    /// name is stale, e.g. right after a TLS or Kerberos toggle changed the port name but before
+    /// the listener-operator has seen the new `Listener` spec. It must be skipped like an
+    /// address-less `Listener` -- failing the build instead would abort the reconcile run before
+    /// the apply step, so the updated `Listener` spec would never reach the listener-operator and
+    /// the stale status would never be refreshed (a deadlock).
     #[test]
-    fn address_without_the_client_port_is_an_error() {
+    fn address_without_the_client_port_is_skipped() {
         let mut cluster = broker_cluster();
         cluster.bootstrap_listeners = vec![bootstrap_listener(Some(vec![ingress_address(
             "host1",
@@ -247,7 +261,12 @@ mod tests {
             9093,
         )]))];
 
-        build_discovery_configmap(&cluster)
-            .expect_err("an ingress address without the client port must fail the build");
+        let discovery_cm =
+            build_discovery_configmap(&cluster).expect("discovery ConfigMap build should succeed");
+
+        assert!(
+            discovery_cm.is_none(),
+            "a stale ingress address without the client port must be skipped, not fail the build"
+        );
     }
 }
