@@ -91,7 +91,7 @@ fn listener_hosts(
     listeners: &[listener::v1alpha1::Listener],
     port_name: &str,
 ) -> Result<Vec<(String, u16)>, Error> {
-    listeners
+    let mut hosts = listeners
         .iter()
         .flat_map(|listener| {
             listener
@@ -120,7 +120,14 @@ fn listener_hosts(
                     .map(|port| (addr.address.clone(), port)),
             )
         })
-        .collect::<Result<Vec<_>, _>>()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // The dereference step fetches the Listeners in the iteration order of
+    // `spec.brokers.roleGroups` -- a `HashMap`, so arbitrary and varying between reconcile runs.
+    // Sort so that the discovery ConfigMap content does not change while the spec is unchanged.
+    hosts.sort_unstable();
+
+    Ok(hosts)
 }
 
 #[cfg(test)]
@@ -243,6 +250,38 @@ mod tests {
         assert_eq!(
             data.get("KAFKA").map(String::as_str),
             Some("host1:9093,host2:31234")
+        );
+    }
+
+    /// The bootstrap servers must be sorted, not ordered by `bootstrap_listeners`: the
+    /// dereference step fetches the `Listener`s in the iteration order of
+    /// `spec.brokers.roleGroups` -- a `HashMap`, so arbitrary and varying between reconcile
+    /// runs. Without sorting, the discovery ConfigMap content would change between runs with an
+    /// unchanged spec.
+    #[test]
+    fn bootstrap_servers_are_sorted() {
+        let mut cluster = broker_cluster();
+        let port_name = cluster
+            .cluster_config
+            .kafka_security
+            .client_port_name()
+            .to_owned();
+        cluster.bootstrap_listeners = vec![
+            bootstrap_listener(Some(vec![ingress_address("host2", &port_name, 31234)])),
+            bootstrap_listener(Some(vec![ingress_address("host1", &port_name, 9093)])),
+        ];
+
+        let discovery_cm = build_discovery_configmap(&cluster)
+            .expect("discovery ConfigMap build should succeed")
+            .expect("the listeners have ingress addresses, so a ConfigMap should be built");
+
+        let data = discovery_cm
+            .data
+            .expect("the discovery ConfigMap should carry data");
+        assert_eq!(
+            data.get("KAFKA").map(String::as_str),
+            Some("host1:9093,host2:31234"),
+            "the bootstrap servers must be sorted regardless of the Listener fetch order"
         );
     }
 
