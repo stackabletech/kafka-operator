@@ -13,10 +13,13 @@ All notable changes to this project will be documented in this file.
   functions and carry the full set of recommended labels ([#990]).
 - BREAKING: The `brokers` role is now required by the CRD; a KafkaCluster without it was
   previously accepted by the API server but failed reconciliation ([#990]).
+- The reconciler now applies resources and derives the cluster status in discrete
+  apply and update_status steps ([#1000]).
 
 [#985]: https://github.com/stackabletech/kafka-operator/pull/985
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994
+[#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
 
 ## [26.7.0] - 2026-07-21
 
