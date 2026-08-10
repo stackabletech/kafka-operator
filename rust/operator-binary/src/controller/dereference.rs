@@ -1,9 +1,15 @@
 //! The dereference step in the KafkaCluster controller.
 //!
-//! Fetches all Kubernetes objects referenced by the [`v1alpha1::KafkaCluster`] spec and returns
-//! them in [`DereferencedObjects`]. This step only performs I/O; validation of the fetched
-//! objects (constraints on which auth class providers are supported, kerberos + TLS
-//! compatibility, etc.) happens in the validate step.
+//! Fetches the Kubernetes objects the later steps need and returns them in
+//! [`DereferencedObjects`]. Most of them are referenced from the [`v1alpha1::KafkaCluster`]
+//! spec (e.g. the AuthenticationClasses). The broker role groups' bootstrap `Listener`s are the
+//! exception: they are not referenced from the spec but created by this operator itself in a
+//! previous reconcile run, and are fetched back because the discovery `ConfigMap` is built from
+//! their ingress addresses, which only the listener-operator writes. `Listener`s that do not
+//! exist yet (e.g. around the first reconcile runs) are simply absent.
+//!
+//! Validation of the fetched objects (constraints on which auth class providers are supported,
+//! kerberos + TLS compatibility, etc.) happens in the validate step, not here.
 //!
 //! `KafkaAuthorization::get_opa_config` is a pure fetch + URL assembly (no validation to peel off)
 //! and stays here as-is.
@@ -64,21 +70,13 @@ pub enum Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// Kubernetes objects referenced from the [`v1alpha1::KafkaCluster`] spec, already fetched but
-/// not yet validated.
 pub struct DereferencedObjects {
     pub authentication_classes: ResolvedAuthenticationClasses,
     pub authorization_config: Option<KafkaAuthorizationConfig>,
     pub kubernetes_cluster_info: KubernetesClusterInfo,
-    /// The broker role groups' bootstrap `Listener`s as currently stored in the cluster. Unlike
-    /// the other fields they are not referenced from the spec but created by this operator itself
-    /// in a previous reconcile run. They are fetched because the discovery `ConfigMap` is built
-    /// from their ingress addresses, which only the listener-operator writes. `Listener`s that do
-    /// not exist yet (e.g. around the first reconcile runs) are simply absent.
     pub bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
 }
 
-/// Fetches all Kubernetes objects referenced from the [`v1alpha1::KafkaCluster`] spec.
 pub async fn dereference(
     client: &Client,
     kafka: &v1alpha1::KafkaCluster,

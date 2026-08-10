@@ -29,15 +29,13 @@ pub enum Error {
 ///
 /// The bootstrap servers are read from the bootstrap `Listener`s' ingress addresses (carried on
 /// [`ValidatedCluster::bootstrap_listeners`], fetched in the dereference step), which only the
-/// listener-operator writes. `Ok(None)` is returned instead of failing the run while no usable
-/// address exists: around the first reconcile runs no address exists yet, and after a TLS or
-/// Kerberos toggle the stored addresses carry the old port name until the listener-operator has
-/// reconciled the new `Listener` spec. The `Listener` watch triggers a new run once the
-/// addresses are usable. In that window a previously tracked discovery `ConfigMap` is deleted as
-/// an orphan and re-created later.
-pub fn build_discovery_configmap(
-    validated_cluster: &ValidatedCluster,
-) -> Result<Option<ConfigMap>, Error> {
+/// listener-operator writes. While no usable address exists -- around the first reconcile runs,
+/// or after a TLS or Kerberos toggle while the stored addresses still carry the old port name --
+/// the `ConfigMap` is still written, with an empty `KAFKA` value: omitting it instead would let
+/// the apply step delete an existing discovery `ConfigMap` as an orphan, breaking consumers that
+/// mount it. The `Listener` watch triggers a new run that fills in the value once the addresses
+/// are usable.
+pub fn build_discovery_configmap(validated_cluster: &ValidatedCluster) -> Result<ConfigMap, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
 
     let port_name = if kafka_security.has_kerberos_enabled() {
@@ -50,9 +48,8 @@ pub fn build_discovery_configmap(
     if hosts.is_empty() {
         tracing::debug!(
             "no bootstrap Listener has an ingress address with the expected client port yet, \
-             skipping the discovery ConfigMap"
+             writing an empty KAFKA entry to the discovery ConfigMap"
         );
-        return Ok(None);
     }
 
     // Write a list of bootstrap servers in the format that Kafka clients:
@@ -84,7 +81,7 @@ pub fn build_discovery_configmap(
         .build()
         .context(BuildConfigMapSnafu)?;
 
-    Ok(Some(discovery_cm))
+    Ok(discovery_cm)
 }
 
 fn listener_hosts(
@@ -132,79 +129,42 @@ fn listener_hosts(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use stackable_operator::crd::listener;
 
     use super::build_discovery_configmap;
-    use crate::controller::{
-        ValidatedCluster,
-        test_support::{minimal_kafka, validated_cluster},
+    use crate::controller::test_support::{
+        bootstrap_listener, ingress_address, zookeeper_mode_cluster,
     };
 
-    /// A ZooKeeper-mode cluster with a single `broker` role group and default (TLS) security.
-    fn broker_cluster() -> ValidatedCluster {
-        let kafka = minimal_kafka(
-            r#"
-            apiVersion: kafka.stackable.tech/v1alpha1
-            kind: KafkaCluster
-            metadata:
-              name: simple-kafka
-              namespace: default
-              uid: 12345678-1234-1234-1234-123456789012
-            spec:
-              image:
-                productVersion: 3.9.2
-              clusterConfig:
-                zookeeperConfigMapName: xyz
-              brokers:
-                roleGroups:
-                  default:
-                    replicas: 1
-            "#,
+    /// Asserts that the given ConfigMap carries the given `KAFKA` value.
+    fn assert_kafka_entry(
+        discovery_cm: &stackable_operator::k8s_openapi::api::core::v1::ConfigMap,
+        expected: &str,
+    ) {
+        assert_eq!(
+            discovery_cm
+                .data
+                .as_ref()
+                .expect("the discovery ConfigMap should carry data")
+                .get("KAFKA")
+                .map(String::as_str),
+            Some(expected)
         );
-        validated_cluster(&kafka)
-    }
-
-    fn bootstrap_listener(
-        ingress_addresses: Option<Vec<listener::v1alpha1::ListenerIngress>>,
-    ) -> listener::v1alpha1::Listener {
-        listener::v1alpha1::Listener {
-            metadata: Default::default(),
-            spec: Default::default(),
-            status: Some(listener::v1alpha1::ListenerStatus {
-                service_name: None,
-                ingress_addresses,
-                node_ports: None,
-            }),
-        }
-    }
-
-    fn ingress_address(
-        address: &str,
-        port_name: &str,
-        port: i32,
-    ) -> listener::v1alpha1::ListenerIngress {
-        listener::v1alpha1::ListenerIngress {
-            address: address.to_owned(),
-            address_type: listener::v1alpha1::AddressType::Hostname,
-            ports: BTreeMap::from([(port_name.to_owned(), port)]),
-        }
     }
 
     #[test]
-    fn no_bootstrap_listeners_yield_no_configmap() {
-        let cluster = broker_cluster();
+    fn no_bootstrap_listeners_yield_an_empty_kafka_entry() {
+        let cluster = zookeeper_mode_cluster();
 
         let discovery_cm =
             build_discovery_configmap(&cluster).expect("discovery ConfigMap build should succeed");
 
-        assert!(discovery_cm.is_none());
+        assert_kafka_entry(&discovery_cm, "");
     }
 
     #[test]
-    fn addressless_bootstrap_listeners_yield_no_configmap() {
-        let mut cluster = broker_cluster();
+    fn addressless_bootstrap_listeners_yield_an_empty_kafka_entry() {
+        let mut cluster = zookeeper_mode_cluster();
         cluster.bootstrap_listeners = vec![
             // Not yet reconciled by the listener-operator at all.
             listener::v1alpha1::Listener {
@@ -218,12 +178,12 @@ mod tests {
         let discovery_cm =
             build_discovery_configmap(&cluster).expect("discovery ConfigMap build should succeed");
 
-        assert!(discovery_cm.is_none());
+        assert_kafka_entry(&discovery_cm, "");
     }
 
     #[test]
     fn listener_addresses_are_written_to_the_configmap() {
-        let mut cluster = broker_cluster();
+        let mut cluster = zookeeper_mode_cluster();
         // The fixture keeps the default TLS settings, so the client port is the TLS one.
         let port_name = cluster
             .cluster_config
@@ -235,22 +195,15 @@ mod tests {
             bootstrap_listener(Some(vec![ingress_address("host2", &port_name, 31234)])),
         ];
 
-        let discovery_cm = build_discovery_configmap(&cluster)
-            .expect("discovery ConfigMap build should succeed")
-            .expect("the listeners have ingress addresses, so a ConfigMap should be built");
+        let discovery_cm =
+            build_discovery_configmap(&cluster).expect("discovery ConfigMap build should succeed");
 
         assert_eq!(
             discovery_cm.metadata.name.as_deref(),
             Some("simple-kafka"),
             "the discovery ConfigMap must be named after the cluster"
         );
-        let data = discovery_cm
-            .data
-            .expect("the discovery ConfigMap should carry data");
-        assert_eq!(
-            data.get("KAFKA").map(String::as_str),
-            Some("host1:9093,host2:31234")
-        );
+        assert_kafka_entry(&discovery_cm, "host1:9093,host2:31234");
     }
 
     /// The bootstrap servers must be sorted, not ordered by `bootstrap_listeners`: the
@@ -260,7 +213,7 @@ mod tests {
     /// unchanged spec.
     #[test]
     fn bootstrap_servers_are_sorted() {
-        let mut cluster = broker_cluster();
+        let mut cluster = zookeeper_mode_cluster();
         let port_name = cluster
             .cluster_config
             .kafka_security
@@ -271,18 +224,10 @@ mod tests {
             bootstrap_listener(Some(vec![ingress_address("host1", &port_name, 9093)])),
         ];
 
-        let discovery_cm = build_discovery_configmap(&cluster)
-            .expect("discovery ConfigMap build should succeed")
-            .expect("the listeners have ingress addresses, so a ConfigMap should be built");
+        let discovery_cm =
+            build_discovery_configmap(&cluster).expect("discovery ConfigMap build should succeed");
 
-        let data = discovery_cm
-            .data
-            .expect("the discovery ConfigMap should carry data");
-        assert_eq!(
-            data.get("KAFKA").map(String::as_str),
-            Some("host1:9093,host2:31234"),
-            "the bootstrap servers must be sorted regardless of the Listener fetch order"
-        );
+        assert_kafka_entry(&discovery_cm, "host1:9093,host2:31234");
     }
 
     /// A stored `Listener` whose ingress ports do not (yet) contain the expected client port
@@ -293,7 +238,7 @@ mod tests {
     /// the stale status would never be refreshed (a deadlock).
     #[test]
     fn address_without_the_client_port_is_skipped() {
-        let mut cluster = broker_cluster();
+        let mut cluster = zookeeper_mode_cluster();
         cluster.bootstrap_listeners = vec![bootstrap_listener(Some(vec![ingress_address(
             "host1",
             "not-the-client-port",
@@ -303,9 +248,6 @@ mod tests {
         let discovery_cm =
             build_discovery_configmap(&cluster).expect("discovery ConfigMap build should succeed");
 
-        assert!(
-            discovery_cm.is_none(),
-            "a stale ingress address without the client port must be skipped, not fail the build"
-        );
+        assert_kafka_entry(&discovery_cm, "");
     }
 }

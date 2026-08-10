@@ -32,11 +32,11 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 pub async fn update_status(
     client: &Client,
     kafka: &v1alpha1::KafkaCluster,
-    applied: &KubernetesResources<Applied>,
+    applied: KubernetesResources<Applied>,
 ) -> Result<()> {
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
-    for stateful_set in &applied.stateful_sets {
-        ss_cond_builder.add(stateful_set.clone());
+    for stateful_set in applied.stateful_sets {
+        ss_cond_builder.add(stateful_set);
     }
 
     let cluster_operation_cond_builder =

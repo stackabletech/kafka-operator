@@ -104,9 +104,9 @@ pub struct Applied;
 /// The marker is useful e.g. to ensure that the cluster status is updated based on the applied
 /// resources.
 ///
-/// The discovery `ConfigMap` is part of [`Self::config_maps`], but absent while no bootstrap
-/// [`Listener`](listener) has a usable ingress address; see
-/// [`build::resource::discovery::build_discovery_configmap`].
+/// The discovery `ConfigMap` is part of [`Self::config_maps`]; see
+/// [`build::resource::discovery::build_discovery_configmap`] for how its content depends on the
+/// bootstrap [`Listener`](listener)s.
 pub struct KubernetesResources<T> {
     pub stateful_sets: Vec<StatefulSet>,
     pub services: Vec<Service>,
@@ -550,7 +550,7 @@ pub async fn reconcile_kafka(
         .context(ApplyResourcesSnafu)?;
 
     // update status (client required)
-    update_status(client, kafka, &applied)
+    update_status(client, kafka, applied)
         .await
         .context(UpdateStatusSnafu)?;
 
@@ -570,9 +570,12 @@ pub fn error_policy(
 
 #[cfg(test)]
 pub(crate) mod test_support {
+    use std::collections::BTreeMap;
+
     use stackable_operator::{
         cli::OperatorEnvironmentOptions,
         commons::networking::DomainName,
+        crd::listener,
         utils::{cluster_info::KubernetesClusterInfo, yaml_from_str_singleton_map},
     };
 
@@ -606,6 +609,59 @@ pub(crate) mod test_support {
             operator_namespace: "stackable-operators".to_owned(),
             operator_service_name: "kafka-operator".to_owned(),
             image_repository: "oci.example.org".to_owned(),
+        }
+    }
+
+    /// A ZooKeeper-mode cluster with a single `broker` role group and default (TLS) security.
+    pub fn zookeeper_mode_cluster() -> ValidatedCluster {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+        validated_cluster(&kafka)
+    }
+
+    /// A bootstrap `Listener` with the given ingress addresses, as stored in the cluster after
+    /// the listener-operator has reconciled it.
+    pub fn bootstrap_listener(
+        ingress_addresses: Option<Vec<listener::v1alpha1::ListenerIngress>>,
+    ) -> listener::v1alpha1::Listener {
+        listener::v1alpha1::Listener {
+            metadata: Default::default(),
+            spec: Default::default(),
+            status: Some(listener::v1alpha1::ListenerStatus {
+                service_name: None,
+                ingress_addresses,
+                node_ports: None,
+            }),
+        }
+    }
+
+    /// An ingress address exposing a single named port.
+    pub fn ingress_address(
+        address: &str,
+        port_name: &str,
+        port: i32,
+    ) -> listener::v1alpha1::ListenerIngress {
+        listener::v1alpha1::ListenerIngress {
+            address: address.to_owned(),
+            address_type: listener::v1alpha1::AddressType::Hostname,
+            ports: BTreeMap::from([(port_name.to_owned(), port)]),
         }
     }
 
