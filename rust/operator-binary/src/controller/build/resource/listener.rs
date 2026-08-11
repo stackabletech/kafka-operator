@@ -5,7 +5,7 @@ use stackable_operator::{
     crd::listener,
     v2::{
         builder::meta::ownerreference_from_resource,
-        role_group_utils::ResourceNames,
+        role_group_utils::{QualifiedRoleGroupName, ResourceNames},
         types::{kubernetes::ListenerName, operator::ClusterName},
     },
 };
@@ -26,14 +26,33 @@ pub fn bootstrap_listener_name(
     role: &KafkaRole,
     role_group_name: &RoleGroupName,
 ) -> ListenerName {
+    const BOOTSTRAP_SUFFIX: &str = "-bootstrap";
+
+    // Compile-time checks that `<qualified_role_group_name>-bootstrap` is a valid ListenerName, so
+    // the `expect` below cannot fire.
+    //
+    // Length: the qualified role group name plus the suffix stays within the ListenerName limit.
+    const _: () = assert!(
+        QualifiedRoleGroupName::MAX_LENGTH + BOOTSTRAP_SUFFIX.len() <= ListenerName::MAX_LENGTH,
+        "The string `<qualified_role_group_name>-bootstrap` must not exceed the limit of Listener \
+    names."
+    );
+    // Characters: a ListenerName is an RFC 1123 DNS subdomain. The qualified role group name is an
+    // RFC 1123 label name (which is a subdomain of a single label); appending `-bootstrap` keeps it
+    // one, as the name still starts and ends with an alphanumeric character and adds no invalid ones.
+    let _ = QualifiedRoleGroupName::IS_RFC_1123_SUBDOMAIN_NAME;
+
     let resource_names = ResourceNames {
         cluster_name: cluster_name.clone(),
         role_name: role.into(),
         role_group_name: role_group_name.clone(),
     };
 
-    ListenerName::from_str(&format!("{}-bootstrap", resource_names.stateful_set_name()))
-        .expect("the bootstrap listener name is a valid Listener name")
+    ListenerName::from_str(&format!(
+        "{qualified_role_group_name}{BOOTSTRAP_SUFFIX}",
+        qualified_role_group_name = resource_names.qualified_role_group_name()
+    ))
+    .expect("is a valid Listener name")
 }
 
 /// Kafka clients will use the load-balanced bootstrap listener to get a list of broker addresses and will use those to
