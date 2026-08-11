@@ -121,7 +121,9 @@ rules:
       - authenticationclasses
     verbs:
       - get
-  # Listener created per role group. Applied via SSA and tracked for orphan cleanup.
+  # Listener created per broker role group. Applied via SSA and tracked for orphan cleanup.
+  # Fetched and watched by the controller, so a reconciliation is triggered once the
+  # listener-operator writes the ingress addresses (needed for the discovery ConfigMap).
   - apiGroups:
       - listeners.stackable.tech
     resources:

@@ -1,16 +1,19 @@
 //! Builders that assemble Kubernetes resources for kafka rolegroups.
 
+use std::marker::PhantomData;
+
 use snafu::{ResultExt, Snafu};
 
 use crate::{
     controller::{
-        KubernetesResources, RoleGroupName, ValidatedCluster,
+        KubernetesResources, Prepared, RoleGroupName, ValidatedCluster,
         build::{
             properties::{
                 listener::get_kafka_listener_config, product_logging::vector_config_file_content,
             },
             resource::{
                 config_map::build_rolegroup_config_map,
+                discovery::build_discovery_configmap,
                 listener::build_broker_rolegroup_bootstrap_listener,
                 pdb::build_pdb,
                 rbac::{build_role_binding, build_service_account},
@@ -45,6 +48,9 @@ pub enum Error {
         source: resource::statefulset::Error,
         role_group: RoleGroupName,
     },
+
+    #[snafu(display("failed to build discovery ConfigMap"))]
+    DiscoveryConfigMap { source: resource::discovery::Error },
 }
 
 /// Builds every Kubernetes resource for the given validated cluster.
@@ -52,10 +58,11 @@ pub enum Error {
 /// Does not need a Kubernetes client: every external reference is already dereferenced and
 /// validated by this point, so the only errors are resource-assembly failures.
 ///
-/// The discovery `ConfigMap` is intentionally excluded: it reports the applied bootstrap
-/// `Listener`s' ingress addresses (populated by the Listener operator only after apply), so it is
-/// built in the reconcile step once those `Listener`s exist.
-pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources, Error> {
+/// This includes the discovery `ConfigMap`, built from the bootstrap `Listener`s fetched in the
+/// dereference step; see
+/// [`build_discovery_configmap`] for how its
+/// content depends on their ingress addresses.
+pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>, Error> {
     let mut stateful_sets = vec![];
     let mut services = vec![];
     let mut listeners = vec![];
@@ -138,6 +145,8 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources, Error> {
         }
     }
 
+    config_maps.push(build_discovery_configmap(cluster).context(DiscoveryConfigMapSnafu)?);
+
     Ok(KubernetesResources {
         stateful_sets,
         services,
@@ -146,6 +155,7 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources, Error> {
         pod_disruption_budgets,
         service_accounts: vec![build_service_account(cluster)],
         role_bindings: vec![build_role_binding(cluster)],
+        status: PhantomData,
     })
 }
 
@@ -156,7 +166,10 @@ mod tests {
     use super::build;
     use crate::controller::{
         ValidatedCluster,
-        test_support::{minimal_kafka, validated_cluster},
+        test_support::{
+            bootstrap_listener, ingress_address, minimal_kafka, validated_cluster,
+            zookeeper_mode_cluster,
+        },
     };
 
     /// Sorted `metadata.name`s of the given resources, for order-independent assertions.
@@ -172,7 +185,7 @@ mod tests {
     /// A KRaft cluster with one `broker` and one `controller` role group, resolved through the real
     /// validate step (mirroring the other build fixtures), since [`ValidatedCluster`] carries
     /// several resolved types that are impractical to construct by hand.
-    fn kraft_cluster() -> ValidatedCluster {
+    fn kraft_mode_cluster() -> ValidatedCluster {
         let kafka = minimal_kafka(
             r#"
             apiVersion: kafka.stackable.tech/v1alpha1
@@ -199,33 +212,9 @@ mod tests {
         validated_cluster(&kafka)
     }
 
-    /// A ZooKeeper-mode cluster with a single `broker` role group (no controllers).
-    fn zookeeper_cluster() -> ValidatedCluster {
-        let kafka = minimal_kafka(
-            r#"
-            apiVersion: kafka.stackable.tech/v1alpha1
-            kind: KafkaCluster
-            metadata:
-              name: simple-kafka
-              namespace: default
-              uid: 12345678-1234-1234-1234-123456789012
-            spec:
-              image:
-                productVersion: 3.9.2
-              clusterConfig:
-                zookeeperConfigMapName: xyz
-              brokers:
-                roleGroups:
-                  default:
-                    replicas: 1
-            "#,
-        );
-        validated_cluster(&kafka)
-    }
-
     #[test]
     fn build_produces_expected_resource_names() {
-        let cluster = kraft_cluster();
+        let cluster = kraft_mode_cluster();
         let resources = build(&cluster).expect("build succeeds");
 
         // One StatefulSet per role group.
@@ -236,10 +225,12 @@ mod tests {
                 "simple-kafka-controller-default"
             ]
         );
-        // One rolegroup ConfigMap per role group.
+        // One rolegroup ConfigMap per role group, plus the discovery ConfigMap (named after the
+        // cluster), which is written even while no bootstrap Listener has an address yet.
         assert_eq!(
             sorted_names(&resources.config_maps),
             [
+                "simple-kafka",
                 "simple-kafka-broker-default",
                 "simple-kafka-controller-default"
             ]
@@ -275,11 +266,44 @@ mod tests {
         );
     }
 
+    /// `build()` threads the bootstrap Listeners (fetched in the dereference step) through to the
+    /// discovery ConfigMap: once one carries an ingress address, the `KAFKA` entry names it. The
+    /// other tests run without bootstrap Listeners, where the entry is empty.
+    #[test]
+    fn build_writes_listener_addresses_to_the_discovery_configmap() {
+        let mut cluster = kraft_mode_cluster();
+        let port_name = cluster
+            .cluster_config
+            .kafka_security
+            .client_port_name()
+            .to_owned();
+        cluster.bootstrap_listeners = vec![bootstrap_listener(Some(vec![ingress_address(
+            "host1", &port_name, 9093,
+        )]))];
+
+        let resources = build(&cluster).expect("build succeeds");
+
+        let discovery_cm = resources
+            .config_maps
+            .iter()
+            .find(|config_map| config_map.metadata.name.as_deref() == Some("simple-kafka"))
+            .expect("the discovery ConfigMap should be built");
+        assert_eq!(
+            discovery_cm
+                .data
+                .as_ref()
+                .expect("the discovery ConfigMap should carry data")
+                .get("KAFKA")
+                .map(String::as_str),
+            Some("host1:9093")
+        );
+    }
+
     /// ZooKeeper mode has no `controller` role, so `build()` emits no controller resources while
     /// still producing the broker's bootstrap Listener.
     #[test]
     fn build_zookeeper_mode_has_no_controller_resources() {
-        let cluster = zookeeper_cluster();
+        let cluster = zookeeper_mode_cluster();
         let resources = build(&cluster).expect("build succeeds");
 
         assert_eq!(
