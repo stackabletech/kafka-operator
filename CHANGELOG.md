@@ -16,6 +16,9 @@ All notable changes to this project will be documented in this file.
 - All product containers now run with `securityContext.runAsNonRoot` set to `true` to improve security ([#998]).
 - The reconciler now applies resources and derives the cluster status in discrete
   apply and update_status steps ([#1000]).
+- The controller role's PodDisruptionBudget `maxUnavailable` now scales with the number of
+  controller replicas (keeping a strict Raft quorum majority available) instead of being
+  hardcoded to `1` ([#1003]).
 
 ### Fixed
 
@@ -28,6 +31,7 @@ All notable changes to this project will be documented in this file.
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994
 [#998]: https://github.com/stackabletech/kafka-operator/pull/998
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
+[#1003]: https://github.com/stackabletech/kafka-operator/pull/1003
 
 ## [26.7.0] - 2026-07-21
 
