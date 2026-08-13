@@ -12,5 +12,5 @@ This is because we can not make any assumptions about topic replication factors.
 
 == KRaft controllers
 
-Only a single Broker is allowed to be offline at any given time, regardless of the number of replicas or roleGroups.
+Only a single Controller is allowed to be offline at any given time, regardless of the number of replicas or roleGroups.
 This is because they build a quorum for metadata.
