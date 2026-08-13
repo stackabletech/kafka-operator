@@ -6,5 +6,11 @@ You can configure the permitted Pod disruptions for Kafka nodes as described in 
 Unless you configure something else or disable the default PodDisruptionBudgets (PDBs), the operator writes the following PDBs:
 
 == Brokers
-Allow only a single Broker to be offline at any given time, regardless of the number of replicas or `roleGroups`.
+
+Only a single Broker is allowed to be offline at any given time, regardless of the number of replicas or roleGroups.
 This is because we can not make any assumptions about topic replication factors.
+
+== KRaft controllers
+
+Only a single Broker is allowed to be offline at any given time, regardless of the number of replicas or roleGroups.
+This is because they build a quorum for metadata.
