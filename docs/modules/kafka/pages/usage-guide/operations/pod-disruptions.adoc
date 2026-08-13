@@ -12,3 +12,4 @@ This is because we can not make any assumptions about topic replication factors.
 == Kraft Controllers
 The number of controllers that can be offline depends on the total number of replicas.
 The operator computes the `maxUnavailable` value using this formula `max(1, (replicas-1)/2)`.
+For more information, see the https://kafka.apache.org/42/operations/kraft/#deploying-considerations[Deployment Considerations] in the official Apache Kafka documentation.
