@@ -908,6 +908,7 @@ fn add_vector_container(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::controller::test_support::{minimal_kafka, validated_cluster};
 
     fn kraft_mode_cluster() -> crate::controller::ValidatedCluster {
@@ -970,6 +971,150 @@ mod tests {
                 .expect("the StatefulSet has a spec")
                 .pod_management_policy,
             Some("Parallel".to_string())
+        );
+    }
+
+    fn controller_containers(
+        cluster: &crate::controller::ValidatedCluster,
+    ) -> Vec<stackable_operator::k8s_openapi::api::core::v1::Container> {
+        let resources = crate::controller::build::build(cluster).expect("build succeeds");
+        let sts = resources
+            .stateful_sets
+            .into_iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
+            .expect("the controller StatefulSet is built");
+        sts.spec
+            .expect("the StatefulSet has a spec")
+            .template
+            .spec
+            .expect("the pod template has a spec")
+            .containers
+    }
+
+    #[test]
+    fn controller_pods_get_a_quorum_manager_sidecar_on_supported_versions() {
+        let cluster = kraft_mode_cluster();
+        let containers = controller_containers(&cluster);
+
+        assert!(
+            containers
+                .iter()
+                .any(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME),
+            "expected a quorum-manager sidecar, got containers: {:?}",
+            containers.iter().map(|c| &c.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn quorum_manager_sidecar_targets_bootstrap_servers_in_its_command() {
+        let cluster = kraft_mode_cluster();
+        let containers = controller_containers(&cluster);
+        let sidecar = containers
+            .iter()
+            .find(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME)
+            .expect("the quorum-manager sidecar is built");
+
+        let command = sidecar
+            .command
+            .as_ref()
+            .expect("the sidecar has a command")
+            .join(" ");
+        assert!(command.contains("add-controller"));
+
+        let pre_stop_command = sidecar
+            .lifecycle
+            .as_ref()
+            .and_then(|l| l.pre_stop.as_ref())
+            .and_then(|h| h.exec.as_ref())
+            .and_then(|e| e.command.as_ref())
+            .expect("the sidecar has a preStop exec hook")
+            .join(" ");
+        assert!(pre_stop_command.contains("remove-controller"));
+        assert!(pre_stop_command.trim_end().ends_with("exit 0"));
+    }
+
+    #[test]
+    fn controller_pods_get_no_quorum_manager_sidecar_on_kafka_3_7() {
+        let kafka = crate::controller::test_support::minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.7.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+        let cluster = crate::controller::test_support::validated_cluster(&kafka);
+        let containers = controller_containers(&cluster);
+
+        assert!(
+            !containers
+                .iter()
+                .any(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME)
+        );
+    }
+
+    #[test]
+    fn controller_pods_get_no_quorum_manager_sidecar_when_kerberos_is_enabled() {
+        // This is a Global Constraint (see the plan header): the sidecar's admin-client
+        // properties file only covers the TLS/SSL case, so it must never be added when
+        // Kerberos is enabled, even on an otherwise-supported Kafka version.
+        //
+        // Rather than building a full CRD-level Kerberos fixture (which needs a resolved
+        // AuthenticationClass threaded through `DereferencedObjects`, more than this test
+        // needs), call `build_quorum_manager_container` directly — it already takes
+        // `&ValidatedKafkaSecurity` as a parameter, so a fixture at that level is enough.
+        // Reuse the `kerberos()` fixture from `security.rs`'s existing test module (see
+        // Task 2).
+        let cluster = kraft_mode_cluster();
+        let kerberos_security = crate::controller::build::security::tests::kerberos();
+
+        let result = build_quorum_manager_container(
+            &cluster.image,
+            &kerberos_security,
+            "controller-0:9093",
+            "0",
+        )
+        .expect("build_quorum_manager_container does not error for a kerberos security value");
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn broker_pods_never_get_a_quorum_manager_sidecar() {
+        let cluster = kraft_mode_cluster();
+        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+        let sts = resources
+            .stateful_sets
+            .into_iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-broker-default"))
+            .expect("the broker StatefulSet is built");
+        let containers = sts
+            .spec
+            .expect("the StatefulSet has a spec")
+            .template
+            .spec
+            .expect("the pod template has a spec")
+            .containers;
+
+        assert!(
+            !containers
+                .iter()
+                .any(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME)
         );
     }
 }

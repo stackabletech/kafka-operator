@@ -682,7 +682,7 @@ fn kcat_client_sasl_ssl(cert_directory: &str, service_name: &str) -> Vec<String>
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::{collections::BTreeMap, str::FromStr};
 
     use stackable_operator::{
@@ -755,7 +755,7 @@ mod tests {
     }
 
     /// Kerberos, which also requires server and internal TLS.
-    fn kerberos() -> ValidatedKafkaSecurity {
+    pub(crate) fn kerberos() -> ValidatedKafkaSecurity {
         ValidatedKafkaSecurity::new(
             ResolvedAuthenticationClasses::new(vec![kerberos_auth_class()]),
             SecretClassName::from_str("tls").expect("tls secret class name is valid"),
