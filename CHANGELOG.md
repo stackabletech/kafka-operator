@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- KRaft controller replicas can now be scaled up and down on a running cluster: a new
+  `quorum-manager` sidecar container on each controller pod admits itself into the KRaft
+  voter set on startup and removes itself before termination ([#NNNN]).
+
 ### Changed
 
 - Internal operator refactoring: introduce a build() step in the reconciler that
@@ -28,6 +34,7 @@ All notable changes to this project will be documented in this file.
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994
 [#998]: https://github.com/stackabletech/kafka-operator/pull/998
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
+[#NNNN]: https://github.com/stackabletech/kafka-operator/pull/NNNN
 
 ## [26.7.0] - 2026-07-21
 
