@@ -20,7 +20,7 @@ use stackable_operator::{
             apps::v1::{StatefulSet, StatefulSetSpec, StatefulSetUpdateStrategy},
             core::v1::{
                 ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource, ExecAction,
-                ObjectFieldSelector, PodSpec, Probe, TCPSocketAction, Volume,
+                LifecycleHandler, ObjectFieldSelector, PodSpec, Probe, TCPSocketAction, Volume,
             },
         },
         apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
@@ -49,11 +49,15 @@ use crate::{
         build::{
             command::{
                 broker_kafka_container_commands, controller_kafka_container_command,
-                kafka_log_opts, kafka_log_opts_env_var,
+                kafka_log_opts, kafka_log_opts_env_var, quorum_manager_container_command,
+                quorum_manager_pre_stop_command,
             },
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::add_kerberos_pod_config,
-            properties::{kraft_controllers, product_logging::MAX_KAFKA_LOG_FILES_SIZE},
+            properties::{
+                kraft_controllers, product_logging::MAX_KAFKA_LOG_FILES_SIZE,
+                supports_dynamic_quorum,
+            },
             security::{
                 add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
                 kcat_prober_container_commands,
@@ -274,6 +278,8 @@ pub fn build_broker_rolegroup_statefulset(
             &resolved_product_image.product_version,
         )]);
 
+    let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
+
     add_common_kafka_env(
         &mut cb_kafka,
         merged_config,
@@ -281,8 +287,7 @@ pub fn build_broker_rolegroup_statefulset(
             .product_specific_common_config
             .jvm_argument_overrides,
         resolved_product_image,
-        kafka_role,
-        role_group_name,
+        &node_id_offset,
     )?;
 
     cb_kafka
@@ -492,10 +497,9 @@ pub fn build_controller_rolegroup_statefulset(
         .pod_descriptors(Some(kafka_role))
         .context(BuildPodDescriptorsSnafu)?;
     // Comma-joined `host:port` list of all KRaft controller voters, consumed by the
-    // controller sidecar container (added in a later task) so it can talk to the
-    // quorum via `kafka-metadata-quorum.sh`.
-    // TODO(task-4): drop the `_` prefix once the sidecar container consumes this.
-    let _quorum_bootstrap_servers = kraft_controllers(&controller_pod_descriptors).join(",");
+    // `quorum-manager` sidecar container so it can talk to the quorum via
+    // `kafka-metadata-quorum.sh`.
+    let quorum_bootstrap_servers = kraft_controllers(&controller_pod_descriptors).join(",");
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -511,6 +515,8 @@ pub fn build_controller_rolegroup_statefulset(
             &resolved_product_image.product_version,
         )]);
 
+    let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
+
     add_common_kafka_env(
         &mut cb_kafka,
         merged_config,
@@ -518,8 +524,7 @@ pub fn build_controller_rolegroup_statefulset(
             .product_specific_common_config
             .jvm_argument_overrides,
         resolved_product_image,
-        kafka_role,
-        role_group_name,
+        &node_id_offset,
     )?;
 
     cb_kafka
@@ -586,6 +591,15 @@ pub fn build_controller_rolegroup_statefulset(
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(kafka_container)
         .affinity(&merged_config.affinity);
+
+    if let Some(quorum_manager_container) = build_quorum_manager_container(
+        resolved_product_image,
+        kafka_security,
+        &quorum_bootstrap_servers,
+        &node_id_offset,
+    )? {
+        pod_builder.add_container(quorum_manager_container);
+    }
 
     add_common_pod_config(
         &mut pod_builder,
@@ -676,13 +690,17 @@ fn container_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<ContainerPort
 
 /// Adds the env vars that the broker and controller Kafka containers share: the JVM
 /// arguments, log options, the `containerdebug` log directory and the node-id offset.
+///
+/// `node_id_offset` is the pre-computed value of [`node_id_hash32_offset`] for this role
+/// group, shared with the controller's `quorum-manager` sidecar (see
+/// [`build_quorum_manager_container`]), which also needs `NODE_ID_OFFSET` in its `preStop`
+/// script.
 fn add_common_kafka_env(
     cb_kafka: &mut ContainerBuilder,
     merged_config: &AnyConfig,
     jvm_argument_overrides: &JvmArgumentOverrides,
     resolved_product_image: &ResolvedProductImage,
-    kafka_role: &KafkaRole,
-    role_group_name: &RoleGroupName,
+    node_id_offset: &str,
 ) -> Result<(), Error> {
     cb_kafka
         .add_env_var(
@@ -710,10 +728,7 @@ fn add_common_kafka_env(
             "CONTAINERDEBUG_LOG_DIRECTORY",
             format!("{STACKABLE_LOG_DIR}/containerdebug"),
         )
-        .add_env_var(
-            KAFKA_NODE_ID_OFFSET,
-            node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string(),
-        );
+        .add_env_var(KAFKA_NODE_ID_OFFSET, node_id_offset);
     Ok(())
 }
 
@@ -786,6 +801,74 @@ fn add_common_pod_config(
 fn container_name(container: impl std::fmt::Display) -> ContainerName {
     ContainerName::from_str(&container.to_string())
         .expect("a container enum variant is always a valid ContainerName")
+}
+
+/// Builds the `quorum-manager` sidecar for a controller pod. Returns `None` when this
+/// Kafka version doesn't support KIP-853 dynamic quorum tooling, or when Kerberos is
+/// enabled (the sidecar's admin-client properties file only covers the TLS/SSL case).
+fn build_quorum_manager_container(
+    resolved_product_image: &ResolvedProductImage,
+    kafka_security: &ValidatedKafkaSecurity,
+    quorum_bootstrap_servers: &str,
+    node_id_offset: &str,
+) -> Result<Option<stackable_operator::k8s_openapi::api::core::v1::Container>, Error> {
+    if !supports_dynamic_quorum(&resolved_product_image.product_version)
+        || kafka_security.has_kerberos_enabled()
+    {
+        return Ok(None);
+    }
+
+    let container_name = "quorum-manager".to_string();
+    let mut cb = ContainerBuilder::new(&container_name).context(InvalidContainerNameSnafu {
+        name: container_name.clone(),
+    })?;
+
+    cb.image_from_product_image(resolved_product_image)
+        .command(vec![
+            "/bin/bash".to_string(),
+            "-c".to_string(),
+            quorum_manager_container_command(quorum_bootstrap_servers),
+        ])
+        .add_env_vars(vec![
+            EnvVar {
+                name: "POD_NAME".to_string(),
+                value_from: Some(EnvVarSource {
+                    field_ref: Some(ObjectFieldSelector {
+                        api_version: Some("v1".to_string()),
+                        field_path: "metadata.name".to_string(),
+                    }),
+                    ..EnvVarSource::default()
+                }),
+                ..EnvVar::default()
+            },
+            EnvVar {
+                name: KAFKA_NODE_ID_OFFSET.to_string(),
+                value: Some(node_id_offset.to_string()),
+                ..EnvVar::default()
+            },
+        ])
+        .resources(
+            ResourceRequirementsBuilder::new()
+                .with_cpu_request("100m")
+                .with_cpu_limit("200m")
+                .with_memory_request("128Mi")
+                .with_memory_limit("128Mi")
+                .build(),
+        )
+        .add_volume_mount(STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
+        .context(AddVolumeMountSnafu)?
+        .lifecycle_pre_stop(LifecycleHandler {
+            exec: Some(ExecAction {
+                command: Some(vec![
+                    "/bin/bash".to_string(),
+                    "-c".to_string(),
+                    quorum_manager_pre_stop_command(quorum_bootstrap_servers),
+                ]),
+            }),
+            ..LifecycleHandler::default()
+        });
+
+    Ok(Some(cb.build()))
 }
 
 fn add_vector_container(

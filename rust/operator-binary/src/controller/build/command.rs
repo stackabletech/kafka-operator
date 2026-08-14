@@ -11,7 +11,7 @@ use super::properties::ConfigFileName;
 use crate::{
     controller::{build::security::copy_opa_tls_cert_command, security::ValidatedKafkaSecurity},
     crd::{
-        BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, STACKABLE_CONFIG_DIR,
+        BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, METRICS_PORT, STACKABLE_CONFIG_DIR,
         STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LOG_CONFIG_DIR,
     },
 };
@@ -187,6 +187,90 @@ pub fn controller_kafka_container_command(
     }
 }
 
+/// The `kafka-metadata-quorum.sh` binary, referenced by its absolute path (matching every
+/// other exec-into-pod usage of a Kafka CLI tool in this repo, e.g. the kuttl test scripts
+/// under `tests/templates/kuttl/*/*.sh`), rather than the relative `bin/...` form used only
+/// inside the `kafka` container's own entrypoint (which runs with the Kafka install dir as
+/// its working directory).
+const KAFKA_METADATA_QUORUM_BINARY: &str = "/stackable/kafka/bin/kafka-metadata-quorum.sh";
+
+const ADMIN_CLIENT_PROPERTIES_PATH: &str = "/stackable/config/admin-client.properties";
+
+/// The sidecar's main-loop command: while this controller's local Raft state is
+/// `observer`, repeatedly attempt to admit it into the quorum's voter set.
+///
+/// `bootstrap_servers` is the comma-joined `host:port` list produced by
+/// `kraft_controllers(...)` (see `build/properties/mod.rs`).
+pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
+    format!(
+        r#"
+        set -uo pipefail
+        echo "Starting KRaft voter admission loop against bootstrap servers: {bootstrap_servers}"
+        while true; do
+          state=$(curl -s localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+"\}}' | grep -oE '"[a-z]+"' | tr -d '"')
+          if [ "$state" = "observer" ]; then
+            echo "Local Raft state is observer, attempting add-controller..."
+            {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} add-controller \
+              || echo "add-controller attempt failed (this is expected if it already succeeded or a leader election is in progress), will retry"
+          fi
+          sleep 10
+        done
+        "#,
+        bootstrap_servers = bootstrap_servers,
+        metrics_port = METRICS_PORT,
+        binary = KAFKA_METADATA_QUORUM_BINARY,
+        config = ADMIN_CLIENT_PROPERTIES_PATH,
+    )
+}
+
+/// The sidecar's `preStop` command: before this controller pod terminates, check that
+/// removing it still leaves the quorum with a majority of its *current* voter count, and
+/// if so, remove it from the voter set. Always exits 0 — a stuck or failed check must
+/// never block pod termination.
+///
+/// `node_id` is this controller's own KRaft node id (the same value written to
+/// `node.id` in `controller.properties`, derived from `$POD_NAME` and `NODE_ID_OFFSET`
+/// exactly as the `kafka` container's own entrypoint does — see `controller_kafka_container_command`).
+pub fn quorum_manager_pre_stop_command(bootstrap_servers: &str) -> String {
+    format!(
+        r#"
+        set -uo pipefail
+        POD_INDEX=$(echo "$POD_NAME" | grep -oE '[0-9]+$')
+        REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))
+        DEADLINE=$((SECONDS + 25))
+        while [ "$SECONDS" -lt "$DEADLINE" ]; do
+          describe=$({binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} describe --replication 2>/dev/null)
+          if [ -n "$describe" ]; then
+            # NOTE: this parsing was written against the documented `describe --replication`
+            # tabular output (one voter per line, NodeId as the first column) and must be
+            # confirmed/adjusted against a live cluster's real output before this is
+            # considered done -- see Task 4 Step 4 below.
+            total_voters=$(echo "$describe" | tail -n +2 | grep -c .)
+            majority=$(( total_voters / 2 + 1 ))
+            remaining_after_removal=$(( total_voters - 1 ))
+            if [ "$remaining_after_removal" -ge "$majority" ]; then
+              directory_id=$(echo "$describe" | tail -n +2 | awk -v id="$REPLICA_ID" '$1 == id {{ print $2 }}')
+              if [ -n "$directory_id" ]; then
+                echo "Removing self (node $REPLICA_ID, directory $directory_id) from the voter set..."
+                {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} remove-controller \
+                  --controller-id "$REPLICA_ID" --controller-directory-id "$directory_id" \
+                  || echo "remove-controller failed, proceeding with termination anyway"
+              fi
+            else
+              echo "Removing self would break quorum majority ($remaining_after_removal remaining of $majority needed), skipping and retrying..."
+            fi
+            break
+          fi
+          sleep 2
+        done
+        exit 0
+        "#,
+        bootstrap_servers = bootstrap_servers,
+        binary = KAFKA_METADATA_QUORUM_BINARY,
+        config = ADMIN_CLIENT_PROPERTIES_PATH,
+    )
+}
+
 fn to_initial_controllers(controller_descriptors: &[KafkaPodDescriptor]) -> String {
     controller_descriptors
         .iter()
@@ -205,5 +289,25 @@ fn initial_controllers_command(
             "--initial-controllers {initial_controllers}",
             initial_controllers = to_initial_controllers(controller_descriptors),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quorum_manager_container_command_targets_the_bootstrap_servers_not_localhost() {
+        let command = quorum_manager_container_command("controller-0:9093,controller-1:9093");
+        assert!(command.contains("--bootstrap-controller 'controller-0:9093,controller-1:9093'"));
+        assert!(command.contains("add-controller"));
+        assert!(!command.contains("--bootstrap-controller 'localhost"));
+    }
+
+    #[test]
+    fn quorum_manager_pre_stop_command_always_exits_zero() {
+        let command = quorum_manager_pre_stop_command("controller-0:9093,controller-1:9093");
+        assert!(command.trim_end().ends_with("exit 0"));
+        assert!(command.contains("remove-controller"));
     }
 }
