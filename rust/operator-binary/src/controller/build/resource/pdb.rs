@@ -40,6 +40,8 @@ fn max_unavailable_brokers() -> u16 {
 }
 
 fn max_unavailable_controllers() -> u16 {
-    // TODO: what do we want here?
+    // Controllers build a quorum for metadata stuff, so fall below the "Multiple replicas to
+    // increase availability" category. We basically treat them in the same way we treat ZooKeeper
+    // nodes.
     1
 }
