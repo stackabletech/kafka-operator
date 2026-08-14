@@ -12,11 +12,11 @@ on:
     branches:
       - main
     tags:
-      - '[0-9][0-9].[0-9]+.[0-9]+-rc[0-9]+'
-      - '[0-9][0-9].[0-9]+.[0-9]+'
+      - "[0-9][0-9].[0-9]+.[0-9]+-rc[0-9]+"
+      - "[0-9][0-9].[0-9]+.[0-9]+"
   schedule:
     # Run every Saturday morning: https://crontab.guru/#15_3_*_*_6
-    - cron: '15 3 * * 6'
+    - cron: "15 3 * * 6"
   pull_request:
     # Do not limit by paths. This workflow contains a required job.
   merge_group:
