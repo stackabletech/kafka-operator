@@ -6,11 +6,15 @@ timeout: 600
 commands:
   - script: kubectl -n $NAMESPACE wait --for=condition=available kafkaclusters.kafka.stackable.tech/test-kafka --timeout 301s
   - script: |
+      # :9093 is the TLS client port of this test fixture's default security config, not a
+      # fixed Kafka port - if the fixture's TLS/port config changes, update this too.
       kubectl exec -n $NAMESPACE test-kafka-controller-default-0 -c kafka -- \
         /stackable/kafka/bin/kafka-metadata-quorum.sh \
         --bootstrap-controller test-kafka-controller-default-0.test-kafka-controller-default-headless.$NAMESPACE.svc.cluster.local:9093 \
         --command-config /stackable/config/admin-client.properties \
         describe --replication | tail -n +2 | awk '$NF == "Leader" || $NF == "Follower"' | wc -l | grep -q '^5$'
+    # `timeout` is known-inert here: kuttl's TestAssert `commands` don't read this field (only
+    # TestStep commands do); left in place only as documentation of the intended budget.
     timeout: 30
 ---
 apiVersion: apps/v1

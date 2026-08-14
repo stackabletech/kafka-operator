@@ -37,6 +37,22 @@ pub fn kafka_log_opts_env_var() -> String {
     "KAFKA_LOG4J_OPTS".to_string()
 }
 
+/// Shell snippet setting `$POD_INDEX` to this pod's ordinal, parsed from the trailing digits
+/// of `$POD_NAME` (e.g. `2` for `..-controller-default-2`).
+///
+/// Paired with [`EXPORT_REPLICA_ID`] (see there for why the split): used, in some combination,
+/// by four call sites that used to each duplicate this derivation with slightly drifted
+/// whitespace — the broker and controller `kafka` containers' own entrypoints, and the
+/// `quorum-manager` sidecar's main loop and `preStop` hook.
+const DERIVE_POD_INDEX: &str = r#"POD_INDEX=$(echo "$POD_NAME" | grep -oE '[0-9]+$')"#;
+
+/// Shell snippet exporting `$REPLICA_ID` (this container's KRaft node id) from `$POD_INDEX`
+/// (see [`DERIVE_POD_INDEX`], which must run first) and `$NODE_ID_OFFSET`. Exported (rather
+/// than a plain assignment) because every caller either runs `config-utils template` or the
+/// `quorum-manager` sidecar's `kafka-metadata-quorum.sh`/`curl` calls as a *subprocess*, which
+/// need `REPLICA_ID` in their environment, not just this shell's.
+const EXPORT_REPLICA_ID: &str = "export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))";
+
 /// Returns the commands to start the main Kafka container
 pub fn broker_kafka_container_commands(
     kraft_mode: bool,
@@ -75,8 +91,8 @@ fn broker_start_command(
     product_version: &str,
 ) -> String {
     let common_command = formatdoc! {"
-            export POD_INDEX=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
-            export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
+            {derive_pod_index}
+            {export_replica_id}
 
             if [ -f \"{broker_id_pod_map_dir}/$POD_NAME\" ]; then
                 REPLICA_ID=$(cat \"{broker_id_pod_map_dir}/$POD_NAME\")
@@ -88,6 +104,8 @@ fn broker_start_command(
             cp {config_dir}/{jaas_file} /tmp/{jaas_file}
             config-utils template /tmp/{jaas_file}
         ",
+    derive_pod_index = DERIVE_POD_INDEX,
+    export_replica_id = EXPORT_REPLICA_ID,
     broker_id_pod_map_dir = BROKER_ID_POD_MAP_DIR,
     config_dir = STACKABLE_CONFIG_DIR,
     properties_file = ConfigFileName::BrokerProperties,
@@ -166,8 +184,8 @@ pub fn controller_kafka_container_command(
         prepare_signal_handlers
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
 
-        POD_INDEX=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
-        export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
+        {derive_pod_index}
+        {export_replica_id}
 
         cp {config_dir}/{properties_file} /tmp/{properties_file}
 
@@ -180,6 +198,8 @@ pub fn controller_kafka_container_command(
         {create_vector_shutdown_file_command}
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+        derive_pod_index = DERIVE_POD_INDEX,
+        export_replica_id = EXPORT_REPLICA_ID,
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = ConfigFileName::ControllerProperties,
         initial_controller_command = initial_controllers_command(&controller_descriptors, product_version),
@@ -209,8 +229,15 @@ const ADMIN_CLIENT_PROPERTIES_PATH: &str = "/stackable/config/admin-client.prope
 /// AdminClient with no TLS config and unable to reach the (TLS-only) bootstrap controller.
 /// Concatenating both files (also confirmed live) gives `add-controller` everything it reads:
 /// the bare `ssl.*`/`security.protocol` keys for its own connection, plus `node.id` and the
-/// listener keys for the registration payload. There is no key overlap between the two files,
-/// so simple concatenation (later values would win) is safe.
+/// listener keys for the registration payload.
+///
+/// **Order matters.** There is no key overlap between the two files today, but
+/// `controller.properties` accepts unconditional `configOverrides` merged into it (see
+/// `controller_properties::build`), so a user override there could add a colliding key. Java
+/// properties parsing lets a later occurrence of the same key win, so `controller.properties`
+/// is concatenated *first* and [`ADMIN_CLIENT_PROPERTIES_PATH`] *last* — that way the client
+/// TLS config `add-controller` connects with always wins by construction, rather than
+/// depending on there being no collision today.
 const ADD_CONTROLLER_PROPERTIES_PATH: &str = "/tmp/add-controller.properties";
 
 /// Wall-clock bound (seconds) applied to every individual `kafka-metadata-quorum.sh`
@@ -231,7 +258,7 @@ const CLI_CALL_TIMEOUT_SECONDS: u32 = 15;
 /// kernel suppresses the default action of unhandled signals for PID 1, so without this
 /// trap the loop below would never notice `SIGTERM` and would run until Kubernetes gives up
 /// waiting and sends `SIGKILL` after the full `terminationGracePeriodSeconds` (confirmed
-/// live: with no trap, this container kept looping — and its pod kept report as
+/// live: with no trap, this container kept looping — and its pod kept reporting as
 /// `Terminating` — long after the `kafka` container in the same pod had shut down
 /// gracefully). The `sleep 10 &`/`wait $!` pair (rather than a plain `sleep 10`) lets the
 /// trap fire immediately: bash's `wait` builtin is interrupted as soon as a trapped signal
@@ -239,23 +266,39 @@ const CLI_CALL_TIMEOUT_SECONDS: u32 = 15;
 ///
 /// Renders [`ADD_CONTROLLER_PROPERTIES_PATH`] once at startup (this controller's identity
 /// and listener address don't change for the container's lifetime) by reusing the same
-/// `$POD_NAME`/`NODE_ID_OFFSET` → `REPLICA_ID` derivation, and the same
-/// `config-utils template` render step, as the `kafka` container's own entrypoint (see
-/// [`controller_kafka_container_command`]) — see [`ADD_CONTROLLER_PROPERTIES_PATH`] for why
-/// `add-controller` needs this merged file rather than the plain admin-client config.
+/// `$POD_NAME`/`NODE_ID_OFFSET` → `REPLICA_ID` derivation ([`DERIVE_POD_INDEX`]/
+/// [`EXPORT_REPLICA_ID`]), and the same `config-utils template` render step, as the `kafka`
+/// container's own entrypoint (see [`controller_kafka_container_command`]) — see
+/// [`ADD_CONTROLLER_PROPERTIES_PATH`] for why `add-controller` needs this merged file rather
+/// than the plain admin-client config, and for why the concatenation order matters.
+///
+/// The render/merge preamble runs under a `set -e` scoped to just that preamble (see the
+/// inline comment) so a failure there crash-loops the container loudly, rather than silently
+/// starting the retry loop below with a missing or stale config. The loop itself deliberately
+/// does *not* run under `set -e`: `add-controller`/`curl` failures there are expected
+/// (e.g. a leader election in progress) and are handled explicitly.
 pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
     format!(
         r#"
         set -uo pipefail
         trap 'exit 0' TERM
-        POD_INDEX=$(echo "$POD_NAME" | grep -oE '[0-9]+$')
-        export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))
+        {derive_pod_index}
+        [ -n "$POD_INDEX" ] || exit 0
+        {export_replica_id}
+
+        # Scoped to just this preamble: a failed render/merge step must crash-loop this
+        # container loudly rather than silently starting the loop below with a missing or
+        # stale config (see the function doc comment). The loop below intentionally does not
+        # run under `set -e`.
+        set -e
         cp {config_dir}/{controller_properties_file} /tmp/{controller_properties_file}
         config-utils template /tmp/{controller_properties_file}
-        cat {admin_client_config} /tmp/{controller_properties_file} > {add_controller_config}
+        cat /tmp/{controller_properties_file} {admin_client_config} > {add_controller_config}
+        set +e
+
         echo "Starting KRaft voter admission loop against bootstrap servers: {bootstrap_servers}"
         while true; do
-          state=$(curl -s localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+"\}}' | grep -oE '"[a-z]+"' | tr -d '"')
+          state=$(curl -s --max-time 5 --connect-timeout 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+"\}}' | grep -oE '"[a-z]+"' | tr -d '"')
           if [ "$state" = "observer" ]; then
             echo "Local Raft state is observer, attempting add-controller..."
             timeout {cli_timeout} {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {add_controller_config} add-controller \
@@ -272,6 +315,8 @@ pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
         bootstrap_servers = bootstrap_servers,
         metrics_port = METRICS_PORT,
         binary = KAFKA_METADATA_QUORUM_BINARY,
+        derive_pod_index = DERIVE_POD_INDEX,
+        export_replica_id = EXPORT_REPLICA_ID,
         config_dir = STACKABLE_CONFIG_DIR,
         controller_properties_file = ConfigFileName::ControllerProperties,
         admin_client_config = ADMIN_CLIENT_PROPERTIES_PATH,
@@ -286,8 +331,8 @@ pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
 /// never block pod termination.
 ///
 /// This controller's own KRaft node id is derived at runtime from `$POD_NAME` and
-/// `$NODE_ID_OFFSET`, exactly as the `kafka` container's own entrypoint does — see
-/// `controller_kafka_container_command`.
+/// `$NODE_ID_OFFSET` ([`DERIVE_POD_INDEX`]/[`EXPORT_REPLICA_ID`]), exactly as the `kafka`
+/// container's own entrypoint does — see `controller_kafka_container_command`.
 ///
 /// `describe --replication`'s column layout (`NodeId` as column 1, `DirectoryId` as column
 /// 2, `Status` as the last column, with `Status` one of `Leader`/`Follower`/`Observer`) is
@@ -302,9 +347,9 @@ pub fn quorum_manager_pre_stop_command(bootstrap_servers: &str) -> String {
     format!(
         r#"
         set -uo pipefail
-        POD_INDEX=$(echo "$POD_NAME" | grep -oE '[0-9]+$')
+        {derive_pod_index}
         [ -n "$POD_INDEX" ] || exit 0
-        REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))
+        {export_replica_id}
         DEADLINE=$((SECONDS + 25))
         while [ "$SECONDS" -lt "$DEADLINE" ]; do
           describe=$(timeout {cli_timeout} {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} describe --replication 2>/dev/null)
@@ -340,6 +385,8 @@ pub fn quorum_manager_pre_stop_command(bootstrap_servers: &str) -> String {
         binary = KAFKA_METADATA_QUORUM_BINARY,
         config = ADMIN_CLIENT_PROPERTIES_PATH,
         cli_timeout = CLI_CALL_TIMEOUT_SECONDS,
+        derive_pod_index = DERIVE_POD_INDEX,
+        export_replica_id = EXPORT_REPLICA_ID,
     )
 }
 
@@ -376,43 +423,50 @@ mod tests {
         assert!(!command.contains("--bootstrap-controller 'localhost"));
     }
 
-    /// Confirmed on a live cluster: without a `TERM` trap, this loop runs as the
-    /// container's PID 1, whose unhandled signals the kernel suppresses by default — so the
-    /// `kafka` container in the same pod shut down promptly on `SIGTERM` while this sidecar
-    /// kept looping (curl connection-refused every ~15s) until Kubernetes gave up and sent
-    /// `SIGKILL` after the full `terminationGracePeriodSeconds` (1800s), holding the whole
-    /// pod in `Terminating` well past kuttl's step timeout. The trap plus `sleep 10 &` /
-    /// `wait $!` (rather than a foreground `sleep 10`) let bash notice and act on `SIGTERM`
-    /// immediately instead of only after the next blocking command returns.
+    /// Checks only that the trap and the interruptible-sleep pair are present in the
+    /// generated command *string* — it does not execute the script, so it cannot verify the
+    /// trap actually fires promptly under a real `SIGTERM`. That was confirmed separately on
+    /// a live cluster: without a `TERM` trap, this loop runs as the container's PID 1, whose
+    /// unhandled signals the kernel suppresses by default — so the `kafka` container in the
+    /// same pod shut down promptly on `SIGTERM` while this sidecar kept looping (curl
+    /// connection-refused every ~15s) until Kubernetes gave up and sent `SIGKILL` after the
+    /// full `terminationGracePeriodSeconds` (1800s), holding the whole pod in `Terminating`
+    /// well past kuttl's step timeout. The trap plus `sleep 10 &` / `wait $!` (rather than a
+    /// foreground `sleep 10`) let bash notice and act on `SIGTERM` immediately instead of
+    /// only after the next blocking command returns.
     #[test]
-    fn quorum_manager_container_command_exits_promptly_on_term() {
+    fn quorum_manager_container_command_traps_term_and_sleeps_interruptibly() {
         let command = quorum_manager_container_command("controller-0:9093,controller-1:9093");
         assert!(command.contains("trap 'exit 0' TERM"));
         assert!(command.contains("sleep 10 &"));
         assert!(command.contains("wait $!"));
     }
 
-    /// Confirmed on a live cluster: `add-controller` reads `node.id` and its own
+    /// Checks only that the generated command *string* concatenates the two config files in
+    /// the order that makes `add-controller` self-register successfully — it does not
+    /// execute the script, so it cannot verify runtime behavior. That was confirmed
+    /// separately on a live cluster: `add-controller` reads `node.id` and its own
     /// `listeners`/`controller.listener.names` from the *same* `--command-config` file it
     /// connects with, to build the voter registration payload — pointed at the plain
     /// admin-client config (which has no `node.id`), every attempt failed with `node.id not
     /// found in configuration file`, so no controller was ever admitted as a voter. See
-    /// [`ADD_CONTROLLER_PROPERTIES_PATH`] for why the fix is a merged file rather than
-    /// switching to `controller.properties` outright (that file has no bare `ssl.*`/
-    /// `security.protocol`, so the AdminClient couldn't reach the TLS-only bootstrap
-    /// controller at all).
+    /// [`ADD_CONTROLLER_PROPERTIES_PATH`] for why the fix is a merged file (in this specific
+    /// order) rather than switching to `controller.properties` outright (that file has no
+    /// bare `ssl.*`/`security.protocol`, so the AdminClient couldn't reach the TLS-only
+    /// bootstrap controller at all).
     #[test]
-    fn quorum_manager_container_command_renders_a_command_config_add_controller_can_self_register_with()
+    fn quorum_manager_container_command_string_merges_controller_and_admin_client_properties_for_add_controller()
      {
         let command = quorum_manager_container_command("controller-0:9093,controller-1:9093");
         // Renders this controller's own `controller.properties` (carries `node.id` and
         // `listeners`) via the same REPLICA_ID derivation used by the `kafka` container.
         assert!(command.contains("export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))"));
         assert!(command.contains("config-utils template /tmp/controller.properties"));
-        // Merges it with the plain admin-client config (carries `security.protocol`/`ssl.*`)
-        // into the file actually passed to `add-controller`.
+        // Merges it with the plain admin-client config (carries `security.protocol`/`ssl.*`),
+        // controller.properties first so the client TLS config in admin-client.properties
+        // wins on any key collision (see `ADD_CONTROLLER_PROPERTIES_PATH`'s doc comment).
         assert!(command.contains(
-            "cat /stackable/config/admin-client.properties /tmp/controller.properties > /tmp/add-controller.properties"
+            "cat /tmp/controller.properties /stackable/config/admin-client.properties > /tmp/add-controller.properties"
         ));
         assert!(command.contains("--command-config /tmp/add-controller.properties add-controller"));
     }
@@ -422,5 +476,41 @@ mod tests {
         let command = quorum_manager_pre_stop_command("controller-0:9093,controller-1:9093");
         assert!(command.trim_end().ends_with("exit 0"));
         assert!(command.contains("remove-controller"));
+    }
+
+    /// The `preStop` hook already guarded its `REPLICA_ID` derivation against an empty
+    /// `POD_INDEX`; the main loop's derivation must have the same guard, or an empty
+    /// `POD_INDEX` would silently produce a wrong `node.id` instead of the sidecar noticing.
+    #[test]
+    fn quorum_manager_container_command_guards_against_empty_pod_index() {
+        let command = quorum_manager_container_command("controller-0:9093,controller-1:9093");
+        assert!(command.contains(r#"[ -n "$POD_INDEX" ] || exit 0"#));
+    }
+
+    /// The render/merge preamble (`cp`/`config-utils template`/`cat`) must fail loudly (this
+    /// container crash-loops) rather than silently starting the retry loop below with a
+    /// missing or stale config.
+    #[test]
+    fn quorum_manager_container_command_preamble_fails_loudly_on_error() {
+        let command = quorum_manager_container_command("controller-0:9093,controller-1:9093");
+        let preamble_end = command
+            .find("Starting KRaft voter admission loop")
+            .expect("the command has a preamble followed by the retry loop");
+        let preamble = &command[..preamble_end];
+        assert!(
+            preamble.contains("set -e"),
+            "expected the preamble to opt into `set -e` so a failed render/merge step crashes \
+             the container instead of silently continuing, preamble was: {preamble}"
+        );
+    }
+
+    /// The SIGTERM-handling fix's whole point is prompt shutdown, but an unresponsive (not
+    /// refused) connection to the metrics port would otherwise block the loop body
+    /// indefinitely — the trap can only fire between commands or during `wait` — reintroducing
+    /// the exact stall the fix targeted.
+    #[test]
+    fn quorum_manager_container_command_metrics_curl_has_timeouts() {
+        let command = quorum_manager_container_command("controller-0:9093,controller-1:9093");
+        assert!(command.contains("curl -s --max-time 5 --connect-timeout 2 localhost"));
     }
 }

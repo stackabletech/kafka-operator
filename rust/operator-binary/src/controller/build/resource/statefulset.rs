@@ -129,6 +129,39 @@ fn common_operator_env_vars(
     env
 }
 
+/// Environment variables the operator sets that are common to *every* container in a
+/// **controller** pod: today that's the `kafka` server process and, when present, the
+/// `quorum-manager` sidecar.
+///
+/// The sidecar renders the very same `controller.properties` template (see
+/// `properties/controller_properties.rs`) that the `kafka` container's own entrypoint does, to
+/// build its own `add-controller`/`remove-controller` config — so it needs every
+/// `${env:...}` placeholder that template references (`POD_NAME`, `KAFKA_CLIENT_PORT`,
+/// `NAMESPACE`, `ROLEGROUP_HEADLESS_SERVICE_NAME`, `CLUSTER_DOMAIN`). Building this set once
+/// and handing it to both containers means they can't silently drift apart over time (a real
+/// bug found in review: the sidecar was originally given only `POD_NAME`/`NODE_ID_OFFSET`,
+/// so its `controller.properties` render most likely produced a broken `listeners` value).
+///
+/// The caller merges the user's `envOverrides` on top (so a user override wins on a name
+/// collision) and, for the `kafka` container only, adds container-specific env vars such as
+/// `PRE_STOP_CONTROLLER_SLEEP_SECONDS`.
+fn controller_pod_shared_env_vars(
+    validated_cluster: &ValidatedCluster,
+    kafka_security: &ValidatedKafkaSecurity,
+    resource_names: &ResourceNames,
+) -> EnvVarSet {
+    common_operator_env_vars(validated_cluster, kafka_security)
+        .with_field_path(&env_var_name("NAMESPACE"), &FieldPathEnvVar::Namespace)
+        .with_value(
+            &env_var_name("ROLEGROUP_HEADLESS_SERVICE_NAME"),
+            resource_names.headless_service_name().to_string(),
+        )
+        .with_value(
+            &env_var_name("CLUSTER_DOMAIN"),
+            validated_cluster.cluster_domain.to_string(),
+        )
+}
+
 const POD_MANAGEMENT_POLICY_PARALLEL: &str = "Parallel";
 const POD_MANAGEMENT_POLICY_ORDERED_READY: &str = "OrderedReady";
 
@@ -479,19 +512,23 @@ pub fn build_controller_rolegroup_statefulset(
 
     let mut pod_builder = PodBuilder::new();
 
+    let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
+
     // Operator-set env vars first (common + controller-specific); the user's `envOverrides`
-    // are merged on top and win.
-    let env: Vec<EnvVar> = common_operator_env_vars(validated_cluster, kafka_security)
-        .with_field_path(&env_var_name("NAMESPACE"), &FieldPathEnvVar::Namespace)
-        .with_value(
-            &env_var_name("ROLEGROUP_HEADLESS_SERVICE_NAME"),
-            resource_names.headless_service_name().to_string(),
-        )
-        .with_value(
-            &env_var_name("CLUSTER_DOMAIN"),
-            validated_cluster.cluster_domain.to_string(),
-        )
+    // are merged on top and win. Shared between the `kafka` container and the
+    // `quorum-manager` sidecar (see `controller_pod_shared_env_vars`) so they can't drift
+    // apart; each container then layers its own additions on top.
+    let controller_shared_env =
+        controller_pod_shared_env_vars(validated_cluster, kafka_security, &resource_names);
+
+    let env: Vec<EnvVar> = controller_shared_env
+        .clone()
         .with_value(&env_var_name("PRE_STOP_CONTROLLER_SLEEP_SECONDS"), "10")
+        .merge(validated_rg.env_overrides.clone())
+        .into();
+
+    let quorum_manager_env: Vec<EnvVar> = controller_shared_env
+        .with_value(&env_var_name(KAFKA_NODE_ID_OFFSET), &node_id_offset)
         .merge(validated_rg.env_overrides.clone())
         .into();
 
@@ -516,8 +553,6 @@ pub fn build_controller_rolegroup_statefulset(
             controller_pod_descriptors,
             &resolved_product_image.product_version,
         )]);
-
-    let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
 
     add_common_kafka_env(
         &mut cb_kafka,
@@ -598,7 +633,7 @@ pub fn build_controller_rolegroup_statefulset(
         resolved_product_image,
         kafka_security,
         &quorum_bootstrap_servers,
-        &node_id_offset,
+        quorum_manager_env,
     )? {
         pod_builder.add_container(quorum_manager_container);
     }
@@ -811,11 +846,16 @@ const QUORUM_MANAGER_CONTAINER_NAME: &str = "quorum-manager";
 /// Builds the `quorum-manager` sidecar for a controller pod. Returns `None` when this
 /// Kafka version doesn't support KIP-853 dynamic quorum tooling, or when Kerberos is
 /// enabled (the sidecar's admin-client properties file only covers the TLS/SSL case).
+///
+/// `env` is expected to be [`controller_pod_shared_env_vars`] (plus `NODE_ID_OFFSET` and the
+/// rolegroup's `envOverrides`) — the same base the `kafka` container in this pod gets — so
+/// this sidecar's `controller.properties` render has every env var it references. See
+/// [`controller_pod_shared_env_vars`] for why that matters.
 fn build_quorum_manager_container(
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &ValidatedKafkaSecurity,
     quorum_bootstrap_servers: &str,
-    node_id_offset: &str,
+    env: Vec<EnvVar>,
 ) -> Result<Option<stackable_operator::k8s_openapi::api::core::v1::Container>, Error> {
     if !supports_dynamic_quorum(&resolved_product_image.product_version)
         || kafka_security.has_kerberos_enabled()
@@ -835,24 +875,7 @@ fn build_quorum_manager_container(
             "-c".to_string(),
             quorum_manager_container_command(quorum_bootstrap_servers),
         ])
-        .add_env_vars(vec![
-            EnvVar {
-                name: "POD_NAME".to_string(),
-                value_from: Some(EnvVarSource {
-                    field_ref: Some(ObjectFieldSelector {
-                        api_version: Some("v1".to_string()),
-                        field_path: "metadata.name".to_string(),
-                    }),
-                    ..EnvVarSource::default()
-                }),
-                ..EnvVar::default()
-            },
-            EnvVar {
-                name: KAFKA_NODE_ID_OFFSET.to_string(),
-                value: Some(node_id_offset.to_string()),
-                ..EnvVar::default()
-            },
-        ])
+        .add_env_vars(env)
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -1033,6 +1056,98 @@ mod tests {
         assert!(pre_stop_command.trim_end().ends_with("exit 0"));
     }
 
+    /// Every `${env:NAME}` placeholder found in a rendered Java properties (or similar)
+    /// string, in first-seen order, de-duplicated.
+    ///
+    /// The Java properties writer used to serialize the rendered `controller.properties`
+    /// escapes `:` as `\:` (`:` otherwise separates a properties key from its value), so a
+    /// placeholder actually appears as `${env\:NAME}` in the rendered ConfigMap content —
+    /// this accepts either form.
+    fn extract_env_placeholders(rendered: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut rest = rendered;
+        while let Some(start) = rest.find("${env") {
+            rest = &rest[start + "${env".len()..];
+            rest = rest.strip_prefix('\\').unwrap_or(rest);
+            let Some(rest_after_colon) = rest.strip_prefix(':') else {
+                continue;
+            };
+            rest = rest_after_colon;
+            let Some(end) = rest.find('}') else {
+                break;
+            };
+            let name = rest[..end].to_string();
+            if !result.contains(&name) {
+                result.push(name);
+            }
+            rest = &rest[end + 1..];
+        }
+        result
+    }
+
+    /// Regression test for a real bug found in review: `build_quorum_manager_container` once
+    /// set only `POD_NAME`/`NODE_ID_OFFSET` on the sidecar, while its own
+    /// `controller.properties` render (used to build the `add-controller` config, see
+    /// `command.rs`) needs `POD_NAME`, `ROLEGROUP_HEADLESS_SERVICE_NAME`, `NAMESPACE`,
+    /// `CLUSTER_DOMAIN` and `KAFKA_CLIENT_PORT` — so the rendered `listeners` value was most
+    /// likely broken (unresolved `${env:...}` placeholders). This asserts, from the actual
+    /// rendered `controller.properties` content, that every placeholder it references has a
+    /// matching env var on the sidecar container.
+    #[test]
+    fn quorum_manager_sidecar_has_every_env_var_controller_properties_rendering_references() {
+        let cluster = kraft_mode_cluster();
+        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+
+        let controller_properties = resources
+            .config_maps
+            .iter()
+            .find(|cm| cm.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
+            .expect("the controller rolegroup ConfigMap is built")
+            .data
+            .as_ref()
+            .expect("the ConfigMap carries data")
+            .get("controller.properties")
+            .expect("controller.properties is rendered into the ConfigMap")
+            .clone();
+
+        let placeholders = extract_env_placeholders(&controller_properties);
+        assert!(
+            placeholders.len() > 1,
+            "sanity check failed: expected multiple ${{env:...}} placeholders in the rendered \
+             controller.properties, got: {placeholders:?}"
+        );
+
+        let containers = controller_containers(&cluster);
+        let sidecar = containers
+            .iter()
+            .find(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME)
+            .expect("the quorum-manager sidecar is built");
+        let sidecar_env_names: Vec<&str> = sidecar
+            .env
+            .as_ref()
+            .expect("the sidecar has env vars")
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+
+        for placeholder in &placeholders {
+            // REPLICA_ID is not a Kubernetes-injected env var: both the `kafka` container's
+            // entrypoint and this sidecar's main-loop script derive and `export` it
+            // themselves from `$POD_NAME`/`$NODE_ID_OFFSET` before rendering the template
+            // (see `command.rs`), so it's expected to be absent from the container spec's
+            // `env` list.
+            if placeholder == "REPLICA_ID" {
+                continue;
+            }
+            assert!(
+                sidecar_env_names.contains(&placeholder.as_str()),
+                "quorum-manager sidecar is missing env var {placeholder:?}, which is \
+                 referenced by controller.properties's rendering; sidecar env vars: \
+                 {sidecar_env_names:?}"
+            );
+        }
+    }
+
     #[test]
     fn controller_pods_get_no_quorum_manager_sidecar_on_kafka_3_7() {
         let kafka = crate::controller::test_support::minimal_kafka(
@@ -1087,7 +1202,7 @@ mod tests {
             &cluster.image,
             &kerberos_security,
             "controller-0:9093",
-            "0",
+            Vec::new(),
         )
         .expect("build_quorum_manager_container does not error for a kerberos security value");
 
