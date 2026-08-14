@@ -53,7 +53,7 @@ use crate::{
             },
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::add_kerberos_pod_config,
-            properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
+            properties::{kraft_controllers, product_logging::MAX_KAFKA_LOG_FILES_SIZE},
             security::{
                 add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
                 kcat_prober_container_commands,
@@ -488,6 +488,15 @@ pub fn build_controller_rolegroup_statefulset(
         .merge(validated_rg.env_overrides.clone())
         .into();
 
+    let controller_pod_descriptors = validated_cluster
+        .pod_descriptors(Some(kafka_role))
+        .context(BuildPodDescriptorsSnafu)?;
+    // Comma-joined `host:port` list of all KRaft controller voters, consumed by the
+    // controller sidecar container (added in a later task) so it can talk to the
+    // quorum via `kafka-metadata-quorum.sh`.
+    // TODO(task-4): drop the `_` prefix once the sidecar container consumes this.
+    let _quorum_bootstrap_servers = kraft_controllers(&controller_pod_descriptors).join(",");
+
     cb_kafka
         .image_from_product_image(resolved_product_image)
         .command(vec![
@@ -498,9 +507,7 @@ pub fn build_controller_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![controller_kafka_container_command(
-            validated_cluster
-                .pod_descriptors(Some(kafka_role))
-                .context(BuildPodDescriptorsSnafu)?,
+            controller_pod_descriptors,
             &resolved_product_image.product_version,
         )]);
 

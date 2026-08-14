@@ -121,4 +121,47 @@ mod tests {
     fn dynamic_quorum_is_not_supported_on_3_7() {
         assert!(!supports_dynamic_quorum("3.7.2"));
     }
+
+    /// Builds a minimal [`KafkaPodDescriptor`] for the given role, replica and client port.
+    ///
+    /// `KafkaPodDescriptor`'s fields are `pub(crate)`, which is crate-wide (not
+    /// module-scoped) visibility in Rust, so this direct construction is legal from any
+    /// module inside `stackable-kafka-operator`, including this one.
+    fn pod_descriptor(role: KafkaRole, replica: u16, client_port: u16) -> KafkaPodDescriptor {
+        KafkaPodDescriptor {
+            namespace: "default".parse().expect("valid namespace name"),
+            role_group_statefulset_name: "kafka-controller-default"
+                .parse()
+                .expect("valid statefulset name"),
+            role_group_service_name: "kafka-controller-default-headless"
+                .parse()
+                .expect("valid service name"),
+            replica,
+            cluster_domain: stackable_operator::commons::networking::DomainName::try_from(
+                "cluster.local",
+            )
+            .expect("valid domain"),
+            node_id: replica.into(),
+            role,
+            client_port: client_port.into(),
+        }
+    }
+
+    #[test]
+    fn kraft_controllers_env_value_is_comma_joined_host_ports() {
+        let pod_descriptors = vec![
+            pod_descriptor(KafkaRole::Controller, 0, 9093),
+            pod_descriptor(KafkaRole::Controller, 1, 9093),
+            // Brokers must be filtered out of the controller quorum bootstrap servers list.
+            pod_descriptor(KafkaRole::Broker, 0, 9092),
+        ];
+
+        let quorum_bootstrap_servers = kraft_controllers(&pod_descriptors).join(",");
+
+        assert_eq!(
+            quorum_bootstrap_servers,
+            "kafka-controller-default-0.kafka-controller-default-headless.default.svc.cluster.local:9093,\
+             kafka-controller-default-1.kafka-controller-default-headless.default.svc.cluster.local:9093"
+        );
+    }
 }
