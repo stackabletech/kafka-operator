@@ -615,7 +615,7 @@ In the `statefulset.rs` test module (created in Task 3 or already present), add:
     }
 ```
 
-This uses the `kraft_mode_cluster()` fixture — if Task 3/4 didn't already add it to this file's test module, add it now, copied from the pattern shown in the exploration (a minimal `KafkaCluster` YAML with `clusterConfig.metadataManager: kraft`, one controller role group of 3 replicas, one broker role group of 3 replicas, resolved via `crate::controller::test_support::{minimal_kafka, validated_cluster}`).
+This uses a `kraft_mode_cluster()` fixture. Task 3 deliberately deferred creating this fixture (see its Step 1) in favor of this task owning it. **This task creates `kraft_mode_cluster()`** in this file's test module, copied from the pattern shown in the exploration: a minimal `KafkaCluster` YAML with `clusterConfig.metadataManager: kraft`, one controller role group of 3 replicas, one broker role group of 3 replicas, resolved via `crate::controller::test_support::{minimal_kafka, validated_cluster}`.
 
 - [ ] **Step 2: Run the tests to verify the controller one fails**
 
@@ -671,7 +671,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 
-- Consumes: `kraft_mode_cluster()` fixture (Task 5), `build_quorum_manager_container` / the sidecar's presence in the built `StatefulSet` (Task 4).
+- Consumes: `kraft_mode_cluster()` fixture (created by Task 5 — Task 3 deliberately deferred it), `build_quorum_manager_container` / the sidecar's presence in the built `StatefulSet` (Task 4), the `kerberos()` security fixture from `security.rs`'s test module (Task 2 — may need its visibility bumped to `pub(crate)` for this task to reach it).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -762,6 +762,32 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
         let containers = controller_containers(&cluster);
 
         assert!(!containers.iter().any(|c| c.name == "quorum-manager"));
+    }
+
+    #[test]
+    fn controller_pods_get_no_quorum_manager_sidecar_when_kerberos_is_enabled() {
+        // This is a Global Constraint (see the plan header): the sidecar's admin-client
+        // properties file only covers the TLS/SSL case, so it must never be added when
+        // Kerberos is enabled, even on an otherwise-supported Kafka version.
+        //
+        // Rather than building a full CRD-level Kerberos fixture (which needs a resolved
+        // AuthenticationClass threaded through `DereferencedObjects`, more than this test
+        // needs), call `build_quorum_manager_container` directly — it already takes
+        // `&ValidatedKafkaSecurity` as a parameter, so a fixture at that level is enough.
+        // Reuse the `kerberos()` fixture from `security.rs`'s existing test module (see
+        // Task 2) for a security value with Kerberos enabled; import it, adjusting its
+        // visibility to `pub(crate)` in `security.rs` if it is not already visible here.
+        let cluster = kraft_mode_cluster();
+        let kerberos_security = crate::controller::build::security::tests::kerberos();
+
+        let result = build_quorum_manager_container(
+            &cluster.image,
+            &kerberos_security,
+            "controller-0:9093",
+        )
+        .expect("build_quorum_manager_container does not error for a kerberos security value");
+
+        assert!(result.is_none());
     }
 
     #[test]
