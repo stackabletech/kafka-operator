@@ -196,6 +196,23 @@ const KAFKA_METADATA_QUORUM_BINARY: &str = "/stackable/kafka/bin/kafka-metadata-
 
 const ADMIN_CLIENT_PROPERTIES_PATH: &str = "/stackable/config/admin-client.properties";
 
+/// The merged config used only for `add-controller` (self-registration).
+///
+/// `add-controller` is not a plain admin-client call: the same process that connects to the
+/// quorum also reads `node.id` and its own `listeners`/`controller.listener.names` from the
+/// **same** `--command-config` file to build the voter registration payload (confirmed live:
+/// pointed at the plain [`ADMIN_CLIENT_PROPERTIES_PATH`], every attempt failed with `node.id
+/// not found in configuration file`, so no controller was ever able to admit itself as a
+/// voter). But that rendered `controller.properties` has no bare `security.protocol`/`ssl.*`
+/// keys of its own — only the `listener.name.<name>.ssl.*`-prefixed ones the server process
+/// uses for its listeners — so using it *instead of* the admin-client config leaves the
+/// AdminClient with no TLS config and unable to reach the (TLS-only) bootstrap controller.
+/// Concatenating both files (also confirmed live) gives `add-controller` everything it reads:
+/// the bare `ssl.*`/`security.protocol` keys for its own connection, plus `node.id` and the
+/// listener keys for the registration payload. There is no key overlap between the two files,
+/// so simple concatenation (later values would win) is safe.
+const ADD_CONTROLLER_PROPERTIES_PATH: &str = "/tmp/add-controller.properties";
+
 /// Wall-clock bound (seconds) applied to every individual `kafka-metadata-quorum.sh`
 /// invocation via `timeout`. The Java AdminClient can otherwise retry internally for far
 /// longer than any of this file's own script-level deadlines, which matters most in
@@ -209,29 +226,56 @@ const CLI_CALL_TIMEOUT_SECONDS: u32 = 15;
 ///
 /// `bootstrap_servers` is the comma-joined `host:port` list produced by
 /// `kraft_controllers(...)` (see `build/properties/mod.rs`).
+///
+/// Explicitly traps `TERM` and exits: this script runs as the container's PID 1, and the
+/// kernel suppresses the default action of unhandled signals for PID 1, so without this
+/// trap the loop below would never notice `SIGTERM` and would run until Kubernetes gives up
+/// waiting and sends `SIGKILL` after the full `terminationGracePeriodSeconds` (confirmed
+/// live: with no trap, this container kept looping — and its pod kept report as
+/// `Terminating` — long after the `kafka` container in the same pod had shut down
+/// gracefully). The `sleep 10 &`/`wait $!` pair (rather than a plain `sleep 10`) lets the
+/// trap fire immediately: bash's `wait` builtin is interrupted as soon as a trapped signal
+/// arrives, whereas a foreground `sleep` would only be noticed once it finished.
+///
+/// Renders [`ADD_CONTROLLER_PROPERTIES_PATH`] once at startup (this controller's identity
+/// and listener address don't change for the container's lifetime) by reusing the same
+/// `$POD_NAME`/`NODE_ID_OFFSET` → `REPLICA_ID` derivation, and the same
+/// `config-utils template` render step, as the `kafka` container's own entrypoint (see
+/// [`controller_kafka_container_command`]) — see [`ADD_CONTROLLER_PROPERTIES_PATH`] for why
+/// `add-controller` needs this merged file rather than the plain admin-client config.
 pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
     format!(
         r#"
         set -uo pipefail
+        trap 'exit 0' TERM
+        POD_INDEX=$(echo "$POD_NAME" | grep -oE '[0-9]+$')
+        export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))
+        cp {config_dir}/{controller_properties_file} /tmp/{controller_properties_file}
+        config-utils template /tmp/{controller_properties_file}
+        cat {admin_client_config} /tmp/{controller_properties_file} > {add_controller_config}
         echo "Starting KRaft voter admission loop against bootstrap servers: {bootstrap_servers}"
         while true; do
           state=$(curl -s localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+"\}}' | grep -oE '"[a-z]+"' | tr -d '"')
           if [ "$state" = "observer" ]; then
             echo "Local Raft state is observer, attempting add-controller..."
-            timeout {cli_timeout} {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} add-controller \
+            timeout {cli_timeout} {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {add_controller_config} add-controller \
               || echo "add-controller attempt failed (this is expected if it already succeeded or a leader election is in progress), will retry"
           elif [ -z "$state" ]; then
             echo "Could not determine local Raft state (metrics scrape returned nothing), will retry"
           else
             echo "Local Raft state is '$state', nothing to do"
           fi
-          sleep 10
+          sleep 10 &
+          wait $!
         done
         "#,
         bootstrap_servers = bootstrap_servers,
         metrics_port = METRICS_PORT,
         binary = KAFKA_METADATA_QUORUM_BINARY,
-        config = ADMIN_CLIENT_PROPERTIES_PATH,
+        config_dir = STACKABLE_CONFIG_DIR,
+        controller_properties_file = ConfigFileName::ControllerProperties,
+        admin_client_config = ADMIN_CLIENT_PROPERTIES_PATH,
+        add_controller_config = ADD_CONTROLLER_PROPERTIES_PATH,
         cli_timeout = CLI_CALL_TIMEOUT_SECONDS,
     )
 }
@@ -330,6 +374,47 @@ mod tests {
         assert!(command.contains("--bootstrap-controller 'controller-0:9093,controller-1:9093'"));
         assert!(command.contains("add-controller"));
         assert!(!command.contains("--bootstrap-controller 'localhost"));
+    }
+
+    /// Confirmed on a live cluster: without a `TERM` trap, this loop runs as the
+    /// container's PID 1, whose unhandled signals the kernel suppresses by default — so the
+    /// `kafka` container in the same pod shut down promptly on `SIGTERM` while this sidecar
+    /// kept looping (curl connection-refused every ~15s) until Kubernetes gave up and sent
+    /// `SIGKILL` after the full `terminationGracePeriodSeconds` (1800s), holding the whole
+    /// pod in `Terminating` well past kuttl's step timeout. The trap plus `sleep 10 &` /
+    /// `wait $!` (rather than a foreground `sleep 10`) let bash notice and act on `SIGTERM`
+    /// immediately instead of only after the next blocking command returns.
+    #[test]
+    fn quorum_manager_container_command_exits_promptly_on_term() {
+        let command = quorum_manager_container_command("controller-0:9093,controller-1:9093");
+        assert!(command.contains("trap 'exit 0' TERM"));
+        assert!(command.contains("sleep 10 &"));
+        assert!(command.contains("wait $!"));
+    }
+
+    /// Confirmed on a live cluster: `add-controller` reads `node.id` and its own
+    /// `listeners`/`controller.listener.names` from the *same* `--command-config` file it
+    /// connects with, to build the voter registration payload — pointed at the plain
+    /// admin-client config (which has no `node.id`), every attempt failed with `node.id not
+    /// found in configuration file`, so no controller was ever admitted as a voter. See
+    /// [`ADD_CONTROLLER_PROPERTIES_PATH`] for why the fix is a merged file rather than
+    /// switching to `controller.properties` outright (that file has no bare `ssl.*`/
+    /// `security.protocol`, so the AdminClient couldn't reach the TLS-only bootstrap
+    /// controller at all).
+    #[test]
+    fn quorum_manager_container_command_renders_a_command_config_add_controller_can_self_register_with()
+     {
+        let command = quorum_manager_container_command("controller-0:9093,controller-1:9093");
+        // Renders this controller's own `controller.properties` (carries `node.id` and
+        // `listeners`) via the same REPLICA_ID derivation used by the `kafka` container.
+        assert!(command.contains("export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))"));
+        assert!(command.contains("config-utils template /tmp/controller.properties"));
+        // Merges it with the plain admin-client config (carries `security.protocol`/`ssl.*`)
+        // into the file actually passed to `add-controller`.
+        assert!(command.contains(
+            "cat /stackable/config/admin-client.properties /tmp/controller.properties > /tmp/add-controller.properties"
+        ));
+        assert!(command.contains("--command-config /tmp/add-controller.properties add-controller"));
     }
 
     #[test]
