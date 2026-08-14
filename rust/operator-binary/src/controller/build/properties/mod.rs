@@ -25,6 +25,11 @@ pub enum ConfigFileName {
     Security,
     #[strum(serialize = "client.properties")]
     Client,
+    /// Client-side (unprefixed `security.protocol`/`ssl.*`) properties for an admin CLI tool
+    /// (e.g. `kafka-metadata-quorum.sh`) running inside a controller pod. Only written to
+    /// controller rolegroup `ConfigMap`s.
+    #[strum(serialize = "admin-client.properties")]
+    AdminClient,
     /// JAAS configuration for Kerberos authentication. It has the `.properties`
     /// extension but is not a Java properties file.
     #[strum(serialize = "jaas.properties")]
@@ -96,6 +101,10 @@ mod tests {
         );
         assert_eq!(ConfigFileName::Security.to_string(), "security.properties");
         assert_eq!(ConfigFileName::Client.to_string(), "client.properties");
+        assert_eq!(
+            ConfigFileName::AdminClient.to_string(),
+            "admin-client.properties"
+        );
         assert_eq!(ConfigFileName::Jaas.to_string(), "jaas.properties");
         assert_eq!(ConfigFileName::Log4j.to_string(), "log4j.properties");
         assert_eq!(ConfigFileName::Log4j2.to_string(), "log4j2.properties");

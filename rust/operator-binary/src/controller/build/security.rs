@@ -221,6 +221,34 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
     props
 }
 
+/// Client-side (unprefixed `security.protocol`/`ssl.*`) properties for an admin CLI tool
+/// (e.g. `kafka-metadata-quorum.sh`) talking to the CONTROLLER listener from *inside* a
+/// controller pod, over the `tls-kafka-internal` volume mounted by
+/// `add_controller_volume_and_volume_mounts`.
+///
+/// This is deliberately separate from `client_properties()`: that function points at
+/// `/stackable/tls-kafka-server`, a directory that is only mounted on broker pods.
+///
+/// Internal (broker/controller) TLS is mandatory (see [`ValidatedKafkaSecurity::tls_internal_secret_class`]),
+/// and `add_controller_volume_and_volume_mounts` unconditionally mounts both the keystore and
+/// truststore on controller pods, independent of the external client TLS/authentication
+/// settings. So, mirroring how `controller_config_settings` unconditionally writes the
+/// CONTROLLER listener's keystore/truststore settings, this function always returns SSL
+/// properties - there is no plaintext variant for the CONTROLLER listener.
+pub fn controller_admin_client_properties(
+    _security: &ValidatedKafkaSecurity,
+) -> Vec<(String, Option<String>)> {
+    let mut properties = vec![];
+
+    properties.push((
+        PROPERTY_SECURITY_PROTOCOL.to_string(),
+        Some(KafkaListenerProtocol::Ssl.to_string()),
+    ));
+    push_client_ssl_stores(&mut properties, STACKABLE_TLS_KAFKA_INTERNAL_DIR);
+
+    properties
+}
+
 /// Adds required volumes and volume mounts to the broker pod and container builders
 /// depending on the tls and authentication settings.
 pub fn add_broker_volume_and_volume_mounts(
@@ -886,6 +914,62 @@ mod tests {
             Some(&Some("kafka".to_string()))
         );
         assert!(props.contains_key("sasl.jaas.config"));
+    }
+
+    // ---- controller_admin_client_properties ----
+
+    #[test]
+    fn controller_admin_client_properties_uses_the_internal_tls_directory() {
+        let security = server_tls();
+        let props = as_map(controller_admin_client_properties(&security));
+
+        assert_eq!(
+            props.get("security.protocol"),
+            Some(&Some("SSL".to_string()))
+        );
+        assert_eq!(
+            props.get("ssl.truststore.location"),
+            Some(&Some(
+                "/stackable/tls-kafka-internal/truststore.p12".to_string()
+            ))
+        );
+        assert_eq!(
+            props.get("ssl.truststore.type"),
+            Some(&Some("PKCS12".to_string()))
+        );
+    }
+
+    #[test]
+    fn controller_admin_client_properties_includes_keystore_when_client_auth_is_required() {
+        let security = client_auth_tls();
+        let props = as_map(controller_admin_client_properties(&security));
+
+        assert_eq!(
+            props.get("ssl.keystore.location"),
+            Some(&Some(
+                "/stackable/tls-kafka-internal/keystore.p12".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn controller_admin_client_properties_always_uses_tls_even_without_external_client_tls() {
+        // Internal (broker/controller) TLS is mandatory (`tls_internal_secret_class()` always
+        // returns a SecretClass, defaulting to "tls"), and `add_controller_volume_and_volume_mounts`
+        // unconditionally mounts both the keystore and truststore on controller pods, independent
+        // of the external client TLS/authentication settings. So even the "plaintext" fixture
+        // (no external client TLS, no client-cert auth) still needs SSL to reach the CONTROLLER
+        // listener - mirroring `controller_config_settings`'s unconditional treatment of the same
+        // listener (see `controller_config_plaintext_has_internal_tls`).
+        let security = plaintext();
+        let props = as_map(controller_admin_client_properties(&security));
+
+        assert_eq!(
+            props.get("security.protocol"),
+            Some(&Some("SSL".to_string()))
+        );
+        assert!(props.contains_key("ssl.truststore.location"));
+        assert!(props.contains_key("ssl.keystore.location"));
     }
 
     // ---- broker_config_settings ----

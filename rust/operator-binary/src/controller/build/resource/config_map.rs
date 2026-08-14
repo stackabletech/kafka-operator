@@ -17,7 +17,7 @@ use crate::{
             properties::{
                 ConfigFileName, config_file_name, product_logging::role_group_config_map_data,
             },
-            security::client_properties,
+            security::{client_properties, controller_admin_client_properties},
         },
     },
     crd::{
@@ -171,6 +171,22 @@ pub fn build_rolegroup_config_map(
             ConfigFileName::Jaas.to_string(),
             jaas_config_file(kafka_security.has_kerberos_enabled()),
         );
+
+    // `admin-client.properties` is only needed by the controller-side sidecar running
+    // `kafka-metadata-quorum.sh` against the CONTROLLER listener; brokers don't need it.
+    if let AnyConfig::Controller(_) = &validated_rg.config.config {
+        cm_builder.add_data(
+            ConfigFileName::AdminClient.to_string(),
+            to_java_properties_string(
+                controller_admin_client_properties(kafka_security)
+                    .iter()
+                    .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
+            )
+            .with_context(|_| JvmSecurityPropertiesSnafu {
+                role_group: role_group_name.clone(),
+            })?,
+        );
+    }
 
     tracing::debug!(?kafka_config, "Applied kafka config");
     tracing::debug!(?jvm_sec_props, "Applied JVM config");
