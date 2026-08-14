@@ -95,9 +95,8 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 
 * Automatic migration from Apache ZooKeeper to KRaft is not supported.
 * Kerberos is currently not supported for KRaft in all versions.
-* Scaling controllers down to a single replica is not verified and may leave brokers and controllers unable to
-  reach the old controller endpoints; only scale-downs that keep an odd number of controllers greater than one
-  have been tested.
+* Scaling controllers down to a single replica is not verified under the sidecar-based mechanism described above;
+  only scale-downs that keep an odd number of controllers greater than one have been tested.
 * If a `remove-controller` call fails or times out during pod termination (for example, no reachable leader within
   the pod's grace period), the pod terminates anyway and can leave a stale voter entry in the quorum behind. This is
   not fully automatic in every case and may require manual cleanup with `kafka-metadata-quorum.sh remove-controller`.
