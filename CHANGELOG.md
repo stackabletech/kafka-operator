@@ -6,7 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- A new `readinessProbe` for KRaft controllers that fails when new pods cannot join the quorum ([#1006]).
+- A new `readinessProbe` for KRaft controllers that fails when new pods cannot join the quorum.
+  Disabled controller scaling tests as they are failing now. See the documentation on known KRaft
+  scaling issues for details ([#1006]).
 
 ### Changed
 
