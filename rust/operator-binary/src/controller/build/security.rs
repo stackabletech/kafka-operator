@@ -49,8 +49,11 @@ const PROPERTY_SECURITY_PROTOCOL: &str = "security.protocol";
 const PROPERTY_SASL_ENABLED_MECHANISMS: &str = "sasl.enabled.mechanisms";
 const PROPERTY_SASL_KERBEROS_SERVICE_NAME: &str = "sasl.kerberos.service.name";
 const PROPERTY_SASL_INTER_BROKER_MECHANISM: &str = "sasl.mechanism.inter.broker.protocol";
-const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &str = "/stackable/tls-kafka-internal";
-const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &str = "tls-kafka-internal";
+// Also mounted on the controller's `quorum-manager` sidecar (see
+// `build_quorum_manager_container` in `build/resource/statefulset.rs`), since
+// `controller_admin_client_properties` points its keystore/truststore here.
+pub(crate) const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &str = "/stackable/tls-kafka-internal";
+pub(crate) const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &str = "tls-kafka-internal";
 const STACKABLE_TLS_KAFKA_SERVER_DIR: &str = "/stackable/tls-kafka-server";
 const STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME: &str = "tls-kafka-server";
 // directories

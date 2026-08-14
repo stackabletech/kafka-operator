@@ -196,6 +196,14 @@ const KAFKA_METADATA_QUORUM_BINARY: &str = "/stackable/kafka/bin/kafka-metadata-
 
 const ADMIN_CLIENT_PROPERTIES_PATH: &str = "/stackable/config/admin-client.properties";
 
+/// Wall-clock bound (seconds) applied to every individual `kafka-metadata-quorum.sh`
+/// invocation via `timeout`. The Java AdminClient can otherwise retry internally for far
+/// longer than any of this file's own script-level deadlines, which matters most in
+/// `quorum_manager_pre_stop_command`: it runs exactly when peers may be unreachable, and a
+/// hung admin-client call there would burn into `terminationGracePeriodSeconds` (default:
+/// 30 minutes) rather than the script's own 25s budget.
+const CLI_CALL_TIMEOUT_SECONDS: u32 = 15;
+
 /// The sidecar's main-loop command: while this controller's local Raft state is
 /// `observer`, repeatedly attempt to admit it into the quorum's voter set.
 ///
@@ -210,8 +218,12 @@ pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
           state=$(curl -s localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+"\}}' | grep -oE '"[a-z]+"' | tr -d '"')
           if [ "$state" = "observer" ]; then
             echo "Local Raft state is observer, attempting add-controller..."
-            {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} add-controller \
+            timeout {cli_timeout} {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} add-controller \
               || echo "add-controller attempt failed (this is expected if it already succeeded or a leader election is in progress), will retry"
+          elif [ -z "$state" ]; then
+            echo "Could not determine local Raft state (metrics scrape returned nothing), will retry"
+          else
+            echo "Local Raft state is '$state', nothing to do"
           fi
           sleep 10
         done
@@ -220,6 +232,7 @@ pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
         metrics_port = METRICS_PORT,
         binary = KAFKA_METADATA_QUORUM_BINARY,
         config = ADMIN_CLIENT_PROPERTIES_PATH,
+        cli_timeout = CLI_CALL_TIMEOUT_SECONDS,
     )
 }
 
@@ -228,38 +241,52 @@ pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
 /// if so, remove it from the voter set. Always exits 0 — a stuck or failed check must
 /// never block pod termination.
 ///
-/// `node_id` is this controller's own KRaft node id (the same value written to
-/// `node.id` in `controller.properties`, derived from `$POD_NAME` and `NODE_ID_OFFSET`
-/// exactly as the `kafka` container's own entrypoint does — see `controller_kafka_container_command`).
+/// This controller's own KRaft node id is derived at runtime from `$POD_NAME` and
+/// `$NODE_ID_OFFSET`, exactly as the `kafka` container's own entrypoint does — see
+/// `controller_kafka_container_command`.
+///
+/// `describe --replication`'s column layout (`NodeId` as column 1, `DirectoryId` as column
+/// 2, `Status` as the last column, with `Status` one of `Leader`/`Follower`/`Observer`) is
+/// the *documented* KIP-853 tabular format, but has not been confirmed against a live
+/// cluster (see Task 4's brief, Step 5 — deferred to Task 7's kuttl run, which has one).
+/// Filtering is deliberately conservative: only rows whose `Status` is a recognized voter
+/// value (`Leader`/`Follower`) count towards `total_voters`, and if that filter yields zero
+/// voters (e.g. because the real column layout differs from what's assumed here), the
+/// majority check simply retries rather than treating "no known voters" as "safe to
+/// remove" — i.e. this fails closed (skips removal) rather than open on a parsing mismatch.
 pub fn quorum_manager_pre_stop_command(bootstrap_servers: &str) -> String {
     format!(
         r#"
         set -uo pipefail
         POD_INDEX=$(echo "$POD_NAME" | grep -oE '[0-9]+$')
+        [ -n "$POD_INDEX" ] || exit 0
         REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))
         DEADLINE=$((SECONDS + 25))
         while [ "$SECONDS" -lt "$DEADLINE" ]; do
-          describe=$({binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} describe --replication 2>/dev/null)
+          describe=$(timeout {cli_timeout} {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} describe --replication 2>/dev/null)
           if [ -n "$describe" ]; then
-            # NOTE: this parsing was written against the documented `describe --replication`
-            # tabular output (one voter per line, NodeId as the first column) and must be
-            # confirmed/adjusted against a live cluster's real output before this is
-            # considered done -- see Task 4 Step 4 below.
-            total_voters=$(echo "$describe" | tail -n +2 | grep -c .)
-            majority=$(( total_voters / 2 + 1 ))
-            remaining_after_removal=$(( total_voters - 1 ))
-            if [ "$remaining_after_removal" -ge "$majority" ]; then
-              directory_id=$(echo "$describe" | tail -n +2 | awk -v id="$REPLICA_ID" '$1 == id {{ print $2 }}')
-              if [ -n "$directory_id" ]; then
-                echo "Removing self (node $REPLICA_ID, directory $directory_id) from the voter set..."
-                {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} remove-controller \
-                  --controller-id "$REPLICA_ID" --controller-directory-id "$directory_id" \
-                  || echo "remove-controller failed, proceeding with termination anyway"
+            voters=$(echo "$describe" | tail -n +2 | awk '$NF == "Leader" || $NF == "Follower"')
+            total_voters=$(echo "$voters" | grep -c .)
+            if [ "$total_voters" -gt 0 ]; then
+              majority=$(( total_voters / 2 + 1 ))
+              remaining_after_removal=$(( total_voters - 1 ))
+              if [ "$remaining_after_removal" -ge "$majority" ]; then
+                directory_id=$(echo "$voters" | awk -v id="$REPLICA_ID" '$1 == id {{ print $2 }}')
+                if [ -n "$directory_id" ]; then
+                  echo "Removing self (node $REPLICA_ID, directory $directory_id) from the voter set..."
+                  timeout {cli_timeout} {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {config} remove-controller \
+                    --controller-id "$REPLICA_ID" --controller-directory-id "$directory_id" \
+                    || echo "remove-controller failed, proceeding with termination anyway"
+                else
+                  echo "Could not find own node $REPLICA_ID among current voters (already removed?), nothing to do"
+                fi
+                break
+              else
+                echo "Removing self would break quorum majority ($remaining_after_removal remaining of $majority needed), skipping and retrying..."
               fi
             else
-              echo "Removing self would break quorum majority ($remaining_after_removal remaining of $majority needed), skipping and retrying..."
+              echo "Could not identify any voters in the describe output (unrecognized format), skipping removal for safety and retrying..."
             fi
-            break
           fi
           sleep 2
         done
@@ -268,6 +295,7 @@ pub fn quorum_manager_pre_stop_command(bootstrap_servers: &str) -> String {
         bootstrap_servers = bootstrap_servers,
         binary = KAFKA_METADATA_QUORUM_BINARY,
         config = ADMIN_CLIENT_PROPERTIES_PATH,
+        cli_timeout = CLI_CALL_TIMEOUT_SECONDS,
     )
 }
 

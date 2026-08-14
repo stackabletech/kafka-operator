@@ -66,7 +66,6 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
 /// the voter set of an already-formed quorum. Mirrors the existing 3.7.x carve-out
 /// already used for `--initial-controllers` (see `initial_controllers_command` in
 /// `build/command.rs`).
-#[allow(dead_code)]
 pub fn supports_dynamic_quorum(product_version: &str) -> bool {
     !product_version.starts_with("3.7")
 }

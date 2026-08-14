@@ -59,6 +59,7 @@ use crate::{
                 supports_dynamic_quorum,
             },
             security::{
+                STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                 add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
                 kcat_prober_container_commands,
             },
@@ -803,6 +804,9 @@ fn container_name(container: impl std::fmt::Display) -> ContainerName {
         .expect("a container enum variant is always a valid ContainerName")
 }
 
+/// Name of the controller's `quorum-manager` sidecar container.
+const QUORUM_MANAGER_CONTAINER_NAME: &str = "quorum-manager";
+
 /// Builds the `quorum-manager` sidecar for a controller pod. Returns `None` when this
 /// Kafka version doesn't support KIP-853 dynamic quorum tooling, or when Kerberos is
 /// enabled (the sidecar's admin-client properties file only covers the TLS/SSL case).
@@ -818,10 +822,11 @@ fn build_quorum_manager_container(
         return Ok(None);
     }
 
-    let container_name = "quorum-manager".to_string();
-    let mut cb = ContainerBuilder::new(&container_name).context(InvalidContainerNameSnafu {
-        name: container_name.clone(),
-    })?;
+    let mut cb = ContainerBuilder::new(QUORUM_MANAGER_CONTAINER_NAME).context(
+        InvalidContainerNameSnafu {
+            name: QUORUM_MANAGER_CONTAINER_NAME,
+        },
+    )?;
 
     cb.image_from_product_image(resolved_product_image)
         .command(vec![
@@ -856,6 +861,14 @@ fn build_quorum_manager_container(
                 .build(),
         )
         .add_volume_mount(STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
+        .context(AddVolumeMountSnafu)?
+        // `controller_admin_client_properties` (see `build/security.rs`) always points
+        // its keystore/truststore at this directory, so the sidecar's admin-client calls
+        // need it mounted here too, not just on the `kafka` container.
+        .add_volume_mount(
+            STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
+            STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+        )
         .context(AddVolumeMountSnafu)?
         .lifecycle_pre_stop(LifecycleHandler {
             exec: Some(ExecAction {
