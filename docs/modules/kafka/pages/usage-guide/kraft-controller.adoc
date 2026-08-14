@@ -85,12 +85,18 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 * `cluster-id`: This is set to the `metadata.name` of the KafkaCluster resource during initial formatting
 * `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
 * `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not supported.
-* The operator configures a static voter list containing the controller pods. Controllers are not dynamically managed.
+* The operator uses Kafka's dynamic KRaft quorum mechanism (KIP-853): controllers are pointed at
+  each other via `controller.quorum.bootstrap.servers`, and the initial voter set is established
+  by passing `--initial-controllers` to `kafka-storage.sh format`. The operator does not configure
+  a static `controller.quorum.voters` list. However, it does not perform the follow-up step
+  required to add a controller to an *already-formed* quorum's voter set (an explicit
+  `AddVoter`/`add-controller` request against the current leader, or enabling
+  `controller.quorum.auto.join.enable`) - see the Known Issues section below.
 
 == Known Issues
 
 * Automatic migration from Apache ZooKeeper to KRaft is not supported.
-* Scaling controller replicas might lead to unstable clusters.
+* Scaling controller replicas up is not supported; see <<_scaling_issues, Scaling issues>> below.
 * Kerberos is currently not supported for KRaft in all versions.
 
 == Troubleshooting
@@ -110,8 +116,21 @@ The Stackable Kafka operator currently does not support the migration.
 
 === Scaling issues
 
-The https://developers.redhat.com/articles/2024/11/27/dynamic-kafka-controller-quorum[Dynamic scaling] is only supported from Kafka version 3.9.0.
-If you are using older versions, automatic scaling may not work properly (e.g. adding or removing controller replicas).
+Scaling `spec.controllers.roleGroups.<name>.replicas` up on a running cluster is not supported by the operator.
+
+When a new controller pod is added, it registers itself and starts up, but it is never actually
+admitted into the Raft quorum's voter set. It permanently reports the Raft `observer` state instead
+of `leader`, `follower`, or `voted`.
+
+Admitting a new voter into an existing quorum requires an explicit `AddVoter`/`add-controller`
+request against the current leader (KIP-853), or a newer Kafka KIP-853 feature,
+`controller.quorum.auto.join.enable`, that lets an observer auto-promote itself.
+
+Until the operator supports the required quorum-reconfiguration step, do not plan on scaling
+controller replica counts up or down on a running cluster. If a controller role group's replica
+count needs to change, expect to need external, manual intervention against the running quorum
+using Kafka's own KRaft tooling - there is currently no supported, automated migration path for
+this in the operator.
 
 == Kraft migration guide
 

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- BREAKING: A new `readinessProbe` for KRaft controllers that fails when new pods cannot join the quorum ([#1006]).
+
 ### Changed
 
 - Internal operator refactoring: introduce a build() step in the reconciler that
@@ -28,6 +32,7 @@ All notable changes to this project will be documented in this file.
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994
 [#998]: https://github.com/stackabletech/kafka-operator/pull/998
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
+[#1006]: https://github.com/stackabletech/kafka-operator/pull/1006
 
 ## [26.7.0] - 2026-07-21
 
