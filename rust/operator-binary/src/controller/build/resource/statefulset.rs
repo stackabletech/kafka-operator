@@ -54,10 +54,7 @@ use crate::{
             },
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::add_kerberos_pod_config,
-            properties::{
-                kraft_controllers, product_logging::MAX_KAFKA_LOG_FILES_SIZE,
-                supports_dynamic_quorum,
-            },
+            properties::{kraft_controllers, product_logging::MAX_KAFKA_LOG_FILES_SIZE},
             security::{
                 STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                 add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
@@ -310,7 +307,6 @@ pub fn build_broker_rolegroup_statefulset(
                 .pod_descriptors(Some(&KafkaRole::Controller))
                 .context(BuildPodDescriptorsSnafu)?,
             kafka_security,
-            &resolved_product_image.product_version,
         )]);
 
     let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
@@ -551,7 +547,6 @@ pub fn build_controller_rolegroup_statefulset(
         ])
         .args(vec![controller_kafka_container_command(
             controller_pod_descriptors,
-            &resolved_product_image.product_version,
         )]);
 
     add_common_kafka_env(
@@ -843,8 +838,7 @@ fn container_name(container: impl std::fmt::Display) -> ContainerName {
 /// Name of the controller's `quorum-manager` sidecar container.
 const QUORUM_MANAGER_CONTAINER_NAME: &str = "quorum-manager";
 
-/// Builds the `quorum-manager` sidecar for a controller pod. Returns `None` when this
-/// Kafka version doesn't support KIP-853 dynamic quorum tooling, or when Kerberos is
+/// Builds the `quorum-manager` sidecar for a controller pod. Returns `None` when Kerberos is
 /// enabled (the sidecar's admin-client properties file only covers the TLS/SSL case).
 ///
 /// `env` is expected to be [`controller_pod_shared_env_vars`] (plus `NODE_ID_OFFSET` and the
@@ -857,9 +851,7 @@ fn build_quorum_manager_container(
     quorum_bootstrap_servers: &str,
     env: Vec<EnvVar>,
 ) -> Result<Option<stackable_operator::k8s_openapi::api::core::v1::Container>, Error> {
-    if !supports_dynamic_quorum(&resolved_product_image.product_version)
-        || kafka_security.has_kerberos_enabled()
-    {
+    if kafka_security.has_kerberos_enabled() {
         return Ok(None);
     }
 
@@ -876,12 +868,20 @@ fn build_quorum_manager_container(
             quorum_manager_container_command(quorum_bootstrap_servers),
         ])
         .add_env_vars(env)
+        // `kafka-metadata-quorum.sh` goes through `kafka-run-class.sh`, which defaults
+        // `KAFKA_HEAP_OPTS` to `-Xmx256M` when unset. Set an explicit, modest heap so the
+        // JVM's max heap plus its base/metaspace/SSL-buffer overhead stays comfortably
+        // under the container's memory limit below.
+        .add_env_var(KAFKA_HEAP_OPTS, "-Xmx128M")
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
-                .with_cpu_limit("200m")
-                .with_memory_request("128Mi")
-                .with_memory_limit("128Mi")
+                // A JVM cold start plus an SSL handshake and an admin-client round-trip all
+                // need to happen inside this sidecar's existing `timeout 15`/`25s preStop`
+                // budgets (see `CLI_CALL_TIMEOUT_SECONDS` in `command.rs`).
+                .with_cpu_limit("500m")
+                .with_memory_request("256Mi")
+                .with_memory_limit("512Mi")
                 .build(),
         )
         .add_volume_mount(STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
@@ -1146,40 +1146,17 @@ mod tests {
                  {sidecar_env_names:?}"
             );
         }
-    }
 
-    #[test]
-    fn controller_pods_get_no_quorum_manager_sidecar_on_kafka_3_7() {
-        let kafka = crate::controller::test_support::minimal_kafka(
-            r#"
-            apiVersion: kafka.stackable.tech/v1alpha1
-            kind: KafkaCluster
-            metadata:
-              name: simple-kafka
-              namespace: default
-              uid: 12345678-1234-1234-1234-123456789012
-            spec:
-              image:
-                productVersion: 3.7.2
-              clusterConfig:
-                metadataManager: kraft
-              controllers:
-                roleGroups:
-                  default:
-                    replicas: 3
-              brokers:
-                roleGroups:
-                  default:
-                    replicas: 3
-            "#,
-        );
-        let cluster = crate::controller::test_support::validated_cluster(&kafka);
-        let containers = controller_containers(&cluster);
-
+        // Targeted assertion (rather than relying on it only showing up incidentally among
+        // `placeholders` above): NODE_ID_OFFSET is consumed directly by the sidecar's own
+        // `EXPORT_REPLICA_ID` bash logic under `set -u` (see `command.rs`), so a regression
+        // here would break the sidecar's main loop and its `preStop` hook silently (an unset
+        // variable under `set -u` aborts the script).
         assert!(
-            !containers
-                .iter()
-                .any(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME)
+            sidecar_env_names.contains(&KAFKA_NODE_ID_OFFSET),
+            "quorum-manager sidecar is missing the {KAFKA_NODE_ID_OFFSET} env var, needed by \
+             its EXPORT_REPLICA_ID derivation under `set -u`; sidecar env vars: \
+             {sidecar_env_names:?}"
         );
     }
 

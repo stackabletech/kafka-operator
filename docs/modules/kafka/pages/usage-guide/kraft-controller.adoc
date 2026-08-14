@@ -16,6 +16,11 @@ WARNING: The Stackable Operator for Apache Kafka currently does not support auto
 * Full Replacement: Kafka 4.0.0 (2025) removes ZooKeeper completely.
 * Migration: Tools exist to migrate from ZooKeeper to KRaft, but new deployments should start with KRaft.
 
+IMPORTANT: The Stackable Operator for Apache Kafka requires Kafka 3.9.0 or later for KRaft mode. Kafka 3.7.x is not
+supported: the operator relies on the `kafka-storage.sh format --initial-controllers` option and the KIP-853 dynamic
+quorum tooling, both of which require 3.9.0+. Running KRaft mode on an unsupported Kafka version is undefined
+behavior, up to and including `kafka-storage.sh` rejecting the operator-generated formatting command outright.
+
 == Configuration
 
 The Stackable Kafka operator introduces a new xref:concepts:roles-and-role-groups.adoc[role] in the KafkaCluster CRD called KRaft `Controller`.
@@ -85,11 +90,10 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 * `cluster-id`: This is set to the `metadata.name` of the KafkaCluster resource during initial formatting
 * `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
 * `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not supported.
-* On Kafka versions that support the KIP-853 dynamic quorum tooling (everything except `3.7.x`), and when Kerberos is
-  not enabled, each controller pod runs an additional `quorum-manager` sidecar container. On startup it admits the
-  pod into the KRaft voter set (`kafka-metadata-quorum.sh add-controller`), and on pod termination (`preStop`) it
-  removes the pod from the voter set again (`remove-controller`), but only if doing so would not break the quorum's
-  majority.
+* When Kerberos is not enabled, each controller pod runs an additional `quorum-manager` sidecar container (requires
+  Kafka 3.9.0 or later, see the minimum-version note above). On startup it admits the pod into the KRaft voter set
+  (`kafka-metadata-quorum.sh add-controller`), and on pod termination (`preStop`) it removes the pod from the voter
+  set again (`remove-controller`), but only if doing so would not remove the last remaining voter.
 
 == Known Issues
 
@@ -100,6 +104,13 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 * If a `remove-controller` call fails or times out during pod termination (for example, no reachable leader within
   the pod's grace period), the pod terminates anyway and can leave a stale voter entry in the quorum behind. This is
   not fully automatic in every case and may require manual cleanup with `kafka-metadata-quorum.sh remove-controller`.
+* When a new controller is added on scale-up, it is formatted with `kafka-storage.sh format --initial-controllers`
+  listing the *full* desired voter set, including itself, rather than following Kafka's documented procedure for
+  joining an already-formed quorum (format with no initial controllers, then explicitly `add-controller`). In manual
+  live testing this has been observed to work correctly: the new pod starts as an `observer` and the sidecar's
+  `add-controller` call succeeds. However, this has not yet been confirmed end-to-end through the fully automated
+  sidecar path on a live cluster. This is a known, tracked risk to verify before or soon after this feature ships;
+  changing the format-step behavior itself would be a separate, larger design change.
 
 == Troubleshooting
 
@@ -119,10 +130,9 @@ The Stackable Kafka operator currently does not support the migration.
 === Scaling controllers
 
 Controller replicas can be scaled up and down on a running cluster. A per-pod `quorum-manager` sidecar admits and
-removes the pod from the KRaft voter set as described under "Internal operator details" above. This requires a
-Kafka version that supports the https://developers.redhat.com/articles/2024/11/27/dynamic-kafka-controller-quorum[KIP-853
-dynamic quorum tooling] (everything except `3.7.x`); on `3.7.x`, controller replica counts should not be changed on
-a running cluster.
+removes the pod from the KRaft voter set as described under "Internal operator details" above. This requires Kafka
+3.9.0 or later (see the minimum-version note in "Overview"), which supports the
+https://developers.redhat.com/articles/2024/11/27/dynamic-kafka-controller-quorum[KIP-853 dynamic quorum tooling].
 
 Scaling more than one controller down at a time is processed one pod at a time (`OrderedReady` pod management), not
 in parallel, so that each pod's removal from the voter set can complete before the next one is terminated.

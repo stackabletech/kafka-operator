@@ -50,6 +50,16 @@ pub enum Error {
         role_group: RoleGroupName,
     },
 
+    #[snafu(display(
+        "failed to serialize client-side connection properties ([{}] or [{}]) for role group {role_group}",
+        ConfigFileName::Client,
+        ConfigFileName::AdminClient
+    ))]
+    ClientProperties {
+        source: PropertiesWriterError,
+        role_group: RoleGroupName,
+    },
+
     #[snafu(display("failed to build pod descriptors"))]
     BuildPodDescriptors {
         source: crate::controller::PodDescriptorsError,
@@ -159,7 +169,7 @@ pub fn build_rolegroup_config_map(
                     .iter()
                     .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
             )
-            .with_context(|_| JvmSecurityPropertiesSnafu {
+            .with_context(|_| ClientPropertiesSnafu {
                 role_group: role_group_name.clone(),
             })?,
         )
@@ -182,7 +192,7 @@ pub fn build_rolegroup_config_map(
                     .iter()
                     .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
             )
-            .with_context(|_| JvmSecurityPropertiesSnafu {
+            .with_context(|_| ClientPropertiesSnafu {
                 role_group: role_group_name.clone(),
             })?,
         );

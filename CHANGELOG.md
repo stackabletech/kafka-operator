@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file.
 - All product containers now run with `securityContext.runAsNonRoot` set to `true` to improve security ([#998]).
 - The reconciler now applies resources and derives the cluster status in discrete
   apply and update_status steps ([#1000]).
+- BREAKING: KRaft mode now requires Kafka 3.9.0 or later; Kafka 3.7.x is no longer supported and its previous
+  special-casing has been removed entirely, rather than narrowed. Running KRaft mode on an unsupported Kafka
+  version is undefined behavior ([#NNNN]).
 
 ### Fixed
 

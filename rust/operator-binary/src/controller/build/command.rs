@@ -58,7 +58,6 @@ pub fn broker_kafka_container_commands(
     kraft_mode: bool,
     controller_descriptors: Vec<KafkaPodDescriptor>,
     kafka_security: &ValidatedKafkaSecurity,
-    product_version: &str,
 ) -> String {
     formatdoc! {"
         {COMMON_BASH_TRAP_FUNCTIONS}
@@ -81,14 +80,13 @@ pub fn broker_kafka_container_commands(
             false => "".to_string(),
         },
         import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
-        broker_start_command = broker_start_command(kraft_mode, controller_descriptors, product_version),
+        broker_start_command = broker_start_command(kraft_mode, controller_descriptors),
     }
 }
 
 fn broker_start_command(
     kraft_mode: bool,
     controller_descriptors: Vec<KafkaPodDescriptor>,
-    product_version: &str,
 ) -> String {
     let common_command = formatdoc! {"
             {derive_pod_index}
@@ -120,7 +118,7 @@ fn broker_start_command(
             bin/kafka-server-start.sh /tmp/{properties_file} &
         ",
         properties_file = ConfigFileName::BrokerProperties,
-        initial_controller_command = initial_controllers_command(&controller_descriptors, product_version),
+        initial_controller_command = initial_controllers_command(&controller_descriptors),
         }
     } else {
         formatdoc! {"
@@ -176,7 +174,6 @@ wait_for_termination()
 
 pub fn controller_kafka_container_command(
     controller_descriptors: Vec<KafkaPodDescriptor>,
-    product_version: &str,
 ) -> String {
     formatdoc! {"
         {BASH_TRAP_FUNCTIONS}
@@ -202,7 +199,7 @@ pub fn controller_kafka_container_command(
         export_replica_id = EXPORT_REPLICA_ID,
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = ConfigFileName::ControllerProperties,
-        initial_controller_command = initial_controllers_command(&controller_descriptors, product_version),
+        initial_controller_command = initial_controllers_command(&controller_descriptors),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
     }
 }
@@ -272,11 +269,19 @@ const CLI_CALL_TIMEOUT_SECONDS: u32 = 15;
 /// [`ADD_CONTROLLER_PROPERTIES_PATH`] for why `add-controller` needs this merged file rather
 /// than the plain admin-client config, and for why the concatenation order matters.
 ///
-/// The render/merge preamble runs under a `set -e` scoped to just that preamble (see the
-/// inline comment) so a failure there crash-loops the container loudly, rather than silently
-/// starting the retry loop below with a missing or stale config. The loop itself deliberately
-/// does *not* run under `set -e`: `add-controller`/`curl` failures there are expected
-/// (e.g. a leader election in progress) and are handled explicitly.
+/// The render/merge preamble's inputs are static, operator-rendered config (env vars set
+/// once at pod creation), so a failure there is a genuine misconfiguration that retrying
+/// won't fix. It must still be loud in the logs, but it must *not* crash the container: a
+/// container with no readiness probe is only `Ready` while `Running`, and (with
+/// `OrderedReady` pod management on every non-Kerberos controller `StatefulSet`) a
+/// crash-looping sidecar would make its whole pod `NotReady` and block scale/update
+/// progress for every sibling pod in the role, not just the broken one. So on failure this
+/// falls into a "degraded" loop that repeats a clear error every 30s and never attempts
+/// `add-controller` (there is no valid rendered config to use), keeping the container alive
+/// and `Running` while the problem stays visible via `kubectl logs`. This deliberately does
+/// *not* retry the render/merge step itself — that would look like it might eventually
+/// succeed, when the actual cause is a misconfiguration that only a human or a new rollout
+/// can fix.
 pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
     format!(
         r#"
@@ -286,31 +291,32 @@ pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
         [ -n "$POD_INDEX" ] || exit 0
         {export_replica_id}
 
-        # Scoped to just this preamble: a failed render/merge step must crash-loop this
-        # container loudly rather than silently starting the loop below with a missing or
-        # stale config (see the function doc comment). The loop below intentionally does not
-        # run under `set -e`.
-        set -e
-        cp {config_dir}/{controller_properties_file} /tmp/{controller_properties_file}
-        config-utils template /tmp/{controller_properties_file}
-        cat /tmp/{controller_properties_file} {admin_client_config} > {add_controller_config}
-        set +e
-
-        echo "Starting KRaft voter admission loop against bootstrap servers: {bootstrap_servers}"
-        while true; do
-          state=$(curl -s --max-time 5 --connect-timeout 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+"\}}' | grep -oE '"[a-z]+"' | tr -d '"')
-          if [ "$state" = "observer" ]; then
-            echo "Local Raft state is observer, attempting add-controller..."
-            timeout {cli_timeout} {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {add_controller_config} add-controller \
-              || echo "add-controller attempt failed (this is expected if it already succeeded or a leader election is in progress), will retry"
-          elif [ -z "$state" ]; then
-            echo "Could not determine local Raft state (metrics scrape returned nothing), will retry"
-          else
-            echo "Local Raft state is '$state', nothing to do"
-          fi
-          sleep 10 &
-          wait $!
-        done
+        if cp {config_dir}/{controller_properties_file} /tmp/{controller_properties_file} \
+          && config-utils template /tmp/{controller_properties_file} \
+          && cat /tmp/{controller_properties_file} {admin_client_config} > {add_controller_config}; then
+          echo "Starting KRaft voter admission loop against bootstrap servers: {bootstrap_servers}"
+          while true; do
+            state=$(curl -s --max-time 5 --connect-timeout 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+"\}}' | grep -oE '"[a-z]+"' | tr -d '"')
+            if [ "$state" = "observer" ]; then
+              echo "Local Raft state is observer, attempting add-controller..."
+              timeout {cli_timeout} {binary} --bootstrap-controller '{bootstrap_servers}' --command-config {add_controller_config} add-controller \
+                || echo "add-controller attempt failed (this is expected if it already succeeded or a leader election is in progress), will retry"
+            elif [ -z "$state" ]; then
+              echo "Could not determine local Raft state (metrics scrape returned nothing), will retry"
+            else
+              echo "Local Raft state is '$state', nothing to do"
+            fi
+            sleep 10 &
+            wait $!
+          done
+        else
+          echo "ERROR: quorum-manager failed to render or merge its configuration (see errors above); this looks like a genuine misconfiguration, not a transient failure."
+          while true; do
+            echo "ERROR: quorum-manager is degraded and will NOT attempt add-controller: configuration render/merge failed at startup and this container is not retrying it. Check the errors above and the operator-rendered config; this pod likely needs manual investigation or a new rollout."
+            sleep 30 &
+            wait $!
+          done
+        fi
         "#,
         bootstrap_servers = bootstrap_servers,
         metrics_port = METRICS_PORT,
@@ -326,9 +332,16 @@ pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
 }
 
 /// The sidecar's `preStop` command: before this controller pod terminates, check that
-/// removing it still leaves the quorum with a majority of its *current* voter count, and
-/// if so, remove it from the voter set. Always exits 0 — a stuck or failed check must
-/// never block pod termination.
+/// removing it would not remove the *last* remaining voter from the quorum, and if so,
+/// remove it from the voter set. Always exits 0 — a stuck or failed check must never block
+/// pod termination.
+///
+/// Removing a departing voter only ever *lowers* the majority threshold for the remaining
+/// set, and the `remove-controller` RPC itself needs the *current* quorum to already commit
+/// it — if peers are unreachable the call simply fails, it can't corrupt anything. So the
+/// only real invariant worth enforcing here is "never remove the last voter": a 1-voter
+/// quorum can't be reduced further without permanently losing all fault tolerance (there
+/// would be no other voter left to ever add a replacement to).
 ///
 /// This controller's own KRaft node id is derived at runtime from `$POD_NAME` and
 /// `$NODE_ID_OFFSET` ([`DERIVE_POD_INDEX`]/[`EXPORT_REPLICA_ID`]), exactly as the `kafka`
@@ -341,8 +354,8 @@ pub fn quorum_manager_container_command(bootstrap_servers: &str) -> String {
 /// Filtering is deliberately conservative: only rows whose `Status` is a recognized voter
 /// value (`Leader`/`Follower`) count towards `total_voters`, and if that filter yields zero
 /// voters (e.g. because the real column layout differs from what's assumed here), the
-/// majority check simply retries rather than treating "no known voters" as "safe to
-/// remove" — i.e. this fails closed (skips removal) rather than open on a parsing mismatch.
+/// check simply retries rather than treating "no known voters" as "safe to remove" — i.e.
+/// this fails closed (skips removal) rather than open on a parsing mismatch.
 pub fn quorum_manager_pre_stop_command(bootstrap_servers: &str) -> String {
     format!(
         r#"
@@ -357,9 +370,8 @@ pub fn quorum_manager_pre_stop_command(bootstrap_servers: &str) -> String {
             voters=$(echo "$describe" | tail -n +2 | awk '$NF == "Leader" || $NF == "Follower"')
             total_voters=$(echo "$voters" | grep -c .)
             if [ "$total_voters" -gt 0 ]; then
-              majority=$(( total_voters / 2 + 1 ))
               remaining_after_removal=$(( total_voters - 1 ))
-              if [ "$remaining_after_removal" -ge "$majority" ]; then
+              if [ "$remaining_after_removal" -ge 1 ]; then
                 directory_id=$(echo "$voters" | awk -v id="$REPLICA_ID" '$1 == id {{ print $2 }}')
                 if [ -n "$directory_id" ]; then
                   echo "Removing self (node $REPLICA_ID, directory $directory_id) from the voter set..."
@@ -371,7 +383,7 @@ pub fn quorum_manager_pre_stop_command(bootstrap_servers: &str) -> String {
                 fi
                 break
               else
-                echo "Removing self would break quorum majority ($remaining_after_removal remaining of $majority needed), skipping and retrying..."
+                echo "Removing self would leave zero voters, skipping and retrying..."
               fi
             else
               echo "Could not identify any voters in the describe output (unrecognized format), skipping removal for safety and retrying..."
@@ -398,17 +410,11 @@ fn to_initial_controllers(controller_descriptors: &[KafkaPodDescriptor]) -> Stri
         .join(",")
 }
 
-fn initial_controllers_command(
-    controller_descriptors: &[KafkaPodDescriptor],
-    product_version: &str,
-) -> String {
-    match product_version.starts_with("3.7") {
-        true => "".to_string(),
-        false => format!(
-            "--initial-controllers {initial_controllers}",
-            initial_controllers = to_initial_controllers(controller_descriptors),
-        ),
-    }
+fn initial_controllers_command(controller_descriptors: &[KafkaPodDescriptor]) -> String {
+    format!(
+        "--initial-controllers {initial_controllers}",
+        initial_controllers = to_initial_controllers(controller_descriptors),
+    )
 }
 
 #[cfg(test)]
@@ -478,6 +484,59 @@ mod tests {
         assert!(command.contains("remove-controller"));
     }
 
+    /// The old majority-based guard (`majority=$(( total_voters / 2 + 1 ))`,
+    /// `remaining_after_removal -ge majority`) always blocked the last safe removal of a
+    /// 2-voter quorum (2 -> 1): `majority` was 2, `remaining_after_removal` was 1, and
+    /// `1 -ge 2` is false. That left a 2-voter quorum with only 1 live member — a dead
+    /// quorum requiring manual recovery, exactly the outage this feature exists to prevent.
+    /// The only invariant that actually matters is "never remove the last voter", so this
+    /// asserts the generated script uses that condition instead.
+    #[test]
+    fn quorum_manager_pre_stop_command_allows_removing_the_second_to_last_voter() {
+        let command = quorum_manager_pre_stop_command("controller-0:9093,controller-1:9093");
+        assert!(
+            command.contains(r#"remaining_after_removal" -ge 1 ]"#),
+            "expected the guard to allow removal whenever at least one voter remains \
+             afterwards, command was: {command}"
+        );
+        assert!(
+            !command.contains("majority"),
+            "the old majority-based guard variable should be gone entirely, command was: \
+             {command}"
+        );
+    }
+
+    /// Directly exercises the corrected guard's arithmetic (mirrored from the generated
+    /// script) end to end in bash: a 2-voter quorum must allow removing the departing voter
+    /// (leaving 1), while a 1-voter quorum must not (that would leave zero).
+    #[test]
+    fn quorum_manager_pre_stop_guard_arithmetic_allows_two_to_one_but_not_one_to_zero() {
+        fn removal_allowed(total_voters: u32) -> bool {
+            let script = format!(
+                r#"
+                total_voters={total_voters}
+                remaining_after_removal=$(( total_voters - 1 ))
+                [ "$remaining_after_removal" -ge 1 ]
+                "#
+            );
+            std::process::Command::new("bash")
+                .arg("-c")
+                .arg(script)
+                .status()
+                .expect("bash is available to run this test")
+                .success()
+        }
+
+        assert!(
+            removal_allowed(2),
+            "removing the second-to-last voter of a 2-voter quorum must be allowed"
+        );
+        assert!(
+            !removal_allowed(1),
+            "removing the last voter of a 1-voter quorum must never be allowed"
+        );
+    }
+
     /// The `preStop` hook already guarded its `REPLICA_ID` derivation against an empty
     /// `POD_INDEX`; the main loop's derivation must have the same guard, or an empty
     /// `POD_INDEX` would silently produce a wrong `node.id` instead of the sidecar noticing.
@@ -487,21 +546,36 @@ mod tests {
         assert!(command.contains(r#"[ -n "$POD_INDEX" ] || exit 0"#));
     }
 
-    /// The render/merge preamble (`cp`/`config-utils template`/`cat`) must fail loudly (this
-    /// container crash-loops) rather than silently starting the retry loop below with a
-    /// missing or stale config.
+    /// The render/merge preamble (`cp`/`config-utils template`/`cat`) must log loudly on
+    /// failure, but must not crash-loop the container: it falls into a degraded loop instead
+    /// of exiting, and never attempts `add-controller` once degraded.
     #[test]
-    fn quorum_manager_container_command_preamble_fails_loudly_on_error() {
+    fn quorum_manager_container_command_preamble_is_loud_but_does_not_crash_on_error() {
         let command = quorum_manager_container_command("controller-0:9093,controller-1:9093");
-        let preamble_end = command
-            .find("Starting KRaft voter admission loop")
-            .expect("the command has a preamble followed by the retry loop");
-        let preamble = &command[..preamble_end];
+        // A failed render/merge must not crash-loop the container (that would make the pod
+        // NotReady and, under OrderedReady pod management, block every sibling pod in the
+        // role too) — it must log loudly instead and stay Running.
         assert!(
-            preamble.contains("set -e"),
-            "expected the preamble to opt into `set -e` so a failed render/merge step crashes \
-             the container instead of silently continuing, preamble was: {preamble}"
+            !command.contains("set -e"),
+            "the preamble must not opt into `set -e` (that would crash-loop the container), \
+             command was: {command}"
         );
+        assert!(
+            command.contains("ERROR"),
+            "expected a clear error message on a failed render/merge, command was: {command}"
+        );
+        // On failure it must degrade into a loop rather than exiting (which would also crash
+        // the container) and must never attempt add-controller once degraded.
+        let error_branch_start = command
+            .find("echo \"ERROR: quorum-manager failed to render or merge")
+            .expect("the command has a degraded-mode error branch");
+        let degraded_branch = &command[error_branch_start..];
+        assert!(degraded_branch.contains("while true"));
+        // The degraded branch must never invoke the CLI tool (there is no valid rendered
+        // config to use) — check for the actual invocation, not just the word
+        // "add-controller" (which also appears inside the degraded branch's own log
+        // message, explaining what it is *not* doing).
+        assert!(!degraded_branch.contains(KAFKA_METADATA_QUORUM_BINARY));
     }
 
     /// The SIGTERM-handling fix's whole point is prompt shutdown, but an unresponsive (not
