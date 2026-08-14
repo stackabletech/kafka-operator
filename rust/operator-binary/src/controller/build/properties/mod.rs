@@ -56,6 +56,16 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
     product_version.starts_with("3.")
 }
 
+/// Whether this Kafka version supports the KIP-853 dynamic KRaft quorum tooling
+/// (`kafka-metadata-quorum.sh add-controller` / `remove-controller`) needed to change
+/// the voter set of an already-formed quorum. Mirrors the existing 3.7.x carve-out
+/// already used for `--initial-controllers` (see `initial_controllers_command` in
+/// `build/command.rs`).
+#[allow(dead_code)]
+pub fn supports_dynamic_quorum(product_version: &str) -> bool {
+    !product_version.starts_with("3.7")
+}
+
 pub(crate) fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
     pod_descriptors
         .iter()
@@ -89,5 +99,17 @@ mod tests {
         assert_eq!(ConfigFileName::Jaas.to_string(), "jaas.properties");
         assert_eq!(ConfigFileName::Log4j.to_string(), "log4j.properties");
         assert_eq!(ConfigFileName::Log4j2.to_string(), "log4j2.properties");
+    }
+
+    #[test]
+    fn dynamic_quorum_is_supported_from_3_9_onwards() {
+        assert!(supports_dynamic_quorum("3.9.2"));
+        assert!(supports_dynamic_quorum("4.1.1"));
+        assert!(supports_dynamic_quorum("4.2.1"));
+    }
+
+    #[test]
+    fn dynamic_quorum_is_not_supported_on_3_7() {
+        assert!(!supports_dynamic_quorum("3.7.2"));
     }
 }
