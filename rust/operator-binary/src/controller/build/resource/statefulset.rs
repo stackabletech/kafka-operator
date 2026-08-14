@@ -130,6 +130,7 @@ fn common_operator_env_vars(
 }
 
 const POD_MANAGEMENT_POLICY_PARALLEL: &str = "Parallel";
+const POD_MANAGEMENT_POLICY_ORDERED_READY: &str = "OrderedReady";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -639,7 +640,7 @@ pub fn build_controller_rolegroup_statefulset(
             .with_label(RESTART_CONTROLLER_ENABLED_LABEL.to_owned())
             .build(),
         spec: Some(StatefulSetSpec {
-            pod_management_policy: Some(POD_MANAGEMENT_POLICY_PARALLEL.to_string()),
+            pod_management_policy: Some(POD_MANAGEMENT_POLICY_ORDERED_READY.to_string()),
             update_strategy: Some(StatefulSetUpdateStrategy {
                 type_: Some("RollingUpdate".to_string()),
                 ..StatefulSetUpdateStrategy::default()
@@ -902,5 +903,73 @@ fn add_vector_container(
             &VECTOR_LOG_VOLUME_NAME,
             EnvVarSet::new(),
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::controller::test_support::{minimal_kafka, validated_cluster};
+
+    fn kraft_mode_cluster() -> crate::controller::ValidatedCluster {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+        validated_cluster(&kafka)
+    }
+
+    #[test]
+    fn controller_statefulset_uses_ordered_ready_pod_management() {
+        let cluster = kraft_mode_cluster();
+        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+        let sts = resources
+            .stateful_sets
+            .into_iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
+            .expect("the controller StatefulSet is built");
+
+        assert_eq!(
+            sts.spec
+                .expect("the StatefulSet has a spec")
+                .pod_management_policy,
+            Some("OrderedReady".to_string())
+        );
+    }
+
+    #[test]
+    fn broker_statefulset_still_uses_parallel_pod_management() {
+        let cluster = kraft_mode_cluster();
+        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+        let sts = resources
+            .stateful_sets
+            .into_iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-broker-default"))
+            .expect("the broker StatefulSet is built");
+
+        assert_eq!(
+            sts.spec
+                .expect("the StatefulSet has a spec")
+                .pod_management_policy,
+            Some("Parallel".to_string())
+        );
     }
 }
