@@ -49,6 +49,12 @@ All notable changes to this project will be documented in this file.
   down to a single replica, or the last surviving pod of a full teardown): removal is
   correctly refused in that case, and confirmed live that retrying can never change that
   outcome, so the hook now gives up immediately instead of retrying until the deadline ([#NNNN]).
+- Scaling a KRaft cluster's controller role group(s) down to a total of 0 replicas while any
+  broker replicas are configured is now rejected up front, during validation, with an actionable
+  error message. Previously it passed validation and failed much later and much more
+  confusingly, as `no Kraft controllers found to build` while building the unrelated *broker*
+  role group's `ConfigMap`. Controllers and brokers at 0 replicas together is unaffected, since
+  that is what `clusterOperation.stopped` already does today ([#NNNN]).
 
 [#985]: https://github.com/stackabletech/kafka-operator/pull/985
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990

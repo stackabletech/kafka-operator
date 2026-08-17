@@ -667,6 +667,14 @@ pub(crate) mod test_support {
 
     /// Runs the real validate step against a minimal (auth/OPA-free) fixture.
     pub fn validated_cluster(kafka: &v1alpha1::KafkaCluster) -> ValidatedCluster {
+        validate_err(kafka).expect("validate should succeed for the test fixture")
+    }
+
+    /// Runs the real validate step against a minimal (auth/OPA-free) fixture, without unwrapping
+    /// the result -- for tests asserting on a specific validation failure.
+    pub fn validate_err(
+        kafka: &v1alpha1::KafkaCluster,
+    ) -> Result<ValidatedCluster, super::validate::Error> {
         validate(
             kafka,
             DereferencedObjects {
@@ -677,7 +685,6 @@ pub(crate) mod test_support {
             },
             &operator_environment(),
         )
-        .expect("validate should succeed for the test fixture")
     }
 }
 
