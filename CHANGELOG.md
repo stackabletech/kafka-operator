@@ -40,6 +40,11 @@ All notable changes to this project will be documented in this file.
 - Fix a longstanding problem of including empty `categories`, `shortNames` and `additionalPrinterColumns` in the CRDs,
   which could cause problems with GitOps tools (e.g. ArgoCD) reporting a diff in the custom resources.
   See [our internal issue](https://github.com/stackabletech/hdfs-operator/issues/626) and [the fix](https://github.com/kube-rs/kube/pull/2042) for details ([#998]).
+- The `quorum-manager` sidecar's `preStop` hook no longer retries for the full 25s timeout
+  when a controller pod is the last remaining voter at termination (e.g. scaling controllers
+  down to a single replica, or the last surviving pod of a full teardown): removal is
+  correctly refused in that case, and confirmed live that retrying can never change that
+  outcome, so the hook now gives up immediately instead of retrying until the deadline ([#NNNN]).
 
 [#985]: https://github.com/stackabletech/kafka-operator/pull/985
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990

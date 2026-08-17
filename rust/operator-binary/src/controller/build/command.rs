@@ -429,6 +429,13 @@ pub fn quorum_manager_container_command() -> String {
 /// voters (e.g. because the real column layout differs from what's assumed here), the
 /// check simply retries rather than treating "no known voters" as "safe to remove" — i.e.
 /// this fails closed (skips removal) rather than open on a parsing mismatch.
+///
+/// The "would leave zero voters" case is the one exception that does *not* retry: once a
+/// `describe` shows this pod is the last remaining voter, retrying for the rest of the
+/// `DEADLINE` can't make it safe to remove — nothing else is going to add a voter for it
+/// while it terminates. Confirmed live: before this early `break`, a controller pod that
+/// became the last voter (e.g. scaling controllers down to 1, or the last surviving pod
+/// during a full teardown) always burned the entire 25s `DEADLINE` here for no benefit.
 pub fn quorum_manager_pre_stop_command() -> String {
     format!(
         r#"
@@ -457,7 +464,8 @@ pub fn quorum_manager_pre_stop_command() -> String {
                 fi
                 break
               else
-                echo "Removing self would leave zero voters, skipping and retrying..."
+                echo "Removing self would leave zero voters, skipping (this can't become safe later during my own termination -- nothing else will add a voter for me)"
+                break
               fi
             else
               echo "Could not identify any voters in the describe output (unrecognized format), skipping removal for safety and retrying..."
@@ -598,6 +606,30 @@ mod tests {
         assert!(
             !removal_allowed(1),
             "removing the last voter of a 1-voter quorum must never be allowed"
+        );
+    }
+
+    /// Confirmed live: a controller pod that is the last remaining voter when it terminates
+    /// (e.g. scaling controllers down to 1, or the last survivor of a full teardown) hit the
+    /// "would leave zero voters" branch and, before this fix, kept retrying every 2s until
+    /// the full 25s `DEADLINE` elapsed for no benefit -- nothing else adds a voter for this
+    /// pod while it's terminating, so the outcome can never change. The branch must `break`
+    /// immediately instead of falling through to the loop's `sleep 2`.
+    #[test]
+    fn quorum_manager_pre_stop_command_gives_up_immediately_on_the_last_voter() {
+        let command = quorum_manager_pre_stop_command();
+        let zero_voters_branch = command
+            .split("Removing self would leave zero voters")
+            .nth(1)
+            .expect("the zero-voters message is present in the generated script");
+        let next_fi = zero_voters_branch
+            .find("fi")
+            .expect("an `fi` closes this branch");
+        assert!(
+            zero_voters_branch[..next_fi].contains("break"),
+            "the zero-voters branch must break out of the retry loop immediately instead of \
+             retrying until DEADLINE, branch was: {}",
+            &zero_voters_branch[..next_fi]
         );
     }
 
