@@ -350,24 +350,6 @@ impl KafkaPodDescriptor {
     pub fn pod_name(&self) -> String {
         format!("{}-{}", self.role_group_statefulset_name, self.replica)
     }
-
-    /// Build the Kraft voter String
-    /// See: <https://kafka.apache.org/40/documentation.html#kraft_storage_voters>
-    /// Example: 0@controller-0:1234:0000000000-00000000000
-    ///   * 0 is the replica id
-    ///   * 0000000000-00000000000 is the replica directory id (even though the used Uuid states to be type 4 it does not work)
-    ///     See: <https://github.com/apache/kafka/blob/c5169ca805bd03d870a5bcd49744dcc34891cf15/clients/src/main/java/org/apache/kafka/common/Uuid.java#L29>
-    ///   * controller-0 is the replica's host,
-    ///   * 1234 is the replica's port.
-    // NOTE(@maltesander): Even though the used Uuid states to be type 4 it does not work... 0000000000-00000000000 works...
-    pub fn as_voter(&self) -> String {
-        format!(
-            "{node_id}@{fqdn}:{port}:0000000000-{node_id:0>11}",
-            node_id = self.node_id,
-            port = self.client_port,
-            fqdn = self.fqdn(),
-        )
-    }
 }
 
 #[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]

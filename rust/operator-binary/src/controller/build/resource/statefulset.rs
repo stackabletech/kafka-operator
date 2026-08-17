@@ -54,7 +54,7 @@ use crate::{
             },
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::add_kerberos_pod_config,
-            properties::{kraft_controllers, product_logging::MAX_KAFKA_LOG_FILES_SIZE},
+            properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
             security::{
                 STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                 add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
@@ -302,10 +302,6 @@ pub fn build_broker_rolegroup_statefulset(
         ])
         .args(vec![broker_kafka_container_commands(
             validated_cluster.cluster_config.is_kraft_mode(),
-            // we need controller pods
-            validated_cluster
-                .pod_descriptors(Some(&KafkaRole::Controller))
-                .context(BuildPodDescriptorsSnafu)?,
             kafka_security,
         )]);
 
@@ -531,10 +527,6 @@ pub fn build_controller_rolegroup_statefulset(
     let controller_pod_descriptors = validated_cluster
         .pod_descriptors(Some(kafka_role))
         .context(BuildPodDescriptorsSnafu)?;
-    // Comma-joined `host:port` list of all KRaft controller voters, consumed by the
-    // `quorum-manager` sidecar container so it can talk to the quorum via
-    // `kafka-metadata-quorum.sh`.
-    let quorum_bootstrap_servers = kraft_controllers(&controller_pod_descriptors).join(",");
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -624,12 +616,9 @@ pub fn build_controller_rolegroup_statefulset(
         .add_container(kafka_container)
         .affinity(&merged_config.affinity);
 
-    if let Some(quorum_manager_container) = build_quorum_manager_container(
-        resolved_product_image,
-        kafka_security,
-        &quorum_bootstrap_servers,
-        quorum_manager_env,
-    )? {
+    if let Some(quorum_manager_container) =
+        build_quorum_manager_container(resolved_product_image, kafka_security, quorum_manager_env)?
+    {
         pod_builder.add_container(quorum_manager_container);
     }
 
@@ -848,7 +837,6 @@ const QUORUM_MANAGER_CONTAINER_NAME: &str = "quorum-manager";
 fn build_quorum_manager_container(
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &ValidatedKafkaSecurity,
-    quorum_bootstrap_servers: &str,
     env: Vec<EnvVar>,
 ) -> Result<Option<stackable_operator::k8s_openapi::api::core::v1::Container>, Error> {
     if kafka_security.has_kerberos_enabled() {
@@ -865,7 +853,7 @@ fn build_quorum_manager_container(
         .command(vec![
             "/bin/bash".to_string(),
             "-c".to_string(),
-            quorum_manager_container_command(quorum_bootstrap_servers),
+            quorum_manager_container_command(),
         ])
         .add_env_vars(env)
         // `kafka-metadata-quorum.sh` goes through `kafka-run-class.sh`, which defaults
@@ -894,12 +882,23 @@ fn build_quorum_manager_container(
             STACKABLE_TLS_KAFKA_INTERNAL_DIR,
         )
         .context(AddVolumeMountSnafu)?
+        // `add-controller` reads this controller's own on-disk `meta.properties` (its
+        // `node.id`/`directory.id`, written by `kafka-storage.sh format`) from `log.dirs` in
+        // the merged config it connects with — confirmed live: without this mount, every
+        // `add-controller` attempt failed with "Unable to read meta.properties from
+        // /stackable/data/kraft", since that path doesn't exist in this container's
+        // filesystem at all without it. This mounts the *same* per-pod PVC the `kafka`
+        // container itself writes `meta.properties` into, read-write for parity with it
+        // (the CLI tool doesn't document a read-only requirement, and this repo has no
+        // read-only-mount helper to reach for).
+        .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
+        .context(AddVolumeMountSnafu)?
         .lifecycle_pre_stop(LifecycleHandler {
             exec: Some(ExecAction {
                 command: Some(vec![
                     "/bin/bash".to_string(),
                     "-c".to_string(),
-                    quorum_manager_pre_stop_command(quorum_bootstrap_servers),
+                    quorum_manager_pre_stop_command(),
                 ]),
             }),
             ..LifecycleHandler::default()
@@ -995,6 +994,67 @@ mod tests {
                 .pod_management_policy,
             Some("Parallel".to_string())
         );
+    }
+
+    /// End-to-end regression covering the whole point of removing `--initial-controllers`
+    /// (and the sidecar's own baked-in bootstrap-servers literal) from the controller pod
+    /// template: scaling an existing controller role group's replica count must not change
+    /// either container's `command`, or Kubernetes will roll every already-existing
+    /// controller pod on every scale-up/down, not just the ones actually being added or
+    /// removed. Confirmed live: before this fix, both the `kafka` container's format command
+    /// and the `quorum-manager` sidecar's bootstrap-servers literal changed with replica
+    /// count, forcing a full rolling restart on every scale operation.
+    #[test]
+    fn controller_pod_template_is_stable_across_replica_count_changes() {
+        let three_replicas = kraft_mode_cluster();
+        let five_replicas = crate::controller::test_support::validated_cluster(
+            &crate::controller::test_support::minimal_kafka(
+                r#"
+                apiVersion: kafka.stackable.tech/v1alpha1
+                kind: KafkaCluster
+                metadata:
+                  name: simple-kafka
+                  namespace: default
+                  uid: 12345678-1234-1234-1234-123456789012
+                spec:
+                  image:
+                    productVersion: 3.9.2
+                  clusterConfig:
+                    metadataManager: kraft
+                  controllers:
+                    roleGroups:
+                      default:
+                        replicas: 5
+                  brokers:
+                    roleGroups:
+                      default:
+                        replicas: 3
+                "#,
+            ),
+        );
+
+        let three_containers = controller_containers(&three_replicas);
+        let five_containers = controller_containers(&five_replicas);
+
+        for name in ["kafka", QUORUM_MANAGER_CONTAINER_NAME] {
+            let three_command = three_containers
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap_or_else(|| panic!("the {name} container is built (3 replicas)"))
+                .command
+                .clone();
+            let five_command = five_containers
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap_or_else(|| panic!("the {name} container is built (5 replicas)"))
+                .command
+                .clone();
+            assert_eq!(
+                three_command, five_command,
+                "the {name} container's command must not change when only the replica count \
+                 of an existing controller role group changes"
+            );
+        }
     }
 
     fn controller_containers(
@@ -1175,13 +1235,8 @@ mod tests {
         let cluster = kraft_mode_cluster();
         let kerberos_security = crate::controller::build::security::tests::kerberos();
 
-        let result = build_quorum_manager_container(
-            &cluster.image,
-            &kerberos_security,
-            "controller-0:9093",
-            Vec::new(),
-        )
-        .expect("build_quorum_manager_container does not error for a kerberos security value");
+        let result = build_quorum_manager_container(&cluster.image, &kerberos_security, Vec::new())
+            .expect("build_quorum_manager_container does not error for a kerberos security value");
 
         assert!(result.is_none());
     }

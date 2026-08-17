@@ -7,8 +7,16 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - KRaft controller replicas can now be scaled up and down on a running cluster: a new
-  `quorum-manager` sidecar container on each controller pod admits itself into the KRaft
-  voter set on startup and removes itself before termination ([#NNNN]).
+  `quorum-manager` sidecar container on each controller pod is solely responsible for
+  admitting itself into the KRaft voter set on startup and removing itself before
+  termination. Exactly one controller bootstraps the quorum standalone at format time
+  (`kafka-storage.sh format --standalone`); every other controller, whether present from
+  the start or added later, formats with `--no-initial-controllers` and joins purely
+  through the sidecar. Neither the `kafka` container's nor the sidecar's own command
+  changes with the replica count anymore (confirmed live and covered by a regression
+  test); a platform-level ConfigMap-restarter mechanism unrelated to this change still
+  restarts every controller pod on scale today — see `kraft-controller.adoc`'s Known
+  Issues for why ([#NNNN]).
 
 ### Changed
 

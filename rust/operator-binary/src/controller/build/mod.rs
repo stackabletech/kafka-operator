@@ -173,7 +173,7 @@ mod tests {
                 zookeeper_mode_cluster,
             },
         },
-        crd::{STACKABLE_CONFIG_DIR, role::KafkaRole},
+        crd::{STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, role::KafkaRole},
     };
 
     /// Sorted `metadata.name`s of the given resources, for order-independent assertions.
@@ -346,6 +346,16 @@ mod tests {
         assert!(
             mount_paths.contains(&STACKABLE_TLS_KAFKA_INTERNAL_DIR),
             "the sidecar must mount the internal TLS directory admin-client.properties points its keystore/truststore at, got: {mount_paths:?}"
+        );
+        // `add-controller` reads this controller's own on-disk `meta.properties` (written by
+        // `kafka-storage.sh format`, and pointed at by `log.dirs` in the merged config it
+        // connects with) to build the voter registration payload. Confirmed live: without
+        // this mount, every `add-controller` attempt fails with "Unable to read
+        // meta.properties from /stackable/data/kraft" — the path simply doesn't exist in
+        // this container without it.
+        assert!(
+            mount_paths.contains(&STACKABLE_DATA_DIR),
+            "the sidecar must mount the data directory holding its own meta.properties, or add-controller can never read its own identity, got: {mount_paths:?}"
         );
     }
 
