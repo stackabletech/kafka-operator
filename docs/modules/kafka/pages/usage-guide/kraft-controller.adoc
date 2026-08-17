@@ -91,6 +91,10 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 * `cluster-id`: This is set to the `metadata.name` of the KafkaCluster resource during initial formatting
 * `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
 * `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not supported.
+* Controller pods have a `startupProbe` and a plain TCP `livenessProbe` on the KRaft listener port, and a
+  `readinessProbe` that checks the controller's Raft state (`leader`, `follower`, or `voted`) via its metrics
+  endpoint rather than a bare TCP check, so a controller that cannot join or rejoin the quorum is correctly
+  reported as not ready instead of appearing healthy.
 * Admitting a controller into the KRaft voter set is *solely* the concern of the `quorum-manager` sidecar container
   (see below) — the format step never asserts a voter list. Exactly one controller (the one with the numerically
   lowest `node.id` among all controller pod descriptors) formats with `kafka-storage.sh format --standalone`,

@@ -39,7 +39,10 @@ use stackable_operator::{
             STACKABLE_LOG_DIR, ValidatedContainerLogConfigChoice, vector_container,
         },
         role_group_utils::ResourceNames,
-        types::kubernetes::{ConfigMapKey, ContainerName, PersistentVolumeClaimName, VolumeName},
+        types::{
+            common::Port,
+            kubernetes::{ConfigMapKey, ContainerName, PersistentVolumeClaimName, VolumeName},
+        },
     },
 };
 
@@ -563,27 +566,30 @@ pub fn build_controller_rolegroup_statefulset(
         .add_volume_mount(STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
         .context(AddVolumeMountSnafu)?
         .resources(merged_config.resources().clone().into())
-        // TODO: improve probes
-        .liveness_probe(Probe {
-            tcp_socket: Some(TCPSocketAction {
-                port: IntOrString::Int(kafka_security.client_port().into()),
-                ..Default::default()
-            }),
-            timeout_seconds: Some(10),
-            period_seconds: Some(10),
-            failure_threshold: Some(6),
-            ..Probe::default()
-        })
-        .readiness_probe(Probe {
-            tcp_socket: Some(TCPSocketAction {
-                port: IntOrString::Int(kafka_security.client_port().into()),
-                ..Default::default()
-            }),
-            timeout_seconds: Some(10),
-            period_seconds: Some(10),
-            failure_threshold: Some(6),
-            ..Probe::default()
-        });
+        // The controller listener socket only opens once the KRaft node has finished replaying
+        // its metadata log, which can take a while on a slow first boot or after a long outage.
+        // The startupProbe gives it up to 5 minutes (60 * 5s) before the liveness probe is
+        // allowed to start counting failures at all, so a slow (but progressing) boot is never
+        // mistaken for a stuck process.
+        .startup_probe(controller_tcp_probe(
+            kafka_security.client_port(),
+            /* timeout_seconds */ 5,
+            /* period_seconds */ 5,
+            /* failure_threshold */ 60,
+        ))
+        // Liveness intentionally stays a plain TCP check, same as startupProbe
+        .liveness_probe(controller_tcp_probe(
+            kafka_security.client_port(),
+            /* timeout_seconds */ 10,
+            /* period_seconds */ 10,
+            /* failure_threshold */ 6,
+        ))
+        .readiness_probe(controller_raft_state_probe(
+            METRICS_PORT,
+            /* timeout_seconds */ 10,
+            /* period_seconds */ 10,
+            /* failure_threshold */ 6,
+        ));
 
     add_log_config_volume(
         &mut pod_builder,
@@ -680,6 +686,57 @@ pub fn build_controller_rolegroup_statefulset(
         }),
         status: None,
     })
+}
+
+/// A `Probe` that dials the controller's KRaft listener socket via a plain TCP connect.
+///
+/// This only proves the socket is open, not that the node has a healthy Raft state (leader,
+/// follower, or voted). It is intentionally still used for `startupProbe` (there is no
+/// meaningful Raft state to check yet while the process is still starting) and for
+/// `livenessProbe` (an unhealthy Raft state, e.g. `candidate`/`unattached`, means the node
+/// cannot currently reach its peers, which restarting this pod cannot fix on its own).
+fn controller_tcp_probe(
+    port: Port,
+    timeout_seconds: i32,
+    period_seconds: i32,
+    failure_threshold: i32,
+) -> Probe {
+    Probe {
+        tcp_socket: Some(TCPSocketAction {
+            port: IntOrString::Int(port.into()),
+            ..Default::default()
+        }),
+        timeout_seconds: Some(timeout_seconds),
+        period_seconds: Some(period_seconds),
+        failure_threshold: Some(failure_threshold),
+        ..Probe::default()
+    }
+}
+
+/// A `Probe` that curls the JMX Prometheus exporter's `/metrics` endpoint and checks that the
+/// controller's Raft state is one of the healthy states (`leader`, `follower`, or `voted`)
+/// rather than stuck in `unattached` or `candidate`.
+fn controller_raft_state_probe(
+    metrics_port: Port,
+    timeout_seconds: i32,
+    period_seconds: i32,
+    failure_threshold: i32,
+) -> Probe {
+    Probe {
+        exec: Some(ExecAction {
+            command: Some(vec![
+                "bash".to_string(),
+                "-c".to_string(),
+                format!(
+                    "curl -s localhost:{metrics_port}/metrics | grep -E 'kafka_server_raft_metrics_current_state\\{{state=\"(leader|follower|voted)\",?\\}}'"
+                ),
+            ]),
+        }),
+        timeout_seconds: Some(timeout_seconds),
+        period_seconds: Some(period_seconds),
+        failure_threshold: Some(failure_threshold),
+        ..Probe::default()
+    }
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
@@ -934,9 +991,15 @@ fn add_vector_container(
 
 #[cfg(test)]
 mod tests {
+    use stackable_operator::k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+
     use super::*;
     use crate::controller::test_support::{minimal_kafka, validated_cluster};
 
+    /// A minimal KRaft cluster with one controller role group, resolved through the real
+    /// validate step (mirroring the fixtures in `build/mod.rs`'s own tests), since
+    /// `ValidatedCluster` carries several resolved types that are impractical to construct by
+    /// hand.
     fn kraft_mode_cluster() -> crate::controller::ValidatedCluster {
         let kafka = minimal_kafka(
             r#"
@@ -1076,6 +1139,15 @@ mod tests {
             .spec
             .expect("the pod template has a spec")
             .containers
+    }
+
+    fn controller_kafka_container(
+        cluster: &crate::controller::ValidatedCluster,
+    ) -> stackable_operator::k8s_openapi::api::core::v1::Container {
+        controller_containers(cluster)
+            .into_iter()
+            .find(|c| c.name == "kafka")
+            .expect("the kafka container is built")
     }
 
     #[test]
@@ -1267,5 +1339,67 @@ mod tests {
                 .iter()
                 .any(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME)
         );
+    }
+
+    #[test]
+    fn controller_kafka_container_has_a_startup_probe() {
+        let cluster = kraft_mode_cluster();
+        let container = controller_kafka_container(&cluster);
+        let client_port = cluster.cluster_config.kafka_security.client_port();
+
+        let startup_probe = container
+            .startup_probe
+            .expect("the controller kafka container must have a startupProbe");
+        let tcp_socket = startup_probe
+            .tcp_socket
+            .expect("the startupProbe must be a tcpSocket check");
+        assert_eq!(tcp_socket.port, IntOrString::Int(client_port.into()));
+        assert_eq!(startup_probe.timeout_seconds, Some(5));
+        assert_eq!(startup_probe.period_seconds, Some(5));
+        assert_eq!(startup_probe.failure_threshold, Some(60));
+    }
+
+    #[test]
+    fn controller_kafka_container_liveness_probe_is_a_plain_tcp_check() {
+        let cluster = kraft_mode_cluster();
+        let container = controller_kafka_container(&cluster);
+        let client_port = cluster.cluster_config.kafka_security.client_port();
+
+        // Liveness intentionally stays a bare TCP check, not the Raft-state exec probe used for
+        // readiness: an unreachable-quorum Raft state is not something restarting this pod can
+        // fix, so liveness must not fail on it.
+        let liveness_probe = container
+            .liveness_probe
+            .expect("the controller kafka container must have a livenessProbe");
+        let tcp_socket = liveness_probe
+            .tcp_socket
+            .expect("the livenessProbe must be a tcpSocket check, not an exec check");
+        assert_eq!(tcp_socket.port, IntOrString::Int(client_port.into()));
+        assert_eq!(liveness_probe.timeout_seconds, Some(10));
+        assert_eq!(liveness_probe.period_seconds, Some(10));
+        assert_eq!(liveness_probe.failure_threshold, Some(6));
+    }
+
+    #[test]
+    fn controller_kafka_container_readiness_probe_checks_raft_state() {
+        let cluster = kraft_mode_cluster();
+        let container = controller_kafka_container(&cluster);
+
+        let readiness_probe = container.readiness_probe.expect("readiness probe is set");
+        let exec = readiness_probe
+            .exec
+            .expect("readiness probe is an exec check");
+        let command = exec.command.expect("exec has a command");
+        assert_eq!(
+            command,
+            vec![
+                "bash".to_string(),
+                "-c".to_string(),
+                "curl -s localhost:9606/metrics | grep -E 'kafka_server_raft_metrics_current_state\\{state=\"(leader|follower|voted)\",?\\}'".to_string(),
+            ]
+        );
+        assert_eq!(readiness_probe.timeout_seconds, Some(10));
+        assert_eq!(readiness_probe.period_seconds, Some(10));
+        assert_eq!(readiness_probe.failure_threshold, Some(6));
     }
 }

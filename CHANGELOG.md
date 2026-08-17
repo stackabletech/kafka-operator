@@ -18,6 +18,10 @@ All notable changes to this project will be documented in this file.
   Confirmed live: scaling a controller role group up or down leaves every already-existing
   controller pod completely untouched (same UID, zero restarts, no `StatefulSet` revision
   change) — only the pods actually being added or removed are touched ([#NNNN]).
+- A `startupProbe` and a plain TCP `livenessProbe` for KRaft controllers, and a new
+  `readinessProbe` that checks the controller's Raft state (`leader`/`follower`/`voted`) via
+  its metrics endpoint instead of a bare TCP check, so a controller that can't join or
+  rejoin the quorum is correctly reported as not ready ([#1006]).
 
 ### Changed
 
@@ -51,6 +55,7 @@ All notable changes to this project will be documented in this file.
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994
 [#998]: https://github.com/stackabletech/kafka-operator/pull/998
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
+[#1006]: https://github.com/stackabletech/kafka-operator/pull/1006
 [#NNNN]: https://github.com/stackabletech/kafka-operator/pull/NNNN
 
 ## [26.7.0] - 2026-07-21
