@@ -281,6 +281,20 @@ const ADD_CONTROLLER_PROPERTIES_PATH: &str = "/tmp/add-controller.properties";
 /// 30 minutes) rather than the script's own 25s budget.
 const CLI_CALL_TIMEOUT_SECONDS: u32 = 15;
 
+/// Grace period (seconds) after [`CLI_CALL_TIMEOUT_SECONDS`] elapses before `timeout` sends
+/// `SIGKILL`, via `--kill-after`.
+///
+/// `timeout N cmd` (GNU coreutils) without `--kill-after` only *sends* `SIGTERM` once `N`
+/// seconds pass — it does not force-kill `cmd`, so if `cmd` doesn't honor the signal
+/// promptly, the whole call can run far longer than `N` seconds. Confirmed directly,
+/// independent of Kafka: `timeout 3 bash -c 'trap "" TERM; sleep 30'` takes the full 30s, not
+/// 3s. Confirmed live, with Kafka: during a full namespace deletion (every controller
+/// terminating concurrently, so a peer's `describe`/`add-controller`/`remove-controller` call
+/// can hit a blackholed rather than actively-refused connection), a controller's sidecar kept
+/// running well past its own `preStop` script's ~25-40s design budget — the `timeout` wrapper
+/// around its `kafka-metadata-quorum.sh` calls was not actually bounding them.
+const CLI_CALL_KILL_AFTER_SECONDS: u32 = 5;
+
 /// Shell snippet setting `$BOOTSTRAP_SERVERS` by extracting
 /// `controller.quorum.bootstrap.servers` from the static, un-rendered `controller.properties`
 /// ConfigMap file, un-escaping the `\:` that `to_java_properties_string` applies to colons.
@@ -357,7 +371,7 @@ pub fn quorum_manager_container_command() -> String {
             state=$(curl -s --max-time 5 --connect-timeout 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+"\}}' | grep -oE '"[a-z]+"' | tr -d '"')
             if [ "$state" = "observer" ]; then
               echo "Local Raft state is observer, attempting add-controller..."
-              timeout {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {add_controller_config} add-controller \
+              timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {add_controller_config} add-controller \
                 || echo "add-controller attempt failed (this is expected if it already succeeded or a leader election is in progress), will retry"
             elif [ -z "$state" ]; then
               echo "Could not determine local Raft state (metrics scrape returned nothing), will retry"
@@ -386,6 +400,7 @@ pub fn quorum_manager_container_command() -> String {
         admin_client_config = ADMIN_CLIENT_PROPERTIES_PATH,
         add_controller_config = ADD_CONTROLLER_PROPERTIES_PATH,
         cli_timeout = CLI_CALL_TIMEOUT_SECONDS,
+        cli_kill_after = CLI_CALL_KILL_AFTER_SECONDS,
     )
 }
 
@@ -424,7 +439,7 @@ pub fn quorum_manager_pre_stop_command() -> String {
         {extract_bootstrap_servers}
         DEADLINE=$((SECONDS + 25))
         while [ "$SECONDS" -lt "$DEADLINE" ]; do
-          describe=$(timeout {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {config} describe --replication 2>/dev/null)
+          describe=$(timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {config} describe --replication 2>/dev/null)
           if [ -n "$describe" ]; then
             voters=$(echo "$describe" | tail -n +2 | awk '$NF == "Leader" || $NF == "Follower"')
             total_voters=$(echo "$voters" | grep -c .)
@@ -434,7 +449,7 @@ pub fn quorum_manager_pre_stop_command() -> String {
                 directory_id=$(echo "$voters" | awk -v id="$REPLICA_ID" '$1 == id {{ print $2 }}')
                 if [ -n "$directory_id" ]; then
                   echo "Removing self (node $REPLICA_ID, directory $directory_id) from the voter set..."
-                  timeout {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {config} remove-controller \
+                  timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {config} remove-controller \
                     --controller-id "$REPLICA_ID" --controller-directory-id "$directory_id" \
                     || echo "remove-controller failed, proceeding with termination anyway"
                 else
@@ -455,6 +470,7 @@ pub fn quorum_manager_pre_stop_command() -> String {
         binary = KAFKA_METADATA_QUORUM_BINARY,
         config = ADMIN_CLIENT_PROPERTIES_PATH,
         cli_timeout = CLI_CALL_TIMEOUT_SECONDS,
+        cli_kill_after = CLI_CALL_KILL_AFTER_SECONDS,
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
         extract_bootstrap_servers = extract_bootstrap_servers_command(),
@@ -634,6 +650,36 @@ mod tests {
     fn quorum_manager_container_command_metrics_curl_has_timeouts() {
         let command = quorum_manager_container_command();
         assert!(command.contains("curl -s --max-time 5 --connect-timeout 2 localhost"));
+    }
+
+    /// `timeout N cmd` (GNU coreutils, no `--kill-after`) only *sends* the signal after `N`
+    /// seconds — it does not force-kill the process, so if `cmd` doesn't honor the signal
+    /// promptly, the whole call can run far longer than `N` seconds. Confirmed directly,
+    /// independent of Kafka: `timeout 3 bash -c 'trap "" TERM; sleep 30'` takes the full 30s,
+    /// not 3s, while `timeout --kill-after=2 3 bash -c 'trap "" TERM; sleep 30'` is correctly
+    /// bounded to ~5s. This matters most for `quorum_manager_pre_stop_command`, which runs
+    /// exactly when peers may be mid-termination (a blackholed, not actively-refused,
+    /// connection is exactly the kind of thing a JVM AdminClient can hang on past its own
+    /// `timeout` wrapper) — confirmed live: during a full namespace deletion, a controller's
+    /// sidecar kept running (past `preStop`, so its `SIGTERM` hadn't even been delivered to
+    /// the main loop yet) for 100+ seconds, far past the script's own ~25-40s design budget.
+    #[test]
+    fn every_cli_call_has_a_kill_after_so_timeout_is_actually_enforced() {
+        let container_command = quorum_manager_container_command();
+        let pre_stop_command = quorum_manager_pre_stop_command();
+
+        for command in [&container_command, &pre_stop_command] {
+            for line in command
+                .lines()
+                .filter(|line| line.contains(KAFKA_METADATA_QUORUM_BINARY))
+            {
+                assert!(
+                    line.contains("timeout --kill-after="),
+                    "every kafka-metadata-quorum.sh invocation must use `timeout --kill-after=...` \
+                     so a hung call is actually bounded, not just signaled — offending line: {line}"
+                );
+            }
+        }
     }
 
     /// Builds a minimal [`KafkaPodDescriptor`] for the given role and replica.
