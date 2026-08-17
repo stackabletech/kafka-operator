@@ -334,24 +334,6 @@ pub struct KafkaPodDescriptor {
     pub client_port: Port,
 }
 
-impl KafkaPodDescriptor {
-    /// Return the fully qualified domain name
-    /// Format: `<pod-name>.<service>.<namespace>.svc.<cluster-domain>`
-    pub fn fqdn(&self) -> String {
-        format!(
-            "{pod_name}.{service_name}.{namespace}.svc.{cluster_domain}",
-            pod_name = self.pod_name(),
-            service_name = self.role_group_service_name,
-            namespace = self.namespace,
-            cluster_domain = self.cluster_domain
-        )
-    }
-
-    pub fn pod_name(&self) -> String {
-        format!("{}-{}", self.role_group_statefulset_name, self.replica)
-    }
-}
-
 #[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterStatus {

@@ -12,11 +12,12 @@ All notable changes to this project will be documented in this file.
   termination. Exactly one controller bootstraps the quorum standalone at format time
   (`kafka-storage.sh format --standalone`); every other controller, whether present from
   the start or added later, formats with `--no-initial-controllers` and joins purely
-  through the sidecar. Neither the `kafka` container's nor the sidecar's own command
-  changes with the replica count anymore (confirmed live and covered by a regression
-  test); a platform-level ConfigMap-restarter mechanism unrelated to this change still
-  restarts every controller pod on scale today — see `kraft-controller.adoc`'s Known
-  Issues for why ([#NNNN]).
+  through the sidecar. `controller.quorum.bootstrap.servers` now points at each controller
+  role group's headless Service DNS name instead of individual pod addresses, so neither
+  the container commands nor that ConfigMap value change with the replica count anymore.
+  Confirmed live: scaling a controller role group up or down leaves every already-existing
+  controller pod completely untouched (same UID, zero restarts, no `StatefulSet` revision
+  change) — only the pods actually being added or removed are touched ([#NNNN]).
 
 ### Changed
 

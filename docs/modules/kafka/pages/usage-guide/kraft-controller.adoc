@@ -98,8 +98,16 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
   desired replica count or added later on scale-up — formats with `--no-initial-controllers` and joins purely
   through the sidecar's `add-controller` call. Brokers always format with `--no-initial-controllers` too; they are
   never voters. Because no voter list is baked into any container's command, the command is identical regardless of
-  the current replica count, so changing `spec.controllers.roleGroups.<name>.replicas` no longer forces Kubernetes to
-  roll every already-existing controller pod — only the pods actually being added or removed are touched.
+  the current replica count.
+* `controller.quorum.bootstrap.servers` (used by the `kafka` process itself to find the controller quorum, and by
+  the `quorum-manager` sidecar for its own `add-controller`/`remove-controller` calls) points at each controller
+  role group's own headless Service DNS name, not individual pod addresses. A headless Service's own DNS name
+  resolves to every backing pod's IP — exactly what Kafka's `client.dns.lookup=use_all_dns_ips` default already
+  expects — and the Service sets `publishNotReadyAddresses: true`, so this also resolves correctly during initial
+  cluster formation before any pod is `Ready`. Combined with the previous point, this makes the whole controller
+  pod template invariant to `spec.controllers.roleGroups.<name>.replicas`: confirmed live, scaling a controller
+  role group up or down leaves every already-existing controller pod completely untouched (same UID, zero
+  restarts, no `StatefulSet` revision change) — only the pods actually being added or removed are touched.
 * When Kerberos is not enabled, each controller pod runs an additional `quorum-manager` sidecar container (requires
   Kafka 3.9.0 or later, see the minimum-version note above). On startup it admits the pod into the KRaft voter set
   (`kafka-metadata-quorum.sh add-controller`), and on pod termination (`preStop`) it removes the pod from the voter
@@ -122,15 +130,6 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
   voters to break quorum in any Raft-based system, and the operator has no way to detect or repair it automatically
   (it deliberately has no live-cluster awareness). If this happens, recovery requires manual intervention with
   Kafka's own KRaft tooling.
-* Scaling controller replicas up or down today still restarts every existing controller pod, not just the ones
-  being added or removed. This is not caused by the container command (which is confirmed live to stay identical
-  across replica-count changes) but by the Stackable platform's ConfigMap-restarter mechanism: `controller.properties`
-  still lists every current peer in `controller.quorum.bootstrap.servers`, so its `resourceVersion` genuinely
-  changes on every replica-count change, and the platform restarts every pod referencing a changed ConfigMap
-  (most products need a full restart to pick up config changes; the `quorum-manager` sidecar only reads this value
-  once at its own startup, so for it specifically the restart isn't needed, but the platform mechanism can't tell
-  the difference). Eliminating this would mean making that ConfigMap value itself stable across replica-count
-  changes (for example, pointing at a fixed anchor node instead of the full peer list) — not yet done.
 
 == Troubleshooting
 
