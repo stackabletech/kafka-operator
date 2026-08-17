@@ -359,6 +359,56 @@ mod tests {
         );
     }
 
+    /// Confirmed live: the `smoke-kraft` test cluster's admission control rejects any pod
+    /// whose memory limit-to-request ratio isn't exactly 1 ("memory max limit to request
+    /// ratio per Container is 1, but provided ratio is 2.000000"), which is also what the
+    /// operator's own `stackable_operator::builder::pod` warning already flags. Every
+    /// container's memory request must equal its memory limit, not just the `quorum-manager`
+    /// sidecar's — this test covers all containers in both the broker and controller pods so
+    /// a future container addition can't reintroduce this for either role.
+    #[test]
+    fn every_container_has_a_1_to_1_memory_limit_to_request_ratio() {
+        let cluster = kraft_mode_cluster();
+        let resources = build(&cluster).expect("build succeeds");
+
+        for sts in &resources.stateful_sets {
+            let pod_spec = sts
+                .spec
+                .as_ref()
+                .expect("the StatefulSet should have a spec")
+                .template
+                .spec
+                .as_ref()
+                .expect("the pod template should have a spec");
+            for container in &pod_spec.containers {
+                let resources = container
+                    .resources
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("container {} has no resources set", container.name));
+                let request = resources
+                    .requests
+                    .as_ref()
+                    .and_then(|r| r.get("memory"))
+                    .unwrap_or_else(|| {
+                        panic!("container {} has no memory request set", container.name)
+                    });
+                let limit = resources
+                    .limits
+                    .as_ref()
+                    .and_then(|l| l.get("memory"))
+                    .unwrap_or_else(|| {
+                        panic!("container {} has no memory limit set", container.name)
+                    });
+                assert_eq!(
+                    request, limit,
+                    "container {} must have memory request == memory limit (ratio 1:1); \
+                     the smoke-kraft test cluster's admission control rejects anything else",
+                    container.name
+                );
+            }
+        }
+    }
+
     /// Guards against `add_common_kafka_env`'s refactor (accepting a pre-computed
     /// `node_id_offset: &str` instead of computing it internally) silently changing the
     /// broker's own `NODE_ID_OFFSET` env var value.

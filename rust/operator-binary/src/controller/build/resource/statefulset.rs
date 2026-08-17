@@ -868,7 +868,11 @@ fn build_quorum_manager_container(
                 // need to happen inside this sidecar's existing `timeout 15`/`25s preStop`
                 // budgets (see `CLI_CALL_TIMEOUT_SECONDS` in `command.rs`).
                 .with_cpu_limit("500m")
-                .with_memory_request("256Mi")
+                // Request must equal limit: the Stackable platform's admission control
+                // rejects any container whose memory limit-to-request ratio isn't exactly 1
+                // (confirmed live: "memory max limit to request ratio per Container is 1,
+                // but provided ratio is 2.000000").
+                .with_memory_request("512Mi")
                 .with_memory_limit("512Mi")
                 .build(),
         )
