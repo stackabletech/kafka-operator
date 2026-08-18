@@ -188,14 +188,17 @@ wait_for_termination()
 /// system, not something this operator (which deliberately has no live-cluster awareness)
 /// can detect or repair automatically. See `kraft-controller.adoc`.
 fn controller_quorum_format_flag(controller_descriptors: &[KafkaPodDescriptor]) -> String {
+    // Empty only when the controller role group itself is scaled to 0 replicas -- which
+    // `validate` only allows together with brokers also at 0 (a coordinated whole-cluster
+    // stop, see `NoKraftControllerReplicas` in `controller/validate.rs`). The StatefulSet is
+    // still built in that case (just with 0 replicas), so this command template is assembled
+    // but never actually run by any pod; the placeholder node id is never observed.
     let bootstrap_node_id = controller_descriptors
         .iter()
         .filter(|descriptor| descriptor.role == KafkaRole::Controller)
         .map(|descriptor| descriptor.node_id)
         .min()
-        .expect(
-            "a controller StatefulSet is always built with at least one controller pod descriptor",
-        );
+        .unwrap_or(0);
 
     formatdoc! {"
         if [ \"$REPLICA_ID\" = \"{bootstrap_node_id}\" ]; then

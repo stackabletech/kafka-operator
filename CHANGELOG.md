@@ -55,6 +55,12 @@ All notable changes to this project will be documented in this file.
   confusingly, as `no Kraft controllers found to build` while building the unrelated *broker*
   role group's `ConfigMap`. Controllers and brokers at 0 replicas together is unaffected, since
   that is what `clusterOperation.stopped` already does today ([#NNNN]).
+- Scaling a KRaft cluster's controller *and* broker role groups down to 0 replicas together (a
+  coordinated whole-cluster stop, which the check above deliberately still allows) no longer
+  fails to build resources with `no Kraft controllers found to build`. That check only ever
+  guarded against a genuinely broken half-state; a whole-cluster-at-zero build is harmless since
+  no pod ever reads the resulting `ConfigMap`s or `StatefulSet`s, so it is no longer rejected
+  ([#NNNN]).
 
 [#985]: https://github.com/stackabletech/kafka-operator/pull/985
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990
