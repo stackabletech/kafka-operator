@@ -36,7 +36,7 @@ use stackable_operator::{
 
 use crate::{
     controller::KAFKA_FULL_CONTROLLER_NAME,
-    crd::{KafkaCluster, KafkaClusterVersion, OPERATOR_NAME, v1alpha1},
+    crd::{KAFKA_OPERATOR_NAME, KafkaCluster, KafkaClusterVersion, v1alpha1},
     webhooks::conversion::create_webhook_server,
 };
 
@@ -104,9 +104,11 @@ async fn main() -> anyhow::Result<()> {
                     .run(sigterm_watcher.handle())
                     .map(anyhow::Ok);
 
-            let client =
-                client::initialize_operator(Some(OPERATOR_NAME.to_string()), &common.cluster_info)
-                    .await?;
+            let client = client::initialize_operator(
+                Some(KAFKA_OPERATOR_NAME.to_string()),
+                &common.cluster_info,
+            )
+            .await?;
 
             let webhook_server = create_webhook_server(
                 &operator_environment,

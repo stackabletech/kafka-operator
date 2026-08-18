@@ -4,17 +4,17 @@ pub mod controller;
 
 use std::{borrow::Cow, ops::Deref, str::FromStr};
 
-use serde::{Deserialize, Serialize};
 use stackable_operator::{
     commons::resources::{NoRuntimeLimits, Resources},
+    constant,
     product_logging::spec::ContainerLogConfig,
-    schemars::{self, JsonSchema},
     v2::{
+        builder::pod::container::EnvVarName,
         config_overrides::KeyValueConfigOverrides,
         types::{kubernetes::ListenerClassName, operator::RoleName},
     },
 };
-use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
+use strum::{EnumIter, IntoEnumIterator};
 
 use crate::{
     crd::role::{
@@ -25,8 +25,7 @@ use crate::{
     v1alpha1,
 };
 
-/// Env var
-pub const KAFKA_NODE_ID_OFFSET: &str = "NODE_ID_OFFSET";
+constant!(pub KAFKA_NODE_ID_OFFSET: EnvVarName = "NODE_ID_OFFSET");
 
 /// Past versions of the operator didn't set this explicitly and allowed Kafka to generate random ids.
 /// To support Kraft migration, this must be carried over to `KAFKA_NODE_ID` so the operator needs
@@ -66,37 +65,23 @@ pub const KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: &str = "listener.security.protoc
 /// For example: localhost:9092,localhost:9093,localhost:9094.
 pub const KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS: &str = "controller.quorum.bootstrap.servers";
 
-#[derive(
-    Clone,
-    Debug,
-    Deserialize,
-    Display,
-    EnumIter,
-    Eq,
-    Hash,
-    JsonSchema,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    Serialize,
-    EnumString,
-)]
+constant!(BROKER_ROLE_NAME: RoleName = "broker");
+constant!(CONTROLLER_ROLE_NAME: RoleName = "controller");
+
+#[derive(Clone, Debug, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum KafkaRole {
-    #[strum(serialize = "broker")]
     Broker,
-    #[strum(serialize = "controller")]
     Controller,
 }
 
-impl From<KafkaRole> for RoleName {
-    fn from(value: KafkaRole) -> Self {
-        RoleName::from_str(&value.to_string()).expect("a KafkaRole is a valid role name")
-    }
-}
+impl Deref for KafkaRole {
+    type Target = RoleName;
 
-impl From<&KafkaRole> for RoleName {
-    fn from(value: &KafkaRole) -> Self {
-        RoleName::from_str(&value.to_string()).expect("a KafkaRole is a valid role name")
+    fn deref(&self) -> &Self::Target {
+        match self {
+            KafkaRole::Broker => &BROKER_ROLE_NAME,
+            KafkaRole::Controller => &CONTROLLER_ROLE_NAME,
+        }
     }
 }
 
@@ -197,5 +182,18 @@ impl AnyConfigOverrides {
             AnyConfigOverrides::Broker(o) => &o.security_properties,
             AnyConfigOverrides::Controller(o) => &o.security_properties,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *BROKER_ROLE_NAME;
+        let _ = *CONTROLLER_ROLE_NAME;
+        let _ = *KAFKA_NODE_ID_OFFSET;
     }
 }

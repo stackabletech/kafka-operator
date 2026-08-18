@@ -1,4 +1,4 @@
-use std::{num::TryFromIntError, str::FromStr};
+use std::num::TryFromIntError;
 
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
@@ -9,7 +9,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{RoleGroupName, ValidatedCluster},
+    controller::{ValidatedCluster, build::recommended_labels_for_role_resources},
     crd::role::KafkaRole,
 };
 
@@ -68,13 +68,10 @@ pub fn build_discovery_configmap(validated_cluster: &ValidatedCluster) -> Result
                     None,
                     Some(true),
                 ))
-                .with_labels(
-                    validated_cluster.recommended_labels(
-                        &KafkaRole::Broker,
-                        &RoleGroupName::from_str("discovery")
-                            .expect("'discovery' is a valid role group name"),
-                    ),
-                )
+                .with_labels(recommended_labels_for_role_resources(
+                    validated_cluster,
+                    &KafkaRole::Broker,
+                ))
                 .build(),
         )
         .add_data("KAFKA", bootstrap_servers)
