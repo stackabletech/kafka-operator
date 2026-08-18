@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- KRaft controller replicas can now be scaled up and down on a running cluster: a new
+  `quorum-manager` sidecar container on each controller pod is solely responsible for
+  admitting itself into the KRaft voter set on startup and removing itself before
+  termination. Exactly one controller bootstraps the quorum standalone at format time
+  (`kafka-storage.sh format --standalone`); every other controller, whether present from
+  the start or added later, formats with `--no-initial-controllers` and joins purely
+  through the sidecar. `controller.quorum.bootstrap.servers` now points at each controller
+  role group's headless Service DNS name instead of individual pod addresses, so neither
+  the container commands nor that ConfigMap value change with the replica count anymore.
+  Confirmed live: scaling a controller role group up or down leaves every already-existing
+  controller pod completely untouched (same UID, zero restarts, no `StatefulSet` revision
+  change) — only the pods actually being added or removed are touched ([#NNNN]).
+- A `startupProbe` and a plain TCP `livenessProbe` for KRaft controllers, and a new
+  `readinessProbe` that checks the controller's Raft state (`leader`/`follower`/`voted`) via
+  its metrics endpoint instead of a bare TCP check, so a controller that can't join or
+  rejoin the quorum is correctly reported as not ready ([#1006]).
+
 ### Changed
 
 - Internal operator refactoring: introduce a build() step in the reconciler that
@@ -16,18 +35,40 @@ All notable changes to this project will be documented in this file.
 - All product containers now run with `securityContext.runAsNonRoot` set to `true` to improve security ([#998]).
 - The reconciler now applies resources and derives the cluster status in discrete
   apply and update_status steps ([#1000]).
+- BREAKING: KRaft mode now requires Kafka 3.9.0 or later; Kafka 3.7.x is no longer supported and its previous
+  special-casing has been removed entirely, rather than narrowed. Running KRaft mode on an unsupported Kafka
+  version is undefined behavior ([#NNNN]).
 
 ### Fixed
 
 - Fix a longstanding problem of including empty `categories`, `shortNames` and `additionalPrinterColumns` in the CRDs,
   which could cause problems with GitOps tools (e.g. ArgoCD) reporting a diff in the custom resources.
   See [our internal issue](https://github.com/stackabletech/hdfs-operator/issues/626) and [the fix](https://github.com/kube-rs/kube/pull/2042) for details ([#998]).
+- The `quorum-manager` sidecar's `preStop` hook no longer retries for the full 25s timeout
+  when a controller pod is the last remaining voter at termination (e.g. scaling controllers
+  down to a single replica, or the last surviving pod of a full teardown): removal is
+  correctly refused in that case, and confirmed live that retrying can never change that
+  outcome, so the hook now gives up immediately instead of retrying until the deadline ([#NNNN]).
+- Scaling a KRaft cluster's controller role group(s) down to a total of 0 replicas while any
+  broker replicas are configured is now rejected up front, during validation, with an actionable
+  error message. Previously it passed validation and failed much later and much more
+  confusingly, as `no Kraft controllers found to build` while building the unrelated *broker*
+  role group's `ConfigMap`. Controllers and brokers at 0 replicas together is unaffected, since
+  that is what `clusterOperation.stopped` already does today ([#NNNN]).
+- Scaling a KRaft cluster's controller *and* broker role groups down to 0 replicas together (a
+  coordinated whole-cluster stop, which the check above deliberately still allows) no longer
+  fails to build resources with `no Kraft controllers found to build`. That check only ever
+  guarded against a genuinely broken half-state; a whole-cluster-at-zero build is harmless since
+  no pod ever reads the resulting `ConfigMap`s or `StatefulSet`s, so it is no longer rejected
+  ([#NNNN]).
 
 [#985]: https://github.com/stackabletech/kafka-operator/pull/985
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994
 [#998]: https://github.com/stackabletech/kafka-operator/pull/998
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
+[#1006]: https://github.com/stackabletech/kafka-operator/pull/1006
+[#NNNN]: https://github.com/stackabletech/kafka-operator/pull/NNNN
 
 ## [26.7.0] - 2026-07-21
 
