@@ -64,9 +64,6 @@ pub enum Error {
     BuildPodDescriptors {
         source: crate::controller::PodDescriptorsError,
     },
-
-    #[snafu(display("no Kraft controllers found to build"))]
-    NoKraftControllersFound,
 }
 
 /// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator.
@@ -92,13 +89,15 @@ pub fn build_rolegroup_config_map(
         .overrides
         .clone();
 
+    // In KRaft mode, `pod_descriptors` can only be empty when *every* controller and broker
+    // role group is scaled to 0 replicas: `validate` rejects any other combination of zero
+    // controllers with running brokers before this point is ever reached (see
+    // `NoKraftControllerReplicas`), so a positive broker replica count anywhere guarantees a
+    // positive controller replica count, and vice versa. A whole-cluster-at-zero ConfigMap is
+    // harmless to build (no pod will ever read it), so there is nothing to reject here.
     let pod_descriptors = validated_cluster
         .pod_descriptors(None)
         .context(BuildPodDescriptorsSnafu)?;
-
-    if cluster_config.is_kraft_mode() && pod_descriptors.is_empty() {
-        return NoKraftControllersFoundSnafu.fail();
-    }
 
     let kafka_config = match &validated_rg.config.config {
         AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(

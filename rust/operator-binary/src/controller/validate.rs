@@ -105,6 +105,14 @@ pub enum Error {
         "the Vector aggregator discovery ConfigMap name is required when the Vector agent is enabled"
     ))]
     MissingVectorAggregatorConfigMapName,
+
+    #[snafu(display(
+        "at least one KRaft controller replica is required while any broker replicas are \
+         configured; a KRaft cluster with zero controllers has no metadata quorum for its \
+         brokers to use. Scale brokers to 0 as well (or use `clusterOperation.stopped`) for a \
+         coordinated full stop"
+    ))]
+    NoKraftControllerReplicas,
 }
 
 /// Validated logging configuration for a Kafka role group's Kafka and (optional) Vector
@@ -265,6 +273,10 @@ pub fn validate(
     );
     role_group_configs.insert(KafkaRole::Broker, broker_groups);
 
+    let metadata_manager = kafka
+        .effective_metadata_manager()
+        .context(InvalidMetadataManagerSnafu)?;
+
     // Controllers are optional: ZooKeeper-mode clusters have none, in which case they are simply
     // absent from both maps and not reconciled.
     if let Some(controller_role) = kafka.spec.controllers.as_ref() {
@@ -277,6 +289,39 @@ pub fn validate(
             validate_controller_logging,
             &vector_aggregator_config_map_name,
         )?;
+
+        // A KRaft cluster with zero controller replicas *and running brokers* is a broken
+        // half-state: the brokers expect a live metadata quorum that no longer exists, and
+        // every resource that reads the controller quorum's pod descriptors (including the
+        // broker's own ConfigMap, which renders `controller.quorum.bootstrap.servers` from
+        // them) would fail to build. Reject that combination here, at validation time, with an
+        // actionable message, instead of letting it surface downstream as
+        // `NoKraftControllersFound` while building an unrelated ConfigMap.
+        //
+        // Controllers *and* brokers at zero together is not rejected: that is exactly what
+        // `clusterOperation.stopped` already does today, unconditionally, for every Stackable
+        // operator (scaling every managed StatefulSet's replicas to 0 at apply time, bypassing
+        // this check entirely since it only inspects the raw, pre-`stopped` spec) -- so a
+        // coordinated whole-cluster stop is already a supported shape, not one this check can
+        // meaningfully forbid.
+        //
+        // `replicas: None` (left for a HorizontalPodAutoscaler to own) is never treated as
+        // zero, for either role -- only an explicit, summed-to-zero replica count is.
+        let controller_replicas: u16 = controller_groups
+            .values()
+            .map(|rg| rg.replicas.unwrap_or(1))
+            .sum();
+        let broker_replicas: u16 = role_group_configs[&KafkaRole::Broker]
+            .values()
+            .map(|rg| rg.replicas.unwrap_or(1))
+            .sum();
+        if metadata_manager == crate::crd::MetadataManager::KRaft
+            && controller_replicas == 0
+            && broker_replicas > 0
+        {
+            return NoKraftControllerReplicasSnafu.fail();
+        }
+
         role_configs.insert(
             KafkaRole::Controller,
             ValidatedRoleConfig {
@@ -285,10 +330,6 @@ pub fn validate(
         );
         role_group_configs.insert(KafkaRole::Controller, controller_groups);
     }
-
-    let metadata_manager = kafka
-        .effective_metadata_manager()
-        .context(InvalidMetadataManagerSnafu)?;
 
     let name = get_cluster_name(kafka).context(ResolveClusterNameSnafu)?;
     let namespace = get_namespace(kafka).context(ResolveNamespaceSnafu)?;
@@ -420,7 +461,7 @@ mod tests {
         types::operator::RoleGroupName,
     };
 
-    use super::{KAFKA_CLUSTER_ID_ENV, inject_cluster_id};
+    use super::{Error, KAFKA_CLUSTER_ID_ENV, inject_cluster_id};
     use crate::{
         controller::test_support::{app_version_label, minimal_kafka, validated_cluster},
         crd::role::KafkaRole,
@@ -539,5 +580,158 @@ mod tests {
     fn without_cluster_id_nothing_is_injected() {
         let env = inject_cluster_id(EnvVarSet::new(), None).unwrap();
         assert_eq!(cluster_id_value(&env), None);
+    }
+
+    /// Confirmed live: scaling a KRaft cluster's only controller role group down to 0 replicas
+    /// while brokers keep running used to pass validation and fail much later and much more
+    /// confusingly, as `NoKraftControllersFound` while building the *broker* role group's
+    /// ConfigMap (which also reads the controller quorum's pod descriptors, to render
+    /// `controller.quorum.bootstrap.servers`). Brokers with zero controllers have no metadata
+    /// quorum to talk to at all, so this combination must be rejected here, at validation time,
+    /// with a message that actually names the real problem.
+    #[test]
+    fn kraft_mode_rejects_zero_controller_replicas_while_brokers_are_running() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 0
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+
+        let result = crate::controller::test_support::validate_err(&kafka);
+        let Err(error) = result else {
+            panic!(
+                "validate should reject zero controller replicas while brokers are running in KRaft mode"
+            );
+        };
+
+        assert!(
+            matches!(error, Error::NoKraftControllerReplicas),
+            "expected NoKraftControllerReplicas, got: {error:?}"
+        );
+    }
+
+    /// The same zero-sum check, but split across two controller role groups (0 + 0): neither
+    /// group alone looks suspicious, only their sum does.
+    #[test]
+    fn kraft_mode_rejects_zero_controller_replicas_summed_across_role_groups() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  a:
+                    replicas: 0
+                  b:
+                    replicas: 0
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+
+        let result = crate::controller::test_support::validate_err(&kafka);
+        let Err(error) = result else {
+            panic!(
+                "validate should reject zero controller replicas while brokers are running in KRaft mode"
+            );
+        };
+
+        assert!(
+            matches!(error, Error::NoKraftControllerReplicas),
+            "expected NoKraftControllerReplicas, got: {error:?}"
+        );
+    }
+
+    /// Controllers *and* brokers at zero together is not rejected: that is exactly what
+    /// `clusterOperation.stopped` already does today, unconditionally, for every Stackable
+    /// operator, bypassing this check entirely -- a coordinated whole-cluster stop is already a
+    /// supported shape, not a broken half-state the way controllers-only-at-zero is.
+    #[test]
+    fn kraft_mode_allows_controllers_and_brokers_at_zero_together() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 0
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 0
+            "#,
+        );
+
+        let _cluster = validated_cluster(&kafka);
+    }
+
+    /// A `replicas: 0` controller role group is fine in ZooKeeper mode: the check only applies
+    /// to KRaft, where controllers *are* the metadata quorum.
+    #[test]
+    fn zookeeper_mode_allows_zero_controller_replicas() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: zk-discovery
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 0
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+
+        let _cluster = validated_cluster(&kafka);
     }
 }

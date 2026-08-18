@@ -216,6 +216,45 @@ mod tests {
         validated_cluster(&kafka)
     }
 
+    /// Confirmed live via the `operations-kraft` kuttl test: scaling both the controller and
+    /// broker role groups down to 0 replicas together (a coordinated whole-cluster stop, which
+    /// `validate` allows -- see `NoKraftControllerReplicas` in `controller/validate.rs`) used to
+    /// still fail to *build*, as `NoKraftControllersFound` while building the (unused) rolegroup
+    /// ConfigMaps: `pod_descriptors` comes back empty once every role group is at 0 replicas,
+    /// and `build_rolegroup_config_map` treated that as always broken in KRaft mode, without
+    /// distinguishing it from the "controllers at 0, brokers still running" case `validate`
+    /// actually rejects. No pod will ever read these ConfigMaps, so building them with an empty
+    /// controller quorum is harmless.
+    #[test]
+    fn build_succeeds_when_every_kraft_role_group_is_scaled_to_zero() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 0
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 0
+            "#,
+        );
+        let cluster = validated_cluster(&kafka);
+
+        build(&cluster).expect("build succeeds when the whole KRaft cluster is stopped");
+    }
+
     #[test]
     fn build_produces_expected_resource_names() {
         let cluster = kraft_mode_cluster();
