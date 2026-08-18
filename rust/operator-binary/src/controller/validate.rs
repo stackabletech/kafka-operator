@@ -291,22 +291,10 @@ pub fn validate(
         )?;
 
         // A KRaft cluster with zero controller replicas *and running brokers* is a broken
-        // half-state: the brokers expect a live metadata quorum that no longer exists, and
-        // every resource that reads the controller quorum's pod descriptors (including the
-        // broker's own ConfigMap, which renders `controller.quorum.bootstrap.servers` from
-        // them) would fail to build. Reject that combination here, at validation time, with an
-        // actionable message, instead of letting it surface downstream as
-        // `NoKraftControllersFound` while building an unrelated ConfigMap.
+        // half-state. Reject that combination here.
         //
         // Controllers *and* brokers at zero together is not rejected: that is exactly what
-        // `clusterOperation.stopped` already does today, unconditionally, for every Stackable
-        // operator (scaling every managed StatefulSet's replicas to 0 at apply time, bypassing
-        // this check entirely since it only inspects the raw, pre-`stopped` spec) -- so a
-        // coordinated whole-cluster stop is already a supported shape, not one this check can
-        // meaningfully forbid.
-        //
-        // `replicas: None` (left for a HorizontalPodAutoscaler to own) is never treated as
-        // zero, for either role -- only an explicit, summed-to-zero replica count is.
+        // `clusterOperation.stopped` already does today.
         let controller_replicas: u16 = controller_groups
             .values()
             .map(|rg| rg.replicas.unwrap_or(1))

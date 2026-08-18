@@ -65,12 +65,6 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
 /// pointing at each role group's own headless Service DNS name rather than individual pod
 /// FQDNs.
 ///
-/// A headless Service's own DNS name (no pod prefix) resolves to every backing pod's IP —
-/// exactly what Kafka's own `client.dns.lookup=use_all_dns_ips` default already expects — and
-/// the operator's headless Service sets `publishNotReadyAddresses: true`, so this also
-/// resolves correctly during initial cluster formation before any pod is Ready. This is what
-/// makes the value invariant to an existing controller role group's replica count: adding or
-/// removing replicas within a role group never changes that role group's own Service name.
 /// Only adding or removing a whole role group changes this list.
 pub(crate) fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
     let mut role_group_addresses: Vec<String> = pod_descriptors

@@ -39,18 +39,8 @@ pub fn kafka_log_opts_env_var() -> String {
 
 /// Shell snippet setting `$POD_INDEX` to this pod's ordinal, parsed from the trailing digits
 /// of `$POD_NAME` (e.g. `2` for `..-controller-default-2`).
-///
-/// Paired with [`EXPORT_REPLICA_ID`] (see there for why the split): used, in some combination,
-/// by four call sites that used to each duplicate this derivation with slightly drifted
-/// whitespace — the broker and controller `kafka` containers' own entrypoints, and the
-/// `quorum-manager` sidecar's main loop and `preStop` hook.
 const DERIVE_POD_INDEX: &str = r#"POD_INDEX=$(echo "$POD_NAME" | grep -oE '[0-9]+$')"#;
 
-/// Shell snippet exporting `$REPLICA_ID` (this container's KRaft node id) from `$POD_INDEX`
-/// (see [`DERIVE_POD_INDEX`], which must run first) and `$NODE_ID_OFFSET`. Exported (rather
-/// than a plain assignment) because every caller either runs `config-utils template` or the
-/// `quorum-manager` sidecar's `kafka-metadata-quorum.sh`/`curl` calls as a *subprocess*, which
-/// need `REPLICA_ID` in their environment, not just this shell's.
 const EXPORT_REPLICA_ID: &str = "export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))";
 
 /// Returns the commands to start the main Kafka container
@@ -175,10 +165,7 @@ wait_for_termination()
 ///
 /// Every other controller — whether it is part of the cluster's initial desired replica count
 /// or added later on scale-up — is formatted with `--no-initial-controllers` and relies
-/// entirely on the `quorum-manager` sidecar's `add-controller` loop to join the quorum. This is
-/// what keeps the controller container's command identical across replica-count changes (no
-/// voter list baked into it), and what makes "admit a new controller" solely the sidecar's
-/// concern rather than something the format step also has a hand in.
+/// entirely on the `quorum-manager` sidecar's `add-controller` loop to join the quorum.
 ///
 /// Known limitation: this rule is only safe for a cluster's *original* bootstrap. If the
 /// designated node's persistent volume is ever lost and needs to reformat after the cluster has
@@ -188,11 +175,6 @@ wait_for_termination()
 /// system, not something this operator (which deliberately has no live-cluster awareness)
 /// can detect or repair automatically. See `kraft-controller.adoc`.
 fn controller_quorum_format_flag(controller_descriptors: &[KafkaPodDescriptor]) -> String {
-    // Empty only when the controller role group itself is scaled to 0 replicas -- which
-    // `validate` only allows together with brokers also at 0 (a coordinated whole-cluster
-    // stop, see `NoKraftControllerReplicas` in `controller/validate.rs`). The StatefulSet is
-    // still built in that case (just with 0 replicas), so this command template is assembled
-    // but never actually run by any pod; the placeholder node id is never observed.
     let bootstrap_node_id = controller_descriptors
         .iter()
         .filter(|descriptor| descriptor.role == KafkaRole::Controller)

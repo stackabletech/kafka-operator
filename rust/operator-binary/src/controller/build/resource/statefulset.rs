@@ -133,15 +133,6 @@ fn common_operator_env_vars(
 /// **controller** pod: today that's the `kafka` server process and, when present, the
 /// `quorum-manager` sidecar.
 ///
-/// The sidecar renders the very same `controller.properties` template (see
-/// `properties/controller_properties.rs`) that the `kafka` container's own entrypoint does, to
-/// build its own `add-controller`/`remove-controller` config — so it needs every
-/// `${env:...}` placeholder that template references (`POD_NAME`, `KAFKA_CLIENT_PORT`,
-/// `NAMESPACE`, `ROLEGROUP_HEADLESS_SERVICE_NAME`, `CLUSTER_DOMAIN`). Building this set once
-/// and handing it to both containers means they can't silently drift apart over time (a real
-/// bug found in review: the sidecar was originally given only `POD_NAME`/`NODE_ID_OFFSET`,
-/// so its `controller.properties` render most likely produced a broken `listeners` value).
-///
 /// The caller merges the user's `envOverrides` on top (so a user override wins on a name
 /// collision) and, for the `kafka` container only, adds container-specific env vars such as
 /// `PRE_STOP_CONTROLLER_SLEEP_SECONDS`.
@@ -922,22 +913,17 @@ fn build_quorum_manager_container(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
                 // A JVM cold start plus an SSL handshake and an admin-client round-trip all
-                // need to happen inside this sidecar's existing `timeout 15`/`25s preStop`
-                // budgets (see `CLI_CALL_TIMEOUT_SECONDS` in `command.rs`).
+                // need to happen inside this sidecar's existing budgets
                 .with_cpu_limit("500m")
-                // Request must equal limit: the Stackable platform's admission control
-                // rejects any container whose memory limit-to-request ratio isn't exactly 1
-                // (confirmed live: "memory max limit to request ratio per Container is 1,
-                // but provided ratio is 2.000000").
                 .with_memory_request("512Mi")
                 .with_memory_limit("512Mi")
                 .build(),
         )
         .add_volume_mount(STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
         .context(AddVolumeMountSnafu)?
-        // `controller_admin_client_properties` (see `build/security.rs`) always points
-        // its keystore/truststore at this directory, so the sidecar's admin-client calls
-        // need it mounted here too, not just on the `kafka` container.
+        // `controller_admin_client_properties` always points its keystore/truststore
+        // at this directory, so the sidecar's admin-client calls need it mounted
+        // here too, not just on the `kafka` container.
         .add_volume_mount(
             STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
             STACKABLE_TLS_KAFKA_INTERNAL_DIR,
@@ -945,7 +931,7 @@ fn build_quorum_manager_container(
         .context(AddVolumeMountSnafu)?
         // `add-controller` reads this controller's own on-disk `meta.properties` (its
         // `node.id`/`directory.id`, written by `kafka-storage.sh format`) from `log.dirs` in
-        // the merged config it connects with — confirmed live: without this mount, every
+        // the merged config it connects with - without this mount, every
         // `add-controller` attempt failed with "Unable to read meta.properties from
         // /stackable/data/kraft", since that path doesn't exist in this container's
         // filesystem at all without it. This mounts the *same* per-pod PVC the `kafka`

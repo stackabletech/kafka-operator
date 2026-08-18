@@ -6,22 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- KRaft controller replicas can now be scaled up and down on a running cluster: a new
-  `quorum-manager` sidecar container on each controller pod is solely responsible for
+- A new `quorum-manager` sidecar container on each controller pod is solely responsible for
   admitting itself into the KRaft voter set on startup and removing itself before
   termination. Exactly one controller bootstraps the quorum standalone at format time
   (`kafka-storage.sh format --standalone`); every other controller, whether present from
   the start or added later, formats with `--no-initial-controllers` and joins purely
-  through the sidecar. `controller.quorum.bootstrap.servers` now points at each controller
-  role group's headless Service DNS name instead of individual pod addresses, so neither
-  the container commands nor that ConfigMap value change with the replica count anymore.
-  Confirmed live: scaling a controller role group up or down leaves every already-existing
-  controller pod completely untouched (same UID, zero restarts, no `StatefulSet` revision
-  change) — only the pods actually being added or removed are touched ([#NNNN]).
-- A `startupProbe` and a plain TCP `livenessProbe` for KRaft controllers, and a new
-  `readinessProbe` that checks the controller's Raft state (`leader`/`follower`/`voted`) via
-  its metrics endpoint instead of a bare TCP check, so a controller that can't join or
-  rejoin the quorum is correctly reported as not ready ([#1006]).
+  through the sidecar ([#1010]).
+- A new `readinessProbe` for KRaft controllers that fails when new pods cannot join the quorum ([#1010]).
 
 ### Changed
 
@@ -35,9 +26,11 @@ All notable changes to this project will be documented in this file.
 - All product containers now run with `securityContext.runAsNonRoot` set to `true` to improve security ([#998]).
 - The reconciler now applies resources and derives the cluster status in discrete
   apply and update_status steps ([#1000]).
-- BREAKING: KRaft mode now requires Kafka 3.9.0 or later; Kafka 3.7.x is no longer supported and its previous
-  special-casing has been removed entirely, rather than narrowed. Running KRaft mode on an unsupported Kafka
-  version is undefined behavior ([#NNNN]).
+- `controller.quorum.bootstrap.servers` now points at each controller role group's
+  headless Service DNS name instead of individual pod addresses, so neither the container
+  commands nor that ConfigMap value change with the replica count anymore ([#1010]).
+- The controller's StatefulSet now scales sequentially (`OrderedBy`) instead of parallel.
+  This ensures that one voter joins the quorum at a time ([#1010]).
 
 ### Fixed
 
@@ -67,8 +60,7 @@ All notable changes to this project will be documented in this file.
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994
 [#998]: https://github.com/stackabletech/kafka-operator/pull/998
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
-[#1006]: https://github.com/stackabletech/kafka-operator/pull/1006
-[#NNNN]: https://github.com/stackabletech/kafka-operator/pull/NNNN
+[#1010]: https://github.com/stackabletech/kafka-operator/pull/1010
 
 ## [26.7.0] - 2026-07-21
 

@@ -216,15 +216,6 @@ mod tests {
         validated_cluster(&kafka)
     }
 
-    /// Confirmed live via the `operations-kraft` kuttl test: scaling both the controller and
-    /// broker role groups down to 0 replicas together (a coordinated whole-cluster stop, which
-    /// `validate` allows -- see `NoKraftControllerReplicas` in `controller/validate.rs`) used to
-    /// still fail to *build*, as `NoKraftControllersFound` while building the (unused) rolegroup
-    /// ConfigMaps: `pod_descriptors` comes back empty once every role group is at 0 replicas,
-    /// and `build_rolegroup_config_map` treated that as always broken in KRaft mode, without
-    /// distinguishing it from the "controllers at 0, brokers still running" case `validate`
-    /// actually rejects. No pod will ever read these ConfigMaps, so building them with an empty
-    /// controller quorum is harmless.
     #[test]
     fn build_succeeds_when_every_kraft_role_group_is_scaled_to_zero() {
         let kafka = minimal_kafka(
@@ -342,11 +333,6 @@ mod tests {
         );
     }
 
-    /// The `quorum-manager` sidecar's admin-client calls need every directory that
-    /// `controller_admin_client_properties` (see `build/security.rs`) writes paths into:
-    /// the config volume (for `admin-client.properties` itself) and the internal TLS
-    /// volume (for the keystore/truststore the properties file points at). Missing either
-    /// mount makes every `add-controller`/`remove-controller` invocation fail SSL init.
     #[test]
     fn quorum_manager_sidecar_mounts_every_directory_referenced_by_admin_client_properties() {
         let cluster = kraft_mode_cluster();
