@@ -163,13 +163,17 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>
 mod tests {
     use stackable_operator::kube::Resource;
 
-    use super::build;
-    use crate::controller::{
-        ValidatedCluster,
-        test_support::{
-            bootstrap_listener, ingress_address, minimal_kafka, validated_cluster,
-            zookeeper_mode_cluster,
+    use super::{build, security::STACKABLE_TLS_KAFKA_INTERNAL_DIR};
+    use crate::{
+        controller::{
+            ValidatedCluster,
+            node_id_hasher::node_id_hash32_offset,
+            test_support::{
+                bootstrap_listener, ingress_address, minimal_kafka, validated_cluster,
+                zookeeper_mode_cluster,
+            },
         },
+        crd::{STACKABLE_CONFIG_DIR, STACKABLE_DATA_DIR, role::KafkaRole},
     };
 
     /// Sorted `metadata.name`s of the given resources, for order-independent assertions.
@@ -297,6 +301,151 @@ mod tests {
                 .map(String::as_str),
             Some("host1:9093")
         );
+    }
+
+    /// The `quorum-manager` sidecar's admin-client calls need every directory that
+    /// `controller_admin_client_properties` (see `build/security.rs`) writes paths into:
+    /// the config volume (for `admin-client.properties` itself) and the internal TLS
+    /// volume (for the keystore/truststore the properties file points at). Missing either
+    /// mount makes every `add-controller`/`remove-controller` invocation fail SSL init.
+    #[test]
+    fn quorum_manager_sidecar_mounts_every_directory_referenced_by_admin_client_properties() {
+        let cluster = kraft_mode_cluster();
+        let resources = build(&cluster).expect("build succeeds");
+
+        let controller_sts = resources
+            .stateful_sets
+            .iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
+            .expect("the controller StatefulSet should be built");
+        let pod_spec = controller_sts
+            .spec
+            .as_ref()
+            .expect("the StatefulSet should have a spec")
+            .template
+            .spec
+            .as_ref()
+            .expect("the pod template should have a spec");
+        let quorum_manager = pod_spec
+            .containers
+            .iter()
+            .find(|c| c.name == "quorum-manager")
+            .expect("the controller pod should have a quorum-manager sidecar");
+
+        let mount_paths: Vec<&str> = quorum_manager
+            .volume_mounts
+            .as_ref()
+            .expect("the sidecar should have volume mounts")
+            .iter()
+            .map(|vm| vm.mount_path.as_str())
+            .collect();
+        assert!(
+            mount_paths.contains(&STACKABLE_CONFIG_DIR),
+            "the sidecar must mount the config directory carrying admin-client.properties, got: {mount_paths:?}"
+        );
+        assert!(
+            mount_paths.contains(&STACKABLE_TLS_KAFKA_INTERNAL_DIR),
+            "the sidecar must mount the internal TLS directory admin-client.properties points its keystore/truststore at, got: {mount_paths:?}"
+        );
+        // `add-controller` reads this controller's own on-disk `meta.properties` (written by
+        // `kafka-storage.sh format`, and pointed at by `log.dirs` in the merged config it
+        // connects with) to build the voter registration payload. Confirmed live: without
+        // this mount, every `add-controller` attempt fails with "Unable to read
+        // meta.properties from /stackable/data/kraft" — the path simply doesn't exist in
+        // this container without it.
+        assert!(
+            mount_paths.contains(&STACKABLE_DATA_DIR),
+            "the sidecar must mount the data directory holding its own meta.properties, or add-controller can never read its own identity, got: {mount_paths:?}"
+        );
+    }
+
+    /// Confirmed live: the `smoke-kraft` test cluster's admission control rejects any pod
+    /// whose memory limit-to-request ratio isn't exactly 1 ("memory max limit to request
+    /// ratio per Container is 1, but provided ratio is 2.000000"), which is also what the
+    /// operator's own `stackable_operator::builder::pod` warning already flags. Every
+    /// container's memory request must equal its memory limit, not just the `quorum-manager`
+    /// sidecar's — this test covers all containers in both the broker and controller pods so
+    /// a future container addition can't reintroduce this for either role.
+    #[test]
+    fn every_container_has_a_1_to_1_memory_limit_to_request_ratio() {
+        let cluster = kraft_mode_cluster();
+        let resources = build(&cluster).expect("build succeeds");
+
+        for sts in &resources.stateful_sets {
+            let pod_spec = sts
+                .spec
+                .as_ref()
+                .expect("the StatefulSet should have a spec")
+                .template
+                .spec
+                .as_ref()
+                .expect("the pod template should have a spec");
+            for container in &pod_spec.containers {
+                let resources = container
+                    .resources
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("container {} has no resources set", container.name));
+                let request = resources
+                    .requests
+                    .as_ref()
+                    .and_then(|r| r.get("memory"))
+                    .unwrap_or_else(|| {
+                        panic!("container {} has no memory request set", container.name)
+                    });
+                let limit = resources
+                    .limits
+                    .as_ref()
+                    .and_then(|l| l.get("memory"))
+                    .unwrap_or_else(|| {
+                        panic!("container {} has no memory limit set", container.name)
+                    });
+                assert_eq!(
+                    request, limit,
+                    "container {} must have memory request == memory limit (ratio 1:1); \
+                     the smoke-kraft test cluster's admission control rejects anything else",
+                    container.name
+                );
+            }
+        }
+    }
+
+    /// Guards against `add_common_kafka_env`'s refactor (accepting a pre-computed
+    /// `node_id_offset: &str` instead of computing it internally) silently changing the
+    /// broker's own `NODE_ID_OFFSET` env var value.
+    #[test]
+    fn broker_node_id_offset_env_var_is_unchanged_by_the_shared_computation_refactor() {
+        let cluster = kraft_mode_cluster();
+        let resources = build(&cluster).expect("build succeeds");
+
+        let broker_sts = resources
+            .stateful_sets
+            .iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-broker-default"))
+            .expect("the broker StatefulSet should be built");
+        let kafka_container = broker_sts
+            .spec
+            .as_ref()
+            .expect("the StatefulSet should have a spec")
+            .template
+            .spec
+            .as_ref()
+            .expect("the pod template should have a spec")
+            .containers
+            .iter()
+            .find(|c| c.name == "kafka")
+            .expect("the broker pod should have a kafka container");
+
+        let node_id_offset_value = kafka_container
+            .env
+            .as_ref()
+            .expect("the kafka container should have env vars")
+            .iter()
+            .find(|env_var| env_var.name == "NODE_ID_OFFSET")
+            .and_then(|env_var| env_var.value.as_deref())
+            .expect("NODE_ID_OFFSET should be set");
+
+        let expected = node_id_hash32_offset(&KafkaRole::Broker, "default").to_string();
+        assert_eq!(node_id_offset_value, expected);
     }
 
     /// ZooKeeper mode has no `controller` role, so `build()` emits no controller resources while

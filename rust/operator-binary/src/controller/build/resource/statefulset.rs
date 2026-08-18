@@ -20,7 +20,7 @@ use stackable_operator::{
             apps::v1::{StatefulSet, StatefulSetSpec, StatefulSetUpdateStrategy},
             core::v1::{
                 ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource, ExecAction,
-                ObjectFieldSelector, PodSpec, Probe, TCPSocketAction, Volume,
+                LifecycleHandler, ObjectFieldSelector, PodSpec, Probe, TCPSocketAction, Volume,
             },
         },
         apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
@@ -49,12 +49,14 @@ use crate::{
         build::{
             command::{
                 broker_kafka_container_commands, controller_kafka_container_command,
-                kafka_log_opts, kafka_log_opts_env_var,
+                kafka_log_opts, kafka_log_opts_env_var, quorum_manager_container_command,
+                quorum_manager_pre_stop_command,
             },
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::add_kerberos_pod_config,
             properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
             security::{
+                STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                 add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
                 kcat_prober_container_commands,
             },
@@ -122,6 +124,39 @@ fn common_operator_env_vars(
     }
 
     env
+}
+
+/// Environment variables the operator sets that are common to *every* container in a
+/// **controller** pod: today that's the `kafka` server process and, when present, the
+/// `quorum-manager` sidecar.
+///
+/// The sidecar renders the very same `controller.properties` template (see
+/// `properties/controller_properties.rs`) that the `kafka` container's own entrypoint does, to
+/// build its own `add-controller`/`remove-controller` config — so it needs every
+/// `${env:...}` placeholder that template references (`POD_NAME`, `KAFKA_CLIENT_PORT`,
+/// `NAMESPACE`, `ROLEGROUP_HEADLESS_SERVICE_NAME`, `CLUSTER_DOMAIN`). Building this set once
+/// and handing it to both containers means they can't silently drift apart over time (a real
+/// bug found in review: the sidecar was originally given only `POD_NAME`/`NODE_ID_OFFSET`,
+/// so its `controller.properties` render most likely produced a broken `listeners` value).
+///
+/// The caller merges the user's `envOverrides` on top (so a user override wins on a name
+/// collision) and, for the `kafka` container only, adds container-specific env vars such as
+/// `PRE_STOP_CONTROLLER_SLEEP_SECONDS`.
+fn controller_pod_shared_env_vars(
+    validated_cluster: &ValidatedCluster,
+    kafka_security: &ValidatedKafkaSecurity,
+    resource_names: &ResourceNames,
+) -> EnvVarSet {
+    common_operator_env_vars(validated_cluster, kafka_security)
+        .with_field_path(&env_var_name("NAMESPACE"), &FieldPathEnvVar::Namespace)
+        .with_value(
+            &env_var_name("ROLEGROUP_HEADLESS_SERVICE_NAME"),
+            resource_names.headless_service_name().to_string(),
+        )
+        .with_value(
+            &env_var_name("CLUSTER_DOMAIN"),
+            validated_cluster.cluster_domain.to_string(),
+        )
 }
 
 const POD_MANAGEMENT_POLICY_PARALLEL: &str = "Parallel";
@@ -266,13 +301,10 @@ pub fn build_broker_rolegroup_statefulset(
         ])
         .args(vec![broker_kafka_container_commands(
             validated_cluster.cluster_config.is_kraft_mode(),
-            // we need controller pods
-            validated_cluster
-                .pod_descriptors(Some(&KafkaRole::Controller))
-                .context(BuildPodDescriptorsSnafu)?,
             kafka_security,
-            &resolved_product_image.product_version,
         )]);
+
+    let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
 
     add_common_kafka_env(
         &mut cb_kafka,
@@ -281,8 +313,7 @@ pub fn build_broker_rolegroup_statefulset(
             .product_specific_common_config
             .jvm_argument_overrides,
         resolved_product_image,
-        kafka_role,
-        role_group_name,
+        &node_id_offset,
     )?;
 
     cb_kafka
@@ -472,21 +503,29 @@ pub fn build_controller_rolegroup_statefulset(
 
     let mut pod_builder = PodBuilder::new();
 
+    let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
+
     // Operator-set env vars first (common + controller-specific); the user's `envOverrides`
-    // are merged on top and win.
-    let env: Vec<EnvVar> = common_operator_env_vars(validated_cluster, kafka_security)
-        .with_field_path(&env_var_name("NAMESPACE"), &FieldPathEnvVar::Namespace)
-        .with_value(
-            &env_var_name("ROLEGROUP_HEADLESS_SERVICE_NAME"),
-            resource_names.headless_service_name().to_string(),
-        )
-        .with_value(
-            &env_var_name("CLUSTER_DOMAIN"),
-            validated_cluster.cluster_domain.to_string(),
-        )
+    // are merged on top and win. Shared between the `kafka` container and the
+    // `quorum-manager` sidecar (see `controller_pod_shared_env_vars`) so they can't drift
+    // apart; each container then layers its own additions on top.
+    let controller_shared_env =
+        controller_pod_shared_env_vars(validated_cluster, kafka_security, &resource_names);
+
+    let env: Vec<EnvVar> = controller_shared_env
+        .clone()
         .with_value(&env_var_name("PRE_STOP_CONTROLLER_SLEEP_SECONDS"), "10")
         .merge(validated_rg.env_overrides.clone())
         .into();
+
+    let quorum_manager_env: Vec<EnvVar> = controller_shared_env
+        .with_value(&env_var_name(KAFKA_NODE_ID_OFFSET), &node_id_offset)
+        .merge(validated_rg.env_overrides.clone())
+        .into();
+
+    let controller_pod_descriptors = validated_cluster
+        .pod_descriptors(Some(kafka_role))
+        .context(BuildPodDescriptorsSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -498,10 +537,7 @@ pub fn build_controller_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![controller_kafka_container_command(
-            validated_cluster
-                .pod_descriptors(Some(kafka_role))
-                .context(BuildPodDescriptorsSnafu)?,
-            &resolved_product_image.product_version,
+            controller_pod_descriptors,
         )]);
 
     add_common_kafka_env(
@@ -511,8 +547,7 @@ pub fn build_controller_rolegroup_statefulset(
             .product_specific_common_config
             .jvm_argument_overrides,
         resolved_product_image,
-        kafka_role,
-        role_group_name,
+        &node_id_offset,
     )?;
 
     cb_kafka
@@ -579,6 +614,12 @@ pub fn build_controller_rolegroup_statefulset(
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(kafka_container)
         .affinity(&merged_config.affinity);
+
+    if let Some(quorum_manager_container) =
+        build_quorum_manager_container(resolved_product_image, kafka_security, quorum_manager_env)?
+    {
+        pod_builder.add_container(quorum_manager_container);
+    }
 
     add_common_pod_config(
         &mut pod_builder,
@@ -669,13 +710,17 @@ fn container_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<ContainerPort
 
 /// Adds the env vars that the broker and controller Kafka containers share: the JVM
 /// arguments, log options, the `containerdebug` log directory and the node-id offset.
+///
+/// `node_id_offset` is the pre-computed value of [`node_id_hash32_offset`] for this role
+/// group, shared with the controller's `quorum-manager` sidecar (see
+/// [`build_quorum_manager_container`]), which also needs `NODE_ID_OFFSET` in its `preStop`
+/// script.
 fn add_common_kafka_env(
     cb_kafka: &mut ContainerBuilder,
     merged_config: &AnyConfig,
     jvm_argument_overrides: &JvmArgumentOverrides,
     resolved_product_image: &ResolvedProductImage,
-    kafka_role: &KafkaRole,
-    role_group_name: &RoleGroupName,
+    node_id_offset: &str,
 ) -> Result<(), Error> {
     cb_kafka
         .add_env_var(
@@ -703,10 +748,7 @@ fn add_common_kafka_env(
             "CONTAINERDEBUG_LOG_DIRECTORY",
             format!("{STACKABLE_LOG_DIR}/containerdebug"),
         )
-        .add_env_var(
-            KAFKA_NODE_ID_OFFSET,
-            node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string(),
-        );
+        .add_env_var(KAFKA_NODE_ID_OFFSET, node_id_offset);
     Ok(())
 }
 
@@ -781,6 +823,93 @@ fn container_name(container: impl std::fmt::Display) -> ContainerName {
         .expect("a container enum variant is always a valid ContainerName")
 }
 
+/// Name of the controller's `quorum-manager` sidecar container.
+const QUORUM_MANAGER_CONTAINER_NAME: &str = "quorum-manager";
+
+/// Builds the `quorum-manager` sidecar for a controller pod. Returns `None` when Kerberos is
+/// enabled (the sidecar's admin-client properties file only covers the TLS/SSL case).
+///
+/// `env` is expected to be [`controller_pod_shared_env_vars`] (plus `NODE_ID_OFFSET` and the
+/// rolegroup's `envOverrides`) — the same base the `kafka` container in this pod gets — so
+/// this sidecar's `controller.properties` render has every env var it references. See
+/// [`controller_pod_shared_env_vars`] for why that matters.
+fn build_quorum_manager_container(
+    resolved_product_image: &ResolvedProductImage,
+    kafka_security: &ValidatedKafkaSecurity,
+    env: Vec<EnvVar>,
+) -> Result<Option<stackable_operator::k8s_openapi::api::core::v1::Container>, Error> {
+    if kafka_security.has_kerberos_enabled() {
+        return Ok(None);
+    }
+
+    let mut cb = ContainerBuilder::new(QUORUM_MANAGER_CONTAINER_NAME).context(
+        InvalidContainerNameSnafu {
+            name: QUORUM_MANAGER_CONTAINER_NAME,
+        },
+    )?;
+
+    cb.image_from_product_image(resolved_product_image)
+        .command(vec![
+            "/bin/bash".to_string(),
+            "-c".to_string(),
+            quorum_manager_container_command(),
+        ])
+        .add_env_vars(env)
+        // `kafka-metadata-quorum.sh` goes through `kafka-run-class.sh`, which defaults
+        // `KAFKA_HEAP_OPTS` to `-Xmx256M` when unset. Set an explicit, modest heap so the
+        // JVM's max heap plus its base/metaspace/SSL-buffer overhead stays comfortably
+        // under the container's memory limit below.
+        .add_env_var(KAFKA_HEAP_OPTS, "-Xmx128M")
+        .resources(
+            ResourceRequirementsBuilder::new()
+                .with_cpu_request("100m")
+                // A JVM cold start plus an SSL handshake and an admin-client round-trip all
+                // need to happen inside this sidecar's existing `timeout 15`/`25s preStop`
+                // budgets (see `CLI_CALL_TIMEOUT_SECONDS` in `command.rs`).
+                .with_cpu_limit("500m")
+                // Request must equal limit: the Stackable platform's admission control
+                // rejects any container whose memory limit-to-request ratio isn't exactly 1
+                // (confirmed live: "memory max limit to request ratio per Container is 1,
+                // but provided ratio is 2.000000").
+                .with_memory_request("512Mi")
+                .with_memory_limit("512Mi")
+                .build(),
+        )
+        .add_volume_mount(STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
+        .context(AddVolumeMountSnafu)?
+        // `controller_admin_client_properties` (see `build/security.rs`) always points
+        // its keystore/truststore at this directory, so the sidecar's admin-client calls
+        // need it mounted here too, not just on the `kafka` container.
+        .add_volume_mount(
+            STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
+            STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+        )
+        .context(AddVolumeMountSnafu)?
+        // `add-controller` reads this controller's own on-disk `meta.properties` (its
+        // `node.id`/`directory.id`, written by `kafka-storage.sh format`) from `log.dirs` in
+        // the merged config it connects with — confirmed live: without this mount, every
+        // `add-controller` attempt failed with "Unable to read meta.properties from
+        // /stackable/data/kraft", since that path doesn't exist in this container's
+        // filesystem at all without it. This mounts the *same* per-pod PVC the `kafka`
+        // container itself writes `meta.properties` into, read-write for parity with it
+        // (the CLI tool doesn't document a read-only requirement, and this repo has no
+        // read-only-mount helper to reach for).
+        .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
+        .context(AddVolumeMountSnafu)?
+        .lifecycle_pre_stop(LifecycleHandler {
+            exec: Some(ExecAction {
+                command: Some(vec![
+                    "/bin/bash".to_string(),
+                    "-c".to_string(),
+                    quorum_manager_pre_stop_command(),
+                ]),
+            }),
+            ..LifecycleHandler::default()
+        });
+
+    Ok(Some(cb.build()))
+}
+
 fn add_vector_container(
     pod_builder: &mut PodBuilder,
     vector_container_name: &ContainerName,
@@ -800,4 +929,311 @@ fn add_vector_container(
             EnvVarSet::new(),
         ));
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::controller::test_support::{minimal_kafka, validated_cluster};
+
+    /// A minimal KRaft cluster with one controller role group, resolved through the real
+    /// validate step (mirroring the fixtures in `build/mod.rs`'s own tests), since
+    /// `ValidatedCluster` carries several resolved types that are impractical to construct by
+    /// hand.
+    fn kraft_mode_cluster() -> crate::controller::ValidatedCluster {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+        validated_cluster(&kafka)
+    }
+
+    /// End-to-end regression covering the whole point of removing `--initial-controllers`
+    /// (and the sidecar's own baked-in bootstrap-servers literal) from the controller pod
+    /// template: scaling an existing controller role group's replica count must not change
+    /// either container's `command`, or Kubernetes will roll every already-existing
+    /// controller pod on every scale-up/down, not just the ones actually being added or
+    /// removed. Confirmed live: before this fix, both the `kafka` container's format command
+    /// and the `quorum-manager` sidecar's bootstrap-servers literal changed with replica
+    /// count, forcing a full rolling restart on every scale operation.
+    #[test]
+    fn controller_pod_template_is_stable_across_replica_count_changes() {
+        let three_replicas = kraft_mode_cluster();
+        let five_replicas = crate::controller::test_support::validated_cluster(
+            &crate::controller::test_support::minimal_kafka(
+                r#"
+                apiVersion: kafka.stackable.tech/v1alpha1
+                kind: KafkaCluster
+                metadata:
+                  name: simple-kafka
+                  namespace: default
+                  uid: 12345678-1234-1234-1234-123456789012
+                spec:
+                  image:
+                    productVersion: 3.9.2
+                  clusterConfig:
+                    metadataManager: kraft
+                  controllers:
+                    roleGroups:
+                      default:
+                        replicas: 5
+                  brokers:
+                    roleGroups:
+                      default:
+                        replicas: 3
+                "#,
+            ),
+        );
+
+        let three_containers = controller_containers(&three_replicas);
+        let five_containers = controller_containers(&five_replicas);
+
+        for name in ["kafka", QUORUM_MANAGER_CONTAINER_NAME] {
+            let three_command = three_containers
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap_or_else(|| panic!("the {name} container is built (3 replicas)"))
+                .command
+                .clone();
+            let five_command = five_containers
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap_or_else(|| panic!("the {name} container is built (5 replicas)"))
+                .command
+                .clone();
+            assert_eq!(
+                three_command, five_command,
+                "the {name} container's command must not change when only the replica count \
+                 of an existing controller role group changes"
+            );
+        }
+    }
+
+    fn controller_containers(
+        cluster: &crate::controller::ValidatedCluster,
+    ) -> Vec<stackable_operator::k8s_openapi::api::core::v1::Container> {
+        let resources = crate::controller::build::build(cluster).expect("build succeeds");
+        let sts = resources
+            .stateful_sets
+            .into_iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
+            .expect("the controller StatefulSet is built");
+        sts.spec
+            .expect("the StatefulSet has a spec")
+            .template
+            .spec
+            .expect("the pod template has a spec")
+            .containers
+    }
+
+    #[test]
+    fn controller_pods_get_a_quorum_manager_sidecar_on_supported_versions() {
+        let cluster = kraft_mode_cluster();
+        let containers = controller_containers(&cluster);
+
+        assert!(
+            containers
+                .iter()
+                .any(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME),
+            "expected a quorum-manager sidecar, got containers: {:?}",
+            containers.iter().map(|c| &c.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn quorum_manager_sidecar_targets_bootstrap_servers_in_its_command() {
+        let cluster = kraft_mode_cluster();
+        let containers = controller_containers(&cluster);
+        let sidecar = containers
+            .iter()
+            .find(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME)
+            .expect("the quorum-manager sidecar is built");
+
+        let command = sidecar
+            .command
+            .as_ref()
+            .expect("the sidecar has a command")
+            .join(" ");
+        assert!(command.contains("add-controller"));
+
+        let pre_stop_command = sidecar
+            .lifecycle
+            .as_ref()
+            .and_then(|l| l.pre_stop.as_ref())
+            .and_then(|h| h.exec.as_ref())
+            .and_then(|e| e.command.as_ref())
+            .expect("the sidecar has a preStop exec hook")
+            .join(" ");
+        assert!(pre_stop_command.contains("remove-controller"));
+        assert!(pre_stop_command.trim_end().ends_with("exit 0"));
+    }
+
+    /// Every `${env:NAME}` placeholder found in a rendered Java properties (or similar)
+    /// string, in first-seen order, de-duplicated.
+    ///
+    /// The Java properties writer used to serialize the rendered `controller.properties`
+    /// escapes `:` as `\:` (`:` otherwise separates a properties key from its value), so a
+    /// placeholder actually appears as `${env\:NAME}` in the rendered ConfigMap content —
+    /// this accepts either form.
+    fn extract_env_placeholders(rendered: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut rest = rendered;
+        while let Some(start) = rest.find("${env") {
+            rest = &rest[start + "${env".len()..];
+            rest = rest.strip_prefix('\\').unwrap_or(rest);
+            let Some(rest_after_colon) = rest.strip_prefix(':') else {
+                continue;
+            };
+            rest = rest_after_colon;
+            let Some(end) = rest.find('}') else {
+                break;
+            };
+            let name = rest[..end].to_string();
+            if !result.contains(&name) {
+                result.push(name);
+            }
+            rest = &rest[end + 1..];
+        }
+        result
+    }
+
+    /// Regression test for a real bug found in review: `build_quorum_manager_container` once
+    /// set only `POD_NAME`/`NODE_ID_OFFSET` on the sidecar, while its own
+    /// `controller.properties` render (used to build the `add-controller` config, see
+    /// `command.rs`) needs `POD_NAME`, `ROLEGROUP_HEADLESS_SERVICE_NAME`, `NAMESPACE`,
+    /// `CLUSTER_DOMAIN` and `KAFKA_CLIENT_PORT` — so the rendered `listeners` value was most
+    /// likely broken (unresolved `${env:...}` placeholders). This asserts, from the actual
+    /// rendered `controller.properties` content, that every placeholder it references has a
+    /// matching env var on the sidecar container.
+    #[test]
+    fn quorum_manager_sidecar_has_every_env_var_controller_properties_rendering_references() {
+        let cluster = kraft_mode_cluster();
+        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+
+        let controller_properties = resources
+            .config_maps
+            .iter()
+            .find(|cm| cm.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
+            .expect("the controller rolegroup ConfigMap is built")
+            .data
+            .as_ref()
+            .expect("the ConfigMap carries data")
+            .get("controller.properties")
+            .expect("controller.properties is rendered into the ConfigMap")
+            .clone();
+
+        let placeholders = extract_env_placeholders(&controller_properties);
+        assert!(
+            placeholders.len() > 1,
+            "sanity check failed: expected multiple ${{env:...}} placeholders in the rendered \
+             controller.properties, got: {placeholders:?}"
+        );
+
+        let containers = controller_containers(&cluster);
+        let sidecar = containers
+            .iter()
+            .find(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME)
+            .expect("the quorum-manager sidecar is built");
+        let sidecar_env_names: Vec<&str> = sidecar
+            .env
+            .as_ref()
+            .expect("the sidecar has env vars")
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+
+        for placeholder in &placeholders {
+            // REPLICA_ID is not a Kubernetes-injected env var: both the `kafka` container's
+            // entrypoint and this sidecar's main-loop script derive and `export` it
+            // themselves from `$POD_NAME`/`$NODE_ID_OFFSET` before rendering the template
+            // (see `command.rs`), so it's expected to be absent from the container spec's
+            // `env` list.
+            if placeholder == "REPLICA_ID" {
+                continue;
+            }
+            assert!(
+                sidecar_env_names.contains(&placeholder.as_str()),
+                "quorum-manager sidecar is missing env var {placeholder:?}, which is \
+                 referenced by controller.properties's rendering; sidecar env vars: \
+                 {sidecar_env_names:?}"
+            );
+        }
+
+        // Targeted assertion (rather than relying on it only showing up incidentally among
+        // `placeholders` above): NODE_ID_OFFSET is consumed directly by the sidecar's own
+        // `EXPORT_REPLICA_ID` bash logic under `set -u` (see `command.rs`), so a regression
+        // here would break the sidecar's main loop and its `preStop` hook silently (an unset
+        // variable under `set -u` aborts the script).
+        assert!(
+            sidecar_env_names.contains(&KAFKA_NODE_ID_OFFSET),
+            "quorum-manager sidecar is missing the {KAFKA_NODE_ID_OFFSET} env var, needed by \
+             its EXPORT_REPLICA_ID derivation under `set -u`; sidecar env vars: \
+             {sidecar_env_names:?}"
+        );
+    }
+
+    #[test]
+    fn controller_pods_get_no_quorum_manager_sidecar_when_kerberos_is_enabled() {
+        // This is a Global Constraint (see the plan header): the sidecar's admin-client
+        // properties file only covers the TLS/SSL case, so it must never be added when
+        // Kerberos is enabled, even on an otherwise-supported Kafka version.
+        //
+        // Rather than building a full CRD-level Kerberos fixture (which needs a resolved
+        // AuthenticationClass threaded through `DereferencedObjects`, more than this test
+        // needs), call `build_quorum_manager_container` directly — it already takes
+        // `&ValidatedKafkaSecurity` as a parameter, so a fixture at that level is enough.
+        // Reuse the `kerberos()` fixture from `security.rs`'s existing test module (see
+        // Task 2).
+        let cluster = kraft_mode_cluster();
+        let kerberos_security = crate::controller::build::security::tests::kerberos();
+
+        let result = build_quorum_manager_container(&cluster.image, &kerberos_security, Vec::new())
+            .expect("build_quorum_manager_container does not error for a kerberos security value");
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn broker_pods_never_get_a_quorum_manager_sidecar() {
+        let cluster = kraft_mode_cluster();
+        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+        let sts = resources
+            .stateful_sets
+            .into_iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-broker-default"))
+            .expect("the broker StatefulSet is built");
+        let containers = sts
+            .spec
+            .expect("the StatefulSet has a spec")
+            .template
+            .spec
+            .expect("the pod template has a spec")
+            .containers;
+
+        assert!(
+            !containers
+                .iter()
+                .any(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME)
+        );
+    }
+
 }
