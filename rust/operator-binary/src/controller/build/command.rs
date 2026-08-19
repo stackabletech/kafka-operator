@@ -1,10 +1,13 @@
+use std::str::FromStr;
+
 use indoc::formatdoc;
 use stackable_operator::{
+    constant,
     product_logging::framework::{
         create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
     },
     utils::COMMON_BASH_TRAP_FUNCTIONS,
-    v2::product_logging::framework::STACKABLE_LOG_DIR,
+    v2::{builder::pod::container::EnvVarName, product_logging::framework::STACKABLE_LOG_DIR},
 };
 
 use super::properties::ConfigFileName;
@@ -32,10 +35,8 @@ pub fn kafka_log_opts(product_version: &str) -> String {
     }
 }
 
-/// The env var carrying the Kafka log4j options (see [`kafka_log_opts`]).
-pub fn kafka_log_opts_env_var() -> String {
-    "KAFKA_LOG4J_OPTS".to_string()
-}
+// The env var carrying the Kafka log4j options (see [`kafka_log_opts`]).
+constant!(pub KAFKA_LOG4J_OPTS: EnvVarName = "KAFKA_LOG4J_OPTS");
 
 /// Returns the commands to start the main Kafka container
 pub fn broker_kafka_container_commands(
@@ -205,5 +206,16 @@ fn initial_controllers_command(
             "--initial-controllers {initial_controllers}",
             initial_controllers = to_initial_controllers(controller_descriptors),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *KAFKA_LOG4J_OPTS;
     }
 }

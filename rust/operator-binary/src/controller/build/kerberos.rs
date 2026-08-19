@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::{
@@ -12,6 +14,8 @@ use stackable_operator::{
         },
     },
     commons::secret_class::SecretClassVolumeProvisionParts,
+    constant,
+    v2::builder::pod::container::{EnvVarName, EnvVarSet},
 };
 
 use crate::{
@@ -67,13 +71,42 @@ pub fn add_kerberos_pod_config(
         for cb in [cb_kafka, cb_kcat_prober] {
             cb.add_volume_mount("kerberos", STACKABLE_KERBEROS_DIR)
                 .context(AddVolumeMountSnafu)?;
-            cb.add_env_var("KRB5_CONFIG", STACKABLE_KERBEROS_KRB5_PATH);
-            cb.add_env_var(
-                "KAFKA_OPTS",
-                format!("-Djava.security.auth.login.config=/tmp/jaas.properties -Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}",),
-            );
         }
     }
 
     Ok(())
+}
+
+constant!(KRB5_CONFIG: EnvVarName = "KRB5_CONFIG");
+constant!(KAFKA_OPTS: EnvVarName = "KAFKA_OPTS");
+
+/// The environment variables the Kerberos configuration requires on the Kafka and kcat-prober
+/// containers, or an empty set when Kerberos is disabled.
+///
+/// Returned as an [`EnvVarSet`] (rather than added to the containers directly) so the callers
+/// can merge the user's `envOverrides` on top, letting an override win on a name collision.
+pub fn kerberos_env_vars(kafka_security: &ValidatedKafkaSecurity) -> EnvVarSet {
+    if !kafka_security.has_kerberos_enabled() {
+        return EnvVarSet::new();
+    }
+    EnvVarSet::new()
+        .with_value(&KRB5_CONFIG, STACKABLE_KERBEROS_KRB5_PATH)
+        .with_value(
+            &KAFKA_OPTS,
+            format!(
+                "-Djava.security.auth.login.config=/tmp/jaas.properties -Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}"
+            ),
+        )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *KRB5_CONFIG;
+        let _ = *KAFKA_OPTS;
+    }
 }

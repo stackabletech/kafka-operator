@@ -5,6 +5,8 @@ pub mod listener;
 pub mod role;
 pub mod tls;
 
+use std::str::FromStr;
+
 use authentication::KafkaAuthentication;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
@@ -14,14 +16,16 @@ use stackable_operator::{
         product_image_selection::ProductImage,
     },
     config::merge::Merge,
+    constant,
     deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
-    role_utils::{GenericRoleConfig, Role},
+    role_utils::GenericRoleConfig,
     schemars::{self, JsonSchema},
     status::condition::{ClusterCondition, HasStatusCondition},
     v2::{
+        builder::pod::container::EnvVarName,
         config_overrides::KeyValueConfigOverrides,
-        role_utils::JavaCommonConfig,
+        role_utils::{JavaCommonConfig, Role},
         types::{
             common::Port,
             kubernetes::{ConfigMapName, NamespaceName, ServiceName, StatefulSetName},
@@ -39,13 +43,13 @@ use crate::crd::{
 
 pub const CONTAINER_IMAGE_BASE_NAME: &str = "kafka";
 pub const APP_NAME: &str = "kafka";
-pub const OPERATOR_NAME: &str = "kafka.stackable.tech";
+pub const KAFKA_OPERATOR_NAME: &str = "kafka.stackable.tech";
 pub const FIELD_MANAGER: &str = "kafka-operator";
 // metrics
 pub const METRICS_PORT_NAME: &str = "metrics";
 pub const METRICS_PORT: Port = Port(9606);
 // env vars
-pub const KAFKA_HEAP_OPTS: &str = "KAFKA_HEAP_OPTS";
+constant!(pub KAFKA_HEAP_OPTS: EnvVarName = "KAFKA_HEAP_OPTS");
 // server_properties
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 // directories
@@ -404,6 +408,12 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *KAFKA_HEAP_OPTS;
+    }
 
     fn get_server_secret_class(kafka: &v1alpha1::KafkaCluster) -> Option<SecretClassName> {
         kafka
