@@ -108,8 +108,14 @@ pub fn get_kafka_listener_config(
         port: kafka_security.internal_port().to_string(),
     });
     listener_security_protocol_map.insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
-    listener_security_protocol_map
-        .insert(KafkaListenerName::Controller, KafkaListenerProtocol::Ssl);
+    listener_security_protocol_map.insert(
+        KafkaListenerName::Controller,
+        if kafka_security.has_kerberos_enabled() {
+            KafkaListenerProtocol::SaslSsl
+        } else {
+            KafkaListenerProtocol::Ssl
+        },
+    );
 
     // BOOTSTRAP
     if kafka_security.has_kerberos_enabled() {
@@ -492,7 +498,7 @@ mod tests {
                 bootstrap_name = KafkaListenerName::Bootstrap,
                 bootstrap_protocol = KafkaListenerProtocol::SaslSsl,
                 controller_name = KafkaListenerName::Controller,
-                controller_protocol = KafkaListenerProtocol::Ssl,
+                controller_protocol = KafkaListenerProtocol::SaslSsl,
             )
         );
     }

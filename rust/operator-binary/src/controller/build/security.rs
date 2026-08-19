@@ -49,6 +49,7 @@ const PROPERTY_SECURITY_PROTOCOL: &str = "security.protocol";
 const PROPERTY_SASL_ENABLED_MECHANISMS: &str = "sasl.enabled.mechanisms";
 const PROPERTY_SASL_KERBEROS_SERVICE_NAME: &str = "sasl.kerberos.service.name";
 const PROPERTY_SASL_INTER_BROKER_MECHANISM: &str = "sasl.mechanism.inter.broker.protocol";
+const PROPERTY_SASL_CONTROLLER_MECHANISM: &str = "sasl.mechanism.controller.protocol";
 const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &str = "/stackable/tls-kafka-internal";
 const STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: &str = "tls-kafka-internal";
 const STACKABLE_TLS_KAFKA_SERVER_DIR: &str = "/stackable/tls-kafka-server";
@@ -448,6 +449,10 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
             PROPERTY_SASL_INTER_BROKER_MECHANISM.to_string(),
             SASL_MECHANISM_GSSAPI.to_string(),
         );
+        config.insert(
+            PROPERTY_SASL_CONTROLLER_MECHANISM.to_string(),
+            SASL_MECHANISM_GSSAPI.to_string(),
+        );
         tracing::debug!("Kerberos configs added: [{:#?}]", config);
     }
 
@@ -539,6 +544,10 @@ pub fn controller_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap
         );
         config.insert(
             PROPERTY_SASL_INTER_BROKER_MECHANISM.to_string(),
+            SASL_MECHANISM_GSSAPI.to_string(),
+        );
+        config.insert(
+            PROPERTY_SASL_CONTROLLER_MECHANISM.to_string(),
             SASL_MECHANISM_GSSAPI.to_string(),
         );
         tracing::debug!("Kerberos configs added: [{:#?}]", config);
@@ -933,6 +942,10 @@ mod tests {
             config.get("sasl.mechanism.inter.broker.protocol"),
             Some(&"GSSAPI".to_string())
         );
+        assert_eq!(
+            config.get("sasl.mechanism.controller.protocol"),
+            Some(&"GSSAPI".to_string())
+        );
         assert!(config.contains_key("listener.name.bootstrap.ssl.keystore.location"));
     }
 
@@ -987,6 +1000,10 @@ mod tests {
         assert_eq!(
             config.get("sasl.kerberos.service.name"),
             Some(&"kafka".to_string())
+        );
+        assert_eq!(
+            config.get("sasl.mechanism.controller.protocol"),
+            Some(&"GSSAPI".to_string())
         );
     }
 }

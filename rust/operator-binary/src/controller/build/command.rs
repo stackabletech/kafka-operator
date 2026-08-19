@@ -157,6 +157,7 @@ wait_for_termination()
 "#;
 
 pub fn controller_kafka_container_command(
+    kafka_security: &ValidatedKafkaSecurity,
     controller_descriptors: Vec<KafkaPodDescriptor>,
     product_version: &str,
 ) -> String {
@@ -165,14 +166,14 @@ pub fn controller_kafka_container_command(
         {remove_vector_shutdown_file_command}
         prepare_signal_handlers
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
-
+        {set_realm_env}
         POD_INDEX=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
         export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
 
         cp {config_dir}/{properties_file} /tmp/{properties_file}
 
         config-utils template /tmp/{properties_file}
-
+        {jaas_setup}
         bin/kafka-storage.sh format --cluster-id \"$KAFKA_CLUSTER_ID\" --config /tmp/{properties_file} --ignore-formatted {initial_controller_command}
         bin/kafka-server-start.sh /tmp/{properties_file} &
 
@@ -180,8 +181,25 @@ pub fn controller_kafka_container_command(
         {create_vector_shutdown_file_command}
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+        // When Kerberos is disabled this resolves to an empty string, so the surrounding
+        // template lines collapse to the same single blank line that was present before
+        // Kerberos support was added (byte-identical output for non-Kerberos setups).
+        set_realm_env = match kafka_security.has_kerberos_enabled() {
+            true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})\n"),
+            false => "".to_string(),
+        },
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = ConfigFileName::ControllerProperties,
+        // Same as `set_realm_env`: empty when Kerberos is disabled, preserving the
+        // pre-Kerberos-support blank-line layout.
+        jaas_setup = match kafka_security.has_kerberos_enabled() {
+            true => format!(
+                "\ncp {config_dir}/{jaas_file} /tmp/{jaas_file}\nconfig-utils template /tmp/{jaas_file}\n",
+                config_dir = STACKABLE_CONFIG_DIR,
+                jaas_file = ConfigFileName::Jaas,
+            ),
+            false => "".to_string(),
+        },
         initial_controller_command = initial_controllers_command(&controller_descriptors, product_version),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
     }
@@ -205,5 +223,117 @@ fn initial_controllers_command(
             "--initial-controllers {initial_controllers}",
             initial_controllers = to_initial_controllers(controller_descriptors),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use stackable_operator::{
+        builder::meta::ObjectMetaBuilder,
+        crd::authentication::{core, kerberos},
+        v2::types::kubernetes::SecretClassName,
+    };
+
+    use super::*;
+    use crate::crd::authentication::ResolvedAuthenticationClasses;
+
+    fn kerberos_auth_class() -> core::v1alpha1::AuthenticationClass {
+        core::v1alpha1::AuthenticationClass {
+            metadata: ObjectMetaBuilder::new().name("kerberos-auth").build(),
+            spec: core::v1alpha1::AuthenticationClassSpec {
+                provider: core::v1alpha1::AuthenticationClassProvider::Kerberos(
+                    kerberos::v1alpha1::AuthenticationProvider {
+                        kerberos_secret_class: "kerberos-secret-class".to_string(),
+                    },
+                ),
+            },
+        }
+    }
+
+    /// Kerberos, which also requires server and internal TLS.
+    fn kerberos_security() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![kerberos_auth_class()]),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            Some("tls".parse().unwrap()),
+            None,
+        )
+    }
+
+    /// Plaintext: no TLS, no authentication, no OPA.
+    fn plaintext_security() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![]),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn controller_command_exports_kerberos_realm_and_templates_jaas_when_enabled() {
+        let command = controller_kafka_container_command(&kerberos_security(), vec![], "4.1.1");
+        assert!(command.contains("export KERBEROS_REALM="));
+        assert!(command.contains(&format!(
+            "cp {}/jaas.properties /tmp/jaas.properties",
+            STACKABLE_CONFIG_DIR
+        )));
+        assert!(command.contains("config-utils template /tmp/jaas.properties"));
+    }
+
+    #[test]
+    fn controller_command_skips_kerberos_setup_when_disabled() {
+        let command = controller_kafka_container_command(&plaintext_security(), vec![], "4.1.1");
+        assert!(!command.contains("KERBEROS_REALM"));
+        assert!(!command.contains("jaas.properties"));
+    }
+
+    /// Mirrors `controller_kafka_container_command` as it existed at commit `d9942ad`
+    /// (immediately before Kerberos support was added), before it took a `kafka_security`
+    /// parameter. Used to pin down that Kerberos-disabled output is byte-identical to the
+    /// pre-Kerberos-support output, per the plan's Global Constraint.
+    fn pre_kerberos_controller_kafka_container_command(
+        controller_descriptors: Vec<KafkaPodDescriptor>,
+        product_version: &str,
+    ) -> String {
+        formatdoc! {"
+            {BASH_TRAP_FUNCTIONS}
+            {remove_vector_shutdown_file_command}
+            prepare_signal_handlers
+            containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
+
+            POD_INDEX=$(echo \"$POD_NAME\" | grep -oE '[0-9]+$')
+            export REPLICA_ID=$((POD_INDEX+NODE_ID_OFFSET))
+
+            cp {config_dir}/{properties_file} /tmp/{properties_file}
+
+            config-utils template /tmp/{properties_file}
+
+            bin/kafka-storage.sh format --cluster-id \"$KAFKA_CLUSTER_ID\" --config /tmp/{properties_file} --ignore-formatted {initial_controller_command}
+            bin/kafka-server-start.sh /tmp/{properties_file} &
+
+            wait_for_termination $!
+            {create_vector_shutdown_file_command}
+            ",
+            remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+            config_dir = STACKABLE_CONFIG_DIR,
+            properties_file = ConfigFileName::ControllerProperties,
+            initial_controller_command = initial_controllers_command(&controller_descriptors, product_version),
+            create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
+        }
+    }
+
+    #[test]
+    fn controller_command_is_byte_identical_to_pre_kerberos_output_when_disabled() {
+        let actual = controller_kafka_container_command(&plaintext_security(), vec![], "4.1.1");
+        let expected = pre_kerberos_controller_kafka_container_command(vec![], "4.1.1");
+
+        assert_eq!(
+            actual, expected,
+            "controller_kafka_container_command must produce byte-identical output to the \
+             pre-Kerberos-support implementation when Kerberos is disabled"
+        );
     }
 }

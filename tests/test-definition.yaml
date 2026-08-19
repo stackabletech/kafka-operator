@@ -83,6 +83,14 @@ tests:
     dimensions:
       - kafka-kraft
       - openshift
+  - name: kraft-kerberos
+    dimensions:
+      - kafka-kraft
+      - krb5
+      - kerberos-realm
+      - kerberos-backend
+      - openshift
+      - broker-listener-class
   - name: smoke
     dimensions:
       - kafka

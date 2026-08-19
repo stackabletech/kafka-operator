@@ -12,5 +12,4 @@ Support for clusters running in Kraft mode (which includes Apache Kafka 4.x.x) i
 Also there are some known issues such as:
 
 * Controller scaling is not reliable.
-* Kerberos authentication is not tested yet.
 * Service exposition is not definitive.
