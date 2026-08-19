@@ -3,6 +3,7 @@ use stackable_operator::{
     product_logging::framework::{
         create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
     },
+    shared::time::Duration,
     utils::COMMON_BASH_TRAP_FUNCTIONS,
     v2::product_logging::framework::STACKABLE_LOG_DIR,
 };
@@ -128,10 +129,7 @@ fn broker_start_command(kraft_mode: bool) -> String {
 /// Known limitation: this rule is only safe for a cluster's *original* bootstrap. If the
 /// designated node's persistent volume is ever lost and needs to reformat after the cluster has
 /// already formed a quorum elsewhere, reformatting it with `--standalone` would bootstrap a
-/// second, conflicting one-node quorum instead of rejoining the existing one — the same class
-/// of manual-recovery scenario as losing enough voters to break quorum in any Raft-based
-/// system, not something this operator (which deliberately has no live-cluster awareness)
-/// can detect or repair automatically. See `kraft-controller.adoc`.
+/// second, conflicting one-node quorum instead of rejoining the existing one.
 fn controller_quorum_format_flag(controller_descriptors: &[KafkaPodDescriptor]) -> String {
     let bootstrap_node_id = controller_descriptors
         .iter()
@@ -183,11 +181,6 @@ pub fn controller_kafka_container_command(
     }
 }
 
-/// The `kafka-metadata-quorum.sh` binary, referenced by its absolute path (matching every
-/// other exec-into-pod usage of a Kafka CLI tool in this repo, e.g. the kuttl test scripts
-/// under `tests/templates/kuttl/*/*.sh`), rather than the relative `bin/...` form used only
-/// inside the `kafka` container's own entrypoint (which runs with the Kafka install dir as
-/// its working directory).
 const KAFKA_METADATA_QUORUM_BINARY: &str = "/stackable/kafka/bin/kafka-metadata-quorum.sh";
 
 const ADMIN_CLIENT_PROPERTIES_PATH: &str = "/stackable/config/admin-client.properties";
@@ -196,64 +189,29 @@ const ADMIN_CLIENT_PROPERTIES_PATH: &str = "/stackable/config/admin-client.prope
 ///
 /// `add-controller` is not a plain admin-client call: the same process that connects to the
 /// quorum also reads `node.id` and its own `listeners`/`controller.listener.names` from the
-/// **same** `--command-config` file to build the voter registration payload (confirmed live:
-/// pointed at the plain [`ADMIN_CLIENT_PROPERTIES_PATH`], every attempt failed with `node.id
-/// not found in configuration file`, so no controller was ever able to admit itself as a
-/// voter). But that rendered `controller.properties` has no bare `security.protocol`/`ssl.*`
-/// keys of its own — only the `listener.name.<name>.ssl.*`-prefixed ones the server process
-/// uses for its listeners — so using it *instead of* the admin-client config leaves the
-/// AdminClient with no TLS config and unable to reach the (TLS-only) bootstrap controller.
-/// Concatenating both files (also confirmed live) gives `add-controller` everything it reads:
-/// the bare `ssl.*`/`security.protocol` keys for its own connection, plus `node.id` and the
-/// listener keys for the registration payload.
+/// **same** `--command-config` file to build the voter registration payload.
 ///
 /// **Order matters.** There is no key overlap between the two files today, but
-/// `controller.properties` accepts unconditional `configOverrides` merged into it (see
-/// `controller_properties::build`), so a user override there could add a colliding key. Java
-/// properties parsing lets a later occurrence of the same key win, so `controller.properties`
-/// is concatenated *first* and [`ADMIN_CLIENT_PROPERTIES_PATH`] *last* — that way the client
-/// TLS config `add-controller` connects with always wins by construction, rather than
-/// depending on there being no collision today.
+/// `controller.properties` accepts unconditional `configOverrides` merged into it,
+/// so a user override there could add a colliding key.
 const ADD_CONTROLLER_PROPERTIES_PATH: &str = "/tmp/add-controller.properties";
 
 /// Wall-clock bound (seconds) applied to every individual `kafka-metadata-quorum.sh`
-/// invocation via `timeout`. The Java AdminClient can otherwise retry internally for far
-/// longer than any of this file's own script-level deadlines, which matters most in
-/// `quorum_manager_pre_stop_command`: it runs exactly when peers may be unreachable, and a
-/// hung admin-client call there would burn into `terminationGracePeriodSeconds` (default:
-/// 30 minutes) rather than the script's own 25s budget.
+/// invocation via `timeout`.
 const CLI_CALL_TIMEOUT_SECONDS: u32 = 15;
 
 /// Grace period (seconds) after [`CLI_CALL_TIMEOUT_SECONDS`] elapses before `timeout` sends
 /// `SIGKILL`, via `--kill-after`.
-///
-/// `timeout N cmd` (GNU coreutils) without `--kill-after` only *sends* `SIGTERM` once `N`
-/// seconds pass — it does not force-kill `cmd`, so if `cmd` doesn't honor the signal
-/// promptly, the whole call can run far longer than `N` seconds. Confirmed directly,
-/// independent of Kafka: `timeout 3 bash -c 'trap "" TERM; sleep 30'` takes the full 30s, not
-/// 3s. Confirmed live, with Kafka: during a full namespace deletion (every controller
-/// terminating concurrently, so a peer's `describe`/`add-controller`/`remove-controller` call
-/// can hit a blackholed rather than actively-refused connection), a controller's sidecar kept
-/// running well past its own `preStop` script's ~25-40s design budget — the `timeout` wrapper
-/// around its `kafka-metadata-quorum.sh` calls was not actually bounding them.
 const CLI_CALL_KILL_AFTER_SECONDS: u32 = 5;
 
 /// Shell snippet setting `$BOOTSTRAP_SERVERS` by extracting
 /// `controller.quorum.bootstrap.servers` from the static, un-rendered `controller.properties`
-/// ConfigMap file, un-escaping the `\:` that `to_java_properties_string` applies to colons.
-/// This value has no `${env:...}` placeholders — every `host:port` pair is already fully
-/// resolved at build time from pod descriptors (see `kraft_controllers` in
-/// `build/properties/mod.rs`) — so it can be read directly without running `config-utils
-/// template` first.
+/// ConfigMap file.
 ///
 /// Reading this at runtime, rather than baking the peer list into this script as a Rust
 /// literal, keeps both sidecar scripts' content — and therefore the controller pod
 /// template — identical across changes to an existing controller role group's *replica
-/// count*. Confirmed live: without this, scaling controllers up/down rolled every
-/// already-existing controller pod, not just the ones actually being added/removed — the
-/// same class of problem `--initial-controllers` caused before it was removed from the
-/// `kafka` container's own format step (see `controller_quorum_format_flag`), just via this
-/// sidecar's command instead.
+/// count*.
 fn extract_bootstrap_servers_command() -> String {
     format!(
         r#"BOOTSTRAP_SERVERS=$(grep '^controller.quorum.bootstrap.servers=' {config_dir}/{controller_properties_file} | cut -d= -f2- | sed 's/\\:/:/g')"#,
@@ -264,43 +222,19 @@ fn extract_bootstrap_servers_command() -> String {
 
 /// The sidecar's main-loop command: while this controller's local Raft state is
 /// `observer`, repeatedly attempt to admit it into the quorum's voter set.
-///
-/// Explicitly traps `TERM` and exits: this script runs as the container's PID 1, and the
-/// kernel suppresses the default action of unhandled signals for PID 1, so without this
-/// trap the loop below would never notice `SIGTERM` and would run until Kubernetes gives up
-/// waiting and sends `SIGKILL` after the full `terminationGracePeriodSeconds` (confirmed
-/// live: with no trap, this container kept looping — and its pod kept reporting as
-/// `Terminating` — long after the `kafka` container in the same pod had shut down
-/// gracefully). The `sleep 10 &`/`wait $!` pair (rather than a plain `sleep 10`) lets the
-/// trap fire immediately: bash's `wait` builtin is interrupted as soon as a trapped signal
-/// arrives, whereas a foreground `sleep` would only be noticed once it finished.
-///
-/// Renders [`ADD_CONTROLLER_PROPERTIES_PATH`] once at startup (this controller's identity
-/// and listener address don't change for the container's lifetime) by reusing the same
-/// `$POD_NAME`/`NODE_ID_OFFSET` → `REPLICA_ID` derivation ([`DERIVE_POD_INDEX`]/
-/// [`EXPORT_REPLICA_ID`]), and the same `config-utils template` render step, as the `kafka`
-/// container's own entrypoint (see [`controller_kafka_container_command`]) — see
-/// [`ADD_CONTROLLER_PROPERTIES_PATH`] for why `add-controller` needs this merged file rather
-/// than the plain admin-client config, and for why the concatenation order matters.
-///
-/// The render/merge preamble's inputs are static, operator-rendered config (env vars set
-/// once at pod creation), so a failure there is a genuine misconfiguration that retrying
-/// won't fix. It must still be loud in the logs, but it must *not* crash the container: a
-/// container with no readiness probe is only `Ready` while `Running`, and (with
-/// `OrderedReady` pod management on every non-Kerberos controller `StatefulSet`) a
-/// crash-looping sidecar would make its whole pod `NotReady` and block scale/update
-/// progress for every sibling pod in the role, not just the broken one. So on failure this
-/// falls into a "degraded" loop that repeats a clear error every 30s and never attempts
-/// `add-controller` (there is no valid rendered config to use), keeping the container alive
-/// and `Running` while the problem stays visible via `kubectl logs`. This deliberately does
-/// *not* retry the render/merge step itself — that would look like it might eventually
-/// succeed, when the actual cause is a misconfiguration that only a human or a new rollout
-/// can fix.
 pub fn quorum_manager_container_command() -> String {
     format!(
         r#"
         set -uo pipefail
-        trap 'exit 0' TERM
+        ADD_CONTROLLER_PID=""
+        trap 'handle_term_signal' TERM
+
+        handle_term_signal()
+        {{
+          [ -n "$ADD_CONTROLLER_PID" ] && kill -TERM "$ADD_CONTROLLER_PID" 2>/dev/null
+          exit 0
+        }}
+
         {derive_pod_index}
         [ -n "$POD_INDEX" ] || exit 0
         {export_replica_id}
@@ -314,8 +248,11 @@ pub fn quorum_manager_container_command() -> String {
             state=$(curl -s --max-time 5 --connect-timeout 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+"\}}' | grep -oE '"[a-z]+"' | tr -d '"')
             if [ "$state" = "observer" ]; then
               echo "Local Raft state is observer, attempting add-controller..."
-              timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {add_controller_config} add-controller \
+              timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {add_controller_config} add-controller &
+              ADD_CONTROLLER_PID=$!
+              wait "$ADD_CONTROLLER_PID" \
                 || echo "add-controller attempt failed (this is expected if it already succeeded or a leader election is in progress), will retry"
+              ADD_CONTROLLER_PID=""
             elif [ -z "$state" ]; then
               echo "Could not determine local Raft state (metrics scrape returned nothing), will retry"
             else
@@ -347,39 +284,54 @@ pub fn quorum_manager_container_command() -> String {
     )
 }
 
-/// The sidecar's `preStop` command: before this controller pod terminates, check that
-/// removing it would not remove the *last* remaining voter from the quorum, and if so,
+/// Reserved (seconds), out of the pod's total `terminationGracePeriodSeconds`, for the `kafka`
+/// process's *own* `SIGTERM`-triggered shutdown after this preStop hook finishes or gives up.
+const PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS: u64 = 30;
+
+/// Floor for [`pre_stop_deadline_seconds`]: never worse than the original fixed budget, even
+/// for a user-configured `gracefulShutdownTimeout` too short to leave
+/// [`PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS`] of headroom.
+const PRE_STOP_MIN_DEADLINE_SECONDS: u64 = 25;
+
+/// Cap for [`pre_stop_deadline_seconds`]: even against a generous `gracefulShutdownTimeout`
+/// (the operator's own default is 30 minutes), a single pod's voter removal shouldn't
+/// plausibly hang for tens of minutes during a routine scale-down.
+const PRE_STOP_MAX_DEADLINE_SECONDS: u64 = 120;
+
+/// The wall-clock budget (seconds) [`controller_remove_self_pre_stop_command`] retries voter removal
+/// for, derived from the pod's actual `gracefulShutdownTimeout` rather than a single fixed
+/// constant.
+fn pre_stop_deadline_seconds(graceful_shutdown_timeout: Option<Duration>) -> u64 {
+    graceful_shutdown_timeout
+        .map(|timeout| {
+            timeout
+                .as_secs()
+                .saturating_sub(PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS)
+                .clamp(PRE_STOP_MIN_DEADLINE_SECONDS, PRE_STOP_MAX_DEADLINE_SECONDS)
+        })
+        .unwrap_or(PRE_STOP_MIN_DEADLINE_SECONDS)
+}
+
+/// The `kafka` container's own `preStop` command: before this controller pod terminates, check
+/// that removing it would not remove the *last* remaining voter from the quorum, and if so,
 /// remove it from the voter set. Always exits 0 — a stuck or failed check must never block
 /// pod termination.
 ///
-/// Removing a departing voter only ever *lowers* the majority threshold for the remaining
-/// set, and the `remove-controller` RPC itself needs the *current* quorum to already commit
-/// it — if peers are unreachable the call simply fails, it can't corrupt anything. So the
-/// only real invariant worth enforcing here is "never remove the last voter": a 1-voter
-/// quorum can't be reduced further without permanently losing all fault tolerance (there
-/// would be no other voter left to ever add a replacement to).
-///
-/// This controller's own KRaft node id is derived at runtime from `$POD_NAME` and
-/// `$NODE_ID_OFFSET` ([`DERIVE_POD_INDEX`]/[`EXPORT_REPLICA_ID`]), exactly as the `kafka`
-/// container's own entrypoint does — see `controller_kafka_container_command`.
-///
-/// `describe --replication`'s column layout (`NodeId` as column 1, `DirectoryId` as column
-/// 2, `Status` as the last column, with `Status` one of `Leader`/`Follower`/`Observer`) is
-/// the *documented* KIP-853 tabular format, but has not been confirmed against a live
-/// cluster (see Task 4's brief, Step 5 — deferred to Task 7's kuttl run, which has one).
-/// Filtering is deliberately conservative: only rows whose `Status` is a recognized voter
-/// value (`Leader`/`Follower`) count towards `total_voters`, and if that filter yields zero
-/// voters (e.g. because the real column layout differs from what's assumed here), the
-/// check simply retries rather than treating "no known voters" as "safe to remove" — i.e.
-/// this fails closed (skips removal) rather than open on a parsing mismatch.
-///
 /// The "would leave zero voters" case is the one exception that does *not* retry: once a
-/// `describe` shows this pod is the last remaining voter, retrying for the rest of the
-/// `DEADLINE` can't make it safe to remove — nothing else is going to add a voter for it
-/// while it terminates. Confirmed live: before this early `break`, a controller pod that
-/// became the last voter (e.g. scaling controllers down to 1, or the last surviving pod
-/// during a full teardown) always burned the entire 25s `DEADLINE` here for no benefit.
-pub fn quorum_manager_pre_stop_command() -> String {
+/// `describe` shows this pod is the last remaining voter, stop.
+///
+/// IMPORTANT: the last voter must never be removed from the quorum because that would break
+/// cluster restarts. In that situation a restart would reformat the Raft metadata effectively
+/// losing all information from the previous iteration.
+///
+/// If every retry within `DEADLINE` fails, the loop falls through with the voter never
+/// actually removed; the final `echo "ERROR: ..."` makes that failure loud (grep/alert-able in
+/// container logs) rather than a plain, easy-to-miss log line, since a stale voter entry left
+/// behind here is exactly the kind of thing that can strand a later restart-from-zero (see
+/// `controller_stuck_unattached_liveness_probe`'s doc comment in `resource/statefulset.rs`).
+pub fn controller_remove_self_pre_stop_command(
+    graceful_shutdown_timeout: Option<Duration>,
+) -> String {
     format!(
         r#"
         set -uo pipefail
@@ -387,7 +339,8 @@ pub fn quorum_manager_pre_stop_command() -> String {
         [ -n "$POD_INDEX" ] || exit 0
         {export_replica_id}
         {extract_bootstrap_servers}
-        DEADLINE=$((SECONDS + 25))
+        DEADLINE=$((SECONDS + {deadline_seconds}))
+        finished=false
         while [ "$SECONDS" -lt "$DEADLINE" ]; do
           describe=$(timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {config} describe --replication 2>/dev/null)
           if [ -n "$describe" ]; then
@@ -399,25 +352,33 @@ pub fn quorum_manager_pre_stop_command() -> String {
                 directory_id=$(echo "$voters" | awk -v id="$REPLICA_ID" '$1 == id {{ print $2 }}')
                 if [ -n "$directory_id" ]; then
                   echo "Removing self (node $REPLICA_ID, directory $directory_id) from the voter set..."
-                  timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {config} remove-controller \
-                    --controller-id "$REPLICA_ID" --controller-directory-id "$directory_id" \
-                    || echo "remove-controller failed, proceeding with termination anyway"
+                  if timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {config} remove-controller \
+                    --controller-id "$REPLICA_ID" --controller-directory-id "$directory_id"; then
+                    finished=true
+                  else
+                    echo "remove-controller attempt failed, will retry if time remains"
+                  fi
                 else
                   echo "Could not find own node $REPLICA_ID among current voters (already removed?), nothing to do"
+                  finished=true
                 fi
-                break
               else
                 echo "Removing self would leave zero voters, skipping (this can't become safe later during my own termination -- nothing else will add a voter for me)"
-                break
+                finished=true
               fi
+              [ "$finished" = true ] && break
             else
               echo "Could not identify any voters in the describe output (unrecognized format), skipping removal for safety and retrying..."
             fi
           fi
           sleep 2
         done
+        if [ "$finished" != true ]; then
+          echo "ERROR: could not remove self (node $REPLICA_ID) from the voter set before terminating (every attempt within ${{DEADLINE}}s failed or the quorum was unreachable throughout); the on-disk voter set may now list this pod even though it is gone -- if nothing else corrects this, a later restart may get stuck and require manual recovery, see kraft-controller.adoc"
+        fi
         exit 0
         "#,
+        deadline_seconds = pre_stop_deadline_seconds(graceful_shutdown_timeout),
         binary = KAFKA_METADATA_QUORUM_BINARY,
         config = ADMIN_CLIENT_PROPERTIES_PATH,
         cli_timeout = CLI_CALL_TIMEOUT_SECONDS,
@@ -458,9 +419,34 @@ mod tests {
     #[test]
     fn quorum_manager_container_command_traps_term_and_sleeps_interruptibly() {
         let command = quorum_manager_container_command();
-        assert!(command.contains("trap 'exit 0' TERM"));
+        assert!(command.contains("trap 'handle_term_signal' TERM"));
         assert!(command.contains("sleep 10 &"));
         assert!(command.contains("wait $!"));
+    }
+
+    /// The whole point of backgrounding `add-controller`: a plain foreground `timeout ...`
+    /// call is not interrupted by an arriving `TERM` — bash only checks/runs traps between
+    /// commands or during the interruptible `wait` builtin — so a call already in flight when
+    /// the pod starts terminating could otherwise run to completion and race the `kafka`
+    /// container's own `preStop` removal, re-adding a pod that is simultaneously being
+    /// removed. Backgrounding it and having the trap actively `kill` it closes that window.
+    #[test]
+    fn quorum_manager_container_command_kills_an_in_flight_add_controller_attempt_on_term() {
+        let command = quorum_manager_container_command();
+        assert!(command.contains("ADD_CONTROLLER_PID=$!"));
+        assert!(command.contains(r#"wait "$ADD_CONTROLLER_PID""#));
+        assert!(command.contains(r#"kill -TERM "$ADD_CONTROLLER_PID""#));
+        // The `add-controller` invocation itself must actually be backgrounded (not a plain
+        // foreground call) for the above to have any effect.
+        let add_controller_line = command
+            .lines()
+            .find(|line| line.contains("timeout") && line.contains("add-controller"))
+            .expect("the add-controller invocation is present");
+        assert!(
+            add_controller_line.trim_end().ends_with('&'),
+            "add-controller must be backgrounded so TERM can interrupt `wait` immediately, \
+             line was: {add_controller_line}"
+        );
     }
 
     /// Checks only that the generated command *string* concatenates the two config files in
@@ -493,10 +479,100 @@ mod tests {
     }
 
     #[test]
-    fn quorum_manager_pre_stop_command_always_exits_zero() {
-        let command = quorum_manager_pre_stop_command();
+    fn controller_remove_self_pre_stop_command_always_exits_zero() {
+        let command = controller_remove_self_pre_stop_command(None);
         assert!(command.trim_end().ends_with("exit 0"));
         assert!(command.contains("remove-controller"));
+    }
+
+    /// A failed `remove-controller` attempt must not `break` out of the retry loop — unlike
+    /// the "already removed" and "would leave zero voters" cases, a failure is exactly the
+    /// situation the retry loop exists for. Only success (`finished=true` on that path) may
+    /// exit early.
+    #[test]
+    fn controller_remove_self_pre_stop_command_retries_a_failed_remove_controller_attempt() {
+        let command = controller_remove_self_pre_stop_command(None);
+
+        // The loop's exit check is conditional on success (`finished=true`), not an
+        // unconditional `break` - so a failed attempt, which never reaches `finished=true`,
+        // falls through to the loop's retry instead of exiting immediately.
+        assert!(command.contains(r#"[ "$finished" = true ] && break"#));
+
+        // The failed-attempt branch itself must not set `finished=true` or `break` on its
+        // own - only the sibling success (`then`) branch does; this branch's only content is
+        // the log message.
+        let failure_message = "remove-controller attempt failed, will retry if time remains";
+        let failure_message_pos = command
+            .find(failure_message)
+            .expect("the failure message is present in the generated script");
+        let up_to_failure_message = &command[..failure_message_pos + failure_message.len()];
+        let else_branch_start = up_to_failure_message
+            .rfind("else")
+            .expect("the failure message is inside an `else` branch");
+        let else_branch = &up_to_failure_message[else_branch_start..];
+        assert!(!else_branch.contains("finished=true"));
+        assert!(!else_branch.contains("break"));
+    }
+
+    /// If every retry within `DEADLINE` fails, the script must say so loudly (an `ERROR:`
+    /// prefixed line, consistent with the `quorum-manager` main loop's own degraded-mode
+    /// messages) rather than silently letting the pod terminate with the voter never removed —
+    /// see `pre_stop_deadline_seconds`'s and this function's doc comments for why a silent
+    /// failure here is the specific gap that can strand a later restart-from-zero.
+    #[test]
+    fn controller_remove_self_pre_stop_command_logs_loudly_when_every_attempt_fails() {
+        let command = controller_remove_self_pre_stop_command(None);
+        assert!(command.contains(r#"if [ "$finished" != true ]; then"#));
+        let error_branch = command
+            .split(r#"if [ "$finished" != true ]; then"#)
+            .nth(1)
+            .expect("the failure branch follows the retry loop");
+        assert!(error_branch.contains("echo \"ERROR:"));
+    }
+
+    /// The retry `DEADLINE` must be derived from the pod's actual `gracefulShutdownTimeout`
+    /// (via [`pre_stop_deadline_seconds`]) rather than hardcoded, and must stay within the
+    /// documented floor/cap regardless of how short or long that timeout is.
+    #[test]
+    fn pre_stop_deadline_seconds_is_derived_from_graceful_shutdown_timeout_within_floor_and_cap() {
+        // No configured timeout (shouldn't happen in practice) falls back to the floor.
+        assert_eq!(
+            pre_stop_deadline_seconds(None),
+            PRE_STOP_MIN_DEADLINE_SECONDS
+        );
+
+        // A short timeout (shorter than the reserved buffer) still gets at least the floor,
+        // never less than the original fixed behavior.
+        assert_eq!(
+            pre_stop_deadline_seconds(Some(Duration::from_secs(10))),
+            PRE_STOP_MIN_DEADLINE_SECONDS
+        );
+
+        // A generous timeout (the operator's own 30-minute default) is capped, not handed the
+        // entire budget minus the reserve.
+        assert_eq!(
+            pre_stop_deadline_seconds(Some(Duration::from_minutes_unchecked(30))),
+            PRE_STOP_MAX_DEADLINE_SECONDS
+        );
+
+        // A timeout comfortably between the floor and the cap (once the reserve is subtracted)
+        // is used as-is.
+        assert_eq!(
+            pre_stop_deadline_seconds(Some(Duration::from_secs(90))),
+            90 - PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS
+        );
+    }
+
+    /// The generated script's own `DEADLINE` must actually use
+    /// [`pre_stop_deadline_seconds`]'s output, not a literal left over from before it existed.
+    #[test]
+    fn controller_remove_self_pre_stop_command_deadline_reflects_the_configured_timeout() {
+        let command =
+            controller_remove_self_pre_stop_command(Some(Duration::from_minutes_unchecked(30)));
+        assert!(command.contains(&format!(
+            "DEADLINE=$((SECONDS + {}))",
+            PRE_STOP_MAX_DEADLINE_SECONDS
+        )));
     }
 
     /// The old majority-based guard (`majority=$(( total_voters / 2 + 1 ))`,
@@ -507,8 +583,8 @@ mod tests {
     /// The only invariant that actually matters is "never remove the last voter", so this
     /// asserts the generated script uses that condition instead.
     #[test]
-    fn quorum_manager_pre_stop_command_allows_removing_the_second_to_last_voter() {
-        let command = quorum_manager_pre_stop_command();
+    fn controller_remove_self_pre_stop_command_allows_removing_the_second_to_last_voter() {
+        let command = controller_remove_self_pre_stop_command(None);
         assert!(
             command.contains(r#"remaining_after_removal" -ge 1 ]"#),
             "expected the guard to allow removal whenever at least one voter remains \
@@ -559,20 +635,27 @@ mod tests {
     /// pod while it's terminating, so the outcome can never change. The branch must `break`
     /// immediately instead of falling through to the loop's `sleep 2`.
     #[test]
-    fn quorum_manager_pre_stop_command_gives_up_immediately_on_the_last_voter() {
-        let command = quorum_manager_pre_stop_command();
-        let zero_voters_branch = command
+    fn controller_remove_self_pre_stop_command_gives_up_immediately_on_the_last_voter() {
+        let command = controller_remove_self_pre_stop_command(None);
+        let after_zero_voters_message = command
             .split("Removing self would leave zero voters")
             .nth(1)
             .expect("the zero-voters message is present in the generated script");
-        let next_fi = zero_voters_branch
-            .find("fi")
-            .expect("an `fi` closes this branch");
+        let next_sleep = after_zero_voters_message
+            .find("sleep 2")
+            .expect("the loop's retry `sleep 2` follows somewhere after this branch");
+        let until_next_retry = &after_zero_voters_message[..next_sleep];
+
         assert!(
-            zero_voters_branch[..next_fi].contains("break"),
+            until_next_retry.contains("finished=true"),
+            "the zero-voters branch must mark the loop finished (no voter needs removing), \
+             text was: {until_next_retry}"
+        );
+        assert!(
+            until_next_retry.contains("break"),
             "the zero-voters branch must break out of the retry loop immediately instead of \
-             retrying until DEADLINE, branch was: {}",
-            &zero_voters_branch[..next_fi]
+             falling through to the loop's `sleep 2` and retrying until DEADLINE, text was: \
+             {until_next_retry}"
         );
     }
 
@@ -632,16 +715,17 @@ mod tests {
     /// promptly, the whole call can run far longer than `N` seconds. Confirmed directly,
     /// independent of Kafka: `timeout 3 bash -c 'trap "" TERM; sleep 30'` takes the full 30s,
     /// not 3s, while `timeout --kill-after=2 3 bash -c 'trap "" TERM; sleep 30'` is correctly
-    /// bounded to ~5s. This matters most for `quorum_manager_pre_stop_command`, which runs
+    /// bounded to ~5s. This matters most for `controller_remove_self_pre_stop_command`, which runs
     /// exactly when peers may be mid-termination (a blackholed, not actively-refused,
     /// connection is exactly the kind of thing a JVM AdminClient can hang on past its own
-    /// `timeout` wrapper) — confirmed live: during a full namespace deletion, a controller's
-    /// sidecar kept running (past `preStop`, so its `SIGTERM` hadn't even been delivered to
-    /// the main loop yet) for 100+ seconds, far past the script's own ~25-40s design budget.
+    /// `timeout` wrapper) — confirmed live (back when this ran as the `quorum-manager`
+    /// sidecar's own `preStop`, before it moved to the `kafka` container): during a full
+    /// namespace deletion, the `preStop` kept running for 100+ seconds, far past the script's
+    /// own ~25-40s design budget at the time.
     #[test]
     fn every_cli_call_has_a_kill_after_so_timeout_is_actually_enforced() {
         let container_command = quorum_manager_container_command();
-        let pre_stop_command = quorum_manager_pre_stop_command();
+        let pre_stop_command = controller_remove_self_pre_stop_command(None);
 
         for command in [&container_command, &pre_stop_command] {
             for line in command

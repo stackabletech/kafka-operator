@@ -85,13 +85,19 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 * `cluster-id`: This is set to the `metadata.name` of the KafkaCluster resource during initial formatting
 * `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
 * `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not supported.
-* Each controller pod runs an additional `quorum-manager` sidecar container. On startup it admits the pod into
-  the KRaft voter set (`kafka-metadata-quorum.sh add-controller`), and on pod termination (`preStop`) it removes
-   the pod from the voter set again (`remove-controller`).
-* Controller pods have a `startupProbe` and a plain TCP `livenessProbe` on the KRaft listener port, and a
-  `readinessProbe` that checks the controller's Raft state (`leader`, `follower`, or `voted`) via its metrics
-  endpoint rather than a bare TCP check, so a controller that cannot join or rejoin the quorum is correctly
-  reported as not ready instead of appearing healthy.
+* Each controller pod runs an additional `quorum-manager` sidecar container that, on startup, admits the pod into
+  the KRaft voter set (`kafka-metadata-quorum.sh add-controller`).
+  Removing the pod from the voter set again (`remove-controller`) on termination runs as the `kafka` container's
+  *own* `preStop` hook instead, not the sidecar's: `preStop` only delays that same container's `SIGTERM`, and it's
+  the `kafka` container's own Raft process — the thing actually leaving the voter set — that needs to stay alive
+  while removal is attempted, which matters most when the departing pod is the current leader.
+* Controller pods have a `startupProbe` (a plain TCP check on the KRaft listener port) and a `livenessProbe` that
+  combines that same TCP check with a check that the controller's local Raft state hasn't been stuck `unattached`
+  for an extended period — a symptom of a dynamically-joining controller resolving
+  `controller.quorum.bootstrap.servers` to its own pod address and getting wedged fetching from itself; a restart
+  forces a fresh DNS resolution attempt. A `readinessProbe` separately checks that the Raft state is one of
+  `leader`, `follower`, or `voted` via the controller's metrics endpoint, so a controller that cannot join or
+  rejoin the quorum is correctly reported as not ready instead of appearing healthy.
 * Admitting a controller into the KRaft voter set is *solely* the concern of the `quorum-manager` sidecar container
   — the format step never asserts a voter list. Exactly one controller (the one with the numerically
   lowest `node.id` among all controller pod descriptors) formats with `kafka-storage.sh format --standalone`,
@@ -100,9 +106,10 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
   through the sidecar's `add-controller` call. Brokers always format with `--no-initial-controllers` too; they are
   never voters. Because no voter list is baked into any container's command, the command is identical regardless of
   the current replica count.
-* `controller.quorum.bootstrap.servers` (used by the `kafka` process itself to find the controller quorum, and by
-  the `quorum-manager` sidecar for its own `add-controller`/`remove-controller` calls) points at each controller
-  role group's own headless Service DNS name, not individual pod addresses.
+* `controller.quorum.bootstrap.servers` (used by the `kafka` process itself to find the controller quorum, by the
+  `quorum-manager` sidecar for its own `add-controller` calls, and by the `kafka` container's own `preStop` hook
+  for its `remove-controller` call) points at each controller role group's own headless Service DNS name, not
+  individual pod addresses.
 
 == Known Issues
 
@@ -131,8 +138,9 @@ The Stackable Kafka operator currently does not support the migration.
 
 === Scaling controllers
 
-Controller replicas can be scaled up and down on a running cluster. A per-pod `quorum-manager` sidecar admits and
-removes the pod from the KRaft voter set as described under "Internal operator details" above.
+Controller replicas can be scaled up and down on a running cluster. A per-pod `quorum-manager` sidecar admits the
+pod into the KRaft voter set on startup, and the `kafka` container's own `preStop` hook removes it again on
+termination, as described under "Internal operator details" above.
 
 Scaling more than one controller down at a time is processed one pod at a time (`OrderedReady` pod management), not
 in parallel, so that each pod's removal from the voter set can complete before the next one is terminated.

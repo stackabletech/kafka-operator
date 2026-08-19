@@ -6,13 +6,22 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- A new `quorum-manager` sidecar container on each controller pod is solely responsible for
-  admitting itself into the KRaft voter set on startup and removing itself before
-  termination. Exactly one controller bootstraps the quorum standalone at format time
+- A new `quorum-manager` sidecar container on each controller pod admits itself into the KRaft
+  voter set on startup. Exactly one controller bootstraps the quorum standalone at format time
   (`kafka-storage.sh format --standalone`); every other controller, whether present from
   the start or added later, formats with `--no-initial-controllers` and joins purely
   through the sidecar ([#1010]).
-- A new `readinessProbe` for KRaft controllers that fails when new pods cannot join the quorum ([#1010]).
+- A new `readinessProbe` on the controller's `kafka` container that fails when new pods cannot
+  join the quorum ([#1010]).
+- A new `livenessProbe` on the controller's `kafka` container that fails when the state has
+  been stuck `unattached` for an extended period ([#1010]).
+- A new `preStop` hook on the `kafka` container that removes the controller from the voters list.
+  This is the oposite step to what the `quorum-manager` does ([#1010]).
+- The `quorum-manager` sidecar now kills an in-flight `add-controller` attempt as soon as its
+  pod starts terminating, instead of letting it run to completion. Without this, a call already
+  in flight could succeed after the `kafka` container's `preStop` had already checked the voter
+  list and found nothing to remove, re-adding a pod that was simultaneously being removed and
+  leaving it stuck in the on-disk voter list ([#1010]).
 
 ### Changed
 

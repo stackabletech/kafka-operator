@@ -52,8 +52,8 @@ use crate::{
         build::{
             command::{
                 broker_kafka_container_commands, controller_kafka_container_command,
-                kafka_log_opts, kafka_log_opts_env_var, quorum_manager_container_command,
-                quorum_manager_pre_stop_command,
+                controller_remove_self_pre_stop_command, kafka_log_opts, kafka_log_opts_env_var,
+                quorum_manager_container_command,
             },
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::add_kerberos_pod_config,
@@ -567,12 +567,14 @@ pub fn build_controller_rolegroup_statefulset(
             /* period_seconds */ 5,
             /* failure_threshold */ 60,
         ))
-        // Liveness intentionally stays a plain TCP check, same as startupProbe
-        .liveness_probe(controller_tcp_probe(
+        // See `controller_stuck_unattached_liveness_probe`'s doc comment for why this is no
+        // longer a plain TCP check.
+        .liveness_probe(controller_stuck_unattached_liveness_probe(
             kafka_security.client_port(),
+            METRICS_PORT,
             /* timeout_seconds */ 10,
-            /* period_seconds */ 10,
-            /* failure_threshold */ 6,
+            /* period_seconds */ 30,
+            /* failure_threshold */ 20,
         ))
         .readiness_probe(controller_raft_state_probe(
             METRICS_PORT,
@@ -580,6 +582,23 @@ pub fn build_controller_rolegroup_statefulset(
             /* period_seconds */ 10,
             /* failure_threshold */ 6,
         ));
+    // Skipped when Kerberos is enabled, matching `build_quorum_manager_container`'s own
+    // gating — `admin-client.properties` (the file this removal call relies on) only covers
+    // the TLS/SSL case.
+    if !kafka_security.has_kerberos_enabled() {
+        cb_kafka.lifecycle_pre_stop(LifecycleHandler {
+            exec: Some(ExecAction {
+                command: Some(vec![
+                    "/bin/bash".to_string(),
+                    "-c".to_string(),
+                    controller_remove_self_pre_stop_command(
+                        merged_config.graceful_shutdown_timeout,
+                    ),
+                ]),
+            }),
+            ..LifecycleHandler::default()
+        });
+    }
 
     add_log_config_volume(
         &mut pod_builder,
@@ -681,10 +700,9 @@ pub fn build_controller_rolegroup_statefulset(
 /// A `Probe` that dials the controller's KRaft listener socket via a plain TCP connect.
 ///
 /// This only proves the socket is open, not that the node has a healthy Raft state (leader,
-/// follower, or voted). It is intentionally still used for `startupProbe` (there is no
-/// meaningful Raft state to check yet while the process is still starting) and for
-/// `livenessProbe` (an unhealthy Raft state, e.g. `candidate`/`unattached`, means the node
-/// cannot currently reach its peers, which restarting this pod cannot fix on its own).
+/// follower, or voted). Used for `startupProbe`: there is no meaningful Raft state to check
+/// yet while the process is still starting, so a bare TCP check is all that's meaningful this
+/// early.
 fn controller_tcp_probe(
     port: Port,
     timeout_seconds: i32,
@@ -729,6 +747,40 @@ fn controller_raft_state_probe(
     }
 }
 
+/// A `Probe` combining a plain TCP check of the controller's KRaft listener with a check that
+/// its local Raft state isn't stuck in `unattached`.
+///
+/// This is needed to work around a bug in KRaft where a new controller is stuck in a loop
+/// trying to fetch Raft metadata from its self.
+///
+/// This can happen when the headless service used to point to the bootstrap controllers
+/// happens to resolve to this exact pod.
+fn controller_stuck_unattached_liveness_probe(
+    client_port: Port,
+    metrics_port: Port,
+    timeout_seconds: i32,
+    period_seconds: i32,
+    failure_threshold: i32,
+) -> Probe {
+    Probe {
+        exec: Some(ExecAction {
+            command: Some(vec![
+                "bash".to_string(),
+                "-c".to_string(),
+                format!(
+                    "timeout 2 bash -c 'cat < /dev/null > /dev/tcp/localhost/{client_port}' || exit 1\n\
+                     state=$(curl -s --max-time 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\\{{state=\"[a-z]+\"\\}}' | grep -oE '\"[a-z]+\"' | tr -d '\"')\n\
+                     [ \"$state\" != \"unattached\" ]"
+                ),
+            ]),
+        }),
+        timeout_seconds: Some(timeout_seconds),
+        period_seconds: Some(period_seconds),
+        failure_threshold: Some(failure_threshold),
+        ..Probe::default()
+    }
+}
+
 /// We only expose client HTTP / HTTPS and Metrics ports.
 fn container_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<ContainerPort> {
     let mut ports = vec![
@@ -761,8 +813,8 @@ fn container_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<ContainerPort
 ///
 /// `node_id_offset` is the pre-computed value of [`node_id_hash32_offset`] for this role
 /// group, shared with the controller's `quorum-manager` sidecar (see
-/// [`build_quorum_manager_container`]), which also needs `NODE_ID_OFFSET` in its `preStop`
-/// script.
+/// [`build_quorum_manager_container`]), which also needs `NODE_ID_OFFSET` for its own
+/// `add-controller` main loop.
 fn add_common_kafka_env(
     cb_kafka: &mut ContainerBuilder,
     merged_config: &AnyConfig,
@@ -938,17 +990,7 @@ fn build_quorum_manager_container(
         // (the CLI tool doesn't document a read-only requirement, and this repo has no
         // read-only-mount helper to reach for).
         .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
-        .context(AddVolumeMountSnafu)?
-        .lifecycle_pre_stop(LifecycleHandler {
-            exec: Some(ExecAction {
-                command: Some(vec![
-                    "/bin/bash".to_string(),
-                    "-c".to_string(),
-                    quorum_manager_pre_stop_command(),
-                ]),
-            }),
-            ..LifecycleHandler::default()
-        });
+        .context(AddVolumeMountSnafu)?;
 
     Ok(Some(cb.build()))
 }
@@ -1156,13 +1198,29 @@ mod tests {
             .join(" ");
         assert!(command.contains("add-controller"));
 
-        let pre_stop_command = sidecar
+        // The sidecar only ever joins the quorum now — it has no `preStop` hook of its own.
+        // See `controller_kafka_container_has_a_remove_self_pre_stop_hook` for why the
+        // removal-on-departure half moved to the `kafka` container instead.
+        assert!(sidecar.lifecycle.is_none());
+    }
+
+    /// `remove-controller` must run as the `kafka` container's own `preStop` hook, not the
+    /// `quorum-manager` sidecar's — `preStop` only delays *that same container's* `SIGTERM`,
+    /// and it's the `kafka` container's own Raft process (the thing actually leaving the
+    /// voter set) that needs to stay alive while removal is attempted. See
+    /// `controller_remove_self_pre_stop_command`'s doc comment for the full rationale.
+    #[test]
+    fn controller_kafka_container_has_a_remove_self_pre_stop_hook() {
+        let cluster = kraft_mode_cluster();
+        let container = controller_kafka_container(&cluster);
+
+        let pre_stop_command = container
             .lifecycle
             .as_ref()
             .and_then(|l| l.pre_stop.as_ref())
             .and_then(|h| h.exec.as_ref())
             .and_then(|e| e.command.as_ref())
-            .expect("the sidecar has a preStop exec hook")
+            .expect("the kafka container has a preStop exec hook")
             .join(" ");
         assert!(pre_stop_command.contains("remove-controller"));
         assert!(pre_stop_command.trim_end().ends_with("exit 0"));
@@ -1262,7 +1320,7 @@ mod tests {
         // Targeted assertion (rather than relying on it only showing up incidentally among
         // `placeholders` above): NODE_ID_OFFSET is consumed directly by the sidecar's own
         // `EXPORT_REPLICA_ID` bash logic under `set -u` (see `command.rs`), so a regression
-        // here would break the sidecar's main loop and its `preStop` hook silently (an unset
+        // here would break the sidecar's `add-controller` main loop silently (an unset
         // variable under `set -u` aborts the script).
         assert!(
             sidecar_env_names.contains(&KAFKA_NODE_ID_OFFSET),
@@ -1344,25 +1402,41 @@ mod tests {
         assert_eq!(startup_probe.failure_threshold, Some(60));
     }
 
+    /// The liveness probe must check both TCP reachability (a genuinely dead/hung process must
+    /// still be restarted, same as before) and local Raft state, failing specifically on
+    /// `unattached` — see `controller_stuck_unattached_liveness_probe`'s doc comment for why
+    /// only that state, not any non-healthy state, is treated as restart-worthy.
     #[test]
-    fn controller_kafka_container_liveness_probe_is_a_plain_tcp_check() {
+    fn controller_kafka_container_liveness_probe_checks_tcp_and_stuck_unattached_state() {
         let cluster = kraft_mode_cluster();
         let container = controller_kafka_container(&cluster);
         let client_port = cluster.cluster_config.kafka_security.client_port();
 
-        // Liveness intentionally stays a bare TCP check, not the Raft-state exec probe used for
-        // readiness: an unreachable-quorum Raft state is not something restarting this pod can
-        // fix, so liveness must not fail on it.
         let liveness_probe = container
             .liveness_probe
             .expect("the controller kafka container must have a livenessProbe");
-        let tcp_socket = liveness_probe
-            .tcp_socket
-            .expect("the livenessProbe must be a tcpSocket check, not an exec check");
-        assert_eq!(tcp_socket.port, IntOrString::Int(client_port.into()));
+        let exec = liveness_probe
+            .exec
+            .expect("the livenessProbe must be an exec check, not a bare tcpSocket check");
+        let command = exec.command.expect("exec has a command");
+        let script = command.last().expect("the exec command has a script arg");
+
+        assert!(
+            script.contains(&format!("/dev/tcp/localhost/{client_port}")),
+            "expected a TCP reachability check against the controller's own port, script was: {script}"
+        );
+        assert!(
+            script.contains(r#"[ "$state" != "unattached" ]"#),
+            "expected the check to fail specifically (and only) on the unattached state, \
+             script was: {script}"
+        );
+        // Must not fail merely for being non-healthy in some *other* way (e.g. `candidate` or
+        // `observer`) - only `unattached` is the specific, restart-fixable symptom.
+        assert!(!script.contains("leader|follower"));
+
         assert_eq!(liveness_probe.timeout_seconds, Some(10));
-        assert_eq!(liveness_probe.period_seconds, Some(10));
-        assert_eq!(liveness_probe.failure_threshold, Some(6));
+        assert_eq!(liveness_probe.period_seconds, Some(30));
+        assert_eq!(liveness_probe.failure_threshold, Some(20));
     }
 
     #[test]
