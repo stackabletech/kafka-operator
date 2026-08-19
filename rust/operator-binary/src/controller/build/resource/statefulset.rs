@@ -134,8 +134,8 @@ fn common_operator_env_vars(
 /// `quorum-manager` sidecar.
 ///
 /// The caller merges the user's `envOverrides` on top (so a user override wins on a name
-/// collision) and, for the `kafka` container only, adds container-specific env vars such as
-/// `PRE_STOP_CONTROLLER_SLEEP_SECONDS`.
+/// collision); the `quorum-manager` sidecar additionally gets its own container-specific env
+/// vars layered on top (see [`KAFKA_NODE_ID_OFFSET`]).
 fn controller_pod_shared_env_vars(
     validated_cluster: &ValidatedCluster,
     kafka_security: &ValidatedKafkaSecurity,
@@ -509,7 +509,6 @@ pub fn build_controller_rolegroup_statefulset(
 
     let env: Vec<EnvVar> = controller_shared_env
         .clone()
-        .with_value(&env_var_name("PRE_STOP_CONTROLLER_SLEEP_SECONDS"), "10")
         .merge(validated_rg.env_overrides.clone())
         .into();
 
