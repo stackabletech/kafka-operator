@@ -100,6 +100,13 @@ impl KafkaRole {
     pub fn kerberos_service_name(&self) -> &'static str {
         "kafka"
     }
+
+    /// The type-safe name of this role, e.g. to build [`ResourceNames`][rn].
+    ///
+    /// [rn]: stackable_operator::v2::role_group_utils::ResourceNames
+    pub fn role_name(&self) -> RoleName {
+        RoleName::clone(self)
+    }
 }
 
 /// Configuration for a role and rolegroup of an unknown type.

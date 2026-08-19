@@ -47,7 +47,7 @@ pub fn bootstrap_listener_name(
 
     let resource_names = ResourceNames {
         cluster_name: cluster_name.clone(),
-        role_name: (**role).clone(),
+        role_name: role.role_name(),
         role_group_name: role_group_name.clone(),
     };
 

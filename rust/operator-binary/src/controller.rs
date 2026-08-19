@@ -266,7 +266,7 @@ impl ValidatedCluster {
     ) -> ResourceNames {
         ResourceNames {
             cluster_name: self.name.clone(),
-            role_name: (**role).clone(),
+            role_name: role.role_name(),
             role_group_name: role_group_name.clone(),
         }
     }
