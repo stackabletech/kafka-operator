@@ -45,7 +45,6 @@ pub enum Error {
 pub fn add_kerberos_pod_config(
     kafka_security: &ValidatedKafkaSecurity,
     role: &KafkaRole,
-    cb_kcat_prober: &mut ContainerBuilder,
     cb_kafka: &mut ContainerBuilder,
     pb: &mut PodBuilder,
 ) -> Result<(), Error> {
@@ -68,10 +67,9 @@ pub fn add_kerberos_pod_config(
         )
         .context(AddVolumeSnafu)?;
 
-        for cb in [cb_kafka, cb_kcat_prober] {
-            cb.add_volume_mount("kerberos", STACKABLE_KERBEROS_DIR)
-                .context(AddVolumeMountSnafu)?;
-        }
+        cb_kafka
+            .add_volume_mount("kerberos", STACKABLE_KERBEROS_DIR)
+            .context(AddVolumeMountSnafu)?;
     }
 
     Ok(())
@@ -80,8 +78,8 @@ pub fn add_kerberos_pod_config(
 constant!(KRB5_CONFIG: EnvVarName = "KRB5_CONFIG");
 constant!(KAFKA_OPTS: EnvVarName = "KAFKA_OPTS");
 
-/// The environment variables the Kerberos configuration requires on the Kafka and kcat-prober
-/// containers, or an empty set when Kerberos is disabled.
+/// The environment variables the Kerberos configuration requires on the Kafka container, or an
+/// empty set when Kerberos is disabled.
 ///
 /// Returned as an [`EnvVarSet`] (rather than added to the containers directly) so the callers
 /// can merge the user's `envOverrides` on top, letting an override win on a name collision.

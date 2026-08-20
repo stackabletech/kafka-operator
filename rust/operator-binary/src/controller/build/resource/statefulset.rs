@@ -19,11 +19,10 @@ use stackable_operator::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec, StatefulSetUpdateStrategy},
             core::v1::{
-                ConfigMapVolumeSource, ContainerPort, EnvVar, ExecAction, LifecycleHandler,
-                PodSpec, Probe, TCPSocketAction, Volume,
+                ConfigMapVolumeSource, ContainerPort, EnvVar, ExecAction, LifecycleHandler, Volume,
             },
         },
-        apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
+        apimachinery::pkg::apis::meta::v1::LabelSelector,
     },
     product_logging,
     v2::{
@@ -39,13 +38,11 @@ use stackable_operator::{
             STACKABLE_LOG_DIR, ValidatedContainerLogConfigChoice, vector_container,
         },
         role_group_utils::ResourceNames,
-        types::{
-            common::Port,
-            kubernetes::{ConfigMapKey, ContainerName, PersistentVolumeClaimName, VolumeName},
-        },
+        types::kubernetes::{ConfigMapKey, ContainerName, PersistentVolumeClaimName, VolumeName},
     },
 };
 
+use super::probes;
 use crate::{
     controller::{
         RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
@@ -63,7 +60,6 @@ use crate::{
             security::{
                 STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                 add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
-                kcat_prober_container_commands,
             },
         },
         node_id_hasher::node_id_hash32_offset,
@@ -191,6 +187,9 @@ pub enum Error {
         source: crate::controller::PodDescriptorsError,
     },
 
+    #[snafu(display("failed to build container probe"))]
+    BuildProbe { source: probes::Error },
+
     #[snafu(display("failed to construct JVM arguments"))]
     ConstructJvmArguments {
         source: crate::controller::build::jvm::Error,
@@ -235,12 +234,6 @@ pub fn build_broker_rolegroup_statefulset(
         role_group_name,
     );
 
-    let kcat_prober_container_name = BrokerContainer::KcatProber.to_string();
-    let mut cb_kcat_prober =
-        ContainerBuilder::new(&kcat_prober_container_name).context(InvalidContainerNameSnafu {
-            name: kcat_prober_container_name.clone(),
-        })?;
-
     let kafka_container_name = BrokerContainer::Kafka.to_string();
     let mut cb_kafka =
         ContainerBuilder::new(&kafka_container_name).context(InvalidContainerNameSnafu {
@@ -257,7 +250,6 @@ pub fn build_broker_rolegroup_statefulset(
     add_broker_volume_and_volume_mounts(
         kafka_security,
         &mut pod_builder,
-        &mut cb_kcat_prober,
         &mut cb_kafka,
         &requested_secret_lifetime,
     )
@@ -278,14 +270,8 @@ pub fn build_broker_rolegroup_statefulset(
     ));
 
     if kafka_security.has_kerberos_enabled() {
-        add_kerberos_pod_config(
-            kafka_security,
-            kafka_role,
-            &mut cb_kcat_prober,
-            &mut cb_kafka,
-            &mut pod_builder,
-        )
-        .context(AddKerberosConfigSnafu)?;
+        add_kerberos_pod_config(kafka_security, kafka_role, &mut cb_kafka, &mut pod_builder)
+            .context(AddKerberosConfigSnafu)?;
     }
 
     // Operator-set env vars first; the user's `envOverrides` are merged on top last and win.
@@ -302,6 +288,28 @@ pub fn build_broker_rolegroup_statefulset(
         .merge(kerberos_env_vars(kafka_security))
         .merge(validated_rg.env_overrides.clone())
         .into();
+
+    // The client port can accept connections before the broker has replayed its log and
+    // reached the JMX `RUNNING` state, so the startupProbe waits for both, giving it up to
+    // 5 minutes (60 * 5s) before the livenessProbe is allowed to start counting failures.
+    let broker_startup_probe = probes::broker_running_probe(
+        kafka_security.client_port(),
+        METRICS_PORT,
+        /* timeout_seconds */ 5,
+        /* period_seconds */ 5,
+        /* failure_threshold */ 60,
+    )
+    .context(BuildProbeSnafu)?;
+    let broker_liveness_probe = probes::broker_running_probe(
+        kafka_security.client_port(),
+        METRICS_PORT,
+        /* timeout_seconds */ 10,
+        /* period_seconds */ 30,
+        /* failure_threshold */ 20,
+    )
+    .context(BuildProbeSnafu)?;
+    let broker_readiness_probe =
+        probes::broker_kcat_readiness_probe(kafka_security).context(BuildProbeSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
@@ -335,44 +343,10 @@ pub fn build_broker_rolegroup_statefulset(
         .context(AddVolumeMountSnafu)?
         .add_volume_mount(STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
         .context(AddVolumeMountSnafu)?
-        .resources(merged_config.resources().clone().into());
-
-    // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
-    // unacceptable perf overhead
-    cb_kcat_prober
-        .image_from_product_image(resolved_product_image)
-        .command(vec!["sleep".to_string(), "infinity".to_string()])
-        .add_env_vars(Vec::<EnvVar>::from(
-            EnvVarSet::new()
-                .with_field_path(&POD_NAME, &FieldPathEnvVar::Name)
-                .merge(kerberos_env_vars(kafka_security)),
-        ))
-        .resources(
-            ResourceRequirementsBuilder::new()
-                .with_cpu_request("100m")
-                .with_cpu_limit("200m")
-                .with_memory_request("128Mi")
-                .with_memory_limit("128Mi")
-                .build(),
-        )
-        .add_volume_mount(
-            LISTENER_BOOTSTRAP_VOLUME_NAME,
-            STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        )
-        .context(AddVolumeMountSnafu)?
-        .add_volume_mount(LISTENER_BROKER_VOLUME_NAME, STACKABLE_LISTENER_BROKER_DIR)
-        .context(AddVolumeMountSnafu)?
-        // Only allow the global load balancing service to send traffic to pods that are members of the quorum
-        // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
-        .readiness_probe(Probe {
-            exec: Some(ExecAction {
-                // If the broker is able to get its fellow cluster members then it has at least completed basic registration at some point
-                command: Some(kcat_prober_container_commands(kafka_security)),
-            }),
-            timeout_seconds: Some(5),
-            period_seconds: Some(2),
-            ..Probe::default()
-        });
+        .resources(merged_config.resources().clone().into())
+        .startup_probe(broker_startup_probe)
+        .liveness_probe(broker_liveness_probe)
+        .readiness_probe(broker_readiness_probe);
 
     add_log_config_volume(
         &mut pod_builder,
@@ -414,7 +388,6 @@ pub fn build_broker_rolegroup_statefulset(
         .metadata(metadata)
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(cb_kafka.build())
-        .add_container(cb_kcat_prober.build())
         .affinity(&merged_config.affinity);
 
     add_common_pod_config(
@@ -437,10 +410,6 @@ pub fn build_broker_rolegroup_statefulset(
     add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
 
     let mut pod_template = pod_builder.build_template();
-
-    let pod_template_spec = pod_template.spec.get_or_insert_with(PodSpec::default);
-    // Don't run kcat pod as PID 1, to ensure that default signal handlers apply
-    pod_template_spec.share_process_namespace = Some(true);
 
     // Pod overrides were already merged (role <- role group) during validation.
     pod_template.merge_from(validated_rg.pod_overrides.clone());
@@ -529,6 +498,36 @@ pub fn build_controller_rolegroup_statefulset(
         .pod_descriptors(Some(kafka_role))
         .context(BuildPodDescriptorsSnafu)?;
 
+    // The controller listener socket only opens once the KRaft node has finished replaying
+    // its metadata log, which can take a while on a slow first boot or after a long outage.
+    // The startupProbe gives it up to 5 minutes (60 * 5s) before the liveness probe is
+    // allowed to start counting failures at all, so a slow (but progressing) boot is never
+    // mistaken for a stuck process.
+    let controller_startup_probe = probes::controller_tcp_probe(
+        kafka_security.client_port(),
+        /* timeout_seconds */ 5,
+        /* period_seconds */ 5,
+        /* failure_threshold */ 60,
+    )
+    .context(BuildProbeSnafu)?;
+    // See `probes::controller_stuck_unattached_liveness_probe`'s doc comment for why this is no
+    // longer a plain TCP check.
+    let controller_liveness_probe = probes::controller_stuck_unattached_liveness_probe(
+        kafka_security.client_port(),
+        METRICS_PORT,
+        /* timeout_seconds */ 10,
+        /* period_seconds */ 30,
+        /* failure_threshold */ 20,
+    )
+    .context(BuildProbeSnafu)?;
+    let controller_readiness_probe = probes::controller_raft_state_probe(
+        METRICS_PORT,
+        /* timeout_seconds */ 10,
+        /* period_seconds */ 10,
+        /* failure_threshold */ 6,
+    )
+    .context(BuildProbeSnafu)?;
+
     cb_kafka
         .image_from_product_image(resolved_product_image)
         .command(vec![
@@ -554,32 +553,9 @@ pub fn build_controller_rolegroup_statefulset(
         .add_volume_mount(STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
         .context(AddVolumeMountSnafu)?
         .resources(merged_config.resources().clone().into())
-        // The controller listener socket only opens once the KRaft node has finished replaying
-        // its metadata log, which can take a while on a slow first boot or after a long outage.
-        // The startupProbe gives it up to 5 minutes (60 * 5s) before the liveness probe is
-        // allowed to start counting failures at all, so a slow (but progressing) boot is never
-        // mistaken for a stuck process.
-        .startup_probe(controller_tcp_probe(
-            kafka_security.client_port(),
-            /* timeout_seconds */ 5,
-            /* period_seconds */ 5,
-            /* failure_threshold */ 60,
-        ))
-        // See `controller_stuck_unattached_liveness_probe`'s doc comment for why this is no
-        // longer a plain TCP check.
-        .liveness_probe(controller_stuck_unattached_liveness_probe(
-            kafka_security.client_port(),
-            METRICS_PORT,
-            /* timeout_seconds */ 10,
-            /* period_seconds */ 30,
-            /* failure_threshold */ 20,
-        ))
-        .readiness_probe(controller_raft_state_probe(
-            METRICS_PORT,
-            /* timeout_seconds */ 10,
-            /* period_seconds */ 10,
-            /* failure_threshold */ 6,
-        ));
+        .startup_probe(controller_startup_probe)
+        .liveness_probe(controller_liveness_probe)
+        .readiness_probe(controller_readiness_probe);
     // Skipped when Kerberos is enabled, matching `build_quorum_manager_container`'s own
     // gating — `admin-client.properties` (the file this removal call relies on) only covers
     // the TLS/SSL case.
@@ -691,90 +667,6 @@ pub fn build_controller_rolegroup_statefulset(
         }),
         status: None,
     })
-}
-
-/// A `Probe` that dials the controller's KRaft listener socket via a plain TCP connect.
-///
-/// This only proves the socket is open, not that the node has a healthy Raft state (leader,
-/// follower, or voted). Used for `startupProbe`: there is no meaningful Raft state to check
-/// yet while the process is still starting, so a bare TCP check is all that's meaningful this
-/// early.
-fn controller_tcp_probe(
-    port: Port,
-    timeout_seconds: i32,
-    period_seconds: i32,
-    failure_threshold: i32,
-) -> Probe {
-    Probe {
-        tcp_socket: Some(TCPSocketAction {
-            port: IntOrString::Int(port.into()),
-            ..Default::default()
-        }),
-        timeout_seconds: Some(timeout_seconds),
-        period_seconds: Some(period_seconds),
-        failure_threshold: Some(failure_threshold),
-        ..Probe::default()
-    }
-}
-
-/// A `Probe` that curls the JMX Prometheus exporter's `/metrics` endpoint and checks that the
-/// controller's Raft state is one of the healthy states (`leader`, `follower`, or `voted`)
-/// rather than stuck in `unattached` or `candidate`.
-fn controller_raft_state_probe(
-    metrics_port: Port,
-    timeout_seconds: i32,
-    period_seconds: i32,
-    failure_threshold: i32,
-) -> Probe {
-    Probe {
-        exec: Some(ExecAction {
-            command: Some(vec![
-                "bash".to_string(),
-                "-c".to_string(),
-                format!(
-                    "curl -s localhost:{metrics_port}/metrics | grep -E 'kafka_server_raft_metrics_current_state\\{{state=\"(leader|follower|voted)\",?\\}}'"
-                ),
-            ]),
-        }),
-        timeout_seconds: Some(timeout_seconds),
-        period_seconds: Some(period_seconds),
-        failure_threshold: Some(failure_threshold),
-        ..Probe::default()
-    }
-}
-
-/// A `Probe` combining a plain TCP check of the controller's KRaft listener with a check that
-/// its local Raft state isn't stuck in `unattached`.
-///
-/// This is needed to work around a bug in KRaft where a new controller is stuck in a loop
-/// trying to fetch Raft metadata from its self.
-///
-/// This can happen when the headless service used to point to the bootstrap controllers
-/// happens to resolve to this exact pod.
-fn controller_stuck_unattached_liveness_probe(
-    client_port: Port,
-    metrics_port: Port,
-    timeout_seconds: i32,
-    period_seconds: i32,
-    failure_threshold: i32,
-) -> Probe {
-    Probe {
-        exec: Some(ExecAction {
-            command: Some(vec![
-                "bash".to_string(),
-                "-c".to_string(),
-                format!(
-                    "timeout 2 bash -c 'cat < /dev/null > /dev/tcp/localhost/{client_port}' || exit 1\n\
-                     state=$(curl -s --max-time 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\\{{state=\"[a-z]+\"\\}}' | grep -oE '\"[a-z]+\"' | tr -d '\"')\n\
-                     [ \"$state\" != \"unattached\" ]"
-                ),
-            ]),
-        }),
-        timeout_seconds: Some(timeout_seconds),
-        period_seconds: Some(period_seconds),
-        failure_threshold: Some(failure_threshold),
-        ..Probe::default()
-    }
 }
 
 /// We only expose client HTTP / HTTPS and Metrics ports.
@@ -1504,6 +1396,131 @@ mod tests {
             .into_iter()
             .find(|c| c.name == "kafka")
             .expect("the kafka container is built")
+    }
+
+    fn broker_kafka_container(
+        cluster: &crate::controller::ValidatedCluster,
+    ) -> stackable_operator::k8s_openapi::api::core::v1::Container {
+        let resources = crate::controller::build::build(cluster).expect("build succeeds");
+        let sts = resources
+            .stateful_sets
+            .into_iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-broker-default"))
+            .expect("the broker StatefulSet is built");
+        sts.spec
+            .expect("the StatefulSet has a spec")
+            .template
+            .spec
+            .expect("the pod template has a spec")
+            .containers
+            .into_iter()
+            .find(|c| c.name == "kafka")
+            .expect("the kafka container is built")
+    }
+
+    #[test]
+    fn broker_kafka_container_has_a_startup_probe() {
+        let cluster = kraft_mode_cluster();
+        let container = broker_kafka_container(&cluster);
+        let client_port = cluster.cluster_config.kafka_security.client_port();
+
+        let startup_probe = container
+            .startup_probe
+            .expect("the broker kafka container must have a startupProbe");
+        let exec = startup_probe
+            .exec
+            .expect("the startupProbe must be an exec check, not a bare tcpSocket check");
+        let command = exec.command.expect("exec has a command");
+        let script = command.last().expect("the exec command has a script arg");
+
+        assert!(
+            script.contains(&format!("/dev/tcp/localhost/{client_port}")),
+            "expected a TCP reachability check against the broker's own client port, script was: {script}"
+        );
+        assert!(
+            script.contains("kafka_server_kafkaserver_brokerstate 3"),
+            "expected a check for the broker's JMX BrokerState metric being RUNNING (3), \
+             script was: {script}"
+        );
+        assert_eq!(startup_probe.timeout_seconds, Some(5));
+        assert_eq!(startup_probe.period_seconds, Some(5));
+        assert_eq!(startup_probe.failure_threshold, Some(60));
+    }
+
+    /// The liveness probe must check both TCP reachability (a genuinely dead/hung process must
+    /// still be restarted) and that the broker's JMX `BrokerState` metric reports `RUNNING`
+    /// (state `3`) - see `probes::broker_running_probe`'s doc comment for why the same check
+    /// backs both the startup and liveness probes.
+    #[test]
+    fn broker_kafka_container_liveness_probe_checks_tcp_and_running_state() {
+        let cluster = kraft_mode_cluster();
+        let container = broker_kafka_container(&cluster);
+        let client_port = cluster.cluster_config.kafka_security.client_port();
+
+        let liveness_probe = container
+            .liveness_probe
+            .expect("the broker kafka container must have a livenessProbe");
+        let exec = liveness_probe
+            .exec
+            .expect("the livenessProbe must be an exec check, not a bare tcpSocket check");
+        let command = exec.command.expect("exec has a command");
+        let script = command.last().expect("the exec command has a script arg");
+
+        assert!(
+            script.contains(&format!("/dev/tcp/localhost/{client_port}")),
+            "expected a TCP reachability check against the broker's own client port, script was: {script}"
+        );
+        assert!(
+            script.contains("kafka_server_kafkaserver_brokerstate 3"),
+            "expected a check for the broker's JMX BrokerState metric being RUNNING (3), \
+             script was: {script}"
+        );
+
+        assert_eq!(liveness_probe.timeout_seconds, Some(10));
+        assert_eq!(liveness_probe.period_seconds, Some(30));
+        assert_eq!(liveness_probe.failure_threshold, Some(20));
+    }
+
+    /// The `kcat`-based readiness probe runs directly on the `kafka` container - there is no
+    /// separate `kcat-prober` sidecar (removed since `kcat` ships in the same product image the
+    /// `kafka` container already uses, so a dedicated container was no longer needed).
+    #[test]
+    fn broker_kafka_container_readiness_probe_uses_kcat() {
+        let cluster = kraft_mode_cluster();
+        let container = broker_kafka_container(&cluster);
+
+        let readiness_probe = container
+            .readiness_probe
+            .expect("the broker kafka container must have a readinessProbe");
+        let exec = readiness_probe
+            .exec
+            .expect("the readinessProbe must be an exec check");
+        let command = exec.command.expect("exec has a command");
+        assert_eq!(command[0], "/stackable/kcat");
+    }
+
+    #[test]
+    fn broker_pods_have_no_kcat_prober_sidecar() {
+        let cluster = kraft_mode_cluster();
+        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+        let sts = resources
+            .stateful_sets
+            .into_iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-broker-default"))
+            .expect("the broker StatefulSet is built");
+        let containers = sts
+            .spec
+            .expect("the StatefulSet has a spec")
+            .template
+            .spec
+            .expect("the pod template has a spec")
+            .containers;
+
+        assert!(
+            !containers.iter().any(|c| c.name == "kcat-prober"),
+            "expected no separate kcat-prober container, got: {:?}",
+            containers.iter().map(|c| &c.name).collect::<Vec<_>>()
+        );
     }
 
     #[test]

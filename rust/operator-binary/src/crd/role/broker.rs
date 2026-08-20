@@ -31,7 +31,6 @@ use crate::crd::role::commons::{CommonConfig, Storage, StorageFragment};
 #[strum(serialize_all = "kebab-case")]
 pub enum BrokerContainer {
     Vector,
-    KcatProber,
     Kafka,
 }
 

@@ -43,6 +43,14 @@ All notable changes to this project will be documented in this file.
   which could cause problems with GitOps tools (e.g. ArgoCD) reporting a diff in the custom resources.
   See [our internal issue](https://github.com/stackabletech/hdfs-operator/issues/626) and [the fix](https://github.com/kube-rs/kube/pull/2042) for details ([#998]).
 
+### Removed
+
+- BREAKING: The broker pod's separate `kcat-prober` sidecar container has been removed; its
+  `kcat`-based readiness probe now runs directly on the `kafka` container instead (`kcat` has
+  shipped in the same product image as `kafka` since #527, so the dedicated container/image was
+  no longer needed). The `kcat-prober` value is no longer accepted in a broker's
+  `logging.containers` CRD field ([#1010]).
+
 [#985]: https://github.com/stackabletech/kafka-operator/pull/985
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994

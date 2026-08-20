@@ -254,13 +254,13 @@ pub fn controller_admin_client_properties(
 pub fn add_broker_volume_and_volume_mounts(
     security: &ValidatedKafkaSecurity,
     pod_builder: &mut PodBuilder,
-    cb_kcat_prober: &mut ContainerBuilder,
     cb_kafka: &mut ContainerBuilder,
     requested_secret_lifetime: &Duration,
 ) -> Result<(), Error> {
     // add tls (server or client authentication volumes) if required
     if let Some(tls_server_secret_class) = tls_secret_class(security) {
-        // We have to mount tls pem files for kcat (the mount can be used directly)
+        // We have to mount tls pem files for kcat's readiness-probe command (the mount can be
+        // used directly)
         pod_builder
             .add_volume(create_kcat_tls_volume(
                 STACKABLE_TLS_KCAT_VOLUME_NAME,
@@ -268,7 +268,7 @@ pub fn add_broker_volume_and_volume_mounts(
                 requested_secret_lifetime,
             )?)
             .context(AddVolumeSnafu)?;
-        cb_kcat_prober
+        cb_kafka
             .add_volume_mount(STACKABLE_TLS_KCAT_VOLUME_NAME, STACKABLE_TLS_KCAT_DIR)
             .context(AddVolumeMountSnafu)?;
         // Keystores fore the kafka container
