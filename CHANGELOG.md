@@ -4,27 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-
-- A new `quorum-manager` sidecar container on each controller pod admits itself into the KRaft
-  voter set on startup. Exactly one controller bootstraps the quorum standalone at format time
-  (`kafka-storage.sh format --standalone`); every other controller, whether present from
-  the start or added later, formats with `--no-initial-controllers` and joins purely
-  through the sidecar ([#1010]).
-- A new `readinessProbe` on the controller's `kafka` container that fails when new pods cannot
-  join the quorum ([#1010]).
-- A new `livenessProbe` on the controller's `kafka` container that fails when the state has
-  been stuck `unattached` for an extended period ([#1010]).
-- A new `preStop` hook on the `kafka` container that removes the controller from the voters list.
-  This is the oposite step to what the `quorum-manager` does ([#1010]).
-- The `quorum-manager` sidecar now kills an in-flight `add-controller` attempt as soon as its
-  pod starts terminating, instead of letting it run to completion. Without this, a call already
-  in flight could succeed after the `kafka` container's `preStop` had already checked the voter
-  list and found nothing to remove, re-adding a pod that was simultaneously being removed and
-  leaving it stuck in the on-disk voter list ([#1010]).
-
 ### Changed
 
+- The dynamic KRaft quorum created by the operator is now scaled automatically. Previously,
+  manual intervention was needed after every scale operation.
+  This change introduces a new side-car container (`quorum-manager`) to all controller pods
+  that adds the new controller to the voter list.
+  On termination, a new `preStop` hook on the controller container (`kafka`) removes the pod from
+  the voter list before shutdown.
+  The property `controller.quorum.bootstrap.servers` now contains the headless service names
+  of all controller role groups instead of individual peer host names. This prevevents the
+  restart controller from restarting all pods in the quorum when a new one is added/deleted.
+  The controller `StatefulSet` is now scaled using `OrderedBy` instead of the `Parallel` strategy
+  to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
 - Bump stackable-operator to 0.116.0 ([#994], [#1011]).
@@ -35,11 +27,6 @@ All notable changes to this project will be documented in this file.
 - All product containers now run with `securityContext.runAsNonRoot` set to `true` to improve security ([#998]).
 - The reconciler now applies resources and derives the cluster status in discrete
   apply and update_status steps ([#1000]).
-- `controller.quorum.bootstrap.servers` now points at each controller role group's
-  headless Service DNS name instead of individual pod addresses, so neither the container
-  commands nor that ConfigMap value change with the replica count anymore ([#1010]).
-- The controller's StatefulSet now scales sequentially (`OrderedBy`) instead of parallel.
-  This ensures that one voter joins the quorum at a time ([#1010]).
 - Environment variable overrides (`envOverrides`) are now merged into the operator-set
   environment variables by name, so an override replaces the operator's value instead of
   producing a duplicated entry whose precedence depended on Kubernetes' duplicate-name
