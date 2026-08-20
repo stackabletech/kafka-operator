@@ -27,7 +27,7 @@ All notable changes to this project will be documented in this file.
 
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
-- Bump stackable-operator to 0.114.0 ([#994]).
+- Bump stackable-operator to 0.116.0 ([#994], [#1011]).
 - The RBAC ServiceAccount and RoleBinding are now built with the operator-rs `v2::rbac`
   functions and carry the full set of recommended labels ([#990]).
 - BREAKING: The `brokers` role is now required by the CRD; a KafkaCluster without it was
@@ -40,6 +40,15 @@ All notable changes to this project will be documented in this file.
   commands nor that ConfigMap value change with the replica count anymore ([#1010]).
 - The controller's StatefulSet now scales sequentially (`OrderedBy`) instead of parallel.
   This ensures that one voter joins the quorum at a time ([#1010]).
+- Environment variable overrides (`envOverrides`) are now merged into the operator-set
+  environment variables by name, so an override replaces the operator's value instead of
+  producing a duplicated entry whose precedence depended on Kubernetes' duplicate-name
+  handling ([#1011]).
+- BREAKING: Remove the `app.kubernetes.io/component` and `app.kubernetes.io/role-group` labels
+  from the resources they don't apply to (previously set to `none` or a placeholder value).
+  Broker StatefulSets created by older operator versions cannot be updated in place: after the
+  operator upgrade, delete each broker StatefulSet so that the operator immediately recreates it
+  with the new labels ([#1011]).
 
 ### Fixed
 
@@ -53,6 +62,7 @@ All notable changes to this project will be documented in this file.
 [#998]: https://github.com/stackabletech/kafka-operator/pull/998
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
 [#1010]: https://github.com/stackabletech/kafka-operator/pull/1010
+[#1011]: https://github.com/stackabletech/kafka-operator/pull/1011
 
 ## [26.7.0] - 2026-07-21
 

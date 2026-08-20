@@ -3,10 +3,12 @@
 use std::marker::PhantomData;
 
 use snafu::{ResultExt, Snafu};
+use stackable_operator::{kvp::Labels, v2::kvp::label};
 
 use crate::{
     controller::{
-        KubernetesResources, Prepared, RoleGroupName, ValidatedCluster,
+        CONTROLLER_NAME, KubernetesResources, OPERATOR_NAME, PRODUCT_NAME, Prepared, RoleGroupName,
+        RoleName, ValidatedCluster,
         build::{
             properties::{
                 listener::get_kafka_listener_config, product_logging::vector_config_file_content,
@@ -157,6 +159,70 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>
         role_bindings: vec![build_role_binding(cluster)],
         status: PhantomData,
     })
+}
+
+pub(crate) fn recommended_labels_for_cluster_resources(cluster: &ValidatedCluster) -> Labels {
+    label::recommended_labels_for_cluster_resources(
+        &cluster.name,
+        &PRODUCT_NAME,
+        &cluster.product_version,
+        &OPERATOR_NAME,
+        &CONTROLLER_NAME,
+    )
+}
+
+pub(crate) fn recommended_labels_for_role_resources(
+    cluster: &ValidatedCluster,
+    role_name: &RoleName,
+) -> Labels {
+    label::recommended_labels_for_role_resources(
+        &cluster.name,
+        &PRODUCT_NAME,
+        &cluster.product_version,
+        &OPERATOR_NAME,
+        &CONTROLLER_NAME,
+        role_name,
+    )
+}
+
+pub(crate) fn recommended_labels_for_role_group_resources(
+    cluster: &ValidatedCluster,
+    role_name: &RoleName,
+    role_group_name: &RoleGroupName,
+) -> Labels {
+    label::recommended_labels_for_role_group_resources(
+        &cluster.name,
+        &PRODUCT_NAME,
+        &cluster.product_version,
+        &OPERATOR_NAME,
+        &CONTROLLER_NAME,
+        role_name,
+        role_group_name,
+    )
+}
+
+pub(crate) fn recommended_labels_for_unversioned_role_group_resources(
+    cluster: &ValidatedCluster,
+    role_name: &RoleName,
+    role_group_name: &RoleGroupName,
+) -> Labels {
+    label::recommended_labels_for_unversioned_role_group_resources(
+        &cluster.name,
+        &PRODUCT_NAME,
+        &OPERATOR_NAME,
+        &CONTROLLER_NAME,
+        role_name,
+        role_group_name,
+    )
+}
+
+/// Selector labels matching the pods of a role group.
+pub(crate) fn role_group_selector(
+    cluster: &ValidatedCluster,
+    role_name: &RoleName,
+    role_group_name: &RoleGroupName,
+) -> Labels {
+    label::role_group_selector(&cluster.name, &PRODUCT_NAME, role_name, role_group_name)
 }
 
 #[cfg(test)]

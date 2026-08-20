@@ -11,9 +11,10 @@ use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     commons::product_image_selection,
     config::{fragment::FromFragment, merge::Merge},
+    constant,
     kube::ResourceExt,
     product_logging::spec::Logging,
-    role_utils::{GenericRoleConfig, Role},
+    role_utils::GenericRoleConfig,
     schemars::JsonSchema,
     v2::{
         builder::pod::container::{EnvVarName, EnvVarSet},
@@ -22,7 +23,7 @@ use stackable_operator::{
             ValidatedContainerLogConfigChoice, VectorContainerLogConfig,
             validate_logging_configuration_for_container,
         },
-        role_utils::{JavaCommonConfig, with_validated_config},
+        role_utils::{JavaCommonConfig, Role, with_validated_config},
         types::kubernetes::ConfigMapName,
     },
 };
@@ -46,8 +47,8 @@ use crate::{
     },
 };
 
-/// The operator-managed env var carrying the Kafka cluster id.
-const KAFKA_CLUSTER_ID_ENV: &str = "KAFKA_CLUSTER_ID";
+// The operator-managed env var carrying the Kafka cluster id.
+constant!(KAFKA_CLUSTER_ID: EnvVarName = "KAFKA_CLUSTER_ID");
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -65,11 +66,6 @@ pub enum Error {
     #[snafu(display("failed to merge and validate the role group config"))]
     ValidateRoleGroupConfig {
         source: stackable_operator::config::fragment::ValidationError,
-    },
-
-    #[snafu(display("invalid environment variable name"))]
-    InvalidEnvVarName {
-        source: stackable_operator::v2::macros::attributed_string_type::Error,
     },
 
     #[snafu(display("invalid metadata manager"))]
@@ -386,14 +382,9 @@ where
             >(role_group, role, &default_config)
             .context(ValidateRoleGroupConfigSnafu)?;
 
-            // The merge returns env overrides as a HashMap. Convert to an
-            // EnvVarSet (validating names early), then inject KAFKA_CLUSTER_ID.
-            let mut env_overrides = EnvVarSet::new();
-            for (name, value) in merged.config.env_overrides {
-                let name = EnvVarName::from_str(&name).context(InvalidEnvVarNameSnafu)?;
-                env_overrides = env_overrides.with_value(&name, value);
-            }
-            let env_overrides = inject_cluster_id(env_overrides, cluster_id)?;
+            // The env override names are validated on deserialization; inject the
+            // operator-managed KAFKA_CLUSTER_ID (unless the user overrides it).
+            let env_overrides = inject_cluster_id(merged.config.env_overrides.into(), cluster_id);
 
             let logging =
                 validate_logging(&merged.config.config, vector_aggregator_config_map_name)?;
@@ -427,16 +418,15 @@ where
 /// Injects the operator-managed `KAFKA_CLUSTER_ID` into the merged env overrides,
 /// but only when the user has not already set it via `envOverrides` (user value
 /// wins).
-fn inject_cluster_id(env_overrides: EnvVarSet, cluster_id: Option<&str>) -> Result<EnvVarSet> {
+fn inject_cluster_id(env_overrides: EnvVarSet, cluster_id: Option<&str>) -> EnvVarSet {
     let Some(cluster_id) = cluster_id else {
-        return Ok(env_overrides);
+        return env_overrides;
     };
-    let name = EnvVarName::from_str(KAFKA_CLUSTER_ID_ENV).context(InvalidEnvVarNameSnafu)?;
-    if env_overrides.get(&name).is_some() {
+    if env_overrides.get(&KAFKA_CLUSTER_ID).is_some() {
         // The user set `KAFKA_CLUSTER_ID` via envOverrides; their value wins.
-        Ok(env_overrides)
+        env_overrides
     } else {
-        Ok(env_overrides.with_value(&name, cluster_id))
+        env_overrides.with_value(&KAFKA_CLUSTER_ID, cluster_id)
     }
 }
 
@@ -445,19 +435,23 @@ mod tests {
     use std::str::FromStr;
 
     use stackable_operator::v2::{
-        builder::pod::container::{EnvVarName, EnvVarSet},
-        types::operator::RoleGroupName,
+        builder::pod::container::EnvVarSet, types::operator::RoleGroupName,
     };
 
-    use super::{Error, KAFKA_CLUSTER_ID_ENV, inject_cluster_id};
+    use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id};
     use crate::{
         controller::test_support::{app_version_label, minimal_kafka, validated_cluster},
         crd::role::KafkaRole,
     };
 
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *KAFKA_CLUSTER_ID;
+    }
+
     fn cluster_id_value(env: &EnvVarSet) -> Option<String> {
-        let name = EnvVarName::from_str(KAFKA_CLUSTER_ID_ENV).unwrap();
-        env.get(&name).and_then(|var| var.value.clone())
+        env.get(&KAFKA_CLUSTER_ID).and_then(|var| var.value.clone())
     }
 
     /// Locks every value the validate step itself derives from the minimal KRaft fixture — so a
@@ -550,23 +544,22 @@ mod tests {
 
     #[test]
     fn injects_cluster_id_when_absent() {
-        let env = inject_cluster_id(EnvVarSet::new(), Some("my-id")).unwrap();
+        let env = inject_cluster_id(EnvVarSet::new(), Some("my-id"));
         assert_eq!(cluster_id_value(&env), Some("my-id".to_string()));
     }
 
     #[test]
     fn user_cluster_id_override_wins() {
-        let name = EnvVarName::from_str(KAFKA_CLUSTER_ID_ENV).unwrap();
-        let env = EnvVarSet::new().with_value(&name, "user-value");
+        let env = EnvVarSet::new().with_value(&KAFKA_CLUSTER_ID, "user-value");
 
-        let env = inject_cluster_id(env, Some("operator-value")).unwrap();
+        let env = inject_cluster_id(env, Some("operator-value"));
 
         assert_eq!(cluster_id_value(&env), Some("user-value".to_string()));
     }
 
     #[test]
     fn without_cluster_id_nothing_is_injected() {
-        let env = inject_cluster_id(EnvVarSet::new(), None).unwrap();
+        let env = inject_cluster_id(EnvVarSet::new(), None);
         assert_eq!(cluster_id_value(&env), None);
     }
 

@@ -7,7 +7,7 @@ use crate::crd::role::KafkaRole;
 /// The node.id is only set and used in Kraft mode.
 /// Warning: this is not safe from collisions.
 pub fn node_id_hash32_offset(role: &KafkaRole, role_group: &str) -> u32 {
-    let hash = fnv_hash32(&format!("{role}-{role_group}"));
+    let hash = fnv_hash32(&format!("{role}-{role_group}", role = role.as_ref()));
     let range = hash & 0x0000FFFF;
     // Kafka uses signed integer
     range * 0x00007FFF

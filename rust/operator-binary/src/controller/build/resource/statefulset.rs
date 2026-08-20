@@ -19,8 +19,8 @@ use stackable_operator::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec, StatefulSetUpdateStrategy},
             core::v1::{
-                ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource, ExecAction,
-                LifecycleHandler, ObjectFieldSelector, PodSpec, Probe, TCPSocketAction, Volume,
+                ConfigMapVolumeSource, ContainerPort, EnvVar, ExecAction, LifecycleHandler,
+                PodSpec, Probe, TCPSocketAction, Volume,
             },
         },
         apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
@@ -51,13 +51,15 @@ use crate::{
         RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
         build::{
             command::{
-                broker_kafka_container_commands, controller_kafka_container_command,
-                controller_remove_self_pre_stop_command, kafka_log_opts, kafka_log_opts_env_var,
-                quorum_manager_container_command,
+                KAFKA_LOG4J_OPTS, broker_kafka_container_commands,
+                controller_kafka_container_command, controller_remove_self_pre_stop_command,
+                kafka_log_opts, quorum_manager_container_command,
             },
             graceful_shutdown::add_graceful_shutdown_config,
-            kerberos::add_kerberos_pod_config,
+            kerberos::{add_kerberos_pod_config, kerberos_env_vars},
             properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
+            recommended_labels_for_role_group_resources,
+            recommended_labels_for_unversioned_role_group_resources, role_group_selector,
             security::{
                 STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                 add_broker_volume_and_volume_mounts, add_controller_volume_and_volume_mounts,
@@ -86,15 +88,20 @@ use crate::{
 stackable_operator::constant!(VECTOR_CONFIG_VOLUME_NAME: VolumeName = "config");
 stackable_operator::constant!(VECTOR_LOG_VOLUME_NAME: VolumeName = "log");
 
-/// Name of both the env var and the ZooKeeper discovery ConfigMap key holding the
-/// ZooKeeper connection string.
-const ZOOKEEPER_ENV_VAR_NAME: &str = "ZOOKEEPER";
+// Env vars the operator sets on the Kafka containers.
+stackable_operator::constant!(POD_NAME: EnvVarName = "POD_NAME");
+stackable_operator::constant!(KAFKA_CLIENT_PORT: EnvVarName = "KAFKA_CLIENT_PORT");
+stackable_operator::constant!(NAMESPACE: EnvVarName = "NAMESPACE");
+stackable_operator::constant!(ROLEGROUP_HEADLESS_SERVICE_NAME: EnvVarName = "ROLEGROUP_HEADLESS_SERVICE_NAME");
+stackable_operator::constant!(CLUSTER_DOMAIN: EnvVarName = "CLUSTER_DOMAIN");
+stackable_operator::constant!(EXTRA_ARGS: EnvVarName = "EXTRA_ARGS");
+// Needed for the `containerdebug` process to log its tracing information to.
+stackable_operator::constant!(CONTAINERDEBUG_LOG_DIRECTORY: EnvVarName = "CONTAINERDEBUG_LOG_DIRECTORY");
 
-/// Parses a compile-time-known env var name; panics only on a programming error (a malformed
-/// literal in this file).
-fn env_var_name(name: &str) -> EnvVarName {
-    EnvVarName::from_str(name).expect("a static env var name is valid")
-}
+// The env var and the ZooKeeper discovery ConfigMap key holding the ZooKeeper connection
+// string (the same string, as the env var name is used as the ConfigMap key).
+stackable_operator::constant!(ZOOKEEPER: EnvVarName = "ZOOKEEPER");
+stackable_operator::constant!(ZOOKEEPER_CONFIG_MAP_KEY: ConfigMapKey = "ZOOKEEPER");
 
 /// Environment variables the operator sets on the Kafka container that are common to broker and
 /// controller role groups.
@@ -108,21 +115,17 @@ fn common_operator_env_vars(
     kafka_security: &ValidatedKafkaSecurity,
 ) -> EnvVarSet {
     let mut env = EnvVarSet::new()
-        .with_field_path(&env_var_name("POD_NAME"), &FieldPathEnvVar::Name)
-        .with_value(
-            &env_var_name("KAFKA_CLIENT_PORT"),
-            kafka_security.client_port().to_string(),
-        );
+        .with_field_path(&POD_NAME, &FieldPathEnvVar::Name)
+        .with_value(&KAFKA_CLIENT_PORT, kafka_security.client_port().to_string());
 
     // Present in ZooKeeper mode only: brokers use it to connect, controllers for migration.
     if let Some(zookeeper_config_map_name) =
         &validated_cluster.cluster_config.zookeeper_config_map_name
     {
         env = env.with_config_map_key_ref(
-            &env_var_name(ZOOKEEPER_ENV_VAR_NAME),
+            &ZOOKEEPER,
             zookeeper_config_map_name,
-            &ConfigMapKey::from_str(ZOOKEEPER_ENV_VAR_NAME)
-                .expect("a static config map key is valid"),
+            &ZOOKEEPER_CONFIG_MAP_KEY,
         );
     }
 
@@ -142,13 +145,13 @@ fn controller_pod_shared_env_vars(
     resource_names: &ResourceNames,
 ) -> EnvVarSet {
     common_operator_env_vars(validated_cluster, kafka_security)
-        .with_field_path(&env_var_name("NAMESPACE"), &FieldPathEnvVar::Namespace)
+        .with_field_path(&NAMESPACE, &FieldPathEnvVar::Namespace)
         .with_value(
-            &env_var_name("ROLEGROUP_HEADLESS_SERVICE_NAME"),
+            &ROLEGROUP_HEADLESS_SERVICE_NAME,
             resource_names.headless_service_name().to_string(),
         )
         .with_value(
-            &env_var_name("CLUSTER_DOMAIN"),
+            &CLUSTER_DOMAIN,
             validated_cluster.cluster_domain.to_string(),
         )
 }
@@ -222,10 +225,15 @@ pub fn build_broker_rolegroup_statefulset(
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.config.config;
     let resource_names = validated_cluster.role_group_resource_names(kafka_role, role_group_name);
-    let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
-    // Used for PVC templates that cannot be modified once they are deployed
-    let unversioned_recommended_labels =
-        validated_cluster.unversioned_recommended_labels(kafka_role, role_group_name);
+    let recommended_labels =
+        recommended_labels_for_role_group_resources(validated_cluster, kafka_role, role_group_name);
+    // Used for PVC templates, which cannot be modified once they are deployed. The version label
+    // is omitted so the labels stay stable across version upgrades.
+    let unversioned_recommended_labels = recommended_labels_for_unversioned_role_group_resources(
+        validated_cluster,
+        kafka_role,
+        role_group_name,
+    );
 
     let kcat_prober_container_name = BrokerContainer::KcatProber.to_string();
     let mut cb_kcat_prober =
@@ -280,8 +288,18 @@ pub fn build_broker_rolegroup_statefulset(
         .context(AddKerberosConfigSnafu)?;
     }
 
-    // Operator-set env vars first; the user's `envOverrides` are merged on top and win.
+    // Operator-set env vars first; the user's `envOverrides` are merged on top last and win.
     let env: Vec<EnvVar> = common_operator_env_vars(validated_cluster, kafka_security)
+        .merge(common_kafka_env(
+            merged_config,
+            &validated_rg
+                .product_specific_common_config
+                .jvm_argument_overrides,
+            resolved_product_image,
+            kafka_role,
+            role_group_name,
+        )?)
+        .merge(kerberos_env_vars(kafka_security))
         .merge(validated_rg.env_overrides.clone())
         .into();
 
@@ -298,18 +316,6 @@ pub fn build_broker_rolegroup_statefulset(
             validated_cluster.cluster_config.is_kraft_mode(),
             kafka_security,
         )]);
-
-    let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
-
-    add_common_kafka_env(
-        &mut cb_kafka,
-        merged_config,
-        &validated_rg
-            .product_specific_common_config
-            .jvm_argument_overrides,
-        resolved_product_image,
-        &node_id_offset,
-    )?;
 
     cb_kafka
         .add_env_vars(env)
@@ -336,17 +342,11 @@ pub fn build_broker_rolegroup_statefulset(
     cb_kcat_prober
         .image_from_product_image(resolved_product_image)
         .command(vec!["sleep".to_string(), "infinity".to_string()])
-        .add_env_vars(vec![EnvVar {
-            name: "POD_NAME".to_string(),
-            value_from: Some(EnvVarSource {
-                field_ref: Some(ObjectFieldSelector {
-                    api_version: Some("v1".to_string()),
-                    field_path: "metadata.name".to_string(),
-                }),
-                ..EnvVarSource::default()
-            }),
-            ..EnvVar::default()
-        }])
+        .add_env_vars(Vec::<EnvVar>::from(
+            EnvVarSet::new()
+                .with_field_path(&POD_NAME, &FieldPathEnvVar::Name)
+                .merge(kerberos_env_vars(kafka_security)),
+        ))
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -462,9 +462,7 @@ pub fn build_broker_rolegroup_statefulset(
             replicas: validated_rg.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
-                    validated_cluster
-                        .role_group_selector(kafka_role, role_group_name)
-                        .into(),
+                    role_group_selector(validated_cluster, kafka_role, role_group_name).into(),
                 ),
                 ..LabelSelector::default()
             },
@@ -488,7 +486,8 @@ pub fn build_controller_rolegroup_statefulset(
     let resolved_product_image = &validated_cluster.image;
     let merged_config = &validated_rg.config.config;
     let resource_names = validated_cluster.role_group_resource_names(kafka_role, role_group_name);
-    let recommended_labels = validated_cluster.recommended_labels(kafka_role, role_group_name);
+    let recommended_labels =
+        recommended_labels_for_role_group_resources(validated_cluster, kafka_role, role_group_name);
 
     let kafka_container_name = ControllerContainer::Kafka.to_string();
     let mut cb_kafka =
@@ -509,11 +508,20 @@ pub fn build_controller_rolegroup_statefulset(
 
     let env: Vec<EnvVar> = controller_shared_env
         .clone()
+        .merge(common_kafka_env(
+            merged_config,
+            &validated_rg
+                .product_specific_common_config
+                .jvm_argument_overrides,
+            resolved_product_image,
+            kafka_role,
+            role_group_name,
+        )?)
         .merge(validated_rg.env_overrides.clone())
         .into();
 
     let quorum_manager_env: Vec<EnvVar> = controller_shared_env
-        .with_value(&env_var_name(KAFKA_NODE_ID_OFFSET), &node_id_offset)
+        .with_value(&KAFKA_NODE_ID_OFFSET, &node_id_offset)
         .merge(validated_rg.env_overrides.clone())
         .into();
 
@@ -533,16 +541,6 @@ pub fn build_controller_rolegroup_statefulset(
         .args(vec![controller_kafka_container_command(
             controller_pod_descriptors,
         )]);
-
-    add_common_kafka_env(
-        &mut cb_kafka,
-        merged_config,
-        &validated_rg
-            .product_specific_common_config
-            .jvm_argument_overrides,
-        resolved_product_image,
-        &node_id_offset,
-    )?;
 
     cb_kafka
         .add_env_vars(env)
@@ -682,9 +680,7 @@ pub fn build_controller_rolegroup_statefulset(
             replicas: validated_rg.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
-                    validated_cluster
-                        .role_group_selector(kafka_role, role_group_name)
-                        .into(),
+                    role_group_selector(validated_cluster, kafka_role, role_group_name).into(),
                 ),
                 ..LabelSelector::default()
             },
@@ -808,48 +804,47 @@ fn container_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<ContainerPort
     ports
 }
 
-/// Adds the env vars that the broker and controller Kafka containers share: the JVM
-/// arguments, log options, the `containerdebug` log directory and the node-id offset.
+/// Environment variables the operator sets on the Kafka container of both roles, on top of
+/// [`common_operator_env_vars`].
 ///
-/// `node_id_offset` is the pre-computed value of [`node_id_hash32_offset`] for this role
-/// group, shared with the controller's `quorum-manager` sidecar (see
-/// [`build_quorum_manager_container`]), which also needs `NODE_ID_OFFSET` for its own
-/// `add-controller` main loop.
-fn add_common_kafka_env(
-    cb_kafka: &mut ContainerBuilder,
+/// Returned as an [`EnvVarSet`] so the callers can merge the user's `envOverrides` on top,
+/// letting an override win on a name collision.
+fn common_kafka_env(
     merged_config: &AnyConfig,
     jvm_argument_overrides: &JvmArgumentOverrides,
     resolved_product_image: &ResolvedProductImage,
-    node_id_offset: &str,
-) -> Result<(), Error> {
-    cb_kafka
-        .add_env_var(
-            "EXTRA_ARGS",
+    kafka_role: &KafkaRole,
+    role_group_name: &RoleGroupName,
+) -> Result<EnvVarSet, Error> {
+    Ok(EnvVarSet::new()
+        .with_value(
+            &EXTRA_ARGS,
             crate::controller::build::jvm::construct_non_heap_jvm_args(
                 merged_config,
                 jvm_argument_overrides,
             )
             .context(ConstructJvmArgumentsSnafu)?,
         )
-        .add_env_var(
-            KAFKA_HEAP_OPTS,
+        .with_value(
+            &KAFKA_HEAP_OPTS,
             crate::controller::build::jvm::construct_heap_jvm_args(
                 merged_config,
                 jvm_argument_overrides,
             )
             .context(ConstructJvmArgumentsSnafu)?,
         )
-        .add_env_var(
-            kafka_log_opts_env_var(),
+        .with_value(
+            &KAFKA_LOG4J_OPTS,
             kafka_log_opts(&resolved_product_image.product_version),
         )
-        // Needed for the `containerdebug` process to log it's tracing information to.
-        .add_env_var(
-            "CONTAINERDEBUG_LOG_DIRECTORY",
+        .with_value(
+            &CONTAINERDEBUG_LOG_DIRECTORY,
             format!("{STACKABLE_LOG_DIR}/containerdebug"),
         )
-        .add_env_var(KAFKA_NODE_ID_OFFSET, node_id_offset);
-    Ok(())
+        .with_value(
+            &KAFKA_NODE_ID_OFFSET,
+            node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string(),
+        ))
 }
 
 /// Adds the `log-config` volume, sourced either from the user-supplied custom log config
@@ -959,7 +954,7 @@ fn build_quorum_manager_container(
         // `KAFKA_HEAP_OPTS` to `-Xmx256M` when unset. Set an explicit, modest heap so the
         // JVM's max heap plus its base/metaspace/SSL-buffer overhead stays comfortably
         // under the container's memory limit below.
-        .add_env_var(KAFKA_HEAP_OPTS, "-Xmx128M")
+        .add_env_var(KAFKA_HEAP_OPTS.to_string(), "-Xmx128M")
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -1023,6 +1018,87 @@ mod tests {
     use super::*;
     use crate::controller::test_support::{minimal_kafka, validated_cluster};
 
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *VECTOR_CONFIG_VOLUME_NAME;
+        let _ = *VECTOR_LOG_VOLUME_NAME;
+        let _ = *POD_NAME;
+        let _ = *KAFKA_CLIENT_PORT;
+        let _ = *NAMESPACE;
+        let _ = *ROLEGROUP_HEADLESS_SERVICE_NAME;
+        let _ = *CLUSTER_DOMAIN;
+        let _ = *EXTRA_ARGS;
+        let _ = *CONTAINERDEBUG_LOG_DIRECTORY;
+        let _ = *ZOOKEEPER;
+        let _ = *ZOOKEEPER_CONFIG_MAP_KEY;
+    }
+
+    /// The user-supplied `envOverrides` must be merged in after all operator-set environment
+    /// variables, so that they can override any of them. `CONTAINERDEBUG_LOG_DIRECTORY` is used
+    /// as the example here because it is set unconditionally by the operator.
+    #[test]
+    fn env_overrides_override_operator_set_env_vars() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+        let cluster = validated_cluster(&kafka);
+        let role_group_name = RoleGroupName::from_str("default").expect("valid role group name");
+        let mut validated_rg =
+            cluster.role_group_configs[&KafkaRole::Broker][&role_group_name].clone();
+        validated_rg.env_overrides = validated_rg
+            .env_overrides
+            .with_value(&CONTAINERDEBUG_LOG_DIRECTORY, "/custom/log/dir");
+
+        let stateful_set = build_broker_rolegroup_statefulset(
+            &KafkaRole::Broker,
+            &role_group_name,
+            &cluster,
+            &validated_rg,
+        )
+        .expect("the StatefulSet builds");
+
+        let env = stateful_set
+            .spec
+            .expect("the StatefulSet has a spec")
+            .template
+            .spec
+            .expect("the pod template has a spec")
+            .containers
+            .into_iter()
+            .find(|container| container.name == "kafka")
+            .expect("the kafka container exists")
+            .env
+            .expect("the kafka container has env vars");
+
+        let containerdebug: Vec<_> = env
+            .iter()
+            .filter(|env_var| env_var.name == "CONTAINERDEBUG_LOG_DIRECTORY")
+            .collect();
+        assert_eq!(
+            containerdebug.len(),
+            1,
+            "the override must replace the operator-set value, not duplicate it"
+        );
+        assert_eq!(containerdebug[0].value.as_deref(), Some("/custom/log/dir"));
+    }
+
     /// A minimal KRaft cluster with one controller role group, resolved through the real
     /// validate step (mirroring the fixtures in `build/mod.rs`'s own tests), since
     /// `ValidatedCluster` carries several resolved types that are impractical to construct by
@@ -1052,6 +1128,51 @@ mod tests {
             "#,
         );
         validated_cluster(&kafka)
+    }
+
+    /// Same guarantee for the controller role, whose env vars are assembled by a separate
+    /// builder ([`build_controller_rolegroup_statefulset`]).
+    #[test]
+    fn controller_env_overrides_override_operator_set_env_vars() {
+        let cluster = kraft_mode_cluster();
+        let role_group_name = RoleGroupName::from_str("default").expect("valid role group name");
+        let mut validated_rg =
+            cluster.role_group_configs[&KafkaRole::Controller][&role_group_name].clone();
+        validated_rg.env_overrides = validated_rg
+            .env_overrides
+            .with_value(&CONTAINERDEBUG_LOG_DIRECTORY, "/custom/log/dir");
+
+        let stateful_set = build_controller_rolegroup_statefulset(
+            &KafkaRole::Controller,
+            &role_group_name,
+            &cluster,
+            &validated_rg,
+        )
+        .expect("the StatefulSet builds");
+
+        let env = stateful_set
+            .spec
+            .expect("the StatefulSet has a spec")
+            .template
+            .spec
+            .expect("the pod template has a spec")
+            .containers
+            .into_iter()
+            .find(|container| container.name == "kafka")
+            .expect("the kafka container exists")
+            .env
+            .expect("the kafka container has env vars");
+
+        let containerdebug: Vec<_> = env
+            .iter()
+            .filter(|env_var| env_var.name == "CONTAINERDEBUG_LOG_DIRECTORY")
+            .collect();
+        assert_eq!(
+            containerdebug.len(),
+            1,
+            "the override must replace the operator-set value, not duplicate it"
+        );
+        assert_eq!(containerdebug[0].value.as_deref(), Some("/custom/log/dir"));
     }
 
     #[test]
@@ -1322,9 +1443,10 @@ mod tests {
         // `EXPORT_REPLICA_ID` bash logic under `set -u` (see `command.rs`), so a regression
         // here would break the sidecar's `add-controller` main loop silently (an unset
         // variable under `set -u` aborts the script).
+        let node_id_offset_name = KAFKA_NODE_ID_OFFSET.to_string();
         assert!(
-            sidecar_env_names.contains(&KAFKA_NODE_ID_OFFSET),
-            "quorum-manager sidecar is missing the {KAFKA_NODE_ID_OFFSET} env var, needed by \
+            sidecar_env_names.contains(&node_id_offset_name.as_str()),
+            "quorum-manager sidecar is missing the {node_id_offset_name} env var, needed by \
              its EXPORT_REPLICA_ID derivation under `set -u`; sidecar env vars: \
              {sidecar_env_names:?}"
         );

@@ -11,7 +11,10 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::{RoleGroupName, ValidatedCluster, security::ValidatedKafkaSecurity},
+    controller::{
+        RoleGroupName, ValidatedCluster, build::recommended_labels_for_role_group_resources,
+        security::ValidatedKafkaSecurity,
+    },
     crd::role::{KafkaRole, broker::BrokerConfig},
 };
 
@@ -44,7 +47,7 @@ pub fn bootstrap_listener_name(
 
     let resource_names = ResourceNames {
         cluster_name: cluster_name.clone(),
-        role_name: role.into(),
+        role_name: role.role_name(),
         role_group_name: role_group_name.clone(),
     };
 
@@ -75,7 +78,11 @@ pub fn build_broker_rolegroup_bootstrap_listener(
                 None,
                 Some(true),
             ))
-            .with_labels(validated_cluster.recommended_labels(role, role_group_name))
+            .with_labels(recommended_labels_for_role_group_resources(
+                validated_cluster,
+                role,
+                role_group_name,
+            ))
             .build(),
         spec: listener::v1alpha1::ListenerSpec {
             class_name: Some(merged_config.bootstrap_listener_class.to_string()),

@@ -19,6 +19,7 @@ use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     cluster_resources::ClusterResourceApplyStrategy,
     commons::{networking::DomainName, product_image_selection::ResolvedProductImage},
+    constant,
     crd::listener,
     k8s_openapi::api::{
         apps::v1::StatefulSet,
@@ -32,12 +33,10 @@ use stackable_operator::{
         core::{DeserializeGuard, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
     },
-    kvp::Labels,
     logging::controller::ReconcilerError,
     shared::time::Duration,
     v2::{
         HasName, HasUid, NameIsValidLabelValue,
-        kvp::label::{recommended_labels, role_group_selector},
         role_group_utils::ResourceNames,
         role_utils,
         types::{
@@ -66,7 +65,7 @@ use crate::{
         update_status::update_status,
     },
     crd::{
-        APP_NAME, KafkaPodDescriptor, MetadataManager, OPERATOR_NAME,
+        APP_NAME, KAFKA_OPERATOR_NAME, KafkaPodDescriptor, MetadataManager,
         authorization::KafkaAuthorizationConfig,
         role::{AnyConfig, AnyConfigOverrides, KafkaRole},
         v1alpha1,
@@ -74,15 +73,19 @@ use crate::{
 };
 
 pub const KAFKA_CONTROLLER_NAME: &str = "kafkacluster";
-pub const KAFKA_FULL_CONTROLLER_NAME: &str = concatcp!(KAFKA_CONTROLLER_NAME, '.', OPERATOR_NAME);
+pub const KAFKA_FULL_CONTROLLER_NAME: &str =
+    concatcp!(KAFKA_CONTROLLER_NAME, '.', KAFKA_OPERATOR_NAME);
 
-// Placeholder version label value for resources whose labels must not change after deployment.
-stackable_operator::constant!(UNVERSIONED_PRODUCT_VERSION: ProductVersion = "none");
+constant!(PRODUCT_NAME: ProductName = APP_NAME);
+constant!(OPERATOR_NAME: OperatorName = KAFKA_OPERATOR_NAME);
+constant!(CONTROLLER_NAME: ControllerName = KAFKA_CONTROLLER_NAME);
 
 #[derive(Snafu, Debug)]
 pub enum PodDescriptorsError {
     #[snafu(display(
-        "the node id hash offset of role group {role}/{role_group} collides with {colliding_role}/{colliding_role_group}; node ids must be unique across the cluster"
+        "the node id hash offset of role group {role}/{role_group} collides with {colliding_role}/{colliding_role_group}; node ids must be unique across the cluster",
+        role = role.as_ref(),
+        colliding_role = colliding_role.as_ref(),
     ))]
     KafkaNodeIdHashCollision {
         role: KafkaRole,
@@ -246,13 +249,12 @@ impl ValidatedCluster {
         Ok(pod_descriptors)
     }
 
-    /// The given [`KafkaRole`] as a type-safe [`RoleName`].
     /// Type-safe names for the per-cluster RBAC resources: the ServiceAccount shared by all
     /// Pods, its (namespaced) RoleBinding, and the operator-deployed ClusterRole it binds.
     pub fn cluster_resource_names(&self) -> role_utils::ResourceNames {
         role_utils::ResourceNames {
             cluster_name: self.name.clone(),
-            product_name: product_name(),
+            product_name: PRODUCT_NAME.clone(),
         }
     }
 
@@ -264,55 +266,9 @@ impl ValidatedCluster {
     ) -> ResourceNames {
         ResourceNames {
             cluster_name: self.name.clone(),
-            role_name: role.into(),
+            role_name: role.role_name(),
             role_group_name: role_group_name.clone(),
         }
-    }
-
-    /// Recommended labels for a role-group resource.
-    pub fn recommended_labels(&self, role: &KafkaRole, role_group_name: &RoleGroupName) -> Labels {
-        self.recommended_labels_for(&role.into(), role_group_name)
-    }
-
-    /// Recommended labels for a resource that is not tied to a concrete [`KafkaRole`], using a free-form role/role-group label value.
-    pub fn recommended_labels_for(
-        &self,
-        role_name: &RoleName,
-        role_group_name: &RoleGroupName,
-    ) -> Labels {
-        self.recommended_labels_with(&self.product_version, role_name, role_group_name)
-    }
-
-    /// Recommended labels with the constant [`UNVERSIONED_PRODUCT_VERSION`], for PVC templates
-    /// that cannot be modified after deployment (keeps the labels stable across version upgrades).
-    pub fn unversioned_recommended_labels(
-        &self,
-        role: &KafkaRole,
-        role_group_name: &RoleGroupName,
-    ) -> Labels {
-        self.recommended_labels_with(&UNVERSIONED_PRODUCT_VERSION, &role.into(), role_group_name)
-    }
-
-    fn recommended_labels_with(
-        &self,
-        product_version: &ProductVersion,
-        role_name: &RoleName,
-        role_group_name: &RoleGroupName,
-    ) -> Labels {
-        recommended_labels(
-            self,
-            &product_name(),
-            product_version,
-            &operator_name(),
-            &controller_name(),
-            role_name,
-            role_group_name,
-        )
-    }
-
-    /// Selector labels matching the pods of a role group.
-    pub fn role_group_selector(&self, role: &KafkaRole, role_group_name: &RoleGroupName) -> Labels {
-        role_group_selector(self, &product_name(), &role.into(), role_group_name)
     }
 
     /// The name of the broker rolegroup's bootstrap [`Listener`](stackable_operator::crd::listener),
@@ -342,22 +298,6 @@ impl NameIsValidLabelValue for ValidatedCluster {
     fn to_label_value(&self) -> String {
         self.name.to_label_value()
     }
-}
-
-/// The product name (`kafka`) as a type-safe label value.
-pub(crate) fn product_name() -> ProductName {
-    ProductName::from_str(APP_NAME).expect("'kafka' is a valid product name")
-}
-
-/// The operator name as a type-safe label value.
-pub(crate) fn operator_name() -> OperatorName {
-    OperatorName::from_str(OPERATOR_NAME).expect("the operator name is a valid label value")
-}
-
-/// The controller name as a type-safe label value.
-pub(crate) fn controller_name() -> ControllerName {
-    ControllerName::from_str(KAFKA_CONTROLLER_NAME)
-        .expect("the controller name is a valid label value")
 }
 
 /// Cluster-wide settings resolved during validation and dereferencing.
@@ -692,14 +632,19 @@ pub(crate) mod test_support {
 mod tests {
     use std::collections::BTreeSet;
 
-    use stackable_operator::v2::types::operator::RoleName;
-    use strum::IntoEnumIterator;
-
     use super::{
-        PodDescriptorsError,
+        CONTROLLER_NAME, OPERATOR_NAME, PRODUCT_NAME, PodDescriptorsError,
         test_support::{minimal_kafka, validated_cluster},
     };
     use crate::crd::role::KafkaRole;
+
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *PRODUCT_NAME;
+        let _ = *OPERATOR_NAME;
+        let _ = *CONTROLLER_NAME;
+    }
 
     /// Two broker role groups whose names hash to the same node-id offset must be
     /// rejected: a collision would hand two pods the same Kafka `node.id`. `rg865`
@@ -777,15 +722,5 @@ mod tests {
         assert_eq!(descriptors.len(), 3);
         let node_ids: BTreeSet<u32> = descriptors.iter().map(|d| d.node_id).collect();
         assert_eq!(node_ids.len(), 3, "node ids must be unique: {node_ids:?}");
-    }
-
-    /// Locks the invariant behind the `expect` in the `From<KafkaRole> for RoleName` impls:
-    /// every `KafkaRole` variant (present and future) must serialise to a valid `RoleName`.
-    #[test]
-    fn every_kafka_role_serialises_to_a_valid_role_name() {
-        for role in KafkaRole::iter() {
-            let _: RoleName = (&role).into();
-            let _: RoleName = role.into();
-        }
     }
 }

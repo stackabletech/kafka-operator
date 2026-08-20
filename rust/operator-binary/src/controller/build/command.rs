@@ -1,11 +1,14 @@
+use std::str::FromStr;
+
 use indoc::formatdoc;
 use stackable_operator::{
+    constant,
     product_logging::framework::{
         create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
     },
     shared::time::Duration,
     utils::COMMON_BASH_TRAP_FUNCTIONS,
-    v2::product_logging::framework::STACKABLE_LOG_DIR,
+    v2::{builder::pod::container::EnvVarName, product_logging::framework::STACKABLE_LOG_DIR},
 };
 
 use super::properties::ConfigFileName;
@@ -33,10 +36,8 @@ pub fn kafka_log_opts(product_version: &str) -> String {
     }
 }
 
-/// The env var carrying the Kafka log4j options (see [`kafka_log_opts`]).
-pub fn kafka_log_opts_env_var() -> String {
-    "KAFKA_LOG4J_OPTS".to_string()
-}
+// The env var carrying the Kafka log4j options (see [`kafka_log_opts`]).
+constant!(pub KAFKA_LOG4J_OPTS: EnvVarName = "KAFKA_LOG4J_OPTS");
 
 /// Shell snippet setting `$POD_INDEX` to this pod's ordinal, parsed from the trailing digits
 /// of `$POD_NAME` (e.g. `2` for `..-controller-default-2`).
@@ -826,5 +827,11 @@ mod tests {
         assert!(command.contains("--no-initial-controllers"));
         assert!(!command.contains("--initial-controllers"));
         assert!(!command.contains("--standalone"));
+    }
+
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *KAFKA_LOG4J_OPTS;
     }
 }
