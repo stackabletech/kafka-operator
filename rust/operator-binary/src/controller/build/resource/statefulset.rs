@@ -292,22 +292,12 @@ pub fn build_broker_rolegroup_statefulset(
     // The client port can accept connections before the broker has replayed its log and
     // reached the JMX `RUNNING` state, so the startupProbe waits for both, giving it up to
     // 5 minutes (60 * 5s) before the livenessProbe is allowed to start counting failures.
-    let broker_startup_probe = probes::broker_running_probe(
-        kafka_security.client_port(),
-        METRICS_PORT,
-        /* timeout_seconds */ 5,
-        /* period_seconds */ 5,
-        /* failure_threshold */ 60,
-    )
-    .context(BuildProbeSnafu)?;
-    let broker_liveness_probe = probes::broker_running_probe(
-        kafka_security.client_port(),
-        METRICS_PORT,
-        /* timeout_seconds */ 10,
-        /* period_seconds */ 30,
-        /* failure_threshold */ 20,
-    )
-    .context(BuildProbeSnafu)?;
+    let broker_startup_probe =
+        probes::broker_running_probe(kafka_security.client_port(), METRICS_PORT, 5, 5, 60)
+            .context(BuildProbeSnafu)?;
+    let broker_liveness_probe =
+        probes::broker_running_probe(kafka_security.client_port(), METRICS_PORT, 10, 30, 20)
+            .context(BuildProbeSnafu)?;
     let broker_readiness_probe =
         probes::broker_kcat_readiness_probe(kafka_security).context(BuildProbeSnafu)?;
 
@@ -503,30 +493,21 @@ pub fn build_controller_rolegroup_statefulset(
     // The startupProbe gives it up to 5 minutes (60 * 5s) before the liveness probe is
     // allowed to start counting failures at all, so a slow (but progressing) boot is never
     // mistaken for a stuck process.
-    let controller_startup_probe = probes::controller_tcp_probe(
-        kafka_security.client_port(),
-        /* timeout_seconds */ 5,
-        /* period_seconds */ 5,
-        /* failure_threshold */ 60,
-    )
-    .context(BuildProbeSnafu)?;
+    let controller_startup_probe =
+        probes::controller_tcp_probe(kafka_security.client_port(), 5, 5, 60)
+            .context(BuildProbeSnafu)?;
     // See `probes::controller_stuck_unattached_liveness_probe`'s doc comment for why this is no
     // longer a plain TCP check.
     let controller_liveness_probe = probes::controller_stuck_unattached_liveness_probe(
         kafka_security.client_port(),
         METRICS_PORT,
-        /* timeout_seconds */ 10,
-        /* period_seconds */ 30,
-        /* failure_threshold */ 20,
+        10,
+        30,
+        20,
     )
     .context(BuildProbeSnafu)?;
-    let controller_readiness_probe = probes::controller_raft_state_probe(
-        METRICS_PORT,
-        /* timeout_seconds */ 10,
-        /* period_seconds */ 10,
-        /* failure_threshold */ 6,
-    )
-    .context(BuildProbeSnafu)?;
+    let controller_readiness_probe =
+        probes::controller_raft_state_probe(METRICS_PORT, 10, 10, 6).context(BuildProbeSnafu)?;
 
     cb_kafka
         .image_from_product_image(resolved_product_image)
