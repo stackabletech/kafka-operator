@@ -448,6 +448,10 @@ pub async fn reconcile_kafka(
 ) -> Result<Action> {
     tracing::info!("Starting reconcile");
 
+    if kafka.meta().deletion_timestamp.is_some() {
+        return Ok(Action::await_change());
+    }
+
     let kafka = kafka
         .0
         .as_ref()
