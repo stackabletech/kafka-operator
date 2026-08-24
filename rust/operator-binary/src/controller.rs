@@ -627,13 +627,24 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, str::FromStr, sync::Arc};
+
+    use stackable_operator::{
+        cli::OperatorEnvironmentOptions,
+        client::Client,
+        commons::networking::DomainName,
+        kube::{Client as KubeClient, Config, core::DeserializeGuard, runtime::controller::Action},
+        utils::cluster_info::KubernetesClusterInfo,
+    };
 
     use super::{
         CONTROLLER_NAME, OPERATOR_NAME, PRODUCT_NAME, PodDescriptorsError,
         test_support::{minimal_kafka, validated_cluster},
     };
-    use crate::crd::role::KafkaRole;
+    use crate::{
+        controller::{Ctx, Error, reconcile_kafka},
+        crd::{role::KafkaRole, v1alpha1},
+    };
 
     #[test]
     fn test_constants() {
@@ -719,5 +730,114 @@ mod tests {
         assert_eq!(descriptors.len(), 3);
         let node_ids: BTreeSet<u32> = descriptors.iter().map(|d| d.node_id).collect();
         assert_eq!(node_ids.len(), 3, "node ids must be unique: {node_ids:?}");
+    }
+
+    /// A [`Ctx`] whose client points at a closed port. Any API call made through it fails the
+    /// reconciliation, so an `Ok` result proves the reconciler returned before touching the
+    /// Kubernetes API.
+    fn unreachable_ctx() -> Arc<Ctx> {
+        let config = Config::new(
+            "http://127.0.0.1:1"
+                .parse::<http::Uri>()
+                .expect("valid static URI"),
+        );
+        let kube_client = KubeClient::try_from(config).expect("client from static config");
+
+        Arc::new(Ctx {
+            client: Client::new(
+                kube_client.clone(),
+                None,
+                "default".to_owned(),
+                KubernetesClusterInfo {
+                    cluster_domain: DomainName::from_str("cluster.local")
+                        .expect("valid cluster domain"),
+                },
+            ),
+            operator_environment: OperatorEnvironmentOptions {
+                operator_namespace: "stackable-operators".to_owned(),
+                operator_service_name: "kafka-operator".to_owned(),
+                image_repository: "oci.stackable.tech/sdp".to_owned(),
+            },
+        })
+    }
+
+    fn reconcile(kafka: DeserializeGuard<v1alpha1::KafkaCluster>) -> Result<Action, Error> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("current-thread tokio runtime")
+            .block_on(async { reconcile_kafka(Arc::new(kafka), unreachable_ctx()).await })
+    }
+
+    #[test]
+    fn reconcile_exits_early_for_deleted_cluster() {
+        let kafka = serde_yaml::from_str(
+            r#"
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: kafka
+  namespace: default
+  deletionTimestamp: "2026-08-14T12:00:00Z"
+spec:
+  image:
+    productVersion: 3.2.2
+"#,
+        )
+        .expect("valid cluster YAML");
+
+        let action = reconcile(kafka).expect("a deleted cluster reconciles without any API call");
+
+        assert_eq!(action, Action::await_change());
+    }
+
+    #[test]
+    fn reconcile_exits_early_for_deleted_cluster_with_invalid_spec() {
+        let kafka = serde_yaml::from_str(
+            r#"
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: kafka
+  namespace: default
+  deletionTimestamp: "2026-08-14T12:00:00Z"
+spec: {}
+"#,
+        )
+        .expect("YAML parses; the invalid spec is captured inside the DeserializeGuard");
+
+        let action =
+            reconcile(kafka).expect("a deleted cluster reconciles even when its spec is invalid");
+
+        assert_eq!(action, Action::await_change());
+    }
+
+    #[test]
+    fn reconcile_proceeds_for_live_cluster() {
+        let kafka = serde_yaml::from_str(
+            r#"
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: kafka
+  namespace: default
+spec:
+  image:
+    productVersion: 4.1.0
+  clusterConfig: {}
+  brokers:
+    roleGroups:
+      default:
+        replicas: 1
+"#,
+        )
+        .expect("valid cluster YAML");
+
+        let result = reconcile(kafka);
+
+        assert!(
+            matches!(result, Err(Error::Dereference { .. })),
+            "a live cluster must reach the API but when dereferencing against the unreachable test server: {result:?}"
+        );
     }
 }
