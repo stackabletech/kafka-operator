@@ -24,7 +24,6 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-http.workspace = true
 serde_yaml.workspace = true
 rstest.workspace = true
 

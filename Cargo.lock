@@ -3178,7 +3178,6 @@ dependencies = [
  "clap",
  "const_format",
  "futures",
- "http",
  "indoc",
  "rstest",
  "serde",
