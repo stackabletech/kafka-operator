@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
     commons::resources::{
@@ -5,6 +7,7 @@ use stackable_operator::{
         PvcConfigFragment, Resources, ResourcesFragment,
     },
     config::{fragment::Fragment, merge::Merge},
+    constant,
     k8s_openapi::apimachinery::pkg::api::resource::Quantity,
     product_logging::{self, spec::Logging},
     schemars::{self, JsonSchema},
@@ -13,6 +16,9 @@ use stackable_operator::{
 use strum::{Display, EnumIter};
 
 use crate::crd::role::commons::{CommonConfig, Storage, StorageFragment};
+
+// The default listener class for both the bootstrap and the broker listeners.
+constant!(DEFAULT_LISTENER_CLASS: ListenerClassName = "cluster-internal");
 
 #[derive(
     Clone,
@@ -70,16 +76,8 @@ impl BrokerConfig {
     pub fn default_config(cluster_name: &str, role: &str) -> BrokerConfigFragment {
         BrokerConfigFragment {
             common_config: CommonConfig::default_config(cluster_name, role),
-            bootstrap_listener_class: Some(
-                "cluster-internal"
-                    .parse()
-                    .expect("\"cluster-internal\" is a valid listener class name"),
-            ),
-            broker_listener_class: Some(
-                "cluster-internal"
-                    .parse()
-                    .expect("\"cluster-internal\" is a valid listener class name"),
-            ),
+            bootstrap_listener_class: Some(DEFAULT_LISTENER_CLASS.clone()),
+            broker_listener_class: Some(DEFAULT_LISTENER_CLASS.clone()),
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {
@@ -99,5 +97,16 @@ impl BrokerConfig {
                 },
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *DEFAULT_LISTENER_CLASS;
     }
 }

@@ -2,11 +2,12 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
+    constant,
     schemars::{self, JsonSchema},
     v2::types::kubernetes::SecretClassName,
 };
 
-const TLS_DEFAULT_SECRET_CLASS: &str = "tls";
+constant!(TLS_DEFAULT_SECRET_CLASS: SecretClassName = "tls");
 
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,8 +45,7 @@ pub fn default_kafka_tls() -> Option<KafkaTls> {
 
 /// The `tls` default secret class as a typed name.
 fn default_secret_class() -> SecretClassName {
-    SecretClassName::from_str(TLS_DEFAULT_SECRET_CLASS)
-        .expect("the default secret class name is valid")
+    TLS_DEFAULT_SECRET_CLASS.clone()
 }
 
 /// Helper methods to provide defaults in the CRDs and tests
@@ -56,4 +56,15 @@ pub fn internal_tls_default() -> SecretClassName {
 /// Helper methods to provide defaults in the CRDs and tests
 pub fn server_tls_default() -> Option<SecretClassName> {
     Some(default_secret_class())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *TLS_DEFAULT_SECRET_CLASS;
+    }
 }

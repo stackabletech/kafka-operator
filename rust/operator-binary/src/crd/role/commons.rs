@@ -7,7 +7,7 @@ use stackable_operator::{
     shared::time::Duration,
 };
 
-use crate::crd::affinity::get_affinity;
+use crate::crd::{LOG_DIRS_VOLUME_NAME, affinity::get_affinity};
 
 #[derive(Clone, Debug, Default, PartialEq, Fragment, JsonSchema)]
 #[fragment_attrs(
@@ -29,12 +29,10 @@ pub struct Storage {
 }
 
 impl Storage {
-    pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
-
     pub fn build_pvcs(&self) -> Vec<PersistentVolumeClaim> {
         let data_pvc = self
             .log_dirs
-            .build_pvc(Self::LOG_DIRS_VOLUME_NAME, Some(vec!["ReadWriteOnce"]));
+            .build_pvc(LOG_DIRS_VOLUME_NAME.as_ref(), Some(vec!["ReadWriteOnce"]));
         vec![data_pvc]
     }
 }

@@ -30,12 +30,6 @@ use crate::{
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("failed to build ConfigMap for role group {role_group}"))]
-    BuildRoleGroupConfig {
-        source: stackable_operator::builder::configmap::Error,
-        role_group: RoleGroupName,
-    },
-
     #[snafu(display(
         "failed to serialize [{}] for role group {role_group}",
         ConfigFileName::Security
@@ -194,11 +188,9 @@ pub fn build_rolegroup_config_map(
         cm_builder.add_data(VECTOR_CONFIG_FILE, vector_config);
     }
 
-    cm_builder
+    Ok(cm_builder
         .build()
-        .with_context(|_| BuildRoleGroupConfigSnafu {
-            role_group: role_group_name.clone(),
-        })
+        .expect("The ConfigMap metadata is set in this function."))
 }
 
 // Generate JAAS configuration file for Kerberos authentication
