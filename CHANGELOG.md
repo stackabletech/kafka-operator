@@ -42,6 +42,8 @@ All notable changes to this project will be documented in this file.
 - Fix a longstanding problem of including empty `categories`, `shortNames` and `additionalPrinterColumns` in the CRDs,
   which could cause problems with GitOps tools (e.g. ArgoCD) reporting a diff in the custom resources.
   See [our internal issue](https://github.com/stackabletech/hdfs-operator/issues/626) and [the fix](https://github.com/kube-rs/kube/pull/2042) for details ([#998]).
+- The operator now watches all resources that it creates and early-exits the reconcile action when the
+  cluster is marked for deletion ([#1014]).
 
 ### Removed
 
@@ -58,6 +60,7 @@ All notable changes to this project will be documented in this file.
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
 [#1010]: https://github.com/stackabletech/kafka-operator/pull/1010
 [#1011]: https://github.com/stackabletech/kafka-operator/pull/1011
+[#1014]: https://github.com/stackabletech/kafka-operator/pull/1014
 
 ## [26.7.0] - 2026-07-21
 
