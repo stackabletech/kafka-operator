@@ -660,6 +660,12 @@ fn common_kafka_env(
 /// Adds the `log-config` volume, sourced either from the user-supplied custom log config
 /// `ConfigMap` or the rolegroup `ConfigMap` (which carries the operator-generated config).
 /// Branches on the *validated* Kafka-container logging choice.
+///
+/// # Panics
+///
+/// Panics if the volumes or volume mounts cannot be added to the builders. Only call this
+/// on builders whose volume names and mount paths are still distinct from the ones added
+/// here.
 fn add_log_config_volume(
     pod_builder: &mut PodBuilder,
     logging: &ValidatedLogging,
@@ -682,6 +688,12 @@ fn add_log_config_volume(
 
 /// Adds the `config` volume, the `log` emptyDir, the service account and the pod security
 /// context that the broker and controller pods share.
+///
+/// # Panics
+///
+/// Panics if the volumes or volume mounts cannot be added to the builders. Only call this
+/// on builders whose volume names and mount paths are still distinct from the ones added
+/// here.
 fn add_common_pod_config(
     pod_builder: &mut PodBuilder,
     resource_names: &ResourceNames,

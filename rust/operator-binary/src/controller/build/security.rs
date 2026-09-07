@@ -200,6 +200,12 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
 
 /// Adds required volumes and volume mounts to the broker pod and container builders
 /// depending on the tls and authentication settings.
+///
+/// # Panics
+///
+/// Panics if the volumes or volume mounts cannot be added to the builders. Only call this
+/// on builders whose volume names and mount paths are still distinct from the ones added
+/// here.
 pub fn add_broker_volume_and_volume_mounts(
     security: &ValidatedKafkaSecurity,
     pod_builder: &mut PodBuilder,
@@ -275,6 +281,12 @@ pub fn add_broker_volume_and_volume_mounts(
 
 /// Adds required volumes and volume mounts to the controller pod and container builders
 /// depending on the tls and authentication settings.
+///
+/// # Panics
+///
+/// Panics if the volumes or volume mounts cannot be added to the builders. Only call this
+/// on builders whose volume names and mount paths are still distinct from the ones added
+/// here.
 pub fn add_controller_volume_and_volume_mounts(
     security: &ValidatedKafkaSecurity,
     pod_builder: &mut PodBuilder,
@@ -536,6 +548,11 @@ fn tls_secret_class(security: &ValidatedKafkaSecurity) -> Option<&str> {
 }
 
 /// Creates ephemeral volumes to mount the `SecretClass` into the Pods for kcat client
+///
+/// # Panics
+///
+/// Panics if the volume source cannot be built, which cannot happen because the annotation
+/// keys are static and annotation values cannot be invalid.
 fn create_kcat_tls_volume(
     volume_name: &VolumeName,
     secret_class_name: &str,
@@ -560,6 +577,11 @@ fn create_kcat_tls_volume(
 }
 
 /// Creates ephemeral volumes to mount the `SecretClass` into the Pods as keystores
+///
+/// # Panics
+///
+/// Panics if the volume source cannot be built, which cannot happen because the annotation
+/// keys are static and annotation values cannot be invalid.
 fn create_tls_keystore_volume(
     volume_name: &VolumeName,
     secret_class_name: &str,

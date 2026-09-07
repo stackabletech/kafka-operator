@@ -24,6 +24,14 @@ use crate::{
 
 constant!(KERBEROS_VOLUME_NAME: VolumeName = "kerberos");
 
+/// Adds the Kerberos keytab and `krb5.conf` volume to the pod builder and mounts it into the
+/// Kafka and kcat-prober containers, when Kerberos is enabled.
+///
+/// # Panics
+///
+/// Panics if the volumes or volume mounts cannot be added to the builders. Only call this
+/// on builders whose volume names and mount paths are still distinct from the ones added
+/// here.
 pub fn add_kerberos_pod_config(
     kafka_security: &ValidatedKafkaSecurity,
     role: &KafkaRole,
