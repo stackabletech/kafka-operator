@@ -4,9 +4,9 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "operator.name" . }}-clusterrole
+  name: {{ include "kafka-operator.name" . }}-clusterrole
   labels:
-  {{- include "operator.labels" . | nindent 4 }}
+  {{- include "kafka-operator.labels" . | nindent 4 }}
 rules:
 {{ if .Capabilities.APIVersions.Has "security.openshift.io/v1" }}
   # On OpenShift, the workload pods must be allowed to use the nonroot-v2 SCC
