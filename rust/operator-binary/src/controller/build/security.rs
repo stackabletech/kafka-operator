@@ -5,11 +5,15 @@
 //! any validation themselves.
 use std::{collections::BTreeMap, str::FromStr};
 
+use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    builder::pod::{
-        PodBuilder,
-        container::ContainerBuilder,
-        volume::{SecretFormat, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
+    builder::{
+        self,
+        pod::{
+            PodBuilder,
+            container::ContainerBuilder,
+            volume::{SecretFormat, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
+        },
     },
     commons::secret_class::SecretClassVolumeProvisionParts,
     constant,
@@ -55,6 +59,22 @@ constant!(STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME: VolumeName = "tls-kafka-server
 const STACKABLE_TLS_KCAT_DIR: &str = "/stackable/tls-kcat";
 constant!(STACKABLE_TLS_KCAT_VOLUME_NAME: VolumeName = "tls-kcat");
 const TRUSTSTORE_P12_FILE_NAME: &str = "truststore.p12";
+
+#[derive(Snafu, Debug)]
+pub enum Error {
+    #[snafu(display("failed to build the secret operator Volume"))]
+    SecretVolumeBuild {
+        source: stackable_operator::builder::pod::volume::SecretOperatorVolumeSourceBuilderError,
+    },
+
+    #[snafu(display("failed to add needed volume"))]
+    AddVolume { source: builder::pod::Error },
+
+    #[snafu(display("failed to build OPA TLS certificate volume"))]
+    OpaTlsCertSecretClassVolumeBuild {
+        source: stackable_operator::builder::pod::volume::SecretOperatorVolumeSourceBuilderError,
+    },
+}
 
 pub fn copy_opa_tls_cert_command(security: &ValidatedKafkaSecurity) -> String {
     match security.opa_secret_class().is_some() {
@@ -203,16 +223,15 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
 ///
 /// # Panics
 ///
-/// Panics if the volumes or volume mounts cannot be added to the builders. Only call this
-/// on builders whose volume names and mount paths are still distinct from the ones added
-/// here.
+/// Panics if the volume mounts cannot be added to the container builders. Only call this on
+/// container builders whose mount paths are still distinct from the ones added here.
 pub fn add_broker_volume_and_volume_mounts(
     security: &ValidatedKafkaSecurity,
     pod_builder: &mut PodBuilder,
     cb_kcat_prober: &mut ContainerBuilder,
     cb_kafka: &mut ContainerBuilder,
     requested_secret_lifetime: &Duration,
-) {
+) -> Result<(), Error> {
     // add tls (server or client authentication volumes) if required
     if let Some(tls_server_secret_class) = tls_secret_class(security) {
         // We have to mount tls pem files for kcat (the mount can be used directly)
@@ -221,8 +240,8 @@ pub fn add_broker_volume_and_volume_mounts(
                 &STACKABLE_TLS_KCAT_VOLUME_NAME,
                 tls_server_secret_class,
                 requested_secret_lifetime,
-            ))
-            .expect("The volume names are statically defined and there should be no duplicates.");
+            )?)
+            .context(AddVolumeSnafu)?;
         cb_kcat_prober
             .add_volume_mount(&*STACKABLE_TLS_KCAT_VOLUME_NAME, STACKABLE_TLS_KCAT_DIR)
             .expect("The mount paths are statically defined and there should be no duplicates.");
@@ -232,8 +251,8 @@ pub fn add_broker_volume_and_volume_mounts(
                 &STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
                 tls_server_secret_class,
                 requested_secret_lifetime,
-            ))
-            .expect("The volume names are statically defined and there should be no duplicates.");
+            )?)
+            .context(AddVolumeSnafu)?;
         cb_kafka
             .add_volume_mount(
                 &*STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
@@ -247,8 +266,8 @@ pub fn add_broker_volume_and_volume_mounts(
             &STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
             security.tls_internal_secret_class(),
             requested_secret_lifetime,
-        ))
-        .expect("The volume names are statically defined and there should be no duplicates.");
+        )?)
+        .context(AddVolumeSnafu)?;
     cb_kafka
         .add_volume_mount(
             &*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
@@ -271,12 +290,14 @@ pub fn add_broker_volume_and_volume_mounts(
                             SecretClassVolumeProvisionParts::Public,
                         )
                         .build()
-                        .expect("The annotation keys are static and annotation values cannot be invalid."),
+                        .context(OpaTlsCertSecretClassVolumeBuildSnafu)?,
                     )
                     .build(),
             )
-            .expect("The volume names are statically defined and there should be no duplicates.");
+            .context(AddVolumeSnafu)?;
     }
+
+    Ok(())
 }
 
 /// Adds required volumes and volume mounts to the controller pod and container builders
@@ -284,15 +305,14 @@ pub fn add_broker_volume_and_volume_mounts(
 ///
 /// # Panics
 ///
-/// Panics if the volumes or volume mounts cannot be added to the builders. Only call this
-/// on builders whose volume names and mount paths are still distinct from the ones added
-/// here.
+/// Panics if the volume mounts cannot be added to the container builder. Only call this on a
+/// container builder whose mount paths are still distinct from the ones added here.
 pub fn add_controller_volume_and_volume_mounts(
     security: &ValidatedKafkaSecurity,
     pod_builder: &mut PodBuilder,
     cb_kafka: &mut ContainerBuilder,
     requested_secret_lifetime: &Duration,
-) {
+) -> Result<(), Error> {
     pod_builder
         .add_volume(
             VolumeBuilder::new(&*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME)
@@ -308,19 +328,19 @@ pub fn add_controller_volume_and_volume_mounts(
                     .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
                     .with_auto_tls_cert_domain_components_in_subject_dn(true)
                     .build()
-                    .expect(
-                        "The annotation keys are static and annotation values cannot be invalid.",
-                    ),
+                    .context(SecretVolumeBuildSnafu)?,
                 )
                 .build(),
         )
-        .expect("The volume names are statically defined and there should be no duplicates.");
+        .context(AddVolumeSnafu)?;
     cb_kafka
         .add_volume_mount(
             &*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
             STACKABLE_TLS_KAFKA_INTERNAL_DIR,
         )
         .expect("The mount paths are statically defined and there should be no duplicates.");
+
+    Ok(())
 }
 
 /// Inserts the `listener.<name>.ssl.{keystore,truststore}.{location,password,type}`
@@ -552,8 +572,8 @@ fn create_kcat_tls_volume(
     volume_name: &VolumeName,
     secret_class_name: &str,
     requested_secret_lifetime: &Duration,
-) -> Volume {
-    VolumeBuilder::new(volume_name)
+) -> Result<Volume, Error> {
+    Ok(VolumeBuilder::new(volume_name)
         .ephemeral(
             SecretOperatorVolumeSourceBuilder::new(
                 secret_class_name,
@@ -566,9 +586,9 @@ fn create_kcat_tls_volume(
             .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
             .with_auto_tls_cert_domain_components_in_subject_dn(true)
             .build()
-            .expect("The annotation keys are static and annotation values cannot be invalid."),
+            .context(SecretVolumeBuildSnafu)?,
         )
-        .build()
+        .build())
 }
 
 /// Creates ephemeral volumes to mount the `SecretClass` into the Pods as keystores
@@ -576,8 +596,8 @@ fn create_tls_keystore_volume(
     volume_name: &VolumeName,
     secret_class_name: &str,
     requested_secret_lifetime: &Duration,
-) -> Volume {
-    VolumeBuilder::new(volume_name)
+) -> Result<Volume, Error> {
+    Ok(VolumeBuilder::new(volume_name)
         .ephemeral(
             SecretOperatorVolumeSourceBuilder::new(
                 secret_class_name,
@@ -591,9 +611,9 @@ fn create_tls_keystore_volume(
             .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
             .with_auto_tls_cert_domain_components_in_subject_dn(true)
             .build()
-            .expect("The annotation keys are static and annotation values cannot be invalid."),
+            .context(SecretVolumeBuildSnafu)?,
         )
-        .build()
+        .build())
 }
 
 fn kcat_client_auth_ssl(cert_directory: &str) -> Vec<String> {

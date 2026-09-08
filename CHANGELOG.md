@@ -25,7 +25,7 @@ All notable changes to this project will be documented in this file.
   Broker StatefulSets created by older operator versions cannot be updated in place: after the
   operator upgrade, delete each broker StatefulSet so that the operator immediately recreates it
   with the new labels ([#1011]).
-- Make operations infallible where appropriate ([#1017]).
+- Make operations infallible where dependent on static inputs ([#1017]).
 
 ### Fixed
 

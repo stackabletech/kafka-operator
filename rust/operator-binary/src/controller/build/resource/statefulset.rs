@@ -129,6 +129,26 @@ const POD_MANAGEMENT_POLICY_PARALLEL: &str = "Parallel";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
+    #[snafu(display("failed to add kerberos config"))]
+    AddKerberosConfig {
+        source: crate::controller::build::kerberos::Error,
+    },
+
+    #[snafu(display("failed to add listener volume"))]
+    AddListenerVolume {
+        source: stackable_operator::builder::pod::Error,
+    },
+
+    #[snafu(display("failed to add Secret Volumes and VolumeMounts"))]
+    AddVolumesAndVolumeMounts {
+        source: crate::controller::build::security::Error,
+    },
+
+    #[snafu(display("failed to add needed volume"))]
+    AddVolume {
+        source: stackable_operator::builder::pod::Error,
+    },
+
     #[snafu(display("failed to build pod descriptors"))]
     BuildPodDescriptors {
         source: crate::controller::PodDescriptorsError,
@@ -188,7 +208,8 @@ pub fn build_broker_rolegroup_statefulset(
         &mut cb_kcat_prober,
         &mut cb_kafka,
         &requested_secret_lifetime,
-    );
+    )
+    .context(AddVolumesAndVolumeMountsSnafu)?;
 
     let mut pvcs = merged_config.resources().storage.build_pvcs();
 
@@ -209,7 +230,8 @@ pub fn build_broker_rolegroup_statefulset(
             &mut cb_kcat_prober,
             &mut cb_kafka,
             &mut pod_builder,
-        );
+        )
+        .context(AddKerberosConfigSnafu)?;
     }
 
     // Operator-set env vars first; the user's `envOverrides` are merged on top last and win.
@@ -307,7 +329,7 @@ pub fn build_broker_rolegroup_statefulset(
         &mut pod_builder,
         &validated_rg.config.logging,
         &resource_names,
-    );
+    )?;
 
     let metadata = ObjectMetaBuilder::new()
         .with_labels(recommended_labels.clone())
@@ -320,7 +342,7 @@ pub fn build_broker_rolegroup_statefulset(
                 listener_class.as_ref(),
                 &recommended_labels,
             )
-            .expect("The annotation keys are static, annotation values cannot be invalid, and the volume name is statically defined.");
+            .context(AddListenerVolumeSnafu)?;
     }
 
     if let Some(broker_id_config_map_name) = &validated_cluster
@@ -333,7 +355,7 @@ pub fn build_broker_rolegroup_statefulset(
                     .with_config_map(broker_id_config_map_name)
                     .build(),
             )
-            .expect("The volume names are statically defined and there should be no duplicates.");
+            .context(AddVolumeSnafu)?;
         cb_kafka
             .add_volume_mount(&*BROKER_ID_POD_MAP_DIR_NAME, BROKER_ID_POD_MAP_DIR)
             .expect("The mount paths are statically defined and there should be no duplicates.");
@@ -353,7 +375,7 @@ pub fn build_broker_rolegroup_statefulset(
             .cluster_resource_names()
             .service_account_name()
             .as_ref(),
-    );
+    )?;
 
     add_vector_container(
         &mut pod_builder,
@@ -501,7 +523,7 @@ pub fn build_controller_rolegroup_statefulset(
         &mut pod_builder,
         &validated_rg.config.logging,
         &resource_names,
-    );
+    )?;
 
     let metadata = ObjectMetaBuilder::new()
         .with_labels(recommended_labels.clone())
@@ -517,7 +539,8 @@ pub fn build_controller_rolegroup_statefulset(
         &mut pod_builder,
         &mut cb_kafka,
         &requested_secret_lifetime,
-    );
+    )
+    .context(AddVolumesAndVolumeMountsSnafu)?;
 
     let kafka_container = cb_kafka.build();
 
@@ -534,7 +557,7 @@ pub fn build_controller_rolegroup_statefulset(
             .cluster_resource_names()
             .service_account_name()
             .as_ref(),
-    );
+    )?;
 
     add_vector_container(
         &mut pod_builder,
@@ -660,17 +683,11 @@ fn common_kafka_env(
 /// Adds the `log-config` volume, sourced either from the user-supplied custom log config
 /// `ConfigMap` or the rolegroup `ConfigMap` (which carries the operator-generated config).
 /// Branches on the *validated* Kafka-container logging choice.
-///
-/// # Panics
-///
-/// Panics if the volumes or volume mounts cannot be added to the builders. Only call this
-/// on builders whose volume names and mount paths are still distinct from the ones added
-/// here.
 fn add_log_config_volume(
     pod_builder: &mut PodBuilder,
     logging: &ValidatedLogging,
     resource_names: &ResourceNames,
-) {
+) -> Result<(), Error> {
     let config_map = match &logging.kafka_container {
         ValidatedContainerLogConfigChoice::Custom(config_map_name) => config_map_name.to_string(),
         ValidatedContainerLogConfigChoice::Automatic(_) => {
@@ -683,22 +700,17 @@ fn add_log_config_volume(
                 .with_config_map(config_map)
                 .build(),
         )
-        .expect("The volume names are statically defined and there should be no duplicates.");
+        .context(AddVolumeSnafu)?;
+    Ok(())
 }
 
 /// Adds the `config` volume, the `log` emptyDir, the service account and the pod security
 /// context that the broker and controller pods share.
-///
-/// # Panics
-///
-/// Panics if the volumes or volume mounts cannot be added to the builders. Only call this
-/// on builders whose volume names and mount paths are still distinct from the ones added
-/// here.
 fn add_common_pod_config(
     pod_builder: &mut PodBuilder,
     resource_names: &ResourceNames,
     service_account_name: &str,
-) {
+) -> Result<(), Error> {
     pod_builder
         .add_volume(Volume {
             name: STACKABLE_CONFIG_DIR_NAME.to_string(),
@@ -708,20 +720,21 @@ fn add_common_pod_config(
             }),
             ..Volume::default()
         })
-        .expect("The volume names are statically defined and there should be no duplicates.")
+        .context(AddVolumeSnafu)?
         .add_empty_dir_volume(
             &*STACKABLE_LOG_DIR_NAME,
             Some(product_logging::framework::calculate_log_volume_size_limit(
                 &[MAX_KAFKA_LOG_FILES_SIZE],
             )),
         )
-        .expect("The volume names are statically defined and there should be no duplicates.")
+        .context(AddVolumeSnafu)?
         .service_account_name(service_account_name)
         .security_context(
             PodSecurityContextBuilder::with_stackable_defaults()
                 .fs_group(1000)
                 .build(),
         );
+    Ok(())
 }
 
 /// Adds the Vector log-aggregation sidecar container, when the Vector agent is enabled.

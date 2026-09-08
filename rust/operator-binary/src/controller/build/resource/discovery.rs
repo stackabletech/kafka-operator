@@ -17,6 +17,11 @@ use crate::{
 pub enum Error {
     #[snafu(display("nodePort was out of range"))]
     InvalidNodePort { source: TryFromIntError },
+
+    #[snafu(display("failed to build ConfigMap"))]
+    BuildConfigMap {
+        source: stackable_operator::builder::configmap::Error,
+    },
 }
 
 /// Build a discovery [`ConfigMap`] containing information about how to connect to a certain
@@ -71,7 +76,7 @@ pub fn build_discovery_configmap(validated_cluster: &ValidatedCluster) -> Result
         )
         .add_data("KAFKA", bootstrap_servers)
         .build()
-        .expect("The ConfigMap metadata is set in this function.");
+        .context(BuildConfigMapSnafu)?;
 
     Ok(discovery_cm)
 }
