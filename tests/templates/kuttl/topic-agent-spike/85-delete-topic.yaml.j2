@@ -1,0 +1,11 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 300
+commands:
+  # Delete the KafkaTopic CR. The agent's finalizer runs reconcile_cleanup → DeleteTopics → the topic
+  # is removed from Kafka, then the finalizer is cleared and the CR disappears. --wait=false so the
+  # 85-assert observes the finalizer-gated deletion completing.
+  - script: kubectl delete kafkatopic test-topic -n $NAMESPACE --wait=false
+  # Let the finalizer run (reconcile_cleanup -> DeleteTopics -> finalizer cleared) before asserting.
+  - script: sleep 10

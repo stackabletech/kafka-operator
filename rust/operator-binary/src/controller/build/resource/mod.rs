@@ -2,6 +2,7 @@
 
 pub mod config_map;
 pub mod discovery;
+pub mod kafka_agent;
 pub mod listener;
 pub mod pdb;
 pub mod probes;

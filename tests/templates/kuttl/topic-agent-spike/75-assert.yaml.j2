@@ -1,0 +1,19 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 600
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+status:
+  readyReplicas: 3
+  replicas: 3
+---
+apiVersion: autoscaling.stackable.tech/v1alpha1
+kind: Scaler
+metadata:
+  name: test-kafka-broker-default-scaler
+status:
+  replicas: 3

@@ -1,0 +1,33 @@
+[package]
+name = "stackable-kafka-agent"
+description = "Per-cluster Kafka agent for the Stackable Operator for Apache Kafka (spike)"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+# Shared CRD types + operator constants (the agent must not fork them).
+stackable-kafka-operator.workspace = true
+stackable-operator.workspace = true
+
+# Native-Rust Kafka admin client (spike R3): the wire protocol, mTLS transport, topic CRUD and the
+# broker-drain reassignment live in this crate (extracted from the former `kafka_client` module). Now
+# an in-tree workspace member (`rust/tokio-kafka`), so it is inside the Docker/Tilt build context.
+tokio-kafka = { path = "../tokio-kafka" }
+
+anyhow.workspace = true
+clap.workspace = true
+futures.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+snafu.workspace = true
+strum.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[[bin]]
+name = "stackable-kafka-agent"
+path = "src/main.rs"

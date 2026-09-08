@@ -1,0 +1,16 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+commands:
+  # The agent applied the update in Kafka: 9 partitions now, and the new retention config.
+  - script: |
+      set -e
+      DESC=$(kubectl exec -n "$NAMESPACE" test-kafka-broker-default-0 -c kafka -- \
+        /stackable/kafka/bin/kafka-topics.sh \
+        --bootstrap-server "test-kafka-broker-default-bootstrap.$NAMESPACE.svc.cluster.local:9093" \
+        --command-config /stackable/config/client.properties \
+        --describe --topic test-topic 2>/dev/null)
+      echo "$DESC"
+      echo "$DESC" | grep -qE 'PartitionCount: *9\b'
+      echo "$DESC" | grep -q 'retention.ms=1200000'

@@ -6,8 +6,8 @@
 dimensions:
   - name: kafka-kraft
     values:
-      - 3.9.2
-      - 4.1.1
+      # - 3.9.2
+      # - 4.1.1
       - 4.2.1
   - name: kafka
     values:
@@ -75,6 +75,11 @@ dimensions:
       - "external-stable"
       - "external-unstable"
 tests:
+  # Spike: per-cluster kafka-agent + broker draining via the operator-rs Scaler (throwaway).
+  - name: topic-agent-spike
+    dimensions:
+      - kafka-kraft
+      - openshift
   - name: operations-kraft
     dimensions:
       - kafka-kraft

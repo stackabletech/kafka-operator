@@ -1,0 +1,19 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 600
+commands:
+  # Feature 3: the gated drain. Scale the broker Scaler DOWN 3 -> 2 via its /scale subresource.
+  # This is the live frontier of the spike. A scale-DOWN takes the must-gate path:
+  #   Scaler -> PreScaling -> operator's pre_scale hook creates a `scale-down` AgentRequest
+  #   (test-kafka-broker-default-scaler-scaledown) naming the removed broker's ordinal in `context`
+  #   -> the agent reconciles it: connects over `kafka_client` (mTLS), computes a reassignment plan
+  #   moving every partition off the draining broker onto a survivor (keeping RF), submits
+  #   AlterPartitionReassignments(45), polls ListPartitionReassignments(46) until empty, sets
+  #   status.phase=Done -> the hook reads Done -> Scaler advances to Scaling -> status.replicas=2
+  #   -> resolve_replicas drives the broker STS down to 2 -> post_scale unregisters the broker.
+  # The STS only shrinks AFTER the drain reports Done, so a healthy STS=2 transitively proves the drain.
+  - script: kubectl scale scaler/test-kafka-broker-default-scaler --replicas=2 -n $NAMESPACE
+  # Short pause so the AgentRequest exists and the drain is running — but not so long we miss the
+  # (sustained) preScaling window the mid-drain assert wants to catch.
+  - script: sleep 5

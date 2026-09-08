@@ -12,7 +12,7 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
     controller::{Applied, KubernetesResources},
-    crd::{KAFKA_OPERATOR_NAME, KafkaClusterStatus, v1alpha1},
+    crd::{AgentStatus, KAFKA_OPERATOR_NAME, KafkaClusterStatus, v1alpha1},
 };
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
@@ -33,6 +33,7 @@ pub async fn update_status(
     client: &Client,
     kafka: &v1alpha1::KafkaCluster,
     applied: KubernetesResources<Applied>,
+    agent: Option<AgentStatus>,
 ) -> Result<()> {
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
     for stateful_set in applied.stateful_sets {
@@ -44,6 +45,7 @@ pub async fn update_status(
 
     let status = KafkaClusterStatus {
         conditions: compute_conditions(kafka, &[&ss_cond_builder, &cluster_operation_cond_builder]),
+        agent,
     };
 
     client

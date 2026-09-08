@@ -1,0 +1,49 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+# Terminal: the 3->2 drain finished and the gate released the decrement. Everything here is a resource
+# stanza (kuttl polls silently — no per-retry command echo), which works because this is a deterministic
+# spike: the AgentRequest names are predictable (gen = the Scaler's metadata.generation at this scale;
+# create=1, step30=2, step50=3). Reaching Scaler `idle` requires BOTH gated steps to have reported Done.
+# progress.total is 0 at Done (build_plan re-derives: once the partitions are moved off, nothing is
+# "moving"), so only remaining: 0 is asserted.
+timeout: 900
+---
+# The drain AgentRequest completed (remaining 0).
+apiVersion: platform.stackable.tech/v1alpha1
+kind: AgentRequest
+metadata:
+  name: test-kafka-broker-default-scaler-scaledown-gen3
+status:
+  phase: done
+  progress:
+    remaining: 0
+---
+# The PostScaling unregister ran and reached Done (agent writes Done only after UnregisterBroker
+# succeeded → the removed broker's stale registration was cleaned out of the cluster metadata).
+apiVersion: platform.stackable.tech/v1alpha1
+kind: AgentRequest
+metadata:
+  name: test-kafka-broker-default-scaler-unregister-gen3
+status:
+  phase: done
+---
+# Scaler settled back to idle at 2.
+apiVersion: autoscaling.stackable.tech/v1alpha1
+kind: Scaler
+metadata:
+  name: test-kafka-broker-default-scaler
+status:
+  replicas: 2
+  state:
+    idle: {}
+---
+# The broker STS shrank to 2 — only because reconcile_scaler wrote replicas=2 AFTER the drain reported
+# Done, so a healthy 2/2 is the k8s-level proxy that the drain completed first.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+status:
+  readyReplicas: 2
+  replicas: 2

@@ -65,7 +65,7 @@ use crate::{
         update_status::update_status,
     },
     crd::{
-        APP_NAME, KAFKA_OPERATOR_NAME, KafkaPodDescriptor, MetadataManager,
+        APP_NAME, FIELD_MANAGER, KAFKA_OPERATOR_NAME, KafkaPodDescriptor, MetadataManager,
         authorization::KafkaAuthorizationConfig,
         role::{AnyConfig, AnyConfigOverrides, KafkaRole},
         v1alpha1,
@@ -397,6 +397,11 @@ pub type ValidatedRoleGroupConfig = stackable_operator::v2::role_utils::RoleGrou
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
     pub operator_environment: OperatorEnvironmentOptions,
+    /// The operator's own container image (used for image annotations).
+    pub operator_image: Option<String>,
+    /// The **agent** container image, run by per-cluster kafka-agent Deployments (the agent is its
+    /// own binary/image now, spike R2.2). `None` ⇒ no agent Deployment is built.
+    pub agent_image: Option<String>,
 }
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
@@ -422,6 +427,14 @@ pub enum Error {
     InvalidKafkaCluster {
         source: error_boundary::InvalidObject,
     },
+
+    #[snafu(display("failed to ensure broker Scalers"))]
+    EnsureScalers {
+        source: crate::scaler_controller::EnsureScalerError,
+    },
+
+    #[snafu(display("failed to deploy the kafka-agent"))]
+    ApplyAgent { source: apply::Error },
 }
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -438,6 +451,8 @@ impl ReconcilerError for Error {
             Error::ApplyResources { .. } => None,
             Error::UpdateStatus { .. } => None,
             Error::InvalidKafkaCluster { .. } => None,
+            Error::EnsureScalers { .. } => None,
+            Error::ApplyAgent { .. } => None,
         }
     }
 }
@@ -466,6 +481,25 @@ pub async fn reconcile_kafka(
         validate::validate(kafka, dereferenced_objects, &ctx.operator_environment)
             .context(ValidateClusterSnafu)?;
 
+    // Scaler seam (spike Part C): ensure one Scaler per broker role group and read them back, so the
+    // broker STS build can consult `resolve_replicas`. Only wired when the cluster grants
+    // platformAccess (i.e. the agent that reports drain progress is deployed) — otherwise there is no
+    // agent to advance the state machine and gating scale-down would hang.
+    let broker_scalers = if kafka.spec.cluster_config.platform_access.is_some() {
+        let broker_role_groups: BTreeMap<String, i32> = kafka
+            .spec
+            .brokers
+            .role_groups
+            .iter()
+            .map(|(name, rg)| (name.clone(), rg.replicas.map(i32::from).unwrap_or(1)))
+            .collect();
+        crate::scaler_controller::ensure_broker_scalers(client, kafka, &broker_role_groups)
+            .await
+            .context(EnsureScalersSnafu)?
+    } else {
+        BTreeMap::new()
+    };
+
     tracing::debug!(
         kerberos_enabled = validated_cluster.cluster_config.kafka_security.has_kerberos_enabled(),
         kerberos_secret_class = ?validated_cluster.cluster_config.kafka_security.kerberos_secret_class(),
@@ -475,7 +509,7 @@ pub async fn reconcile_kafka(
     );
 
     // build (no client required)
-    let resources = build::build(&validated_cluster).context(BuildResourcesSnafu)?;
+    let resources = build::build(&validated_cluster, &broker_scalers).context(BuildResourcesSnafu)?;
 
     // apply (client required)
     let applier = Applier::new(
@@ -489,12 +523,86 @@ pub async fn reconcile_kafka(
         .await
         .context(ApplyResourcesSnafu)?;
 
+    // Agent liveness (spike): when platformAccess is set, read the agent's heartbeat Lease and surface
+    // AgentUnavailable on the status. Best-effort — a Lease-read error must not fail the reconcile.
+    let agent_status = if kafka.spec.cluster_config.platform_access.is_some() {
+        let cluster_name = validated_cluster.name.to_string();
+        let namespace = validated_cluster.namespace.to_string();
+        match crate::agent_lease::is_agent_alive(client, &namespace, &cluster_name).await {
+            Ok(available) => Some(crate::crd::AgentStatus {
+                available,
+                message: if available {
+                    "the kafka-agent liveness Lease is fresh".to_string()
+                } else {
+                    "AgentUnavailable: the kafka-agent liveness Lease is stale or absent".to_string()
+                },
+            }),
+            Err(error) => {
+                tracing::warn!(%error, "could not read the kafka-agent liveness Lease");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // update status (client required)
-    update_status(client, kafka, applied)
+    update_status(client, kafka, applied, agent_status)
         .await
         .context(UpdateStatusSnafu)?;
 
+    // Deploy the per-cluster kafka-agent when platformAccess is configured (spike Part B). The agent
+    // holds the Kafka grant; the operator only deploys it and grants (namespaced) RBAC.
+    if let Some(platform_access) = &kafka.spec.cluster_config.platform_access {
+        apply_kafka_agent(client, &validated_cluster, platform_access, &ctx.agent_image)
+            .await
+            .context(ApplyAgentSnafu)?;
+        // Requeue so the agent's Lease staleness is re-evaluated: a Lease has no "expired" event to
+        // watch, it just stops being renewed — polling is how the operator notices the agent went away.
+        return Ok(Action::requeue(std::time::Duration::from_secs(20)));
+    }
+
     Ok(Action::await_change())
+}
+
+/// Applies the kafka-agent's Deployment + ServiceAccount + (namespaced) Role + RoleBinding.
+async fn apply_kafka_agent(
+    client: &stackable_operator::client::Client,
+    validated_cluster: &ValidatedCluster,
+    platform_access: &crate::crd::platform_access::v1alpha1::KafkaPlatformAccess,
+    agent_image: &Option<String>,
+) -> Result<(), apply::Error> {
+    use crate::controller::build::resource::kafka_agent::build_kafka_agent;
+
+    // The agent reads its bootstrap servers from the cluster's discovery ConfigMap, which the operator
+    // mounts into the agent Deployment (see `build_kafka_agent`) — no bootstrap address is computed or
+    // passed here (this resolves the earlier hard-coded-DNS SPIKE-TODO).
+    let Some(agent) = build_kafka_agent(validated_cluster, platform_access, agent_image.as_deref())
+        .map_err(|source| apply::Error::BuildAgent { source })?
+    else {
+        return Ok(());
+    };
+
+    // Plain server-side applies (the agent resources are not part of the ClusterResources set).
+    client
+        .apply_patch(FIELD_MANAGER, &agent.service_account, &agent.service_account)
+        .await
+        .map_err(|source| apply::Error::ApplyAgent { source })?;
+    // The operator owns the Lease's existence (owner-ref'd → GCs with the cluster); the agent owns only
+    // its heartbeat fields via a distinct field manager, so this apply never clobbers a fresh renewal.
+    client
+        .apply_patch(FIELD_MANAGER, &agent.lease, &agent.lease)
+        .await
+        .map_err(|source| apply::Error::ApplyAgent { source })?;
+    client
+        .apply_patch(FIELD_MANAGER, &agent.role_binding, &agent.role_binding)
+        .await
+        .map_err(|source| apply::Error::ApplyAgent { source })?;
+    client
+        .apply_patch(FIELD_MANAGER, &agent.deployment, &agent.deployment)
+        .await
+        .map_err(|source| apply::Error::ApplyAgent { source })?;
+    Ok(())
 }
 
 pub fn error_policy(

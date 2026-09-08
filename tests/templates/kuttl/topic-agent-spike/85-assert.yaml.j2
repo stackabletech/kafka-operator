@@ -1,0 +1,15 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+# The CR is gone (the finalizer ran to completion) AND the topic is gone from Kafka (the agent's
+# reconcile_cleanup ran DeleteTopics before clearing the finalizer).
+commands:
+  - script: |
+      set -e
+      ! kubectl -n "$NAMESPACE" get kafkatopic test-topic
+      ! kubectl exec -n "$NAMESPACE" test-kafka-broker-default-0 -c kafka -- \
+        /stackable/kafka/bin/kafka-topics.sh \
+        --bootstrap-server "test-kafka-broker-default-bootstrap.$NAMESPACE.svc.cluster.local:9093" \
+        --command-config /stackable/config/client.properties \
+        --list 2>/dev/null | grep -qx 'test-topic'

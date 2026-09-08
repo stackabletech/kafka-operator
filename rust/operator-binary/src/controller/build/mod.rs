@@ -64,7 +64,15 @@ pub enum Error {
 /// dereference step; see
 /// [`build_discovery_configmap`] for how its
 /// content depends on their ingress addresses.
-pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>, Error> {
+pub fn build(
+    cluster: &ValidatedCluster,
+    // Scalers for broker role groups (spike Part C), keyed by role-group name. Empty when no
+    // platformAccess/externally-managed scaling is configured.
+    broker_scalers: &std::collections::BTreeMap<
+        String,
+        stackable_operator::crd::scaler::v1alpha1::Scaler,
+    >,
+) -> Result<KubernetesResources<Prepared>, Error> {
     let mut stateful_sets = vec![];
     let mut services = vec![];
     let mut listeners = vec![];
@@ -120,9 +128,13 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>
             );
 
             let stateful_set = match role {
-                KafkaRole::Broker => {
-                    build_broker_rolegroup_statefulset(role, role_group_name, cluster, validated_rg)
-                }
+                KafkaRole::Broker => build_broker_rolegroup_statefulset(
+                    role,
+                    role_group_name,
+                    cluster,
+                    validated_rg,
+                    broker_scalers.get(role_group_name.as_ref()),
+                ),
                 KafkaRole::Controller => build_controller_rolegroup_statefulset(
                     role,
                     role_group_name,
@@ -309,13 +321,13 @@ mod tests {
         );
         let cluster = validated_cluster(&kafka);
 
-        build(&cluster).expect("build succeeds when the whole KRaft cluster is stopped");
+        build(&cluster, &Default::default()).expect("build succeeds when the whole KRaft cluster is stopped");
     }
 
     #[test]
     fn build_produces_expected_resource_names() {
         let cluster = kraft_mode_cluster();
-        let resources = build(&cluster).expect("build succeeds");
+        let resources = build(&cluster, &Default::default()).expect("build succeeds");
 
         // One StatefulSet per role group.
         assert_eq!(
@@ -381,7 +393,7 @@ mod tests {
             "host1", &port_name, 9093,
         )]))];
 
-        let resources = build(&cluster).expect("build succeeds");
+        let resources = build(&cluster, &Default::default()).expect("build succeeds");
 
         let discovery_cm = resources
             .config_maps
@@ -402,7 +414,7 @@ mod tests {
     #[test]
     fn quorum_manager_sidecar_mounts_every_directory_referenced_by_admin_client_properties() {
         let cluster = kraft_mode_cluster();
-        let resources = build(&cluster).expect("build succeeds");
+        let resources = build(&cluster, &Default::default()).expect("build succeeds");
 
         let controller_sts = resources
             .stateful_sets
@@ -460,7 +472,7 @@ mod tests {
     #[test]
     fn every_container_has_a_1_to_1_memory_limit_to_request_ratio() {
         let cluster = kraft_mode_cluster();
-        let resources = build(&cluster).expect("build succeeds");
+        let resources = build(&cluster, &Default::default()).expect("build succeeds");
 
         for sts in &resources.stateful_sets {
             let pod_spec = sts
@@ -506,7 +518,7 @@ mod tests {
     #[test]
     fn broker_node_id_offset_env_var_is_unchanged_by_the_shared_computation_refactor() {
         let cluster = kraft_mode_cluster();
-        let resources = build(&cluster).expect("build succeeds");
+        let resources = build(&cluster, &Default::default()).expect("build succeeds");
 
         let broker_sts = resources
             .stateful_sets
@@ -544,7 +556,7 @@ mod tests {
     #[test]
     fn build_zookeeper_mode_has_no_controller_resources() {
         let cluster = zookeeper_mode_cluster();
-        let resources = build(&cluster).expect("build succeeds");
+        let resources = build(&cluster, &Default::default()).expect("build succeeds");
 
         assert_eq!(
             sorted_names(&resources.stateful_sets),

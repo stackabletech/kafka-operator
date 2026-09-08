@@ -2,8 +2,10 @@ pub mod affinity;
 pub mod authentication;
 pub mod authorization;
 pub mod listener;
+pub mod platform_access;
 pub mod role;
 pub mod tls;
+pub mod topic;
 
 use std::str::FromStr;
 
@@ -233,6 +235,14 @@ pub mod versioned {
         ///
         #[serde(skip_serializing_if = "Option::is_none")]
         pub broker_id_pod_config_map_name: Option<ConfigMapName>,
+
+        /// Grants the Stackable platform authenticated access to this Kafka cluster (spike).
+        ///
+        /// When set, the operator deploys a per-cluster kafka-agent that owns `KafkaTopic`
+        /// provisioning (native `rdkafka` over mTLS) and the credentialed broker drain, using the
+        /// credential named here. The operator itself holds no Kafka credentials.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub platform_access: Option<platform_access::v1alpha1::KafkaPlatformAccess>,
     }
 
     #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Merge, PartialEq, Serialize)]
@@ -266,6 +276,7 @@ impl Default for v1alpha1::KafkaClusterConfig {
             zookeeper_config_map_name: None,
             metadata_manager: None,
             broker_id_pod_config_map_name: None,
+            platform_access: None,
         }
     }
 }
@@ -343,6 +354,24 @@ pub struct KafkaPodDescriptor {
 pub struct KafkaClusterStatus {
     #[serde(default)]
     pub conditions: Vec<ClusterCondition>,
+
+    /// Liveness of the per-cluster kafka-agent (spike), derived from its heartbeat Lease. `None` when
+    /// no agent is expected (no `platformAccess`). This is a dedicated field rather than a
+    /// `ClusterCondition` because the condition-merge machinery aggregates on `Available` semantics
+    /// (an agent-down `Degraded=True` would be overridden by the healthy STS `Degraded=False`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentStatus>,
+}
+
+/// Liveness of the per-cluster kafka-agent, from its heartbeat Lease.
+#[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentStatus {
+    /// `true` while the agent's Lease is fresh (the agent process is running and heartbeating);
+    /// `false` = `AgentUnavailable` (crashloop, OOM, unschedulable, deleted, dead node, …).
+    pub available: bool,
+    /// Human-readable detail.
+    pub message: String,
 }
 
 #[derive(

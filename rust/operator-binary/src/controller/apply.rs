@@ -28,6 +28,16 @@ pub enum Error {
     DeleteOrphanedResources {
         source: stackable_operator::cluster_resources::Error,
     },
+
+    #[snafu(display("failed to build the kafka-agent resources"))]
+    BuildAgent {
+        source: crate::controller::build::resource::kafka_agent::Error,
+    },
+
+    #[snafu(display("failed to apply a kafka-agent resource"))]
+    ApplyAgent {
+        source: stackable_operator::client::Error,
+    },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;

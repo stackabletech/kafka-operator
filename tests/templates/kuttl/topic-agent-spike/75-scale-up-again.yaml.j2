@@ -1,0 +1,10 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 600
+commands:
+  # Bring a third broker back (no-drain path) so the next scale-down is a fresh, second drain — used to
+  # prove the R4 unique-name (gen<N>) + retain behaviour across repeated drains.
+  - script: kubectl scale scaler/test-kafka-broker-default-scaler --replicas=3 -n $NAMESPACE
+  # Let the scale-up (STS 2 -> 3) settle before asserting.
+  - script: sleep 30

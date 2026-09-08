@@ -1,0 +1,29 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+# Mid-drain: caught WHILE the 3->2 drain runs (preScaling/InProgress are sustained for the whole drain,
+# and the produced data widens the window). The Scaler-in-preScaling and AgentRequest-inProgress checks
+# are resource stanzas (silent). Only progress.total > 0 stays a command — a stanza can't express ">0",
+# and this is the regression guard that the ordinal->node-id map found REAL partitions (not total=0 =>
+# instant Done, no data moved). gen3 = the Scaler generation at this scale (create=1, step30=2, step50=3).
+timeout: 300
+commands:
+  - script: |
+      test "$(kubectl -n "$NAMESPACE" get agentrequest \
+        test-kafka-broker-default-scaler-scaledown-gen3 \
+        -o jsonpath='{.status.progress.total}')" -gt 0
+---
+apiVersion: autoscaling.stackable.tech/v1alpha1
+kind: Scaler
+metadata:
+  name: test-kafka-broker-default-scaler
+status:
+  state:
+    preScaling: {}
+---
+apiVersion: platform.stackable.tech/v1alpha1
+kind: AgentRequest
+metadata:
+  name: test-kafka-broker-default-scaler-scaledown-gen3
+status:
+  phase: inProgress

@@ -1056,6 +1056,58 @@ spec:
                     - null
                     nullable: true
                     type: string
+                  platformAccess:
+                    description: |-
+                      Grants the Stackable platform authenticated access to this Kafka cluster (spike).
+
+                      When set, the operator deploys a per-cluster kafka-agent that owns `KafkaTopic`
+                      provisioning (native `rdkafka` over mTLS) and the credentialed broker drain, using the
+                      credential named here. The operator itself holds no Kafka credentials.
+                    nullable: true
+                    properties:
+                      credential:
+                        description: |-
+                          The client credential (certificate + private key) the agent authenticates with. Exactly
+                          one variant. Both variants land on the same files (`tls.crt` / `tls.key`) in the same
+                          directory, so the agent code is identical across them.
+                        oneOf:
+                        - required:
+                          - secretClass
+                        - required:
+                          - secret
+                        properties:
+                          secret:
+                            description: |-
+                              The name of an existing `kubernetes.io/tls` Secret. Its well-known `tls.crt` / `tls.key`
+                              keys are mounted directly, producing exactly the layout a secret-operator CSI volume does.
+                            type: string
+                          secretClass:
+                            description: |-
+                              A [SecretClass](https://docs.stackable.tech/home/nightly/secret-operator/secretclass) that
+                              secret-operator mints a certificate from, mounted into the agent via a CSI ephemeral
+                              volume (never written to etcd).
+                            maxLength: 253
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                            type: string
+                        type: object
+                      trustAnchorSecretClass:
+                        description: |-
+                          The [SecretClass](https://docs.stackable.tech/home/nightly/secret-operator/secretclass) whose CA Kafka
+                          should trust for platform (agent) client certificates.
+
+                          Kept separate from `credential` because a customer-supplied static certificate
+                          (`credential.secret`) has no SecretClass CA to expose, so the trust anchor must be stated
+                          explicitly. For a minted certificate this typically names the same SecretClass as
+                          `credential.secretClass`.
+                        maxLength: 253
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                        type: string
+                    required:
+                    - credential
+                    - trustAnchorSecretClass
+                    type: object
                   tls:
                     default:
                       internalSecretClass: tls
@@ -2107,6 +2159,26 @@ spec:
           status:
             nullable: true
             properties:
+              agent:
+                description: |-
+                  Liveness of the per-cluster kafka-agent (spike), derived from its heartbeat Lease. `None` when
+                  no agent is expected (no `platformAccess`). This is a dedicated field rather than a
+                  `ClusterCondition` because the condition-merge machinery aggregates on `Available` semantics
+                  (an agent-down `Degraded=True` would be overridden by the healthy STS `Degraded=False`).
+                nullable: true
+                properties:
+                  available:
+                    description: |-
+                      `true` while the agent's Lease is fresh (the agent process is running and heartbeating);
+                      `false` = `AgentUnavailable` (crashloop, OOM, unschedulable, deleted, dead node, …).
+                    type: boolean
+                  message:
+                    description: Human-readable detail.
+                    type: string
+                required:
+                - available
+                - message
+                type: object
               conditions:
                 default: []
                 items:
@@ -2149,6 +2221,121 @@ spec:
         required:
         - spec
         title: KafkaCluster
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: kafkatopics.kafka.stackable.tech
+spec:
+  group: kafka.stackable.tech
+  names:
+    kind: KafkaTopic
+    plural: kafkatopics
+    shortNames:
+    - kafkatopic
+    singular: kafkatopic
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: A Kafka topic managed by the Stackable operator for Apache Kafka, provisioned by the per-cluster kafka-agent.
+        properties:
+          spec:
+            description: |-
+              A Kafka topic managed by the Stackable operator for Apache Kafka. Provisioned by the
+              per-cluster kafka-agent against a live Kafka cluster over mTLS.
+            properties:
+              clusterRef:
+                description: The `KafkaCluster` this topic lives in. The agent for that cluster owns provisioning.
+                properties:
+                  name:
+                    description: The name of the cluster
+                    nullable: true
+                    type: string
+                  namespace:
+                    description: |-
+                      The namespace of the cluster
+
+                      This field is optional, and will default to the namespace of the referring object.
+                    nullable: true
+                    type: string
+                type: object
+              config:
+                additionalProperties:
+                  type: string
+                default: {}
+                description: |-
+                  Extra per-topic configuration (e.g. `retention.ms`), applied verbatim as Kafka topic
+                  config entries.
+                type: object
+              partitions:
+                description: Number of partitions for the topic.
+                format: int32
+                type: integer
+              replicationFactor:
+                description: Replication factor for the topic.
+                format: int32
+                type: integer
+              topicName:
+                description: The Kafka topic name. Defaults to the object's own name when unset.
+                nullable: true
+                type: string
+            required:
+            - clusterRef
+            - partitions
+            - replicationFactor
+            type: object
+          status:
+            nullable: true
+            properties:
+              conditions:
+                default: []
+                items:
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status to another.
+                      format: date-time
+                      nullable: true
+                      type: string
+                    message:
+                      description: A human readable message indicating details about the transition.
+                      nullable: true
+                      type: string
+                    reason:
+                      description: The reason for the condition's last transition.
+                      nullable: true
+                      type: string
+                    status:
+                      description: Status of the condition, one of True, False, Unknown.
+                      enum:
+                      - 'True'
+                      - 'False'
+                      - Unknown
+                      type: string
+                    type:
+                      description: Type of deployment condition.
+                      enum:
+                      - Available
+                      - Degraded
+                      - Progressing
+                      - ReconciliationPaused
+                      - Stopped
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+            type: object
+        required:
+        - spec
+        title: KafkaTopic
         type: object
     served: true
     storage: true

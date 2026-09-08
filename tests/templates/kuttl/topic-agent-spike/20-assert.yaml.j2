@@ -1,0 +1,33 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 600
+---
+# KRaft controllers are up (brokers are still 0 — the Scaler brings them up in step 30).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-controller-default
+status:
+  readyReplicas: 1
+  replicas: 1
+---
+# The operator created a Scaler for the broker role group (spike Part C).
+apiVersion: autoscaling.stackable.tech/v1alpha1
+kind: Scaler
+metadata:
+  name: test-kafka-broker-default-scaler
+---
+# platformAccess is set → the operator deployed the per-cluster kafka-agent and it became Ready.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-kafka-kafka-agent
+status:
+  readyReplicas: 1
+---
+# The agent renews its liveness Lease (the operator watches it to surface AgentUnavailable).
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: test-kafka-kafka-agent

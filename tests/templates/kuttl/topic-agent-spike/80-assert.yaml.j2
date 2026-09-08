@@ -1,0 +1,33 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+# Below-RF (2->1): the gate REFUSED the unsafe drain. The scaledown AgentRequest reported Failed (not a
+# silent Done), the Scaler failed in PreScaling, and the STS stayed at 2 (never decremented). All
+# resource stanzas → silent. gen6: create=1, 30=2, 50=3, 75=4, 77=5, 80=6. There is NO unregister-gen6
+# — post_scale never runs when PreScaling fails.
+timeout: 300
+---
+apiVersion: platform.stackable.tech/v1alpha1
+kind: AgentRequest
+metadata:
+  name: test-kafka-broker-default-scaler-scaledown-gen6
+status:
+  phase: failed
+---
+apiVersion: autoscaling.stackable.tech/v1alpha1
+kind: Scaler
+metadata:
+  name: test-kafka-broker-default-scaler
+status:
+  state:
+    failed: {}
+---
+# The gate HELD: the broker STS was NOT decremented to 1 (stays 2). If the drain had silently succeeded
+# (the bug this fixes), the STS would drop to 1 and this would never match.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+status:
+  readyReplicas: 2
+  replicas: 2

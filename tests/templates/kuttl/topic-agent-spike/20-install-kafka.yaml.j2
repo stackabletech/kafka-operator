@@ -1,0 +1,41 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 600
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+spec:
+  image:
+{% if test_scenario['values']['kafka-kraft'].find(",") > 0 %}
+    custom: "{{ test_scenario['values']['kafka-kraft'].split(',')[1] }}"
+    productVersion: "{{ test_scenario['values']['kafka-kraft'].split(',')[0] }}"
+{% else %}
+    productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
+{% endif %}
+    pullPolicy: IfNotPresent
+  clusterConfig:
+    metadataManager: kraft
+    authentication:
+      - authenticationClass: test-kafka-client-auth-tls
+    tls:
+      serverSecretClass: tls
+    # Spike: grant the platform (agent) mTLS access. The operator then deploys a per-cluster
+    # kafka-agent (owns KafkaTopic provisioning + the broker drain) and creates a Scaler per broker
+    # role group. Trust anchor + credential name the same autoTLS SecretClass (minted-cert case).
+    platformAccess:
+      trustAnchorSecretClass: test-kafka-client-auth-tls
+      credential:
+        secretClass: test-kafka-client-auth-tls
+  controllers:
+    roleGroups:
+      default:
+        replicas: 1
+  brokers:
+    # `replicas: 0` = externally-managed convention: the Scaler drives the broker STS (spike Part C).
+    # Brokers start at 0; step 30 scales them up via the Scaler's /scale subresource.
+    roleGroups:
+      default:
+        replicas: 0

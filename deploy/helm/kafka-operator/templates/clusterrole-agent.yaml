@@ -1,0 +1,84 @@
+---
+# Agent ClusterRole (spike R2.2): bound to the per-cluster kafka-agent's ServiceAccount via a
+# per-KafkaCluster *RoleBinding* — so, despite being a ClusterRole *definition*, the granted access is
+# confined to each agent's own namespace. The operator *binds* this pre-defined ClusterRole (see the
+# `bind` grant in clusterrole-operator.yaml) rather than minting a Role, mirroring the product
+# ClusterRole above; this avoids k8s privilege-escalation, since the operator need not itself hold
+# these permissions (e.g. kafkatopics).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "operator.name" . }}-agent-clusterrole
+  labels:
+  {{- include "operator.labels" . | nindent 4 }}
+rules:
+  # The KafkaTopic CRs the agent reconciles (+ status/finalizers).
+  - apiGroups:
+      - kafka.stackable.tech
+    resources:
+      - kafkatopics
+      - kafkatopics/status
+      - kafkatopics/finalizers
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # The parent KafkaCluster (read-only, to resolve connection details).
+  - apiGroups:
+      - kafka.stackable.tech
+    resources:
+      - kafkaclusters
+    verbs:
+      - get
+      - list
+      - watch
+  # The AgentRequest transport the agent reconciles and is the sole status-writer of.
+  - apiGroups:
+      - platform.stackable.tech
+    resources:
+      - agentrequests
+      - agentrequests/status
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # Discovery ConfigMaps (read).
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+  # The agent's liveness Lease (renewed so the operator can surface AgentUnavailable).
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # Events for reporting. The stackable_operator `Recorder` uses the newer `events.k8s.io` API, so
+  # both groups are granted (the agent 403'd on `events.events.k8s.io` publishing reconcile errors).
+  - apiGroups:
+      - ""
+      - events.k8s.io
+    resources:
+      - events
+    verbs:
+      - create
+      - patch

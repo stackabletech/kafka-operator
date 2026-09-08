@@ -1,0 +1,11 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 300
+commands:
+  # Failure path: drain 2 -> 1 with RF2. One survivor can't keep RF, so the agent's reassign_off now
+  # REFUSES (CannotDrainBelowReplicationFactor) instead of silently reporting Done and removing the
+  # broker under-replicated. The Scaler must FAIL in PreScaling and NOT decrement the STS.
+  - script: kubectl scale scaler/test-kafka-broker-default-scaler --replicas=1 -n $NAMESPACE
+  # Give the drain attempt time to run, refuse (CannotDrainBelowReplicationFactor) and fail the Scaler.
+  - script: sleep 20

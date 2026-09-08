@@ -1,0 +1,26 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 600
+# Kafka-internal ground truth that the reassignment moved data off the removed broker and lost nothing:
+#  (1) no under-replicated partitions (nothing stranded on the removed broker);
+#  (2) no ongoing reassignment for the topic (the drain completed, not just started);
+#  (3) no data lost — summed partition high-water-mark offsets == the 100000 produced at step 45.
+commands:
+  - script: |
+      set -e
+      B="test-kafka-broker-default-bootstrap.$NAMESPACE.svc.cluster.local:9093"
+      C=/stackable/config/client.properties
+      exec_kafka() { kubectl exec -n "$NAMESPACE" test-kafka-broker-default-0 -c kafka -- "$@" 2>/dev/null; }
+
+      URP=$(exec_kafka /stackable/kafka/bin/kafka-topics.sh --bootstrap-server "$B" --command-config "$C" \
+        --describe --topic test-topic --under-replicated-partitions)
+      test -z "$URP"
+
+      ! exec_kafka /stackable/kafka/bin/kafka-reassign-partitions.sh --bootstrap-server "$B" \
+        --command-config "$C" --list | grep -q 'test-topic'
+
+      SUM=$(exec_kafka /stackable/kafka/bin/kafka-get-offsets.sh --bootstrap-server "$B" \
+        --command-config "$C" --topic test-topic | awk -F: '{s+=$3} END {print s+0}')
+      echo "offset sum = $SUM"
+      test "$SUM" = "100000"

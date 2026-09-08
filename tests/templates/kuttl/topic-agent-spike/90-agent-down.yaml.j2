@@ -1,0 +1,14 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 300
+commands:
+  # Kill the agent's liveness signal. Scaling the Deployment to 0 is NOT enough on its own: the operator
+  # manages the agent Deployment and re-applies replicas=1 on its next reconcile (~20s), and the fresh
+  # pod renews the Lease inside the 30s staleness window — so `available` never flips. Instead, also
+  # DELETE the Lease: is_agent_alive treats an absent Lease as not-alive, and the operator (which watches
+  # the Lease) writes available=false almost immediately. The signal is transient — the resurrected agent
+  # recreates the Lease in ~20-30s — so there is deliberately NO sleep here: the assert must start polling
+  # at once to observe the window (kuttl passes on the first match).
+  - script: kubectl scale deploy/test-kafka-kafka-agent --replicas=0 -n $NAMESPACE
+  - script: kubectl delete lease test-kafka-kafka-agent -n $NAMESPACE --ignore-not-found

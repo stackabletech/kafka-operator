@@ -8,7 +8,10 @@ use stackable_operator::{
     },
 };
 
-use crate::crd::{FIELD_MANAGER, KafkaCluster, KafkaClusterVersion};
+use crate::crd::{
+    FIELD_MANAGER, KafkaCluster, KafkaClusterVersion,
+    topic::{KafkaTopic, KafkaTopicVersion},
+};
 
 /// Contains errors which can be encountered when creating the conversion webhook server and the
 /// CRD maintainer.
@@ -27,10 +30,20 @@ pub async fn create_webhook_server(
     disable_crd_maintenance: bool,
     client: Client,
 ) -> Result<WebhookServer, Error> {
-    let crds_and_handlers = vec![(
-        KafkaCluster::merged_crd(KafkaClusterVersion::V1Alpha1).context(MergeCrdSnafu)?,
-        KafkaCluster::try_convert,
-    )];
+    // The operator maintains only the CRDs it owns: KafkaCluster + KafkaTopic. The Scaler +
+    // AgentRequest platform CRDs are installed by commons-operator (spike R2.1); the operator only
+    // *uses* those types. Both kafka CRDs are single-version, so `try_convert` is an identity
+    // passthrough.
+    let crds_and_handlers = vec![
+        (
+            KafkaCluster::merged_crd(KafkaClusterVersion::V1Alpha1).context(MergeCrdSnafu)?,
+            KafkaCluster::try_convert as fn(_) -> _,
+        ),
+        (
+            KafkaTopic::merged_crd(KafkaTopicVersion::V1Alpha1).context(MergeCrdSnafu)?,
+            KafkaTopic::try_convert as fn(_) -> _,
+        ),
+    ];
 
     let conversion_webhook_options = ConversionWebhookOptions {
         disable_crd_maintenance,

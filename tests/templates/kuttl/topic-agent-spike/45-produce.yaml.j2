@@ -1,0 +1,19 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 600
+commands:
+  # Produce real data so the broker drain (step 50) copies real replica data — this makes "actual
+  # changes to partitions" meaningful, gives the drain a wide-enough window for the mid-drain assert to
+  # observe preScaling/InProgress, and sets the baseline (N) for the no-data-loss check (step 70).
+  # 100k * 512B ≈ 50 MB across 6 partitions, RF2.
+  - script: |
+      set -e
+      kubectl exec -n "$NAMESPACE" test-kafka-broker-default-0 -c kafka -- \
+        /stackable/kafka/bin/kafka-producer-perf-test.sh \
+        --topic test-topic \
+        --num-records 100000 \
+        --record-size 512 \
+        --throughput -1 \
+        --producer.config /stackable/config/client.properties \
+        --producer-props bootstrap.servers="test-kafka-broker-default-bootstrap.$NAMESPACE.svc.cluster.local:9093"

@@ -101,6 +101,7 @@
   }
 , meta ? pkgsLocal.lib.importJSON ./nix/meta.json
 , dockerName ? "oci.stackable.tech/sandbox/${meta.operator.name}"
+, agentDockerName ? "oci.stackable.tech/sandbox/kafka-agent"
 , dockerTag ? null
 # Controls the amount of debug information included in the built operator binaries,
 # see https://doc.rust-lang.org/rustc/codegen-options/index.html#debuginfo
@@ -127,6 +128,8 @@ rec {
   pkgs = lib.warn "pkgs is not cross-compilation-aware, explicitly use either pkgsLocal or pkgsTarget" pkgsLocal;
   build = cargo.allWorkspaceMembers;
   entrypoint = build+"/bin/stackable-${meta.operator.name}";
+  # The agent is a separate binary (spike R2.2); its own image uses this as the entrypoint.
+  agentEntrypoint = build+"/bin/stackable-kafka-agent";
   # Run crds in the target environment, to avoid compiling everything twice
   crds = pkgsTarget.runCommand "${meta.operator.name}-crds.yaml" {}
   ''
@@ -209,6 +212,62 @@ rec {
     {
       name = "crds.yaml";
       path = crds;
+    }
+  ];
+
+  # The agent ships as its OWN image (spike R2.2): same base, but the entrypoint is the agent binary
+  # (the Deployment passes only flags — no subcommand) and it omits krb5 (the pure-Rust agent uses no
+  # gssapi). Build + load with: nix-build . -A dockerAgent --argstr agentDockerName <ref> && ./result/load-image | docker load
+  agentDockerImage = pkgsLocal.dockerTools.streamLayeredImage {
+    name = agentDockerName;
+    tag = dockerTag;
+    contents = [
+      # Make the whole cargo workspace available on $PATH (agent entrypoint selected below).
+      build
+    ] ++ lib.optional includeShell [
+      pkgsTarget.bashInteractive
+      pkgsTarget.coreutils
+      pkgsTarget.util-linuxMinimal
+    ];
+
+    extraCommands = ''
+      mkdir -p etc stackable
+      cat > etc/passwd <<EOF
+      root:x:0:0:root:/root:/bin/bash
+      ${stackableUserName}:x:${toString stackableUserUid}:${toString stackableUserGid}:${stackableUserName}:/stackable:/bin/bash
+      EOF
+      cat > etc/group <<EOF
+      root:x:0:
+      ${stackableUserName}:x:${toString stackableUserGid}:
+      EOF
+    '';
+    fakeRootCommands = ''
+      chown -R ${toString stackableUserUid}:0 stackable
+      chmod -R g=u stackable
+    '';
+
+    config = {
+      Entrypoint = [ agentEntrypoint ];
+      # No `Cmd`: the agent takes only flags, injected by the operator's Deployment builder.
+      User = toString stackableUserUid;
+    };
+  };
+  dockerAgent = pkgsLocal.linkFarm "${agentDockerImage.name}-docker" [
+    {
+      name = "load-image";
+      path = agentDockerImage;
+    }
+    {
+      name = "ref";
+      path = pkgsLocal.writeText "${agentDockerImage.name}-image-tag" "${agentDockerImage.imageName}:${agentDockerImage.imageTag}";
+    }
+    {
+      name = "image-repo";
+      path = pkgsLocal.writeText "${agentDockerImage.name}-repo" agentDockerImage.imageName;
+    }
+    {
+      name = "image-tag";
+      path = pkgsLocal.writeText "${agentDockerImage.name}-tag" agentDockerImage.imageTag;
     }
   ];
 

@@ -41,7 +41,9 @@ rules:
       - list
       - patch
       - watch
-  # Required to bind the product ClusterRole to the per-cluster ServiceAccount.
+  # Required to bind the product + agent ClusterRoles to the per-cluster ServiceAccounts. The operator
+  # binds these pre-defined ClusterRoles (via namespaced RoleBindings) rather than minting Roles, so it
+  # needs no privilege-escalation. `bind` is scoped to exactly these role names.
   - apiGroups:
       - rbac.authorization.k8s.io
     resources:
@@ -50,6 +52,7 @@ rules:
       - bind
     resourceNames:
       - {{ include "operator.name" . }}-clusterrole
+      - {{ include "operator.name" . }}-agent-clusterrole
   # StatefulSet created per role group (broker, KRaft controller). Applied via
   # SSA, tracked for orphan cleanup, and owned by the controller.
   - apiGroups:
@@ -114,6 +117,19 @@ rules:
       - {{ include "operator.name" . }}clusters/status
     verbs:
       - patch
+  # SPIKE: the operator-side finalizer safety net watches KafkaTopics and releases their finalizer
+  # once the owning KafkaCluster is gone (a namespaced agent cannot run its own finalizer during
+  # namespace teardown). Read to watch; patch (incl. the finalizers subresource) to strip it.
+  - apiGroups:
+      - {{ include "operator.name" . }}.stackable.tech
+    resources:
+      - {{ include "operator.name" . }}topics
+      - {{ include "operator.name" . }}topics/finalizers
+    verbs:
+      - get
+      - list
+      - watch
+      - patch
   # Read authentication class configuration referenced in the KafkaCluster spec.
   - apiGroups:
       - authentication.stackable.tech
@@ -131,6 +147,62 @@ rules:
     verbs:
       - create
       - delete
+      - get
+      - list
+      - patch
+      - watch
+  # SPIKE: the operator-rs Scaler state machine, driven per broker role group by the Scaler controller.
+  - apiGroups:
+      - autoscaling.stackable.tech
+    resources:
+      - scalers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - autoscaling.stackable.tech
+    resources:
+      - scalers/status
+    verbs:
+      - get
+      - patch
+      - update
+  # SPIKE: the generic AgentRequest transport; the scaling hook creates/reads/deletes these, and the
+  # Scaler controller owns (watches) them.
+  - apiGroups:
+      - platform.stackable.tech
+    resources:
+      - agentrequests
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+  # SPIKE: the operator deploys the per-cluster kafka-agent (Deployment) and reads its liveness Lease.
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
       - get
       - list
       - patch

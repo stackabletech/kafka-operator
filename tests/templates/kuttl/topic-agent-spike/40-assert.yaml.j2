@@ -1,0 +1,21 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+# Ground truth INSIDE Kafka: the agent (pure-Rust kafka_client) really created the topic with the
+# requested shape AND applied the config (exercises CreateTopics + the config path). This is the strong
+# proof — it stands in for a CR-condition check (which would need a jsonpath list-filter on
+# status.conditions, and is only a status-reporting proxy). mTLS via the operator-provisioned
+# client.properties; bootstrap FQDN (short name / localhost fail SNI verification).
+commands:
+  - script: |
+      set -e
+      DESC=$(kubectl exec -n "$NAMESPACE" test-kafka-broker-default-0 -c kafka -- \
+        /stackable/kafka/bin/kafka-topics.sh \
+        --bootstrap-server "test-kafka-broker-default-bootstrap.$NAMESPACE.svc.cluster.local:9093" \
+        --command-config /stackable/config/client.properties \
+        --describe --topic test-topic 2>/dev/null)
+      echo "$DESC"
+      echo "$DESC" | grep -qE 'PartitionCount: *6\b'
+      echo "$DESC" | grep -qE 'ReplicationFactor: *2\b'
+      echo "$DESC" | grep -q 'retention.ms=600000'

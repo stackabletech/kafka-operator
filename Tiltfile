@@ -28,10 +28,23 @@ custom_build(
     outputs_image_ref_to='result/ref',
 )
 
+# Spike R2.2: the per-cluster agent ships as its OWN image (`nix-build . -A dockerAgent`). Built and
+# loaded via a separate `result-agent` symlink so it doesn't collide with the operator's `result`.
+# The operator learns this ref through the `internal.stackable.tech/agent-image` annotation (below),
+# which Tilt rewrites to the built ref exactly like the operator image.
+agent_image_name = operator_repository + '/' + operator_name.replace('-operator', '') + '-agent'
+custom_build(
+    agent_image_name,
+    'make regenerate-nix && nix-build . -A dockerAgent -o result-agent --argstr agentDockerName "' + agent_image_name + '" && ./result-agent/load-image | docker load',
+    deps=['rust', 'Cargo.toml', 'Cargo.lock', 'default.nix', "nix", 'build.rs', 'vendor'],
+    ignore=['*.~undo-tree~'],
+    outputs_image_ref_to='result-agent/ref',
+)
+
 # We need to set the correct image annotation on the operator Deployment to use e.g.
 # oci.stackable.tech/sandbox/opa-operator:7y19m3d8clwxlv34v5q2x4p7v536s00g instead of
 # oci.stackable.tech/sandbox/opa-operator:0.0.0-dev (which does not exist)
-k8s_kind('Deployment', image_json_path='{.spec.template.metadata.annotations.internal\\.stackable\\.tech/image}')
+k8s_kind('Deployment', image_json_path=['{.spec.template.metadata.annotations.internal\\.stackable\\.tech/image}', '{.spec.template.metadata.annotations.internal\\.stackable\\.tech/agent-image}'])
 k8s_kind('DaemonSet', image_json_path='{.spec.template.metadata.annotations.internal\\.stackable\\.tech/image}')
 
 # Optionally specify a custom Helm values file to be passed to the Helm deployment below.

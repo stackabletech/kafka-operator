@@ -16,6 +16,10 @@ spec:
     metadata:
       annotations:
         internal.stackable.tech/image: {{ include "operator.image" . }}
+        # Spike R2.2: the operator deploys the per-cluster kafka-agent from its OWN image. This
+        # annotation carries the agent image ref; Tilt rewrites it to the built ref (same mechanism as
+        # the operator image above), and it is read into the AGENT_IMAGE env below.
+        internal.stackable.tech/agent-image: {{ include "operator.agentImage" . }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -53,6 +57,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.annotations['internal.stackable.tech/image']
+
+            # Spike R2.2: the image the operator deploys the per-cluster kafka-agent from (its own OCI
+            # image). Read from the annotation Tilt rewrites — same mechanism as OPERATOR_IMAGE.
+            - name: AGENT_IMAGE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['internal.stackable.tech/agent-image']
 
             # Namespace the operator Pod is running in, e.g. used to construct the conversion
             # webhook endpoint.

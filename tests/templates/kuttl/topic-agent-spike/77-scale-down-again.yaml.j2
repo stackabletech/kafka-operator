@@ -1,0 +1,10 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 600
+commands:
+  # Second drain 3 -> 2. The re-added broker is empty, so this drain has nothing to move (total=0) — the
+  # point here is the AgentRequest LIFECYCLE, not data movement.
+  - script: kubectl scale scaler/test-kafka-broker-default-scaler --replicas=2 -n $NAMESPACE
+  # Let the full 2nd flow settle (drain -> STS shrink -> unregister -> Scaler idle) before asserting.
+  - script: sleep 30

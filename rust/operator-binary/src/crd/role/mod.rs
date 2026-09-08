@@ -16,8 +16,8 @@ use stackable_operator::{
 };
 use strum::{EnumIter, IntoEnumIterator};
 
-use crate::{
-    crd::role::{
+use crate::crd::{
+    role::{
         broker::BrokerConfig,
         commons::{CommonConfig, Storage},
         controller::ControllerConfig,

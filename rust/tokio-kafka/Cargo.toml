@@ -1,0 +1,36 @@
+[package]
+name = "tokio-kafka"
+version = "0.1.0"
+description = "Asynchronous native-Rust client for the Apache Kafka admin wire protocol (Stackable spike)"
+readme = "README.md"
+authors = ["Stackable GmbH <info@stackable.tech>"]
+repository = "https://github.com/stackabletech/tokio-kafka"
+license = "OSL-3.0"
+edition = "2024"
+publish = false
+
+[badges]
+maintenance = { status = "experimental" }
+
+[dependencies]
+# Generated Kafka message types + the wire codec (Encodable/Decodable). This is the piece that a
+# from-scratch tokio-zookeeper-style client would have to hand-roll in `proto/request.rs` +
+# `proto/response.rs`; here it is a dependency, which is the single biggest saving vs. that path.
+kafka-protocol = "0.18"
+
+# Async runtime + the mTLS transport. `ring` (not aws-lc-rs) keeps the build pure-Rust: no C
+# toolchain / cmake, so the crate compiles in a bare sandbox. Mirrors tokio-zookeeper's rustls setup.
+tokio = { version = "1.53", features = ["net", "rt", "time", "io-util", "sync"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+bytes = "1.0"
+
+# kafka-protocol's Encodable/Decodable surface encode/decode failures as `anyhow::Error`.
+anyhow = "1.0"
+# Exponential backoff for the in-client retry layer (same crate/pattern as tokio-zookeeper).
+backon = "1.6"
+snafu = "0.9"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread"] }

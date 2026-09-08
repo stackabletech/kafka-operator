@@ -219,6 +219,10 @@ pub fn build_broker_rolegroup_statefulset(
     role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
     validated_rg: &ValidatedRoleGroupConfig,
+    // The Scaler for this broker role group, if one exists (spike Part C). When the role group's
+    // `replicas` is `0` (externally-managed convention), `resolve_replicas` uses the scaler's
+    // `status.replicas` to drive the STS decrement instead.
+    scaler: Option<&stackable_operator::crd::scaler::v1alpha1::Scaler>,
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
@@ -418,7 +422,12 @@ pub fn build_broker_rolegroup_statefulset(
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some(POD_MANAGEMENT_POLICY_PARALLEL.to_string()),
-            replicas: validated_rg.replicas.map(i32::from),
+            // Scaler seam (spike Part C): when the role group's `replicas` is `0`, the Scaler's
+            // `status.replicas` drives the count so the operator-rs state machine owns the decrement.
+            replicas: stackable_operator::crd::scaler::resolve_replicas(
+                validated_rg.replicas.map(i32::from),
+                scaler,
+            ),
             selector: LabelSelector {
                 match_labels: Some(
                     role_group_selector(validated_cluster, kafka_role, role_group_name).into(),
@@ -944,6 +953,7 @@ mod tests {
             &role_group_name,
             &cluster,
             &validated_rg,
+            None,
         )
         .expect("the StatefulSet builds");
 
@@ -1051,7 +1061,7 @@ mod tests {
     #[test]
     fn controller_statefulset_uses_ordered_ready_pod_management() {
         let cluster = kraft_mode_cluster();
-        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+        let resources = crate::controller::build::build(&cluster, &Default::default()).expect("build succeeds");
         let sts = resources
             .stateful_sets
             .into_iter()
@@ -1069,7 +1079,7 @@ mod tests {
     #[test]
     fn broker_statefulset_still_uses_parallel_pod_management() {
         let cluster = kraft_mode_cluster();
-        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+        let resources = crate::controller::build::build(&cluster, &Default::default()).expect("build succeeds");
         let sts = resources
             .stateful_sets
             .into_iter()
@@ -1148,7 +1158,7 @@ mod tests {
     fn controller_containers(
         cluster: &crate::controller::ValidatedCluster,
     ) -> Vec<stackable_operator::k8s_openapi::api::core::v1::Container> {
-        let resources = crate::controller::build::build(cluster).expect("build succeeds");
+        let resources = crate::controller::build::build(cluster, &Default::default()).expect("build succeeds");
         let sts = resources
             .stateful_sets
             .into_iter()
@@ -1260,7 +1270,7 @@ mod tests {
     #[test]
     fn quorum_manager_sidecar_has_every_env_var_controller_properties_rendering_references() {
         let cluster = kraft_mode_cluster();
-        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+        let resources = crate::controller::build::build(&cluster, &Default::default()).expect("build succeeds");
 
         let controller_properties = resources
             .config_maps
@@ -1349,7 +1359,7 @@ mod tests {
     #[test]
     fn broker_pods_never_get_a_quorum_manager_sidecar() {
         let cluster = kraft_mode_cluster();
-        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+        let resources = crate::controller::build::build(&cluster, &Default::default()).expect("build succeeds");
         let sts = resources
             .stateful_sets
             .into_iter()
@@ -1382,7 +1392,7 @@ mod tests {
     fn broker_kafka_container(
         cluster: &crate::controller::ValidatedCluster,
     ) -> stackable_operator::k8s_openapi::api::core::v1::Container {
-        let resources = crate::controller::build::build(cluster).expect("build succeeds");
+        let resources = crate::controller::build::build(cluster, &Default::default()).expect("build succeeds");
         let sts = resources
             .stateful_sets
             .into_iter()
@@ -1483,7 +1493,7 @@ mod tests {
     #[test]
     fn broker_pods_have_no_kcat_prober_sidecar() {
         let cluster = kraft_mode_cluster();
-        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
+        let resources = crate::controller::build::build(&cluster, &Default::default()).expect("build succeeds");
         let sts = resources
             .stateful_sets
             .into_iter()

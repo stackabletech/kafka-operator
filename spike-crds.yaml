@@ -1,0 +1,344 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: kafkatopics.kafka.stackable.tech
+spec:
+  group: kafka.stackable.tech
+  names:
+    kind: KafkaTopic
+    plural: kafkatopics
+    shortNames:
+    - kafkatopic
+    singular: kafkatopic
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: A Kafka topic managed by the Stackable operator for Apache Kafka, provisioned by the per-cluster kafka-agent.
+        properties:
+          spec:
+            description: |-
+              A Kafka topic managed by the Stackable operator for Apache Kafka. Provisioned by the
+              per-cluster kafka-agent against a live Kafka cluster over mTLS.
+            properties:
+              clusterRef:
+                description: The `KafkaCluster` this topic lives in. The agent for that cluster owns provisioning.
+                properties:
+                  name:
+                    description: The name of the cluster
+                    nullable: true
+                    type: string
+                  namespace:
+                    description: |-
+                      The namespace of the cluster
+
+                      This field is optional, and will default to the namespace of the referring object.
+                    nullable: true
+                    type: string
+                type: object
+              config:
+                additionalProperties:
+                  type: string
+                default: {}
+                description: |-
+                  Extra per-topic configuration (e.g. `retention.ms`), applied verbatim as Kafka topic
+                  config entries.
+                type: object
+              partitions:
+                description: Number of partitions for the topic.
+                format: int32
+                type: integer
+              replicationFactor:
+                description: Replication factor for the topic.
+                format: int32
+                type: integer
+              topicName:
+                description: The Kafka topic name. Defaults to the object's own name when unset.
+                nullable: true
+                type: string
+            required:
+            - clusterRef
+            - partitions
+            - replicationFactor
+            type: object
+          status:
+            nullable: true
+            properties:
+              conditions:
+                default: []
+                items:
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status to another.
+                      format: date-time
+                      nullable: true
+                      type: string
+                    message:
+                      description: A human readable message indicating details about the transition.
+                      nullable: true
+                      type: string
+                    reason:
+                      description: The reason for the condition's last transition.
+                      nullable: true
+                      type: string
+                    status:
+                      description: Status of the condition, one of True, False, Unknown.
+                      enum:
+                      - 'True'
+                      - 'False'
+                      - Unknown
+                      type: string
+                    type:
+                      description: Type of deployment condition.
+                      enum:
+                      - Available
+                      - Degraded
+                      - Progressing
+                      - ReconciliationPaused
+                      - Stopped
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+            type: object
+        required:
+        - spec
+        title: KafkaTopic
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stackablescalers.autoscaling.stackable.tech
+spec:
+  group: autoscaling.stackable.tech
+  names:
+    kind: StackableScaler
+    plural: stackablescalers
+    singular: stackablescaler
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: A StackableScaler exposes a /scale subresource so a HorizontalPodAutoscaler can target it instead of a StatefulSet directly.
+        properties:
+          spec:
+            description: |-
+              A StackableScaler exposes a /scale subresource so that a Kubernetes
+              HorizontalPodAutoscaler can target it instead of a StatefulSet directly.
+            properties:
+              replicas:
+                description: |-
+                  Desired replica count. Written by the HPA via the /scale subresource.
+                  Only takes effect when the referenced roleGroup has `replicas: 0`.
+                format: int32
+                type: integer
+            required:
+            - replicas
+            type: object
+          status:
+            description: Status of a StackableScaler.
+            nullable: true
+            properties:
+              currentState:
+                description: The current state machine stage and its transition timestamp.
+                nullable: true
+                properties:
+                  lastTransitionTime:
+                    description: When this stage was entered.
+                    format: date-time
+                    type: string
+                  stage:
+                    description: The current stage of the scaler state machine.
+                    properties:
+                      details:
+                        properties:
+                          failedAt:
+                            description: Which stage of a scaling operation failed.
+                            enum:
+                            - preScaling
+                            - scaling
+                            - postScaling
+                            type: string
+                          reason:
+                            type: string
+                        type: object
+                      stage:
+                        enum:
+                        - idle
+                        - preScaling
+                        - scaling
+                        - postScaling
+                        - failed
+                        type: string
+                    required:
+                    - stage
+                    type: object
+                required:
+                - lastTransitionTime
+                - stage
+                type: object
+              desiredReplicas:
+                description: The target replica count for the in-progress scaling operation. `None` when idle.
+                format: int32
+                nullable: true
+                type: integer
+              previousReplicas:
+                description: |-
+                  The replica count when the current scaling operation started. `None` when idle.
+                  Used to derive [`ScalingDirection`] correctly across all stages, because
+                  `status.replicas` is overwritten to the target value during the `Scaling` stage.
+                format: int32
+                nullable: true
+                type: integer
+              replicas:
+                description: The replica count currently targeted by the managed StatefulSet. Exposed via the `/scale` subresource for HPA consumption.
+                format: int32
+                type: integer
+              selector:
+                description: Label selector string for HPA pod counting. Written at `.status.selector`.
+                nullable: true
+                type: string
+            required:
+            - replicas
+            type: object
+        required:
+        - spec
+        title: StackableScaler
+        type: object
+    served: true
+    storage: true
+    subresources:
+      scale:
+        labelSelectorPath: .status.selector
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: agentrequests.platform.stackable.tech
+spec:
+  group: platform.stackable.tech
+  names:
+    kind: AgentRequest
+    plural: agentrequests
+    singular: agentrequest
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: The out-of-process transport a product operator's scaling hook uses to ask a per-cluster agent to perform a gated, product-specific action (e.g. broker drain). Operator writes spec; agent writes status.
+        properties:
+          spec:
+            description: |-
+              A request for a per-cluster agent to perform a gated, product-specific action on behalf of
+              an operator. The operator writes the spec; the agent is the sole writer of the status.
+            properties:
+              actionType:
+                description: The kind of action the agent should perform.
+                enum:
+                - scaleDown
+                - breakingUpgrade
+                - migration
+                type: string
+              clusterRef:
+                description: |-
+                  Reference to the product cluster this action targets. The namespace is this
+                  AgentRequest's own namespace (an AgentRequest is namespaced and co-located with its
+                  cluster), so only the name is needed.
+                properties:
+                  name:
+                    description: Name of the product cluster CR. Namespace is inferred from the AgentRequest's namespace.
+                    type: string
+                required:
+                - name
+                type: object
+              context:
+                additionalProperties:
+                  type: string
+                default: {}
+                description: |-
+                  Loose, per-action payload, e.g. `brokerIds: "4,5"`. Deliberately an untyped string map so
+                  the envelope stays generic across products (no product-specific fields on this CRD).
+                type: object
+              product:
+                description: Product the target cluster runs, e.g. `kafka`.
+                type: string
+              role:
+                description: Role within the cluster the action applies to, e.g. `broker`.
+                type: string
+              ttlSecondsAfterFinished:
+                description: |-
+                  The operator deletes this AgentRequest this many seconds after it reaches the terminal
+                  `Done` phase. Failed/Rejected requests are retained for inspection.
+                format: uint32
+                minimum: 0.0
+                nullable: true
+                type: integer
+            required:
+            - actionType
+            - clusterRef
+            - product
+            - role
+            type: object
+          status:
+            description: Status of an [`AgentRequest`](v1alpha1::AgentRequest) — written **solely by the product agent**.
+            nullable: true
+            properties:
+              phase:
+                default: pending
+                description: Coarse lifecycle phase the operator gates on.
+                enum:
+                - pending
+                - inProgress
+                - done
+                - failed
+                - rejected
+                type: string
+              progress:
+                description: Optional progress counts for slow-vs-stuck visibility.
+                nullable: true
+                properties:
+                  remaining:
+                    description: Units of work still remaining.
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                  total:
+                    description: Total units of work (e.g. partitions to reassign).
+                    format: uint32
+                    minimum: 0.0
+                    type: integer
+                required:
+                - remaining
+                - total
+                type: object
+              reason:
+                description: Human-readable detail; most relevant for `Failed` / `Rejected`.
+                nullable: true
+                type: string
+              stage:
+                description: Product-specific stage label for humans, e.g. `reassigning`.
+                nullable: true
+                type: string
+            type: object
+        required:
+        - spec
+        title: AgentRequest
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

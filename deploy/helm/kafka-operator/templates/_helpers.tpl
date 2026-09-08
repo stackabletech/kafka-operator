@@ -84,3 +84,13 @@ Build the full operator container image reference.
 {{- define "operator.image" -}}
 {{- printf "%s/%s:%s" .Values.image.repository .Chart.Name (.Values.image.tag | default .Chart.AppVersion) -}}
 {{- end }}
+
+{{/*
+Build the per-cluster agent container image reference (spike R2.2). Same repository + tag as the
+operator image; the name is the product name + `-agent` (e.g. `kafka-agent`), i.e. a peer of the
+`kafka` / `kafka-operator` images and consistent with the `stackable-kafka-agent` binary. Matches
+`agentDockerName` in default.nix.
+*/}}
+{{- define "operator.agentImage" -}}
+{{- printf "%s/%s-agent:%s" .Values.image.repository (.Chart.Name | trimSuffix "-operator") (.Values.image.tag | default .Chart.AppVersion) -}}
+{{- end }}

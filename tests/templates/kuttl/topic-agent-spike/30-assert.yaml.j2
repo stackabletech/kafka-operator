@@ -1,0 +1,24 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 600
+commands:
+  # Scale-UP takes the no-drain path (pre_scale returns Done immediately), so NO AgentRequest is created.
+  - script: |
+      test "$(kubectl -n "$NAMESPACE" get agentrequest -o name | wc -l)" -eq 0
+---
+# The Scaler drove the broker STS up to 3.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+status:
+  readyReplicas: 3
+  replicas: 3
+---
+apiVersion: autoscaling.stackable.tech/v1alpha1
+kind: Scaler
+metadata:
+  name: test-kafka-broker-default-scaler
+status:
+  replicas: 3

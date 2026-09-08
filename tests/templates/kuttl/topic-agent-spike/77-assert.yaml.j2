@@ -1,0 +1,48 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+# The 2nd drain (3->2) completed with its OWN gen name (gen5) — no collision with the retained gen3
+# (the R4 unique-name + retain fix). Naming both proves they coexist; all four expected AgentRequests
+# are Done. All resource stanzas → silent. gens: create=1, 30=2, 50=3 (drain), 75=4, 77=5 (drain).
+timeout: 600
+---
+# The first drain's request is still present and Done (retained across the 2nd drain).
+apiVersion: platform.stackable.tech/v1alpha1
+kind: AgentRequest
+metadata:
+  name: test-kafka-broker-default-scaler-scaledown-gen3
+status:
+  phase: done
+---
+# The second drain got its own gen5 request and completed.
+apiVersion: platform.stackable.tech/v1alpha1
+kind: AgentRequest
+metadata:
+  name: test-kafka-broker-default-scaler-scaledown-gen5
+status:
+  phase: done
+---
+# ...and its PostScaling unregister completed too.
+apiVersion: platform.stackable.tech/v1alpha1
+kind: AgentRequest
+metadata:
+  name: test-kafka-broker-default-scaler-unregister-gen5
+status:
+  phase: done
+---
+apiVersion: autoscaling.stackable.tech/v1alpha1
+kind: Scaler
+metadata:
+  name: test-kafka-broker-default-scaler
+status:
+  replicas: 2
+  state:
+    idle: {}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+status:
+  readyReplicas: 2
+  replicas: 2

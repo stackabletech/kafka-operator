@@ -1,0 +1,9 @@
+---
+# Step 60 has no action of its own — it asserts the terminal state of the drain triggered at step 50.
+# That whole flow (finish reassignment -> STS shrink -> PostScaling unregister -> Scaler idle) takes a
+# while, so pause before the assert starts polling. Without this the assert spins (and re-echoes) for
+# the entire settle window. Runs once, before 60-assert.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: sleep 30

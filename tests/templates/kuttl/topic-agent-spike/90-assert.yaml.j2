@@ -1,0 +1,17 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+# Detection latency = lease staleness window (LEASE_DURATION_SECONDS = 30s) + the operator's re-check
+# requeue (~20s), so allow a generous timeout.
+timeout: 300
+---
+# The operator surfaced AgentUnavailable on the KafkaCluster status once the agent's Lease went stale.
+# Asserted as a resource stanza (subset match) rather than a jsonpath command, so kuttl polls it
+# SILENTLY — no per-retry command echo in the log.
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+status:
+  agent:
+    available: false

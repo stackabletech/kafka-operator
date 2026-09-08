@@ -30,6 +30,10 @@ rstest.workspace = true
 [build-dependencies]
 built.workspace = true
 
+[lib]
+name = "stackable_kafka_operator"
+path = "src/lib.rs"
+
 [[bin]]
 name = "stackable-kafka-operator"
 path = "src/main.rs"

@@ -1,0 +1,11 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 600
+commands:
+  # Scale the broker Scaler UP via its /scale subresource. A scale-UP takes the no-drain path
+  # (pre_scale returns Done immediately) → Scaling → status.replicas=3 → the operator brings the
+  # broker STS to 3 (resolve_replicas reads the Scaler status because the role group is replicas:0).
+  - script: kubectl scale scaler/test-kafka-broker-default-scaler --replicas=3 -n $NAMESPACE
+  # Let the scale-up (STS 0 -> 3) settle before asserting, so the assert doesn't poll from t=0.
+  - script: sleep 30
