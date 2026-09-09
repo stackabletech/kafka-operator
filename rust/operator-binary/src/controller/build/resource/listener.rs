@@ -24,6 +24,8 @@ use crate::{
 /// A free function (rather than only a [`ValidatedCluster`] method) so the dereference step can
 /// compute the name from the raw cluster identity when fetching the stored `Listener`s that the
 /// discovery `ConfigMap` is built from.
+///
+/// The returned ListenerName is a lowercase RFC 1035 label name (checked by a unit test).
 pub fn bootstrap_listener_name(
     cluster_name: &ClusterName,
     role: &KafkaRole,
@@ -109,4 +111,35 @@ fn bootstrap_listener_ports(
             protocol: Some("TCP".to_string()),
         }
     }]
+}
+
+#[cfg(test)]
+mod tests {
+    use stackable_operator::validation::RFC_1123_LABEL_MAX_LENGTH;
+    use strum::IntoEnumIterator;
+
+    use super::*;
+
+    #[test]
+    fn bootstrap_listener_name_is_rfc_1035_label_name() {
+        // Every ClusterName is a valid RFC 1035 label name, so we use just some string with maximum
+        // length. The role group name is user-provided, so use the maximum length of an RFC 1123
+        // label there as well; operator-rs then hash-truncates the qualified role group name.
+        let _ = ClusterName::IS_RFC_1035_LABEL_NAME;
+        let cluster_name = ClusterName::from_str(&"a".repeat(ClusterName::MAX_LENGTH))
+            .expect("is a valid ClusterName");
+        let role_group_name = RoleGroupName::from_str(&"g".repeat(RFC_1123_LABEL_MAX_LENGTH))
+            .expect("is a valid RoleGroupName");
+
+        for role in KafkaRole::iter() {
+            let bootstrap_listener_name =
+                bootstrap_listener_name(&cluster_name, &role, &role_group_name);
+            assert!(
+                stackable_operator::validation::is_lowercase_rfc_1035_label(
+                    bootstrap_listener_name.as_ref()
+                )
+                .is_ok()
+            );
+        }
+    }
 }
