@@ -6,6 +6,8 @@ pub mod listener;
 pub mod product_logging;
 pub mod security_properties;
 
+use std::collections::BTreeSet;
+
 use crate::crd::{
     KafkaPodDescriptor,
     role::{AnyConfig, KafkaRole},
@@ -67,7 +69,7 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
 ///
 /// Only adding or removing a whole role group changes this list.
 pub(crate) fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
-    let mut role_group_addresses: Vec<String> = pod_descriptors
+    pod_descriptors
         .iter()
         .filter(|pd| pd.role == KafkaRole::Controller)
         .map(|desc| {
@@ -79,10 +81,9 @@ pub(crate) fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<S
                 client_port = desc.client_port,
             )
         })
-        .collect();
-    role_group_addresses.sort();
-    role_group_addresses.dedup();
-    role_group_addresses
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 #[cfg(test)]
@@ -214,8 +215,7 @@ mod tests {
             other_group_pod,
         ];
 
-        let mut quorum_bootstrap_servers = kraft_controllers(&pod_descriptors);
-        quorum_bootstrap_servers.sort();
+        let quorum_bootstrap_servers = kraft_controllers(&pod_descriptors);
 
         assert_eq!(
             quorum_bootstrap_servers,
