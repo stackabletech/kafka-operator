@@ -313,85 +313,80 @@ fn pre_stop_deadline_seconds(graceful_shutdown_timeout: Option<Duration>) -> u64
         .unwrap_or(PRE_STOP_MIN_DEADLINE_SECONDS)
 }
 
-/// The `kafka` container's own `preStop` command: before this controller pod terminates, check
-/// that removing it would not remove the *last* remaining voter from the quorum, and if so,
-/// remove it from the voter set. Always exits 0 — a stuck or failed check must never block
-/// pod termination.
+/// Pause (seconds) between two voter-removal attempts inside the `preStop` script's retry
+/// loop.
+const PRE_STOP_RETRY_INTERVAL_SECONDS: u32 = 2;
+
+/// The `preStop` script itself. Kept in its own file — rather than as a string literal here —
+/// so that shellcheck lints it and the unit tests can execute it directly against a stubbed
+/// `kafka-metadata-quorum.sh`. Its header comment documents the inputs the preamble in
+/// [`controller_remove_self_pre_stop_command`] has to define.
+const CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT: &str =
+    include_str!("controller-remove-self-pre-stop.sh");
+
+/// Drops whole-line `#` comments, and the blank runs they leave behind, from a shell script.
+fn strip_shell_comments(script: &str) -> String {
+    let mut kept: Vec<&str> = Vec::new();
+
+    for line in script
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+    {
+        let previous_is_blank = kept.last().is_none_or(|line: &&str| line.trim().is_empty());
+        if line.trim().is_empty() && previous_is_blank {
+            continue;
+        }
+        kept.push(line);
+    }
+    while kept.last().is_some_and(|line| line.trim().is_empty()) {
+        kept.pop();
+    }
+
+    kept.join("\n")
+}
+
+/// The `kafka` container's own `preStop` command: before this controller pod terminates,
+/// remove it from the KRaft voter set, unless that would remove the *last* remaining voter.
 ///
-/// The "would leave zero voters" case is the one exception that does *not* retry: once a
-/// `describe` shows this pod is the last remaining voter, stop.
-///
-/// IMPORTANT: the last voter must never be removed from the quorum because that would break
-/// cluster restarts. In that situation a restart would reformat the Raft metadata effectively
-/// losing all information from the previous iteration.
-///
-/// If every retry within `DEADLINE` fails, the loop falls through with the voter never
-/// actually removed; the final `echo "ERROR: ..."` makes that failure loud (grep/alert-able in
-/// container logs) rather than a plain, easy-to-miss log line, since a stale voter entry left
-/// behind here is exactly the kind of thing that can strand a later restart-from-zero (see
-/// `controller_stuck_unattached_liveness_probe`'s doc comment in `resource/statefulset.rs`).
+/// This only assembles the preamble that feeds
+/// [`CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT`] its inputs; the logic, and the reasoning behind
+/// it, lives in that script (whose maintenance comments [`strip_shell_comments`] drops on
+/// the way in).
 pub fn controller_remove_self_pre_stop_command(
     graceful_shutdown_timeout: Option<Duration>,
 ) -> String {
-    format!(
-        r#"
+    formatdoc! {"
         set -uo pipefail
         {derive_pod_index}
-        [ -n "$POD_INDEX" ] || exit 0
+        [ -n \"$POD_INDEX\" ] || exit 0
         {export_replica_id}
         {extract_bootstrap_servers}
-        DEADLINE=$((SECONDS + {deadline_seconds}))
-        finished=false
-        while [ "$SECONDS" -lt "$DEADLINE" ]; do
-          describe=$(timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {config} describe --replication 2>/dev/null)
-          if [ -n "$describe" ]; then
-            voters=$(echo "$describe" | tail -n +2 | awk '$NF == "Leader" || $NF == "Follower"')
-            total_voters=$(echo "$voters" | grep -c .)
-            if [ "$total_voters" -gt 0 ]; then
-              remaining_after_removal=$(( total_voters - 1 ))
-              if [ "$remaining_after_removal" -ge 1 ]; then
-                directory_id=$(echo "$voters" | awk -v id="$REPLICA_ID" '$1 == id {{ print $2 }}')
-                if [ -n "$directory_id" ]; then
-                  echo "Removing self (node $REPLICA_ID, directory $directory_id) from the voter set..."
-                  if timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {config} remove-controller \
-                    --controller-id "$REPLICA_ID" --controller-directory-id "$directory_id"; then
-                    finished=true
-                  else
-                    echo "remove-controller attempt failed, will retry if time remains"
-                  fi
-                else
-                  echo "Could not find own node $REPLICA_ID among current voters (already removed?), nothing to do"
-                  finished=true
-                fi
-              else
-                echo "Removing self would leave zero voters, skipping (this can't become safe later during my own termination -- nothing else will add a voter for me)"
-                finished=true
-              fi
-              [ "$finished" = true ] && break
-            else
-              echo "Could not identify any voters in the describe output (unrecognized format), skipping removal for safety and retrying..."
-            fi
-          fi
-          sleep 2
-        done
-        if [ "$finished" != true ]; then
-          echo "ERROR: could not remove self (node $REPLICA_ID) from the voter set before terminating (every attempt within ${{DEADLINE}}s failed or the quorum was unreachable throughout); the on-disk voter set may now list this pod even though it is gone -- if nothing else corrects this, a later restart may get stuck and require manual recovery, see kraft-controller.adoc"
-        fi
-        exit 0
-        "#,
-        deadline_seconds = pre_stop_deadline_seconds(graceful_shutdown_timeout),
+        QUORUM_CLI={binary}
+        ADMIN_CLIENT_CONFIG={config}
+        CLI_TIMEOUT_SECONDS={cli_timeout}
+        CLI_KILL_AFTER_SECONDS={cli_kill_after}
+        REMOVAL_DEADLINE_SECONDS={deadline_seconds}
+        RETRY_INTERVAL_SECONDS={retry_interval}
+        {script}",
+        derive_pod_index = DERIVE_POD_INDEX,
+        export_replica_id = EXPORT_REPLICA_ID,
+        extract_bootstrap_servers = extract_bootstrap_servers_command(),
         binary = KAFKA_METADATA_QUORUM_BINARY,
         config = ADMIN_CLIENT_PROPERTIES_PATH,
         cli_timeout = CLI_CALL_TIMEOUT_SECONDS,
         cli_kill_after = CLI_CALL_KILL_AFTER_SECONDS,
-        derive_pod_index = DERIVE_POD_INDEX,
-        export_replica_id = EXPORT_REPLICA_ID,
-        extract_bootstrap_servers = extract_bootstrap_servers_command(),
-    )
+        deadline_seconds = pre_stop_deadline_seconds(graceful_shutdown_timeout),
+        retry_interval = PRE_STOP_RETRY_INTERVAL_SECONDS,
+        script = strip_shell_comments(CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT),
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+
+    use indoc::indoc;
+
     use super::*;
 
     #[test]
@@ -486,49 +481,451 @@ mod tests {
         assert!(command.contains("remove-controller"));
     }
 
-    /// A failed `remove-controller` attempt must not `break` out of the retry loop — unlike
-    /// the "already removed" and "would leave zero voters" cases, a failure is exactly the
-    /// situation the retry loop exists for. Only success (`finished=true` on that path) may
-    /// exit early.
-    #[test]
-    fn controller_remove_self_pre_stop_command_retries_a_failed_remove_controller_attempt() {
-        let command = controller_remove_self_pre_stop_command(None);
+    /// Stands in for `kafka-metadata-quorum.sh` in [`run_pre_stop`]: records every
+    /// invocation, answers `describe --replication` from `$DESCRIBE_OUTPUT`, and fails the
+    /// first `$REMOVE_CONTROLLER_FAILURES` `remove-controller` calls before succeeding.
+    const STUB_QUORUM_CLI: &str = indoc! {r#"
+        #!/usr/bin/env bash
+        set -u
+        echo "$*" >> "$CALL_LOG"
+        for arg in "$@"; do
+          case "$arg" in
+            describe)
+              cat "$DESCRIBE_OUTPUT"
+              exit 0
+              ;;
+            remove-controller)
+              attempts=$(( $(cat "$ATTEMPTS") + 1 ))
+              echo "$attempts" > "$ATTEMPTS"
+              if [ "$attempts" -le "$REMOVE_CONTROLLER_FAILURES" ]; then
+                exit 1
+              fi
+              exit 0
+              ;;
+          esac
+        done
+        exit 0
+    "#};
 
-        // The loop's exit check is conditional on success (`finished=true`), not an
-        // unconditional `break` - so a failed attempt, which never reaches `finished=true`,
-        // falls through to the loop's retry instead of exiting immediately.
-        assert!(command.contains(r#"[ "$finished" = true ] && break"#));
-
-        // The failed-attempt branch itself must not set `finished=true` or `break` on its
-        // own - only the sibling success (`then`) branch does; this branch's only content is
-        // the log message.
-        let failure_message = "remove-controller attempt failed, will retry if time remains";
-        let failure_message_pos = command
-            .find(failure_message)
-            .expect("the failure message is present in the generated script");
-        let up_to_failure_message = &command[..failure_message_pos + failure_message.len()];
-        let else_branch_start = up_to_failure_message
-            .rfind("else")
-            .expect("the failure message is inside an `else` branch");
-        let else_branch = &up_to_failure_message[else_branch_start..];
-        assert!(!else_branch.contains("finished=true"));
-        assert!(!else_branch.contains("break"));
+    /// What one execution of [`CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT`] did.
+    struct PreStopRun {
+        exit_code: Option<i32>,
+        stdout: String,
+        stderr: String,
+        /// The stub CLI's argument list, one entry per invocation, in call order.
+        cli_calls: Vec<String>,
     }
 
-    /// If every retry within `DEADLINE` fails, the script must say so loudly (an `ERROR:`
-    /// prefixed line, consistent with the `quorum-manager` main loop's own degraded-mode
-    /// messages) rather than silently letting the pod terminate with the voter never removed —
-    /// see `pre_stop_deadline_seconds`'s and this function's doc comments for why a silent
-    /// failure here is the specific gap that can strand a later restart-from-zero.
+    impl PreStopRun {
+        /// The recorded invocations of the given subcommand.
+        fn calls_of(&self, subcommand: &str) -> Vec<&String> {
+            self.cli_calls
+                .iter()
+                .filter(|call| call.contains(subcommand))
+                .collect()
+        }
+    }
+
+    /// The inputs of one [`run_pre_stop`] scenario. [`Default`] describes an unreachable
+    /// quorum, so each test only spells out what it actually cares about.
+    struct PreStopScenario<'a> {
+        /// Unique per test — names this run's scratch directory.
+        name: &'a str,
+        /// What the stub prints for `describe --replication`. Empty output stands for an
+        /// unreachable quorum (or a call `timeout` killed).
+        describe: String,
+        /// How many `remove-controller` calls fail before one succeeds.
+        remove_controller_failures: u32,
+        /// The script's total retry budget, i.e. what [`pre_stop_deadline_seconds`] would
+        /// produce in production.
+        deadline_seconds: u32,
+        /// `None` leaves `REPLICA_ID` unset, exercising the missing-input guard.
+        replica_id: Option<u32>,
+    }
+
+    impl Default for PreStopScenario<'_> {
+        fn default() -> Self {
+            Self {
+                name: "unnamed",
+                describe: String::new(),
+                remove_controller_failures: 0,
+                deadline_seconds: 2,
+                replica_id: Some(1),
+            }
+        }
+    }
+
+    /// Mimics one `kafka-metadata-quorum.sh describe --replication` table: a header row, then
+    /// one `NodeId DirectoryId ... Status` row per replica.
+    fn describe_output(replicas: &[(u32, &str, &str)]) -> String {
+        let mut output = "NodeId\tDirectoryId\tLogEndOffset\tLag\tLastFetchTimestamp\tLastCaughtUpTimestamp\tStatus\n".to_string();
+        for (node_id, directory_id, status) in replicas {
+            output.push_str(&format!(
+                "{node_id}\t{directory_id}\t100\t0\t1758000000\t1758000000\t{status}\n"
+            ));
+        }
+        output
+    }
+
+    /// Executes the real `preStop` script in bash against a stub `kafka-metadata-quorum.sh`,
+    /// in the comment-stripped form that actually ships in the pod template.
+    ///
+    /// This exercises the script's own contract — the env inputs its header documents — not
+    /// the operator-generated preamble that supplies them in production; the two are kept in
+    /// sync by [`generated_pre_stop_command_defines_every_input_the_script_requires`].
+    fn run_pre_stop(scenario: PreStopScenario) -> PreStopRun {
+        let dir = std::env::temp_dir().join(format!(
+            "kafka-operator-pre-stop-{name}-{pid}",
+            name = scenario.name,
+            pid = std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("the scratch directory can be created");
+
+        let stub_cli = dir.join("kafka-metadata-quorum.sh");
+        fs::write(&stub_cli, STUB_QUORUM_CLI).expect("the stub CLI can be written");
+        fs::set_permissions(&stub_cli, fs::Permissions::from_mode(0o755))
+            .expect("the stub CLI can be made executable");
+
+        let describe_output_file = dir.join("describe-output");
+        fs::write(&describe_output_file, &scenario.describe)
+            .expect("the stub's describe output can be written");
+        let call_log = dir.join("cli-calls");
+        fs::write(&call_log, "").expect("the stub's call log can be created");
+        let attempts = dir.join("remove-controller-attempts");
+        fs::write(&attempts, "0").expect("the stub's attempt counter can be created");
+
+        let mut command = Command::new("bash");
+        command
+            .arg("-c")
+            .arg(strip_shell_comments(CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT))
+            // The script's own inputs.
+            .env(
+                "BOOTSTRAP_SERVERS",
+                "kafka-controller-default-headless.default.svc.cluster.local:9093",
+            )
+            .env("QUORUM_CLI", &stub_cli)
+            .env("ADMIN_CLIENT_CONFIG", dir.join("admin-client.properties"))
+            .env("CLI_TIMEOUT_SECONDS", "5")
+            .env("CLI_KILL_AFTER_SECONDS", "1")
+            .env(
+                "REMOVAL_DEADLINE_SECONDS",
+                scenario.deadline_seconds.to_string(),
+            )
+            .env("RETRY_INTERVAL_SECONDS", "1")
+            // Read by the stub CLI, not by the script under test.
+            .env("DESCRIBE_OUTPUT", &describe_output_file)
+            .env("CALL_LOG", &call_log)
+            .env("ATTEMPTS", &attempts)
+            .env(
+                "REMOVE_CONTROLLER_FAILURES",
+                scenario.remove_controller_failures.to_string(),
+            );
+        if let Some(replica_id) = scenario.replica_id {
+            command.env("REPLICA_ID", replica_id.to_string());
+        }
+
+        let output = command
+            .output()
+            .expect("bash is available to run the preStop script");
+        let cli_calls = fs::read_to_string(&call_log)
+            .expect("the stub's call log can be read")
+            .lines()
+            .map(str::to_string)
+            .collect();
+
+        let run = PreStopRun {
+            exit_code: output.status.code(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            cli_calls,
+        };
+        fs::remove_dir_all(&dir).expect("the scratch directory can be removed");
+        run
+    }
+
+    /// The happy path: with other voters left behind, the departing controller removes itself,
+    /// passing both its node id and the directory id it read out of the quorum's own
+    /// `describe` output (`remove-controller` needs both).
     #[test]
-    fn controller_remove_self_pre_stop_command_logs_loudly_when_every_attempt_fails() {
+    fn pre_stop_removes_self_while_other_voters_remain() {
+        let run = run_pre_stop(PreStopScenario {
+            name: "removes-self",
+            describe: describe_output(&[
+                (1, "dir-1", "Leader"),
+                (2, "dir-2", "Follower"),
+                (3, "dir-3", "Follower"),
+            ]),
+            ..Default::default()
+        });
+
+        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
+        assert!(
+            run.stdout
+                .contains("Removing self (node 1, directory dir-1)")
+        );
+        let removals = run.calls_of("remove-controller");
+        assert_eq!(removals.len(), 1, "cli calls were: {:?}", run.cli_calls);
+        assert!(
+            removals[0].contains("--controller-id 1 --controller-directory-id dir-1"),
+            "removal call was: {}",
+            removals[0]
+        );
+    }
+
+    /// The 2 -> 1 removal, which the earlier majority-based guard
+    /// (`remaining_after_removal -ge total_voters / 2 + 1`) wrongly blocked: it left a
+    /// 2-voter quorum with one live member and one voter that was gone for good — a dead
+    /// quorum needing manual recovery, exactly the outage this hook exists to prevent. The
+    /// only invariant that matters is "never remove the *last* voter".
+    #[test]
+    fn pre_stop_removes_the_second_to_last_voter() {
+        let run = run_pre_stop(PreStopScenario {
+            name: "second-to-last",
+            describe: describe_output(&[(1, "dir-1", "Leader"), (2, "dir-2", "Follower")]),
+            ..Default::default()
+        });
+
+        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
+        assert_eq!(
+            run.calls_of("remove-controller").len(),
+            1,
+            "cli calls were: {:?}",
+            run.cli_calls
+        );
+    }
+
+    /// Removing the last voter would break the next cluster restart (it would reformat the
+    /// Raft metadata), so it must never happen. Confirmed live: before this branch gave up
+    /// immediately, the last controller standing kept retrying every 2s for the full
+    /// deadline, delaying its own termination for nothing — no peer can add a voter on its
+    /// behalf while it is terminating, so the answer can never change.
+    #[test]
+    fn pre_stop_never_removes_the_last_voter_and_gives_up_immediately() {
+        let run = run_pre_stop(PreStopScenario {
+            name: "last-voter",
+            describe: describe_output(&[(1, "dir-1", "Leader")]),
+            deadline_seconds: 10,
+            ..Default::default()
+        });
+
+        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
+        assert!(run.stdout.contains("Removing self would leave zero voters"));
+        assert!(
+            run.calls_of("remove-controller").is_empty(),
+            "cli calls were: {:?}",
+            run.cli_calls
+        );
+        assert_eq!(
+            run.calls_of("describe").len(),
+            1,
+            "the last-voter case must not retry until the deadline, cli calls were: {:?}",
+            run.cli_calls
+        );
+    }
+
+    /// Observers are not voters: counting them would make a one-voter quorum look like it has
+    /// a spare and let this pod remove the last voter after all.
+    #[test]
+    fn pre_stop_does_not_count_observers_as_voters() {
+        let run = run_pre_stop(PreStopScenario {
+            name: "observers",
+            describe: describe_output(&[(1, "dir-1", "Leader"), (2, "dir-2", "Observer")]),
+            ..Default::default()
+        });
+
+        assert!(run.stdout.contains("Removing self would leave zero voters"));
+        assert!(
+            run.calls_of("remove-controller").is_empty(),
+            "cli calls were: {:?}",
+            run.cli_calls
+        );
+    }
+
+    /// A controller that is not (or no longer) a voter has nothing to remove — that is a
+    /// finished state, not a failure to retry.
+    #[test]
+    fn pre_stop_is_a_no_op_when_self_is_not_a_voter() {
+        let run = run_pre_stop(PreStopScenario {
+            name: "not-a-voter",
+            describe: describe_output(&[(2, "dir-2", "Leader"), (3, "dir-3", "Follower")]),
+            deadline_seconds: 10,
+            ..Default::default()
+        });
+
+        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
+        assert!(
+            run.stdout
+                .contains("Could not find own node 1 among current voters")
+        );
+        assert!(
+            run.calls_of("remove-controller").is_empty(),
+            "cli calls were: {:?}",
+            run.cli_calls
+        );
+        assert_eq!(
+            run.calls_of("describe").len(),
+            1,
+            "cli calls were: {:?}",
+            run.cli_calls
+        );
+    }
+
+    /// A failed `remove-controller` — a leader election in flight, a peer mid-termination —
+    /// is exactly what the retry loop exists for, so it must retry rather than give up like
+    /// the "nothing to do" cases.
+    #[test]
+    fn pre_stop_retries_a_failed_remove_controller_attempt() {
+        let run = run_pre_stop(PreStopScenario {
+            name: "retry-removal",
+            describe: describe_output(&[(1, "dir-1", "Leader"), (2, "dir-2", "Follower")]),
+            remove_controller_failures: 1,
+            deadline_seconds: 6,
+            ..Default::default()
+        });
+
+        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
+        assert!(
+            run.stdout
+                .contains("remove-controller attempt failed, will retry if time remains")
+        );
+        assert_eq!(
+            run.calls_of("remove-controller").len(),
+            2,
+            "cli calls were: {:?}",
+            run.cli_calls
+        );
+        assert!(
+            !run.stdout.contains("ERROR:"),
+            "an attempt that eventually succeeded must not report failure, stdout was: {}",
+            run.stdout
+        );
+    }
+
+    /// An unreachable quorum is retried for the whole budget and then reported loudly
+    /// (`ERROR:`, so it is greppable and alertable): the on-disk voter set may now list a pod
+    /// that is gone, which is what can strand a later restart-from-zero (see
+    /// `controller_stuck_unattached_liveness_probe` in `resource/statefulset.rs`). The hook
+    /// still exits 0 — a failed removal must never be why a pod fails to terminate.
+    #[test]
+    fn pre_stop_retries_an_unreachable_quorum_then_reports_loudly() {
+        let run = run_pre_stop(PreStopScenario {
+            name: "unreachable",
+            deadline_seconds: 3,
+            ..Default::default()
+        });
+
+        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
+        assert!(
+            run.calls_of("describe").len() >= 2,
+            "an unreachable quorum must be retried, cli calls were: {:?}",
+            run.cli_calls
+        );
+        assert!(
+            run.calls_of("remove-controller").is_empty(),
+            "cli calls were: {:?}",
+            run.cli_calls
+        );
+        assert!(
+            run.stdout
+                .contains("ERROR: could not remove self (node 1) from the voter set"),
+            "stdout was: {}",
+            run.stdout
+        );
+    }
+
+    /// Describe output the parser does not recognize must not be read as "no voters left" —
+    /// that looks exactly like the last-voter case and would stop, leaving this pod in the
+    /// voter set without a word. It is inconclusive: retry, then report loudly.
+    #[test]
+    fn pre_stop_retries_unrecognized_describe_output_then_reports_loudly() {
+        let run = run_pre_stop(PreStopScenario {
+            name: "unrecognized",
+            describe: "an unexpected header\nan unexpected row\n".to_string(),
+            deadline_seconds: 3,
+            ..Default::default()
+        });
+
+        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
+        assert!(
+            run.stdout
+                .contains("Could not identify any voters in the describe output")
+        );
+        assert!(
+            run.calls_of("remove-controller").is_empty(),
+            "cli calls were: {:?}",
+            run.cli_calls
+        );
+        assert!(run.stdout.contains("ERROR: could not remove self"));
+    }
+
+    /// A missing input is an operator bug, not a runtime condition, so it must fail loudly
+    /// instead of silently skipping the removal — or, with `REPLICA_ID` empty, hunting for a
+    /// voter row that cannot match.
+    #[test]
+    fn pre_stop_fails_loudly_when_an_input_is_missing() {
+        let run = run_pre_stop(PreStopScenario {
+            name: "missing-input",
+            replica_id: None,
+            ..Default::default()
+        });
+
+        assert_ne!(run.exit_code, Some(0));
+        assert!(
+            run.stderr.contains("REPLICA_ID"),
+            "stderr was: {}",
+            run.stderr
+        );
+    }
+
+    /// The script and the preamble feeding it live in different files, so nothing but this
+    /// test keeps the two in sync: every input the script declares mandatory has to be
+    /// assigned by the generated command.
+    #[test]
+    fn generated_pre_stop_command_defines_every_input_the_script_requires() {
         let command = controller_remove_self_pre_stop_command(None);
-        assert!(command.contains(r#"if [ "$finished" != true ]; then"#));
-        let error_branch = command
-            .split(r#"if [ "$finished" != true ]; then"#)
-            .nth(1)
-            .expect("the failure branch follows the retry loop");
-        assert!(error_branch.contains("echo \"ERROR:"));
+        let required_inputs: Vec<&str> = CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix(r#": "${"#))
+            .filter_map(|declaration| declaration.split(":?").next())
+            .collect();
+
+        assert!(
+            !required_inputs.is_empty(),
+            "the script is expected to declare its mandatory inputs as `: \"${{NAME:?...}}\"`"
+        );
+        for input in required_inputs {
+            assert!(
+                command.contains(&format!("{input}=")),
+                "the generated preStop preamble must define `{input}`, which the script \
+                 declares mandatory; command was: {command}"
+            );
+        }
+    }
+
+    /// The generated command is inlined into the controller pod template, so the script's
+    /// maintenance comments are stripped on the way in — and only those: every line of actual
+    /// shell has to survive [`strip_shell_comments`] intact.
+    #[test]
+    fn generated_pre_stop_command_embeds_the_script_without_its_comments() {
+        let command = controller_remove_self_pre_stop_command(None);
+
+        for line in command.lines() {
+            assert!(
+                !line.trim_start().starts_with('#'),
+                "no comment line may reach the pod template, found: {line}"
+            );
+        }
+
+        let code_lines = CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT
+            .lines()
+            .filter(|line| !line.trim_start().starts_with('#') && !line.trim().is_empty());
+        for line in code_lines {
+            assert!(
+                command.contains(line),
+                "stripping comments must not drop a line of shell, lost: {line}"
+            );
+        }
     }
 
     /// The retry `DEADLINE` must be derived from the pod's actual `gracefulShutdownTimeout`
@@ -568,93 +965,8 @@ mod tests {
         let command =
             controller_remove_self_pre_stop_command(Some(Duration::from_minutes_unchecked(30)));
         assert!(command.contains(&format!(
-            "DEADLINE=$((SECONDS + {}))",
-            PRE_STOP_MAX_DEADLINE_SECONDS
+            "REMOVAL_DEADLINE_SECONDS={PRE_STOP_MAX_DEADLINE_SECONDS}"
         )));
-    }
-
-    /// The old majority-based guard (`majority=$(( total_voters / 2 + 1 ))`,
-    /// `remaining_after_removal -ge majority`) always blocked the last safe removal of a
-    /// 2-voter quorum (2 -> 1): `majority` was 2, `remaining_after_removal` was 1, and
-    /// `1 -ge 2` is false. That left a 2-voter quorum with only 1 live member — a dead
-    /// quorum requiring manual recovery, exactly the outage this feature exists to prevent.
-    /// The only invariant that actually matters is "never remove the last voter", so this
-    /// asserts the generated script uses that condition instead.
-    #[test]
-    fn controller_remove_self_pre_stop_command_allows_removing_the_second_to_last_voter() {
-        let command = controller_remove_self_pre_stop_command(None);
-        assert!(
-            command.contains(r#"remaining_after_removal" -ge 1 ]"#),
-            "expected the guard to allow removal whenever at least one voter remains \
-             afterwards, command was: {command}"
-        );
-        assert!(
-            !command.contains("majority"),
-            "the old majority-based guard variable should be gone entirely, command was: \
-             {command}"
-        );
-    }
-
-    /// Directly exercises the corrected guard's arithmetic (mirrored from the generated
-    /// script) end to end in bash: a 2-voter quorum must allow removing the departing voter
-    /// (leaving 1), while a 1-voter quorum must not (that would leave zero).
-    #[test]
-    fn quorum_manager_pre_stop_guard_arithmetic_allows_two_to_one_but_not_one_to_zero() {
-        fn removal_allowed(total_voters: u32) -> bool {
-            let script = format!(
-                r#"
-                total_voters={total_voters}
-                remaining_after_removal=$(( total_voters - 1 ))
-                [ "$remaining_after_removal" -ge 1 ]
-                "#
-            );
-            std::process::Command::new("bash")
-                .arg("-c")
-                .arg(script)
-                .status()
-                .expect("bash is available to run this test")
-                .success()
-        }
-
-        assert!(
-            removal_allowed(2),
-            "removing the second-to-last voter of a 2-voter quorum must be allowed"
-        );
-        assert!(
-            !removal_allowed(1),
-            "removing the last voter of a 1-voter quorum must never be allowed"
-        );
-    }
-
-    /// Confirmed live: a controller pod that is the last remaining voter when it terminates
-    /// (e.g. scaling controllers down to 1, or the last survivor of a full teardown) hit the
-    /// "would leave zero voters" branch and, before this fix, kept retrying every 2s until
-    /// the full 25s `DEADLINE` elapsed for no benefit -- nothing else adds a voter for this
-    /// pod while it's terminating, so the outcome can never change. The branch must `break`
-    /// immediately instead of falling through to the loop's `sleep 2`.
-    #[test]
-    fn controller_remove_self_pre_stop_command_gives_up_immediately_on_the_last_voter() {
-        let command = controller_remove_self_pre_stop_command(None);
-        let after_zero_voters_message = command
-            .split("Removing self would leave zero voters")
-            .nth(1)
-            .expect("the zero-voters message is present in the generated script");
-        let next_sleep = after_zero_voters_message
-            .find("sleep 2")
-            .expect("the loop's retry `sleep 2` follows somewhere after this branch");
-        let until_next_retry = &after_zero_voters_message[..next_sleep];
-
-        assert!(
-            until_next_retry.contains("finished=true"),
-            "the zero-voters branch must mark the loop finished (no voter needs removing), \
-             text was: {until_next_retry}"
-        );
-        assert!(
-            until_next_retry.contains("break"),
-            "the zero-voters branch must break out of the retry loop immediately instead of \
-             falling through to the loop's `sleep 2` and retrying until DEADLINE, text was: \
-             {until_next_retry}"
-        );
     }
 
     /// The `preStop` hook already guarded its `REPLICA_ID` derivation against an empty
@@ -723,13 +1035,26 @@ mod tests {
     #[test]
     fn every_cli_call_has_a_kill_after_so_timeout_is_actually_enforced() {
         let container_command = quorum_manager_container_command();
-        let pre_stop_command = controller_remove_self_pre_stop_command(None);
 
-        for command in [&container_command, &pre_stop_command] {
-            for line in command
+        // The `preStop` script routes every call through its `quorum_cli` wrapper, so it
+        // refers to the CLI by variable rather than by path — that wrapper is the one place
+        // that has to get this right.
+        for (script, cli_invocation) in [
+            (container_command.as_str(), KAFKA_METADATA_QUORUM_BINARY),
+            (CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT, r#""$QUORUM_CLI""#),
+        ] {
+            // Join line continuations first: an invocation may well be spread over two lines.
+            let script = script.replace("\\\n", " ");
+            let invocations: Vec<&str> = script
                 .lines()
-                .filter(|line| line.contains(KAFKA_METADATA_QUORUM_BINARY))
-            {
+                .filter(|line| line.contains(cli_invocation))
+                .collect();
+
+            assert!(
+                !invocations.is_empty(),
+                "expected at least one `{cli_invocation}` invocation to check"
+            );
+            for line in invocations {
                 assert!(
                     line.contains("timeout --kill-after="),
                     "every kafka-metadata-quorum.sh invocation must use `timeout --kill-after=...` \
