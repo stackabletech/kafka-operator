@@ -822,12 +822,12 @@ fn build_quorum_manager_container(
             "-c".to_string(),
             quorum_manager_container_command(),
         ])
-        .add_env_vars(env)
         // `kafka-metadata-quorum.sh` goes through `kafka-run-class.sh`, which defaults
         // `KAFKA_HEAP_OPTS` to `-Xmx256M` when unset. Set an explicit, modest heap so the
         // JVM's max heap plus its base/metaspace/SSL-buffer overhead stays comfortably
         // under the container's memory limit below.
         .add_env_var(KAFKA_HEAP_OPTS.to_string(), "-Xmx128M")
+        .add_env_vars(env)
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")

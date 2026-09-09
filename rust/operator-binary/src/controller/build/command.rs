@@ -246,7 +246,7 @@ pub fn quorum_manager_container_command() -> String {
           && cat /tmp/{controller_properties_file} {admin_client_config} > {add_controller_config}; then
           echo "Starting KRaft voter admission loop against bootstrap servers: $BOOTSTRAP_SERVERS"
           while true; do
-            state=$(curl -s --max-time 5 --connect-timeout 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+"\}}' | grep -oE '"[a-z]+"' | tr -d '"')
+            state=$(curl -s --max-time 5 --connect-timeout 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+",?\}}' | grep -oE '"[a-z]+"' | tr -d '"')
             if [ "$state" = "observer" ]; then
               echo "Local Raft state is observer, attempting add-controller..."
               timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {add_controller_config} add-controller &
@@ -305,10 +305,10 @@ const PRE_STOP_MAX_DEADLINE_SECONDS: u64 = 120;
 fn pre_stop_deadline_seconds(graceful_shutdown_timeout: Option<Duration>) -> u64 {
     graceful_shutdown_timeout
         .map(|timeout| {
-            timeout
-                .as_secs()
-                .saturating_sub(PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS)
+            let secs = timeout.as_secs();
+            secs.saturating_sub(PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS)
                 .clamp(PRE_STOP_MIN_DEADLINE_SECONDS, PRE_STOP_MAX_DEADLINE_SECONDS)
+                .min(secs)   // never outlive the grace period itself
         })
         .unwrap_or(PRE_STOP_MIN_DEADLINE_SECONDS)
 }
