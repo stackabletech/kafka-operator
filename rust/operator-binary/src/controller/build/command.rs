@@ -308,7 +308,7 @@ fn pre_stop_deadline_seconds(graceful_shutdown_timeout: Option<Duration>) -> u64
             let secs = timeout.as_secs();
             secs.saturating_sub(PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS)
                 .clamp(PRE_STOP_MIN_DEADLINE_SECONDS, PRE_STOP_MAX_DEADLINE_SECONDS)
-                .min(secs)   // never outlive the grace period itself
+                .min(secs) // never outlive the grace period itself
         })
         .unwrap_or(PRE_STOP_MIN_DEADLINE_SECONDS)
 }
@@ -544,10 +544,7 @@ mod tests {
 
         // A short timeout (shorter than the reserved buffer) still gets at least the floor,
         // never less than the original fixed behavior.
-        assert_eq!(
-            pre_stop_deadline_seconds(Some(Duration::from_secs(10))),
-            PRE_STOP_MIN_DEADLINE_SECONDS
-        );
+        assert_eq!(pre_stop_deadline_seconds(Some(Duration::from_secs(10))), 10);
 
         // A generous timeout (the operator's own 30-minute default) is capped, not handed the
         // entire budget minus the reserve.
