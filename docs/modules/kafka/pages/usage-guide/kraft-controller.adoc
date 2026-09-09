@@ -100,7 +100,6 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
   with `kafka-storage.sh format --standalone`, bootstrapping a single-node quorum by itself.
   Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
   Brokers always format with `--no-initial-controllers` too; they are never voters.
-  the current replica count.
 * `controller.quorum.bootstrap.servers` (used by the `kafka` process itself to find the controller quorum, by the
   `quorum-manager` sidecar for its own `add-controller` calls, and by the `kafka` container's own `preStop` hook
   for its `remove-controller` call) points at each controller role group's own headless Service DNS name, not

@@ -151,7 +151,7 @@ pub fn controller_stuck_unattached_liveness_probe(
         "-c".to_string(),
         format!(
             "timeout 2 bash -c 'cat < /dev/null > /dev/tcp/localhost/{client_port}' || exit 1\n\
-             state=$(curl -s --max-time 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\\{{state=\"[a-z]+\"\\}}' | grep -oE '\"[a-z]+\"' | tr -d '\"')\n\
+             state=$(curl -s --max-time 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\\{{state=\"[a-z]+\",?\\}}' | grep -oE '\"[a-z]+\"' | tr -d '\"')\n\
              [ \"$state\" != \"unattached\" ]"
         ),
     ])

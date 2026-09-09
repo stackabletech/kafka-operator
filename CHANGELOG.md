@@ -13,9 +13,9 @@ All notable changes to this project will be documented in this file.
   On termination, a new `preStop` hook on the controller container (`kafka`) removes the pod from
   the voter list before shutdown.
   The property `controller.quorum.bootstrap.servers` now contains the headless service names
-  of all controller role groups instead of individual peer host names. This prevevents the
+  of all controller role groups instead of individual peer host names. This prevents the
   restart controller from restarting all pods in the quorum when a new one is added/deleted.
-  The controller `StatefulSet` is now scaled using `OrderedBy` instead of the `Parallel` strategy
+  The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
