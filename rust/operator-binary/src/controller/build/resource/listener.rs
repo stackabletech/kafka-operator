@@ -8,6 +8,7 @@ use stackable_operator::{
         role_group_utils::{QualifiedRoleGroupName, ResourceNames},
         types::{kubernetes::ListenerName, operator::ClusterName},
     },
+    validation::RFC_1035_LABEL_MAX_LENGTH,
 };
 
 use crate::{
@@ -25,7 +26,9 @@ use crate::{
 /// compute the name from the raw cluster identity when fetching the stored `Listener`s that the
 /// discovery `ConfigMap` is built from.
 ///
-/// The returned ListenerName is a lowercase RFC 1035 label name (checked by a unit test).
+/// The returned ListenerName is a lowercase RFC 1035 label name. Its length is ensured at compile
+/// time; the character class follows from [`QualifiedRoleGroupName`] being an RFC 1035 label name
+/// and is additionally checked by a unit test.
 pub fn bootstrap_listener_name(
     cluster_name: &ClusterName,
     role: &KafkaRole,
@@ -33,19 +36,22 @@ pub fn bootstrap_listener_name(
 ) -> ListenerName {
     const BOOTSTRAP_SUFFIX: &str = "-bootstrap";
 
-    // Compile-time checks that `<qualified_role_group_name>-bootstrap` is a valid ListenerName, so
-    // the `expect` below cannot fire.
+    // Compile-time checks that `<qualified_role_group_name>-bootstrap` is an RFC 1035 label name
+    // (and therefore also a valid ListenerName), so the `expect` below cannot fire.
     //
-    // Length: the qualified role group name plus the suffix stays within the ListenerName limit.
+    // Length: the qualified role group name plus the suffix stays within the RFC 1035 label limit.
     const _: () = assert!(
-        QualifiedRoleGroupName::MAX_LENGTH + BOOTSTRAP_SUFFIX.len() <= ListenerName::MAX_LENGTH,
-        "The string `<qualified_role_group_name>-bootstrap` must not exceed the limit of Listener \
-    names."
+        QualifiedRoleGroupName::MAX_LENGTH + BOOTSTRAP_SUFFIX.len() <= RFC_1035_LABEL_MAX_LENGTH,
+        "The string `<qualified_role_group_name>-bootstrap` must not exceed the limit of an \
+        RFC 1035 label name."
     );
-    // Characters: a ListenerName is an RFC 1123 DNS subdomain. The qualified role group name is an
-    // RFC 1123 label name (which is a subdomain of a single label); appending `-bootstrap` keeps it
-    // one, as the name still starts and ends with an alphanumeric character and adds no invalid ones.
-    let _ = QualifiedRoleGroupName::IS_RFC_1123_SUBDOMAIN_NAME;
+    // Characters: the qualified role group name is an RFC 1035 label name, i.e. it starts with a
+    // letter and consists of lowercase alphanumeric characters and dashes. Appending `-bootstrap`
+    // adds only such characters and ends with a letter, so the result is still an RFC 1035 label
+    // name. Every RFC 1035 label name is also an RFC 1123 DNS subdomain name, which is what a
+    // ListenerName requires.
+    let _ = QualifiedRoleGroupName::IS_RFC_1035_LABEL_NAME;
+    let _ = ListenerName::IS_RFC_1123_SUBDOMAIN_NAME;
 
     let resource_names = ResourceNames {
         cluster_name: cluster_name.clone(),
@@ -122,6 +128,7 @@ mod tests {
 
     #[test]
     fn bootstrap_listener_name_is_rfc_1035_label_name() {
+        // The length is already ensured at compile time; this test covers the character class.
         // Every ClusterName is a valid RFC 1035 label name, so we use just some string with maximum
         // length. The role group name is user-provided, so use the maximum length of an RFC 1123
         // label there as well; operator-rs then hash-truncates the qualified role group name.
