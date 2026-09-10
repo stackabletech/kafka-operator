@@ -26,9 +26,10 @@ use crate::{
 /// compute the name from the raw cluster identity when fetching the stored `Listener`s that the
 /// discovery `ConfigMap` is built from.
 ///
-/// The returned ListenerName is a lowercase RFC 1035 label name. Its length is ensured at compile
-/// time; the character class follows from [`QualifiedRoleGroupName`] being an RFC 1035 label name
-/// and is additionally checked by a unit test.
+/// The returned name is both a valid [`ListenerName`] and a lowercase RFC 1035 label name. The
+/// length is ensured at compile time for both; the character class follows from
+/// [`QualifiedRoleGroupName`] being an RFC 1035 label name and is additionally checked by a unit
+/// test.
 pub fn bootstrap_listener_name(
     cluster_name: &ClusterName,
     role: &KafkaRole,
@@ -36,20 +37,25 @@ pub fn bootstrap_listener_name(
 ) -> ListenerName {
     const BOOTSTRAP_SUFFIX: &str = "-bootstrap";
 
-    // Compile-time checks that `<qualified_role_group_name>-bootstrap` is an RFC 1035 label name
-    // (and therefore also a valid ListenerName), so the `expect` below cannot fire.
+    // Compile-time checks that `<qualified_role_group_name>-bootstrap` is both a valid ListenerName
+    // and an RFC 1035 label name, so the `expect` below cannot fire.
     //
+    // Length: the qualified role group name plus the suffix stays within the ListenerName limit.
+    const _: () = assert!(
+        QualifiedRoleGroupName::MAX_LENGTH + BOOTSTRAP_SUFFIX.len() <= ListenerName::MAX_LENGTH,
+        "The string `<qualified_role_group_name>-bootstrap` must not exceed the limit of Listener \
+        names."
+    );
     // Length: the qualified role group name plus the suffix stays within the RFC 1035 label limit.
     const _: () = assert!(
         QualifiedRoleGroupName::MAX_LENGTH + BOOTSTRAP_SUFFIX.len() <= RFC_1035_LABEL_MAX_LENGTH,
         "The string `<qualified_role_group_name>-bootstrap` must not exceed the limit of an \
         RFC 1035 label name."
     );
-    // Characters: the qualified role group name is an RFC 1035 label name, i.e. it starts with a
-    // letter and consists of lowercase alphanumeric characters and dashes. Appending `-bootstrap`
-    // adds only such characters and ends with a letter, so the result is still an RFC 1035 label
-    // name. Every RFC 1035 label name is also an RFC 1123 DNS subdomain name, which is what a
-    // ListenerName requires.
+    // Characters: the qualified role group name is an RFC 1123 DNS subdomain name (which a
+    // ListenerName requires) and an RFC 1035 label name. Appending `-bootstrap` adds only lowercase
+    // letters and a dash and ends with a letter, so the result is still both.
+    let _ = QualifiedRoleGroupName::IS_RFC_1123_SUBDOMAIN_NAME;
     let _ = QualifiedRoleGroupName::IS_RFC_1035_LABEL_NAME;
     let _ = ListenerName::IS_RFC_1123_SUBDOMAIN_NAME;
 
@@ -66,8 +72,8 @@ pub fn bootstrap_listener_name(
     .expect("is a valid Listener name")
 }
 
-/// Kafka clients will use the load-balanced bootstrap listener to get a list of broker addresses and will use those to
-/// transmit data to the correct broker.
+/// Kafka clients will use the load-balanced bootstrap listener to get a list of broker addresses
+/// and will use those to transmit data to the correct broker.
 // TODO (@NickLarsenNZ): Move shared functionality to stackable-operator
 pub fn build_broker_rolegroup_bootstrap_listener(
     validated_cluster: &ValidatedCluster,
