@@ -28,7 +28,10 @@ use stackable_operator::{
         role_utils::{JavaCommonConfig, Role},
         types::{
             common::Port,
-            kubernetes::{ConfigMapName, NamespaceName, ServiceName, StatefulSetName},
+            kubernetes::{
+                ConfigMapName, NamespaceName, PersistentVolumeClaimName, ServiceName,
+                StatefulSetName, VolumeName,
+            },
         },
     },
     versioned::versioned,
@@ -51,24 +54,27 @@ pub const METRICS_PORT: Port = Port(9606);
 // env vars
 constant!(pub KAFKA_HEAP_OPTS: EnvVarName = "KAFKA_HEAP_OPTS");
 // server_properties
-pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
+// The log-dirs PVC (a volumeClaimTemplate) and the volume mount referencing it share this name.
+constant!(pub LOG_DIRS_VOLUME_NAME: PersistentVolumeClaimName = "log-dirs");
 // directories
-pub const LISTENER_BROKER_VOLUME_NAME: &str = "listener-broker";
-pub const LISTENER_BOOTSTRAP_VOLUME_NAME: &str = "listener-bootstrap";
+constant!(pub LISTENER_BROKER_VOLUME_NAME: VolumeName = "listener-broker");
+// The bootstrap listener PVC (a volumeClaimTemplate) and the volume mount referencing it share
+// this name.
+constant!(pub LISTENER_BOOTSTRAP_VOLUME_NAME: PersistentVolumeClaimName = "listener-bootstrap");
 pub const STACKABLE_LISTENER_BROKER_DIR: &str = "/stackable/listener-broker";
 pub const STACKABLE_LISTENER_BOOTSTRAP_DIR: &str = "/stackable/listener-bootstrap";
 pub const STACKABLE_DATA_DIR: &str = "/stackable/data";
 pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
-pub const STACKABLE_CONFIG_DIR_NAME: &str = "config";
+constant!(pub STACKABLE_CONFIG_DIR_NAME: VolumeName = "config");
 // kerberos
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
 pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
 // logging
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
-pub const STACKABLE_LOG_CONFIG_DIR_NAME: &str = "log-config";
-pub const STACKABLE_LOG_DIR_NAME: &str = "log";
+constant!(pub STACKABLE_LOG_CONFIG_DIR_NAME: VolumeName = "log-config");
+constant!(pub STACKABLE_LOG_DIR_NAME: VolumeName = "log");
 pub const BROKER_ID_POD_MAP_DIR: &str = "/stackable/broker-id-pod-map";
-pub const BROKER_ID_POD_MAP_DIR_NAME: &str = "broker-id-pod-map-dir";
+constant!(pub BROKER_ID_POD_MAP_DIR_NAME: VolumeName = "broker-id-pod-map-dir");
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -76,16 +82,6 @@ pub enum Error {
         "The ZooKeeper metadata manager is not supported for Kafka version 4 and higher"
     ))]
     Kafka4RequiresKraftMetadataManager,
-
-    #[snafu(display(
-        "Kafka version 4 and higher requires a Kraft controller (configured via `spec.controller`)"
-    ))]
-    Kafka4RequiresKraft,
-
-    #[snafu(display(
-        "Kraft controller (`spec.controller`) and ZooKeeper (`spec.clusterConfig.zookeeperConfigMapName`) are configured. Please only choose one"
-    ))]
-    KraftAndZookeeperConfigured,
 }
 
 pub type BrokerRole = Role<
@@ -413,6 +409,13 @@ mod tests {
     fn test_constants() {
         // Test that dereferencing the constants does not panic.
         let _ = *KAFKA_HEAP_OPTS;
+        let _ = *LOG_DIRS_VOLUME_NAME;
+        let _ = *LISTENER_BROKER_VOLUME_NAME;
+        let _ = *LISTENER_BOOTSTRAP_VOLUME_NAME;
+        let _ = *STACKABLE_CONFIG_DIR_NAME;
+        let _ = *STACKABLE_LOG_CONFIG_DIR_NAME;
+        let _ = *STACKABLE_LOG_DIR_NAME;
+        let _ = *BROKER_ID_POD_MAP_DIR_NAME;
     }
 
     fn get_server_secret_class(kafka: &v1alpha1::KafkaCluster) -> Option<SecretClassName> {

@@ -5,11 +5,8 @@ use stackable_operator::{
     builder::{
         meta::ObjectMetaBuilder,
         pod::{
-            PodBuilder,
-            container::{ContainerBuilder, FieldPathEnvVar},
-            resources::ResourceRequirementsBuilder,
-            security::PodSecurityContextBuilder,
-            volume::VolumeBuilder,
+            PodBuilder, container::FieldPathEnvVar, resources::ResourceRequirementsBuilder,
+            security::PodSecurityContextBuilder, volume::VolumeBuilder,
         },
     },
     commons::product_image_selection::ResolvedProductImage,
@@ -30,7 +27,7 @@ use stackable_operator::{
         builder::{
             meta::ownerreference_from_resource,
             pod::{
-                container::{EnvVarName, EnvVarSet},
+                container::{EnvVarName, EnvVarSet, new_container_builder},
                 volume::{ListenerReference, listener_operator_volume_source_builder_build_pvc},
             },
         },
@@ -39,7 +36,7 @@ use stackable_operator::{
             STACKABLE_LOG_DIR, ValidatedContainerLogConfigChoice, vector_container,
         },
         role_group_utils::ResourceNames,
-        types::kubernetes::{ConfigMapKey, ContainerName, PersistentVolumeClaimName, VolumeName},
+        types::kubernetes::{ConfigMapKey, ContainerName, VolumeName},
     },
 };
 
@@ -147,11 +144,6 @@ pub enum Error {
         source: crate::controller::build::security::Error,
     },
 
-    #[snafu(display("failed to add needed volumeMount"))]
-    AddVolumeMount {
-        source: stackable_operator::builder::pod::container::Error,
-    },
-
     #[snafu(display("failed to add needed volume"))]
     AddVolume {
         source: stackable_operator::builder::pod::Error,
@@ -170,12 +162,6 @@ pub enum Error {
     #[snafu(display("failed to configure graceful shutdown"))]
     GracefulShutdown {
         source: crate::controller::build::graceful_shutdown::Error,
-    },
-
-    #[snafu(display("invalid Container name [{name}]"))]
-    InvalidContainerName {
-        name: String,
-        source: stackable_operator::builder::pod::container::Error,
     },
 
     #[snafu(display("missing secret lifetime"))]
@@ -206,17 +192,8 @@ pub fn build_broker_rolegroup_statefulset(
         role_group_name,
     );
 
-    let kcat_prober_container_name = BrokerContainer::KcatProber.to_string();
-    let mut cb_kcat_prober =
-        ContainerBuilder::new(&kcat_prober_container_name).context(InvalidContainerNameSnafu {
-            name: kcat_prober_container_name.clone(),
-        })?;
-
-    let kafka_container_name = BrokerContainer::Kafka.to_string();
-    let mut cb_kafka =
-        ContainerBuilder::new(&kafka_container_name).context(InvalidContainerNameSnafu {
-            name: kafka_container_name.clone(),
-        })?;
+    let mut cb_kcat_prober = new_container_builder(BrokerContainer::KcatProber.name());
+    let mut cb_kafka = new_container_builder(BrokerContainer::Kafka.name());
 
     let mut pod_builder = PodBuilder::new();
 
@@ -240,12 +217,10 @@ pub fn build_broker_rolegroup_statefulset(
     // main broker listener is an ephemeral PVC instead
     let bootstrap_listener_name =
         validated_cluster.bootstrap_listener_name(kafka_role, role_group_name);
-    let bootstrap_pvc_name = PersistentVolumeClaimName::from_str(LISTENER_BOOTSTRAP_VOLUME_NAME)
-        .expect("the bootstrap listener volume name is a valid PVC name");
     pvcs.push(listener_operator_volume_source_builder_build_pvc(
         &ListenerReference::Listener(bootstrap_listener_name),
         &unversioned_recommended_labels,
-        &bootstrap_pvc_name,
+        &LISTENER_BOOTSTRAP_VOLUME_NAME,
     ));
 
     if kafka_security.has_kerberos_enabled() {
@@ -296,21 +271,21 @@ pub fn build_broker_rolegroup_statefulset(
     cb_kafka
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
-        .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
-        .context(AddVolumeMountSnafu)?
-        .add_volume_mount(STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
-        .context(AddVolumeMountSnafu)?
+        .add_volume_mount(&*LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.")
+        .add_volume_mount(&*STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.")
         .add_volume_mount(
-            LISTENER_BOOTSTRAP_VOLUME_NAME,
+            &*LISTENER_BOOTSTRAP_VOLUME_NAME,
             STACKABLE_LISTENER_BOOTSTRAP_DIR,
         )
-        .context(AddVolumeMountSnafu)?
-        .add_volume_mount(LISTENER_BROKER_VOLUME_NAME, STACKABLE_LISTENER_BROKER_DIR)
-        .context(AddVolumeMountSnafu)?
-        .add_volume_mount(STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_CONFIG_DIR)
-        .context(AddVolumeMountSnafu)?
-        .add_volume_mount(STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
-        .context(AddVolumeMountSnafu)?
+        .expect("The mount paths are statically defined and there should be no duplicates.")
+        .add_volume_mount(&*LISTENER_BROKER_VOLUME_NAME, STACKABLE_LISTENER_BROKER_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.")
+        .add_volume_mount(&*STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_CONFIG_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.")
+        .add_volume_mount(&*STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.")
         .resources(merged_config.resources().clone().into());
 
     // Use kcat sidecar for probing container status rather than the official Kafka tools, since they incur a lot of
@@ -332,12 +307,12 @@ pub fn build_broker_rolegroup_statefulset(
                 .build(),
         )
         .add_volume_mount(
-            LISTENER_BOOTSTRAP_VOLUME_NAME,
+            &*LISTENER_BOOTSTRAP_VOLUME_NAME,
             STACKABLE_LISTENER_BOOTSTRAP_DIR,
         )
-        .context(AddVolumeMountSnafu)?
-        .add_volume_mount(LISTENER_BROKER_VOLUME_NAME, STACKABLE_LISTENER_BROKER_DIR)
-        .context(AddVolumeMountSnafu)?
+        .expect("The mount paths are statically defined and there should be no duplicates.")
+        .add_volume_mount(&*LISTENER_BROKER_VOLUME_NAME, STACKABLE_LISTENER_BROKER_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.")
         // Only allow the global load balancing service to send traffic to pods that are members of the quorum
         // This also acts as a hint to the StatefulSet controller to wait for each pod to enter quorum before taking down the next
         .readiness_probe(Probe {
@@ -363,7 +338,7 @@ pub fn build_broker_rolegroup_statefulset(
     if let Some(listener_class) = merged_config.listener_class() {
         pod_builder
             .add_listener_volume_by_listener_class(
-                LISTENER_BROKER_VOLUME_NAME,
+                LISTENER_BROKER_VOLUME_NAME.as_ref(),
                 listener_class.as_ref(),
                 &recommended_labels,
             )
@@ -376,14 +351,14 @@ pub fn build_broker_rolegroup_statefulset(
     {
         pod_builder
             .add_volume(
-                VolumeBuilder::new(BROKER_ID_POD_MAP_DIR_NAME)
+                VolumeBuilder::new(&*BROKER_ID_POD_MAP_DIR_NAME)
                     .with_config_map(broker_id_config_map_name)
                     .build(),
             )
             .context(AddVolumeSnafu)?;
         cb_kafka
-            .add_volume_mount(BROKER_ID_POD_MAP_DIR_NAME, BROKER_ID_POD_MAP_DIR)
-            .context(AddVolumeMountSnafu)?;
+            .add_volume_mount(&*BROKER_ID_POD_MAP_DIR_NAME, BROKER_ID_POD_MAP_DIR)
+            .expect("The mount paths are statically defined and there should be no duplicates.");
     }
 
     pod_builder
@@ -404,7 +379,7 @@ pub fn build_broker_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        &container_name(BrokerContainer::Vector),
+        BrokerContainer::Vector.name(),
         &validated_rg.config.logging,
         resolved_product_image,
         &resource_names,
@@ -465,11 +440,7 @@ pub fn build_controller_rolegroup_statefulset(
     let recommended_labels =
         recommended_labels_for_role_group_resources(validated_cluster, kafka_role, role_group_name);
 
-    let kafka_container_name = ControllerContainer::Kafka.to_string();
-    let mut cb_kafka =
-        ContainerBuilder::new(&kafka_container_name).context(InvalidContainerNameSnafu {
-            name: kafka_container_name.clone(),
-        })?;
+    let mut cb_kafka = new_container_builder(ControllerContainer::Kafka.name());
 
     let mut pod_builder = PodBuilder::new();
 
@@ -517,14 +488,14 @@ pub fn build_controller_rolegroup_statefulset(
     cb_kafka
         .add_env_vars(env)
         .add_container_ports(container_ports(kafka_security))
-        .add_volume_mount(LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
-        .context(AddVolumeMountSnafu)?
-        .add_volume_mount(STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
-        .context(AddVolumeMountSnafu)?
-        .add_volume_mount(STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_CONFIG_DIR)
-        .context(AddVolumeMountSnafu)?
-        .add_volume_mount(STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
-        .context(AddVolumeMountSnafu)?
+        .add_volume_mount(&*LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.")
+        .add_volume_mount(&*STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.")
+        .add_volume_mount(&*STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_CONFIG_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.")
+        .add_volume_mount(&*STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.")
         .resources(merged_config.resources().clone().into())
         // TODO: improve probes
         .liveness_probe(Probe {
@@ -590,7 +561,7 @@ pub fn build_controller_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        &container_name(ControllerContainer::Vector),
+        ControllerContainer::Vector.name(),
         &validated_rg.config.logging,
         resolved_product_image,
         &resource_names,
@@ -725,7 +696,7 @@ fn add_log_config_volume(
     };
     pod_builder
         .add_volume(
-            VolumeBuilder::new(STACKABLE_LOG_CONFIG_DIR_NAME)
+            VolumeBuilder::new(&*STACKABLE_LOG_CONFIG_DIR_NAME)
                 .with_config_map(config_map)
                 .build(),
         )
@@ -751,7 +722,7 @@ fn add_common_pod_config(
         })
         .context(AddVolumeSnafu)?
         .add_empty_dir_volume(
-            STACKABLE_LOG_DIR_NAME,
+            &*STACKABLE_LOG_DIR_NAME,
             Some(product_logging::framework::calculate_log_volume_size_limit(
                 &[MAX_KAFKA_LOG_FILES_SIZE],
             )),
@@ -773,13 +744,6 @@ fn add_common_pod_config(
 /// [`ValidatedLogging`]. The container mounts the
 /// static `vector.yaml` from the `config` volume and is driven by the env vars the
 /// [`vector_container`] sets.
-/// The [`ContainerName`] for a role container, derived from its `Display` name so the
-/// Vector sidecar's container name always matches that container's logging-config key.
-fn container_name(container: impl std::fmt::Display) -> ContainerName {
-    ContainerName::from_str(&container.to_string())
-        .expect("a container enum variant is always a valid ContainerName")
-}
-
 fn add_vector_container(
     pod_builder: &mut PodBuilder,
     vector_container_name: &ContainerName,
