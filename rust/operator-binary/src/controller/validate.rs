@@ -109,6 +109,12 @@ pub enum Error {
          coordinated full stop"
     ))]
     NoKraftControllerReplicas,
+
+    #[snafu(display(
+        "the `spec.controllers` role is required in KRaft mode; brokers have no metadata quorum \
+         to join without it"
+    ))]
+    MissingKraftControllerRole,
 }
 
 /// Validated logging configuration for a Kafka role group's Kafka and (optional) Vector
@@ -273,8 +279,12 @@ pub fn validate(
         .effective_metadata_manager()
         .context(InvalidMetadataManagerSnafu)?;
 
-    // Controllers are optional: ZooKeeper-mode clusters have none, in which case they are simply
-    // absent from both maps and not reconciled.
+    // Controllers are optional in ZooKeeper mode only.
+    // In KRaft mode they are mandatory.
+    if metadata_manager == crate::crd::MetadataManager::KRaft && kafka.spec.controllers.is_none() {
+        return MissingKraftControllerRoleSnafu.fail();
+    }
+
     if let Some(controller_role) = kafka.spec.controllers.as_ref() {
         let controller_groups = validate_role_group_configs(
             controller_role,
@@ -606,6 +616,39 @@ mod tests {
         assert!(
             matches!(error, Error::NoKraftControllerReplicas),
             "expected NoKraftControllerReplicas, got: {error:?}"
+        );
+    }
+
+    /// KRaft mode without a `controllers` role at all: the CRD marks the role optional (it is,
+    /// in ZooKeeper mode), so this has to be caught in validation rather than by the schema.
+    #[test]
+    fn kraft_mode_rejects_missing_controller_role() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 4.1.1
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+
+        let result = crate::controller::test_support::validate_err(&kafka);
+        let Err(error) = result else {
+            panic!("validate should reject a KRaft cluster without a controllers role");
+        };
+
+        assert!(
+            matches!(error, Error::MissingKraftControllerRole),
+            "expected MissingKraftControllerRole, got: {error:?}"
         );
     }
 

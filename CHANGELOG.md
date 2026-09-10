@@ -44,6 +44,9 @@ All notable changes to this project will be documented in this file.
   See [our internal issue](https://github.com/stackabletech/hdfs-operator/issues/626) and [the fix](https://github.com/kube-rs/kube/pull/2042) for details ([#998]).
 - The operator now watches all resources that it creates and early-exits the reconcile action when the
   cluster is marked for deletion ([#1014]).
+- A KRaft cluster without a `controllers` role is now rejected during validation.
+  Previously, the operator would create a cluster consisting only of `brokers` which would never
+  become healthy ([#1010]).
 
 ### Removed
 
