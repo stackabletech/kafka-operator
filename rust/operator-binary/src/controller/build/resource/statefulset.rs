@@ -192,8 +192,8 @@ pub fn build_broker_rolegroup_statefulset(
         role_group_name,
     );
 
-    let mut cb_kcat_prober = new_container_builder(&container_name(BrokerContainer::KcatProber));
-    let mut cb_kafka = new_container_builder(&container_name(BrokerContainer::Kafka));
+    let mut cb_kcat_prober = new_container_builder(&BrokerContainer::KcatProber);
+    let mut cb_kafka = new_container_builder(&BrokerContainer::Kafka);
 
     let mut pod_builder = PodBuilder::new();
 
@@ -379,7 +379,7 @@ pub fn build_broker_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        &container_name(BrokerContainer::Vector),
+        &BrokerContainer::Vector,
         &validated_rg.config.logging,
         resolved_product_image,
         &resource_names,
@@ -440,7 +440,7 @@ pub fn build_controller_rolegroup_statefulset(
     let recommended_labels =
         recommended_labels_for_role_group_resources(validated_cluster, kafka_role, role_group_name);
 
-    let mut cb_kafka = new_container_builder(&container_name(ControllerContainer::Kafka));
+    let mut cb_kafka = new_container_builder(&ControllerContainer::Kafka);
 
     let mut pod_builder = PodBuilder::new();
 
@@ -561,7 +561,7 @@ pub fn build_controller_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        &container_name(ControllerContainer::Vector),
+        &ControllerContainer::Vector,
         &validated_rg.config.logging,
         resolved_product_image,
         &resource_names,
@@ -744,13 +744,6 @@ fn add_common_pod_config(
 /// [`ValidatedLogging`]. The container mounts the
 /// static `vector.yaml` from the `config` volume and is driven by the env vars the
 /// [`vector_container`] sets.
-/// The [`ContainerName`] for a role container, derived from its `Display` name so the
-/// Vector sidecar's container name always matches that container's logging-config key.
-fn container_name(container: impl std::fmt::Display) -> ContainerName {
-    ContainerName::from_str(&container.to_string())
-        .expect("a container enum variant is always a valid ContainerName")
-}
-
 fn add_vector_container(
     pod_builder: &mut PodBuilder,
     vector_container_name: &ContainerName,

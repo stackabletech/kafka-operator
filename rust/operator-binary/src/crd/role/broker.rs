@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{ops::Deref, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
@@ -11,7 +11,7 @@ use stackable_operator::{
     k8s_openapi::apimachinery::pkg::api::resource::Quantity,
     product_logging::{self, spec::Logging},
     schemars::{self, JsonSchema},
-    v2::types::kubernetes::ListenerClassName,
+    v2::types::kubernetes::{ContainerName, ListenerClassName},
 };
 use strum::{Display, EnumIter};
 
@@ -39,6 +39,24 @@ pub enum BrokerContainer {
     Vector,
     KcatProber,
     Kafka,
+}
+
+// Typed container names. They must match the strum `Display` (kebab-case) of the variants above,
+// which is pinned by a unit test.
+constant!(VECTOR_CONTAINER_NAME: ContainerName = "vector");
+constant!(KCAT_PROBER_CONTAINER_NAME: ContainerName = "kcat-prober");
+constant!(KAFKA_CONTAINER_NAME: ContainerName = "kafka");
+
+impl Deref for BrokerContainer {
+    type Target = ContainerName;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            BrokerContainer::Vector => &VECTOR_CONTAINER_NAME,
+            BrokerContainer::KcatProber => &KCAT_PROBER_CONTAINER_NAME,
+            BrokerContainer::Kafka => &KAFKA_CONTAINER_NAME,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Fragment, JsonSchema)]
@@ -102,11 +120,26 @@ impl BrokerConfig {
 
 #[cfg(test)]
 mod tests {
+    use strum::IntoEnumIterator;
+
     use super::*;
 
     #[test]
     fn test_constants() {
         // Test that dereferencing the constants does not panic.
         let _ = *DEFAULT_LISTENER_CLASS;
+        let _ = *VECTOR_CONTAINER_NAME;
+        let _ = *KCAT_PROBER_CONTAINER_NAME;
+        let _ = *KAFKA_CONTAINER_NAME;
+    }
+
+    /// The typed container names behind `BrokerContainer`'s `Deref` must agree with its strum
+    /// `Display`, which the logging configuration still uses as the per-container key.
+    #[test]
+    fn container_names_match_display() {
+        for container in BrokerContainer::iter() {
+            let container_name: &ContainerName = &container;
+            assert_eq!(container_name.to_string(), container.to_string());
+        }
     }
 }
