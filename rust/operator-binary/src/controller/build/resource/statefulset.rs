@@ -192,8 +192,8 @@ pub fn build_broker_rolegroup_statefulset(
         role_group_name,
     );
 
-    let mut cb_kcat_prober = new_container_builder(&BrokerContainer::KcatProber);
-    let mut cb_kafka = new_container_builder(&BrokerContainer::Kafka);
+    let mut cb_kcat_prober = new_container_builder(BrokerContainer::KcatProber.name());
+    let mut cb_kafka = new_container_builder(BrokerContainer::Kafka.name());
 
     let mut pod_builder = PodBuilder::new();
 
@@ -379,7 +379,7 @@ pub fn build_broker_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        &BrokerContainer::Vector,
+        BrokerContainer::Vector.name(),
         &validated_rg.config.logging,
         resolved_product_image,
         &resource_names,
@@ -440,7 +440,7 @@ pub fn build_controller_rolegroup_statefulset(
     let recommended_labels =
         recommended_labels_for_role_group_resources(validated_cluster, kafka_role, role_group_name);
 
-    let mut cb_kafka = new_container_builder(&ControllerContainer::Kafka);
+    let mut cb_kafka = new_container_builder(ControllerContainer::Kafka.name());
 
     let mut pod_builder = PodBuilder::new();
 
@@ -561,7 +561,7 @@ pub fn build_controller_rolegroup_statefulset(
 
     add_vector_container(
         &mut pod_builder,
-        &ControllerContainer::Vector,
+        ControllerContainer::Vector.name(),
         &validated_rg.config.logging,
         resolved_product_image,
         &resource_names,

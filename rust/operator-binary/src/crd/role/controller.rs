@@ -1,4 +1,4 @@
-use std::{ops::Deref, str::FromStr};
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
@@ -42,10 +42,9 @@ pub enum ControllerContainer {
 constant!(VECTOR_CONTAINER_NAME: ContainerName = "vector");
 constant!(KAFKA_CONTAINER_NAME: ContainerName = "kafka");
 
-impl Deref for ControllerContainer {
-    type Target = ContainerName;
-
-    fn deref(&self) -> &Self::Target {
+impl ControllerContainer {
+    /// The typed container name of this variant.
+    pub fn name(&self) -> &'static ContainerName {
         match self {
             ControllerContainer::Vector => &VECTOR_CONTAINER_NAME,
             ControllerContainer::Kafka => &KAFKA_CONTAINER_NAME,
@@ -117,13 +116,13 @@ mod tests {
         let _ = *KAFKA_CONTAINER_NAME;
     }
 
-    /// The typed container names behind `ControllerContainer`'s `Deref` must agree with its strum
-    /// `Display`, which the logging configuration still uses as the per-container key.
+    /// The typed container names returned by `name` must agree with the strum `Display`
+    /// of `ControllerContainer`, which the logging configuration still uses as the per-container
+    /// key.
     #[test]
     fn container_names_match_display() {
         for container in ControllerContainer::iter() {
-            let container_name: &ContainerName = &container;
-            assert_eq!(container_name.to_string(), container.to_string());
+            assert_eq!(container.name().to_string(), container.to_string());
         }
     }
 }

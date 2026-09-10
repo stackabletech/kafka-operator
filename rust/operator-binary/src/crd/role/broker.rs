@@ -1,4 +1,4 @@
-use std::{ops::Deref, str::FromStr};
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
@@ -47,10 +47,9 @@ constant!(VECTOR_CONTAINER_NAME: ContainerName = "vector");
 constant!(KCAT_PROBER_CONTAINER_NAME: ContainerName = "kcat-prober");
 constant!(KAFKA_CONTAINER_NAME: ContainerName = "kafka");
 
-impl Deref for BrokerContainer {
-    type Target = ContainerName;
-
-    fn deref(&self) -> &Self::Target {
+impl BrokerContainer {
+    /// The typed container name of this variant.
+    pub fn name(&self) -> &'static ContainerName {
         match self {
             BrokerContainer::Vector => &VECTOR_CONTAINER_NAME,
             BrokerContainer::KcatProber => &KCAT_PROBER_CONTAINER_NAME,
@@ -133,13 +132,12 @@ mod tests {
         let _ = *KAFKA_CONTAINER_NAME;
     }
 
-    /// The typed container names behind `BrokerContainer`'s `Deref` must agree with its strum
-    /// `Display`, which the logging configuration still uses as the per-container key.
+    /// The typed container names returned by `name` must agree with the strum `Display`
+    /// of `BrokerContainer`, which the logging configuration still uses as the per-container key.
     #[test]
     fn container_names_match_display() {
         for container in BrokerContainer::iter() {
-            let container_name: &ContainerName = &container;
-            assert_eq!(container_name.to_string(), container.to_string());
+            assert_eq!(container.name().to_string(), container.to_string());
         }
     }
 }
