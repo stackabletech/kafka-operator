@@ -221,20 +221,26 @@ fn extract_bootstrap_servers_command() -> String {
     )
 }
 
-/// The sidecar's main-loop command: while this controller's local Raft state is
-/// `observer`, repeatedly attempt to admit it into the quorum's voter set.
+/// How often the sidecar's admission loop polls.
+const QUORUM_MANAGER_POLL_INTERVAL_SECONDS: u32 = 10;
+
+/// Consecutive healthy polls this controller must report before it will join a quorum that
+/// currently has a *single* voter.
+const QUORUM_MANAGER_STABILITY_REQUIRED_POLLS: u32 = 4;
+
+/// How long an existing voter may go without fetching from the leader before the sidecar
+/// treats the quorum as degraded and defers changing its membership.
+const QUORUM_MANAGER_VOTER_STALE_FETCH_SECONDS: u32 = 30;
+
+const CONTROLLER_QUORUM_MANAGER_LOOP_SCRIPT: &str =
+    include_str!("controller-quorum-manager-loop.sh");
+
+/// The sidecar's main-loop command: while this controller's local Raft state is `observer`,
+/// admit it into the quorum's voter set once that is safe.
 pub fn quorum_manager_container_command() -> String {
     format!(
         r#"
         set -uo pipefail
-        ADD_CONTROLLER_PID=""
-        trap 'handle_term_signal' TERM
-
-        handle_term_signal()
-        {{
-          [ -n "$ADD_CONTROLLER_PID" ] && kill -TERM "$ADD_CONTROLLER_PID" 2>/dev/null
-          exit 0
-        }}
 
         {derive_pod_index}
         [ -n "$POD_INDEX" ] || exit 0
@@ -244,24 +250,16 @@ pub fn quorum_manager_container_command() -> String {
         if cp {config_dir}/{controller_properties_file} /tmp/{controller_properties_file} \
           && config-utils template /tmp/{controller_properties_file} \
           && cat /tmp/{controller_properties_file} {admin_client_config} > {add_controller_config}; then
-          echo "Starting KRaft voter admission loop against bootstrap servers: $BOOTSTRAP_SERVERS"
-          while true; do
-            state=$(curl -s --max-time 5 --connect-timeout 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\{{state="[a-z]+",?\}}' | grep -oE '"[a-z]+"' | tr -d '"')
-            if [ "$state" = "observer" ]; then
-              echo "Local Raft state is observer, attempting add-controller..."
-              timeout --kill-after={cli_kill_after} {cli_timeout} {binary} --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config {add_controller_config} add-controller &
-              ADD_CONTROLLER_PID=$!
-              wait "$ADD_CONTROLLER_PID" \
-                || echo "add-controller attempt failed (this is expected if it already succeeded or a leader election is in progress), will retry"
-              ADD_CONTROLLER_PID=""
-            elif [ -z "$state" ]; then
-              echo "Could not determine local Raft state (metrics scrape returned nothing), will retry"
-            else
-              echo "Local Raft state is '$state', nothing to do"
-            fi
-            sleep 10 &
-            wait $!
-          done
+          QUORUM_CLI={binary}
+          ADMIN_CLIENT_CONFIG={admin_client_config}
+          ADD_CONTROLLER_CONFIG={add_controller_config}
+          METRICS_URL=localhost:{metrics_port}/metrics
+          CLI_TIMEOUT_SECONDS={cli_timeout}
+          CLI_KILL_AFTER_SECONDS={cli_kill_after}
+          POLL_INTERVAL_SECONDS={poll_interval}
+          STABILITY_REQUIRED_POLLS={stability_polls}
+          VOTER_STALE_FETCH_SECONDS={stale_fetch}
+{script}
         else
           echo "ERROR: quorum-manager failed to render or merge its configuration (see errors above); this looks like a genuine misconfiguration, not a transient failure."
           while true; do
@@ -282,6 +280,10 @@ pub fn quorum_manager_container_command() -> String {
         add_controller_config = ADD_CONTROLLER_PROPERTIES_PATH,
         cli_timeout = CLI_CALL_TIMEOUT_SECONDS,
         cli_kill_after = CLI_CALL_KILL_AFTER_SECONDS,
+        poll_interval = QUORUM_MANAGER_POLL_INTERVAL_SECONDS,
+        stability_polls = QUORUM_MANAGER_STABILITY_REQUIRED_POLLS,
+        stale_fetch = QUORUM_MANAGER_VOTER_STALE_FETCH_SECONDS,
+        script = strip_shell_comments(CONTROLLER_QUORUM_MANAGER_LOOP_SCRIPT),
     )
 }
 
@@ -412,8 +414,12 @@ mod tests {
     fn quorum_manager_container_command_traps_term_and_sleeps_interruptibly() {
         let command = quorum_manager_container_command();
         assert!(command.contains("trap 'handle_term_signal' TERM"));
-        assert!(command.contains("sleep 10 &"));
+        assert!(command.contains(r#"sleep "$POLL_INTERVAL_SECONDS" &"#));
         assert!(command.contains("wait $!"));
+        // ...and that interval is actually supplied, so the above isn't a no-op.
+        assert!(command.contains(&format!(
+            "POLL_INTERVAL_SECONDS={QUORUM_MANAGER_POLL_INTERVAL_SECONDS}"
+        )));
     }
 
     /// The whole point of backgrounding `add-controller`: a plain foreground `timeout ...`
@@ -430,7 +436,9 @@ mod tests {
         assert!(command.contains(r#"kill -TERM "$ADD_CONTROLLER_PID""#));
         // The `add-controller` invocation itself must actually be backgrounded (not a plain
         // foreground call) for the above to have any effect.
-        let add_controller_line = command
+        // Join line continuations first: the invocation is spread over several lines.
+        let joined = command.replace("\\\n", " ");
+        let add_controller_line = joined
             .lines()
             .find(|line| line.contains("timeout") && line.contains("add-controller"))
             .expect("the add-controller invocation is present");
@@ -467,7 +475,18 @@ mod tests {
         assert!(command.contains(
             "cat /tmp/controller.properties /stackable/config/admin-client.properties > /tmp/add-controller.properties"
         ));
-        assert!(command.contains("--command-config /tmp/add-controller.properties add-controller"));
+        // The merged file is what `add-controller` — and only `add-controller` — connects
+        // with; read-only `describe` calls keep using the plain admin-client config.
+        assert!(command.contains("ADD_CONTROLLER_CONFIG=/tmp/add-controller.properties"));
+        let joined = command.replace("\\\n", " ");
+        let add_controller_line = joined
+            .lines()
+            .find(|line| line.contains("add-controller") && line.contains("--command-config"))
+            .expect("the add-controller invocation is present");
+        assert!(
+            add_controller_line.contains(r#"--command-config "$ADD_CONTROLLER_CONFIG""#),
+            "add-controller must use the merged config, line was: {add_controller_line}"
+        );
     }
 
     #[test]
@@ -1013,7 +1032,8 @@ mod tests {
     #[test]
     fn quorum_manager_container_command_metrics_curl_has_timeouts() {
         let command = quorum_manager_container_command();
-        assert!(command.contains("curl -s --max-time 5 --connect-timeout 2 localhost"));
+        assert!(command.contains(r#"curl -s --max-time 5 --connect-timeout 2 "$METRICS_URL""#));
+        assert!(command.contains(&format!("METRICS_URL=localhost:{METRICS_PORT}/metrics")));
     }
 
     /// `timeout N cmd` (GNU coreutils, no `--kill-after`) only *sends* the signal after `N`
@@ -1032,11 +1052,23 @@ mod tests {
     fn every_cli_call_has_a_kill_after_so_timeout_is_actually_enforced() {
         let container_command = quorum_manager_container_command();
 
-        // The `preStop` script routes every call through its `quorum_cli` wrapper, so it
-        // refers to the CLI by variable rather than by path — that wrapper is the one place
-        // that has to get this right.
+        // Both scripts are handed the CLI path by their operator-generated preamble and
+        // then refer to it by variable, so that assignment is the only place the literal
+        // path may appear in the rendered command.
+        for line in container_command
+            .lines()
+            .filter(|line| line.contains(KAFKA_METADATA_QUORUM_BINARY))
+        {
+            assert!(
+                line.trim().starts_with("QUORUM_CLI="),
+                "the CLI path must only appear as the QUORUM_CLI assignment, so that every \
+                 actual invocation goes through the `timeout --kill-after=` wrappers checked \
+                 below — offending line: {line}"
+            );
+        }
+
         for (script, cli_invocation) in [
-            (container_command.as_str(), KAFKA_METADATA_QUORUM_BINARY),
+            (CONTROLLER_QUORUM_MANAGER_LOOP_SCRIPT, r#""$QUORUM_CLI""#),
             (CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT, r#""$QUORUM_CLI""#),
         ] {
             // Join line continuations first: an invocation may well be spread over two lines.
@@ -1058,6 +1090,333 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Stands in for `curl` in [`run_quorum_manager_loop`]: prints a metrics body reporting
+    /// `$METRIC_STATE`. When `$METRIC_FLAP` is set, every second call instead prints nothing,
+    /// mimicking a controller whose metrics endpoint keeps dropping out.
+    const STUB_METRICS_CURL: &str = indoc! {r#"
+        #!/usr/bin/env bash
+        set -u
+        calls=$(( $(cat "$CURL_CALLS") + 1 ))
+        echo "$calls" > "$CURL_CALLS"
+        if [ -n "${METRIC_FLAP:-}" ] && [ $((calls % 2)) -eq 0 ]; then
+          exit 0
+        fi
+        [ -n "$METRIC_STATE" ] && echo "kafka_server_raft_metrics_current_state{state=\"$METRIC_STATE\",}"
+        exit 0
+    "#};
+
+    /// One `describe --replication` table whose voters last fetched `fetch_age_seconds` ago.
+    fn quorum_describe_output(replicas: &[(u32, &str, &str)], fetch_age_seconds: u64) -> String {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("the clock is after the epoch")
+            .as_millis() as u64;
+        let fetched_ms = now_ms - fetch_age_seconds * 1000;
+
+        let mut output = "NodeId\tDirectoryId\tLogEndOffset\tLag\tLastFetchTimestamp\tLastCaughtUpTimestamp\tStatus\n".to_string();
+        for (node_id, directory_id, status) in replicas {
+            output.push_str(&format!(
+                "{node_id}\t{directory_id}\t100\t0\t{fetched_ms}\t{fetched_ms}\t{status}\n"
+            ));
+        }
+        output
+    }
+
+    /// The inputs of one [`run_quorum_manager_loop`] scenario.
+    struct QuorumManagerScenario<'a> {
+        /// Unique per test — names this run's scratch directory.
+        name: &'a str,
+        /// What the stub CLI prints for `describe --replication`. Empty stands for an
+        /// unreachable quorum.
+        describe: String,
+        /// This controller's own Raft state, as its metrics endpoint reports it. Empty
+        /// stands for a scrape that returned nothing.
+        metric_state: &'a str,
+        /// Drop every second metrics scrape, so no stability streak can accumulate.
+        flapping_metrics: bool,
+        /// Consecutive healthy polls required before joining a single-voter quorum.
+        stability_required_polls: u32,
+        /// How long the loop is left running, in seconds.
+        run_for_seconds: u32,
+    }
+
+    impl Default for QuorumManagerScenario<'_> {
+        fn default() -> Self {
+            Self {
+                name: "unnamed",
+                describe: String::new(),
+                metric_state: "observer",
+                flapping_metrics: false,
+                stability_required_polls: 3,
+                run_for_seconds: 2,
+            }
+        }
+    }
+
+    /// What one bounded execution of [`CONTROLLER_QUORUM_MANAGER_LOOP_SCRIPT`] did.
+    struct QuorumManagerRun {
+        stdout: String,
+        cli_calls: Vec<String>,
+    }
+
+    impl QuorumManagerRun {
+        fn calls_of(&self, subcommand: &str) -> Vec<&String> {
+            self.cli_calls
+                .iter()
+                .filter(|call| call.contains(subcommand))
+                .collect()
+        }
+    }
+
+    /// Runs the real admission loop in bash against stub `kafka-metadata-quorum.sh` and
+    /// `curl` binaries, for a bounded time, in the comment-stripped form that ships.
+    ///
+    /// The loop never terminates on its own, so it is killed once `run_for_seconds` elapse;
+    /// with a one-second poll interval that is `run_for_seconds` iterations, give or take.
+    fn run_quorum_manager_loop(scenario: QuorumManagerScenario) -> QuorumManagerRun {
+        let dir = std::env::temp_dir().join(format!(
+            "kafka-operator-quorum-manager-{name}-{pid}",
+            name = scenario.name,
+            pid = std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("the scratch directory can be created");
+
+        let stub_cli = dir.join("kafka-metadata-quorum.sh");
+        fs::write(&stub_cli, STUB_QUORUM_CLI).expect("the stub CLI can be written");
+        fs::set_permissions(&stub_cli, fs::Permissions::from_mode(0o755))
+            .expect("the stub CLI can be made executable");
+
+        // The script calls `curl` by bare name, so the stub is found via PATH.
+        let stub_curl = dir.join("curl");
+        fs::write(&stub_curl, STUB_METRICS_CURL).expect("the stub curl can be written");
+        fs::set_permissions(&stub_curl, fs::Permissions::from_mode(0o755))
+            .expect("the stub curl can be made executable");
+
+        let describe_output_file = dir.join("describe-output");
+        fs::write(&describe_output_file, &scenario.describe)
+            .expect("the stub's describe output can be written");
+        let call_log = dir.join("cli-calls");
+        fs::write(&call_log, "").expect("the stub's call log can be created");
+        let attempts = dir.join("remove-controller-attempts");
+        fs::write(&attempts, "0").expect("the stub's attempt counter can be created");
+        let curl_calls = dir.join("curl-calls");
+        fs::write(&curl_calls, "0").expect("the stub curl's counter can be created");
+
+        let path = format!(
+            "{stub_dir}:{existing}",
+            stub_dir = dir.display(),
+            existing = std::env::var("PATH").unwrap_or_default()
+        );
+
+        let mut command = Command::new("timeout");
+        command
+            .arg(scenario.run_for_seconds.to_string())
+            .arg("bash")
+            .arg("-c")
+            .arg(strip_shell_comments(CONTROLLER_QUORUM_MANAGER_LOOP_SCRIPT))
+            .env("PATH", path)
+            .env("REPLICA_ID", "3")
+            .env(
+                "BOOTSTRAP_SERVERS",
+                "kafka-controller-default-headless.default.svc.cluster.local:9093",
+            )
+            .env("QUORUM_CLI", &stub_cli)
+            .env("ADMIN_CLIENT_CONFIG", dir.join("admin-client.properties"))
+            .env(
+                "ADD_CONTROLLER_CONFIG",
+                dir.join("add-controller.properties"),
+            )
+            .env("METRICS_URL", "localhost:9606/metrics")
+            .env("CLI_TIMEOUT_SECONDS", "5")
+            .env("CLI_KILL_AFTER_SECONDS", "1")
+            .env("POLL_INTERVAL_SECONDS", "1")
+            .env(
+                "STABILITY_REQUIRED_POLLS",
+                scenario.stability_required_polls.to_string(),
+            )
+            .env("VOTER_STALE_FETCH_SECONDS", "30")
+            // Read by the stubs, not by the script under test.
+            .env("DESCRIBE_OUTPUT", &describe_output_file)
+            .env("CALL_LOG", &call_log)
+            .env("ATTEMPTS", &attempts)
+            .env("REMOVE_CONTROLLER_FAILURES", "0")
+            .env("CURL_CALLS", &curl_calls)
+            .env("METRIC_STATE", scenario.metric_state);
+        if scenario.flapping_metrics {
+            command.env("METRIC_FLAP", "1");
+        }
+
+        let output = command.output().expect("bash is available to run the loop");
+        let cli_calls = fs::read_to_string(&call_log)
+            .expect("the stub's call log can be read")
+            .lines()
+            .map(str::to_string)
+            .collect();
+
+        let run = QuorumManagerRun {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            cli_calls,
+        };
+        fs::remove_dir_all(&dir).expect("the scratch directory can be removed");
+        run
+    }
+
+    /// Joining the only existing voter makes both nodes load-bearing, so a controller that
+    /// has only just appeared must not be admitted yet.
+    #[test]
+    fn quorum_manager_defers_joining_a_single_voter_until_it_has_proven_stable() {
+        let run = run_quorum_manager_loop(QuorumManagerScenario {
+            name: "single-voter-probation",
+            describe: quorum_describe_output(&[(1, "dir-1", "Leader")], 1),
+            stability_required_polls: 10,
+            run_for_seconds: 3,
+            ..Default::default()
+        });
+
+        assert!(
+            run.calls_of("add-controller").is_empty(),
+            "a fresh controller must not join a single-voter quorum, calls: {:?}",
+            run.cli_calls
+        );
+        assert!(
+            run.stdout.contains("proving stability before joining it"),
+            "stdout was: {}",
+            run.stdout
+        );
+    }
+
+    /// ...but it is admitted once the streak is met, otherwise the cluster could never grow.
+    #[test]
+    fn quorum_manager_joins_a_single_voter_once_stable() {
+        let run = run_quorum_manager_loop(QuorumManagerScenario {
+            name: "single-voter-admitted",
+            describe: quorum_describe_output(&[(1, "dir-1", "Leader")], 1),
+            stability_required_polls: 2,
+            run_for_seconds: 5,
+            ..Default::default()
+        });
+
+        assert!(
+            !run.calls_of("add-controller").is_empty(),
+            "a controller that stayed healthy must eventually join, stdout: {}",
+            run.stdout
+        );
+    }
+
+    /// A metrics endpoint that keeps dropping out never accumulates a streak — this is the
+    /// flapping controller the probation exists for.
+    #[test]
+    fn quorum_manager_never_admits_a_flapping_controller_to_a_single_voter_quorum() {
+        let run = run_quorum_manager_loop(QuorumManagerScenario {
+            name: "flapping",
+            describe: quorum_describe_output(&[(1, "dir-1", "Leader")], 1),
+            flapping_metrics: true,
+            stability_required_polls: 3,
+            run_for_seconds: 6,
+            ..Default::default()
+        });
+
+        assert!(
+            run.calls_of("add-controller").is_empty(),
+            "a flapping controller must never reach the streak, calls: {:?}",
+            run.cli_calls
+        );
+    }
+
+    /// Two voters is the fragile size — majority 2, so no failure is tolerated. Getting to
+    /// three is urgent, so this step is not delayed by the probation.
+    #[test]
+    fn quorum_manager_joins_a_two_voter_quorum_without_waiting() {
+        let run = run_quorum_manager_loop(QuorumManagerScenario {
+            name: "two-voter-immediate",
+            describe: quorum_describe_output(
+                &[(1, "dir-1", "Leader"), (2, "dir-2", "Follower")],
+                1,
+            ),
+            stability_required_polls: 100,
+            run_for_seconds: 2,
+            ..Default::default()
+        });
+
+        assert!(
+            !run.calls_of("add-controller").is_empty(),
+            "leaving a two-voter quorum must not wait on probation, stdout: {}",
+            run.stdout
+        );
+    }
+
+    /// Never change the membership of a quorum that is already struggling: a voter that has
+    /// stopped fetching means the next change could be the one that loses the majority.
+    #[test]
+    fn quorum_manager_defers_while_an_existing_voter_is_stale() {
+        let run = run_quorum_manager_loop(QuorumManagerScenario {
+            name: "degraded-quorum",
+            describe: quorum_describe_output(
+                &[(1, "dir-1", "Leader"), (2, "dir-2", "Follower")],
+                600,
+            ),
+            run_for_seconds: 3,
+            ..Default::default()
+        });
+
+        assert!(
+            run.calls_of("add-controller").is_empty(),
+            "a degraded quorum must not be perturbed, calls: {:?}",
+            run.cli_calls
+        );
+        assert!(
+            run.stdout.contains("existing quorum is degraded"),
+            "stdout was: {}",
+            run.stdout
+        );
+    }
+
+    /// An unreachable quorum is not an invitation to guess.
+    #[test]
+    fn quorum_manager_defers_when_the_quorum_cannot_be_described() {
+        let run = run_quorum_manager_loop(QuorumManagerScenario {
+            name: "undescribable",
+            describe: String::new(),
+            run_for_seconds: 3,
+            ..Default::default()
+        });
+
+        assert!(
+            run.calls_of("add-controller").is_empty(),
+            "an undescribable quorum must not be joined, calls: {:?}",
+            run.cli_calls
+        );
+        assert!(
+            run.stdout.contains("could not be described"),
+            "stdout was: {}",
+            run.stdout
+        );
+    }
+
+    /// A controller that is already a voter has nothing to do.
+    #[test]
+    fn quorum_manager_does_nothing_when_already_a_voter() {
+        let run = run_quorum_manager_loop(QuorumManagerScenario {
+            name: "already-voter",
+            describe: quorum_describe_output(&[(1, "dir-1", "Leader")], 1),
+            metric_state: "follower",
+            run_for_seconds: 2,
+            ..Default::default()
+        });
+
+        assert!(
+            run.calls_of("add-controller").is_empty(),
+            "a voter must not re-add itself, calls: {:?}",
+            run.cli_calls
+        );
+        assert!(
+            run.stdout.contains("Local Raft state is 'follower'"),
+            "stdout was: {}",
+            run.stdout
+        );
     }
 
     /// Builds a minimal [`KafkaPodDescriptor`] for the given role and replica.
