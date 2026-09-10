@@ -317,10 +317,6 @@ fn pre_stop_deadline_seconds(graceful_shutdown_timeout: Option<Duration>) -> u64
 /// loop.
 const PRE_STOP_RETRY_INTERVAL_SECONDS: u32 = 2;
 
-/// The `preStop` script itself. Kept in its own file — rather than as a string literal here —
-/// so that shellcheck lints it and the unit tests can execute it directly against a stubbed
-/// `kafka-metadata-quorum.sh`. Its header comment documents the inputs the preamble in
-/// [`controller_remove_self_pre_stop_command`] has to define.
 const CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT: &str =
     include_str!("controller-remove-self-pre-stop.sh");
 
