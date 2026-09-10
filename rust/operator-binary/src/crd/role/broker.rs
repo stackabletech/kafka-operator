@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
     commons::resources::{
@@ -5,14 +7,18 @@ use stackable_operator::{
         PvcConfigFragment, Resources, ResourcesFragment,
     },
     config::{fragment::Fragment, merge::Merge},
+    constant,
     k8s_openapi::apimachinery::pkg::api::resource::Quantity,
     product_logging::{self, spec::Logging},
     schemars::{self, JsonSchema},
-    v2::types::kubernetes::ListenerClassName,
+    v2::types::kubernetes::{ContainerName, ListenerClassName},
 };
 use strum::{Display, EnumIter};
 
 use crate::crd::role::commons::{CommonConfig, Storage, StorageFragment};
+
+// The default listener class for both the bootstrap and the broker listeners.
+constant!(DEFAULT_LISTENER_CLASS: ListenerClassName = "cluster-internal");
 
 #[derive(
     Clone,
@@ -32,6 +38,21 @@ use crate::crd::role::commons::{CommonConfig, Storage, StorageFragment};
 pub enum BrokerContainer {
     Vector,
     Kafka,
+}
+
+// Typed container names. They must match the strum `Display` (kebab-case) of the variants above,
+// which is pinned by a unit test.
+constant!(VECTOR_CONTAINER_NAME: ContainerName = "vector");
+constant!(KAFKA_CONTAINER_NAME: ContainerName = "kafka");
+
+impl BrokerContainer {
+    /// The typed container name of this variant.
+    pub fn name(&self) -> &'static ContainerName {
+        match self {
+            BrokerContainer::Vector => &VECTOR_CONTAINER_NAME,
+            BrokerContainer::Kafka => &KAFKA_CONTAINER_NAME,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Fragment, JsonSchema)]
@@ -69,16 +90,8 @@ impl BrokerConfig {
     pub fn default_config(cluster_name: &str, role: &str) -> BrokerConfigFragment {
         BrokerConfigFragment {
             common_config: CommonConfig::default_config(cluster_name, role),
-            bootstrap_listener_class: Some(
-                "cluster-internal"
-                    .parse()
-                    .expect("\"cluster-internal\" is a valid listener class name"),
-            ),
-            broker_listener_class: Some(
-                "cluster-internal"
-                    .parse()
-                    .expect("\"cluster-internal\" is a valid listener class name"),
-            ),
+            bootstrap_listener_class: Some(DEFAULT_LISTENER_CLASS.clone()),
+            broker_listener_class: Some(DEFAULT_LISTENER_CLASS.clone()),
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {
@@ -97,6 +110,30 @@ impl BrokerConfig {
                     },
                 },
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strum::IntoEnumIterator;
+
+    use super::*;
+
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *DEFAULT_LISTENER_CLASS;
+        let _ = *VECTOR_CONTAINER_NAME;
+        let _ = *KAFKA_CONTAINER_NAME;
+    }
+
+    /// The typed container names returned by `name` must agree with the strum `Display`
+    /// of `BrokerContainer`, which the logging configuration still uses as the per-container key.
+    #[test]
+    fn container_names_match_display() {
+        for container in BrokerContainer::iter() {
+            assert_eq!(container.name().to_string(), container.to_string());
         }
     }
 }

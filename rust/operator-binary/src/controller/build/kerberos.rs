@@ -15,7 +15,10 @@ use stackable_operator::{
     },
     commons::secret_class::SecretClassVolumeProvisionParts,
     constant,
-    v2::builder::pod::container::{EnvVarName, EnvVarSet},
+    v2::{
+        builder::pod::container::{EnvVarName, EnvVarSet},
+        types::kubernetes::VolumeName,
+    },
 };
 
 use crate::{
@@ -26,6 +29,8 @@ use crate::{
     },
 };
 
+constant!(KERBEROS_VOLUME_NAME: VolumeName = "kerberos");
+
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("failed to add Kerberos secret volume"))]
@@ -35,13 +40,15 @@ pub enum Error {
 
     #[snafu(display("failed to add needed volume"))]
     AddVolume { source: builder::pod::Error },
-
-    #[snafu(display("failed to add needed volumeMount"))]
-    AddVolumeMount {
-        source: builder::pod::container::Error,
-    },
 }
 
+/// Adds the Kerberos keytab and `krb5.conf` volume to the pod builder and mounts it into the
+/// Kafka and kcat-prober containers, when Kerberos is enabled.
+///
+/// # Panics
+///
+/// Panics if the volume mounts cannot be added to the container builders. Only call this on
+/// container builders whose mount paths are still distinct from the ones added here.
 pub fn add_kerberos_pod_config(
     kafka_security: &ValidatedKafkaSecurity,
     role: &KafkaRole,
@@ -55,21 +62,21 @@ pub fn add_kerberos_pod_config(
             // We need both public (krb5.conf) and private (keytab) parts.
             SecretClassVolumeProvisionParts::PublicPrivate,
         )
-        .with_listener_volume_scope(LISTENER_BROKER_VOLUME_NAME)
-        .with_listener_volume_scope(LISTENER_BOOTSTRAP_VOLUME_NAME)
+        .with_listener_volume_scope(&*LISTENER_BROKER_VOLUME_NAME)
+        .with_listener_volume_scope(&*LISTENER_BOOTSTRAP_VOLUME_NAME)
         .with_kerberos_service_name(role.kerberos_service_name())
         .build()
         .context(KerberosSecretVolumeSnafu)?;
         pb.add_volume(
-            VolumeBuilder::new("kerberos")
+            VolumeBuilder::new(&*KERBEROS_VOLUME_NAME)
                 .ephemeral(kerberos_secret_operator_volume)
                 .build(),
         )
         .context(AddVolumeSnafu)?;
 
         cb_kafka
-            .add_volume_mount("kerberos", STACKABLE_KERBEROS_DIR)
-            .context(AddVolumeMountSnafu)?;
+            .add_volume_mount(&*KERBEROS_VOLUME_NAME, STACKABLE_KERBEROS_DIR)
+            .expect("The mount paths are statically defined and there should be no duplicates.");
     }
 
     Ok(())
@@ -106,5 +113,6 @@ mod tests {
         // Test that dereferencing the constants does not panic.
         let _ = *KRB5_CONFIG;
         let _ = *KAFKA_OPTS;
+        let _ = *KERBEROS_VOLUME_NAME;
     }
 }

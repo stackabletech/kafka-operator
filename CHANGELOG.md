@@ -36,6 +36,7 @@ All notable changes to this project will be documented in this file.
   Broker StatefulSets created by older operator versions cannot be updated in place: after the
   operator upgrade, delete each broker StatefulSet so that the operator immediately recreates it
   with the new labels ([#1011]).
+- Make operations infallible where dependent on static inputs ([#1017]).
 
 ### Fixed
 
@@ -64,6 +65,7 @@ All notable changes to this project will be documented in this file.
 [#1010]: https://github.com/stackabletech/kafka-operator/pull/1010
 [#1011]: https://github.com/stackabletech/kafka-operator/pull/1011
 [#1014]: https://github.com/stackabletech/kafka-operator/pull/1014
+[#1017]: https://github.com/stackabletech/kafka-operator/pull/1017
 
 ## [26.7.0] - 2026-07-21
 
