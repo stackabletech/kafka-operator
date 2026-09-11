@@ -37,14 +37,12 @@ constant!(DEFAULT_LISTENER_CLASS: ListenerClassName = "cluster-internal");
 #[strum(serialize_all = "kebab-case")]
 pub enum BrokerContainer {
     Vector,
-    KcatProber,
     Kafka,
 }
 
 // Typed container names. They must match the strum `Display` (kebab-case) of the variants above,
 // which is pinned by a unit test.
 constant!(VECTOR_CONTAINER_NAME: ContainerName = "vector");
-constant!(KCAT_PROBER_CONTAINER_NAME: ContainerName = "kcat-prober");
 constant!(KAFKA_CONTAINER_NAME: ContainerName = "kafka");
 
 impl BrokerContainer {
@@ -52,7 +50,6 @@ impl BrokerContainer {
     pub fn name(&self) -> &'static ContainerName {
         match self {
             BrokerContainer::Vector => &VECTOR_CONTAINER_NAME,
-            BrokerContainer::KcatProber => &KCAT_PROBER_CONTAINER_NAME,
             BrokerContainer::Kafka => &KAFKA_CONTAINER_NAME,
         }
     }
@@ -128,7 +125,6 @@ mod tests {
         // Test that dereferencing the constants does not panic.
         let _ = *DEFAULT_LISTENER_CLASS;
         let _ = *VECTOR_CONTAINER_NAME;
-        let _ = *KCAT_PROBER_CONTAINER_NAME;
         let _ = *KAFKA_CONTAINER_NAME;
     }
 

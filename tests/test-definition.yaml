@@ -146,12 +146,7 @@ suites:
   - name: nightly
     patch:
       - dimensions:
-          - name: kafka
-            expr: last
-          - name: zookeeper
-            expr: last
-          - name: upgrade_old
-            expr: last
+          - expr: last
   - name: smoke-latest
     select:
       - smoke

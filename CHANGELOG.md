@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- The dynamic KRaft quorum created by the operator is now scaled automatically. Previously,
+  manual intervention was needed after every scale operation.
+  This change introduces a new side-car container (`quorum-manager`) to all controller pods
+  that adds the new controller to the voter list.
+  On termination, a new `preStop` hook on the controller container (`kafka`) removes the pod from
+  the voter list before shutdown.
+  The property `controller.quorum.bootstrap.servers` now contains the headless service names
+  of all controller role groups instead of individual peer host names. This prevents the
+  restart controller from restarting all pods in the quorum when a new one is added/deleted.
+  The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
+  to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
 - Bump stackable-operator to 0.116.0 ([#994], [#1011]).
@@ -34,12 +45,24 @@ All notable changes to this project will be documented in this file.
   See [our internal issue](https://github.com/stackabletech/hdfs-operator/issues/626) and [the fix](https://github.com/kube-rs/kube/pull/2042) for details ([#998]).
 - The operator now watches all resources that it creates and early-exits the reconcile action when the
   cluster is marked for deletion ([#1014]).
+- A KRaft cluster without a `controllers` role is now rejected during validation.
+  Previously, the operator would create a cluster consisting only of `brokers` which would never
+  become healthy ([#1010]).
+
+### Removed
+
+- BREAKING: The broker pod's separate `kcat-prober` sidecar container has been removed; its
+  `kcat`-based readiness probe now runs directly on the `kafka` container instead (`kcat` has
+  shipped in the same product image as `kafka` since #527, so the dedicated container/image was
+  no longer needed). The `kcat-prober` value is no longer accepted in a broker's
+  `logging.containers` CRD field ([#1010]).
 
 [#985]: https://github.com/stackabletech/kafka-operator/pull/985
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994
 [#998]: https://github.com/stackabletech/kafka-operator/pull/998
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
+[#1010]: https://github.com/stackabletech/kafka-operator/pull/1010
 [#1011]: https://github.com/stackabletech/kafka-operator/pull/1011
 [#1014]: https://github.com/stackabletech/kafka-operator/pull/1014
 [#1017]: https://github.com/stackabletech/kafka-operator/pull/1017

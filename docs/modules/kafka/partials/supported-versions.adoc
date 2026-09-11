@@ -7,10 +7,7 @@
 * 3.9.2 (LTS)
 * 3.9.1 (deprecated)
 
-Support for clusters running in Kraft mode (which includes Apache Kafka 4.x.x) is experimental because it has not been thoroughly tested in production environments yet.
+Support for clusters running in Kraft mode (which includes Apache Kafka >= 4.x) is experimental due to the following known issues:
 
-Also there are some known issues such as:
-
-* Controller scaling is not reliable.
 * Kerberos authentication is not tested yet.
 * Service exposition is not definitive.

@@ -23,3 +23,5 @@ tilt_options.json
 .envrc
 
 .DS_Store
+
+.worktrees/
