@@ -125,13 +125,8 @@ fn common_operator_env_vars(
     env
 }
 
-/// Environment variables the operator sets that are common to *every* container in a
-/// **controller** pod: today that's the `kafka` server process and, when present, the
-/// `quorum-manager` sidecar.
-///
-/// The caller merges the user's `envOverrides` on top (so a user override wins on a name
-/// collision); the `quorum-manager` sidecar additionally gets its own container-specific env
-/// vars layered on top (see [`KAFKA_NODE_ID_OFFSET`]).
+/// Environment variables the operator sets that are common to the `kafka` and `quorum-manager`
+/// containers.
 fn controller_pod_shared_env_vars(
     validated_cluster: &ValidatedCluster,
     kafka_security: &ValidatedKafkaSecurity,
@@ -464,16 +459,10 @@ pub fn build_controller_rolegroup_statefulset(
         .pod_descriptors(Some(kafka_role))
         .context(BuildPodDescriptorsSnafu)?;
 
-    // The controller listener socket only opens once the KRaft node has finished replaying
-    // its metadata log, which can take a while on a slow first boot or after a long outage.
-    // The startupProbe gives it up to 5 minutes (60 * 5s) before the liveness probe is
-    // allowed to start counting failures at all, so a slow (but progressing) boot is never
-    // mistaken for a stuck process.
     let controller_startup_probe =
         probes::controller_tcp_probe(kafka_security.client_port(), 5, 5, 60)
             .context(BuildProbeSnafu)?;
-    // See `probes::controller_stuck_unattached_liveness_probe`'s doc comment for why this is no
-    // longer a plain TCP check.
+
     let controller_liveness_probe = probes::controller_stuck_unattached_liveness_probe(
         kafka_security.client_port(),
         METRICS_PORT,
@@ -758,11 +747,6 @@ stackable_operator::constant!(QUORUM_MANAGER_CONTAINER_NAME: ContainerName = "qu
 
 /// Builds the `quorum-manager` sidecar for a controller pod. Returns `None` when Kerberos is
 /// enabled (the sidecar's admin-client properties file only covers the TLS/SSL case).
-///
-/// `env` is expected to be [`controller_pod_shared_env_vars`] (plus `NODE_ID_OFFSET` and the
-/// rolegroup's `envOverrides`) — the same base the `kafka` container in this pod gets — so
-/// this sidecar's `controller.properties` render has every env var it references. See
-/// [`controller_pod_shared_env_vars`] for why that matters.
 fn build_quorum_manager_container(
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &ValidatedKafkaSecurity,
@@ -806,15 +790,7 @@ fn build_quorum_manager_container(
             STACKABLE_TLS_KAFKA_INTERNAL_DIR,
         )
         .expect("The mount paths are statically defined and there should be no duplicates.")
-        // `add-controller` reads this controller's own on-disk `meta.properties` (its
-        // `node.id`/`directory.id`, written by `kafka-storage.sh format`) from `log.dirs` in
-        // the merged config it connects with - without this mount, every
-        // `add-controller` attempt failed with "Unable to read meta.properties from
-        // /stackable/data/kraft", since that path doesn't exist in this container's
-        // filesystem at all without it. This mounts the *same* per-pod PVC the `kafka`
-        // container itself writes `meta.properties` into, read-write for parity with it
-        // (the CLI tool doesn't document a read-only requirement, and this repo has no
-        // read-only-mount helper to reach for).
+        // `add-controller` reads this controller's own on-disk `meta.properties` from `log.dirs`.
         .add_volume_mount(&*LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .expect("The mount paths are statically defined and there should be no duplicates.");
 

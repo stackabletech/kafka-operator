@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # The `quorum-manager` sidecar's main loop: while this controller's local Raft state is
-# `observer`, admit it into the KRaft voter set -- but only once doing so is actually safe.
+# `observer`, admit it into the KRaft voter set.
+#
+# If the controller is `leader`, `follower` or `unattched` it does nothing.
+#
+# It has a special case handling when the second controller is added to the voter list.
+# In that case, it polls the metrics endpoint `STABILITY_REQUIRES_POLLS` times before
+# adding the controller.
+# This is a precaution mechanism to ensure that a quorum with two voters stays healthy.
+# A quorum with two voters is problematic in Kraft because none of them should fail.
+# KRaft redundancy really only starts at a quorum of 3.
 #
 # Inputs:
 #   REPLICA_ID                  this pod's KRaft `node.id`
@@ -18,31 +27,6 @@
 #                               is joined by a second one (see below)
 #   VOTER_STALE_FETCH_SECONDS   how long an existing voter may go without fetching before the
 #                               quorum counts as degraded
-#
-# Why this waits at all
-# ---------------------
-# Admitting a voter changes the majority, and the sizes are not symmetric:
-#
-#   1 voter  -> majority 1, exactly one node must be alive
-#   2 voters -> majority 2, *both* nodes must be alive
-#   3 voters -> majority 2, any one node may fail
-#
-# KRaft applies one voter change at a time, so a cluster growing 1 -> 3 must pass through 2,
-# where a single unhealthy controller takes the whole quorum down with it. That is not
-# hypothetical: a controller that joined while it was still flapping left the surviving
-# controller unable to commit, and because controllers use `OrderedReady` pod management,
-# nothing could then be rescheduled to fix it.
-#
-# Hence the two gates below, applied asymmetrically:
-#
-#   * Going 1 -> 2 is the dangerous step, and postponing it is free: the cluster simply stays
-#     at one voter, exactly where it already was. So this controller must first prove itself
-#     by reporting `observer` for STABILITY_REQUIRED_POLLS consecutive polls.
-#   * Going 2 -> 3 leaves the fragile state, so it is not delayed: dwell time at two voters
-#     is itself the risk.
-#
-# Independently of that, membership is never changed while the existing quorum is already
-# degraded -- perturbing a struggling quorum is how a recoverable blip becomes a deadlock.
 #
 # This loop runs forever and never exits non-zero on its own: a deferred admission is always
 # retried on the next poll.

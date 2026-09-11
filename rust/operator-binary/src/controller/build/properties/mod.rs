@@ -111,11 +111,6 @@ mod tests {
         assert_eq!(ConfigFileName::Log4j2.to_string(), "log4j2.properties");
     }
 
-    /// Builds a minimal [`KafkaPodDescriptor`] for the given role, replica and client port.
-    ///
-    /// `KafkaPodDescriptor`'s fields are `pub(crate)`, which is crate-wide (not
-    /// module-scoped) visibility in Rust, so this direct construction is legal from any
-    /// module inside `stackable-kafka-operator`, including this one.
     fn pod_descriptor(role: KafkaRole, replica: u16, client_port: u16) -> KafkaPodDescriptor {
         KafkaPodDescriptor {
             namespace: "default".parse().expect("valid namespace name"),
@@ -136,15 +131,6 @@ mod tests {
         }
     }
 
-    /// `kraft_controllers` points at the controller role group's *headless Service* DNS name
-    /// (no pod prefix), not individual pod FQDNs. A headless Service's own DNS name resolves
-    /// to every backing pod's IP (Kafka's own AdminClient default,
-    /// `client.dns.lookup=use_all_dns_ips`, already expects exactly this), and the
-    /// operator's headless Service sets `publishNotReadyAddresses: true`, so this also works
-    /// during initial cluster formation before any pod is Ready. This is what makes
-    /// `controller.quorum.bootstrap.servers` invariant to the controller role group's
-    /// replica count: adding or removing replicas within an existing role group never
-    /// changes the role group's own Service name.
     #[test]
     fn kraft_controllers_points_at_the_role_group_headless_service_not_individual_pods() {
         let pod_descriptors = vec![
@@ -163,9 +149,6 @@ mod tests {
         );
     }
 
-    /// The whole point: scaling an existing controller role group up or down must not change
-    /// `kraft_controllers`'s output at all, since it no longer depends on which replicas
-    /// currently exist — the role group's Service name is stable regardless.
     #[test]
     fn kraft_controllers_is_stable_across_replica_count_changes() {
         let three_replicas = vec![
@@ -187,9 +170,6 @@ mod tests {
         );
     }
 
-    /// Multiple controller role groups each have their own headless Service, so each must
-    /// still get its own bootstrap-servers entry — deduplication is per-Service, not a
-    /// blanket "collapse everything to one entry".
     #[test]
     fn kraft_controllers_lists_every_distinct_role_groups_service_once() {
         let mut default_group_pod = pod_descriptor(KafkaRole::Controller, 0, 9093);
@@ -200,7 +180,7 @@ mod tests {
         other_group_pod.role_group_service_name = "kafka-controller-other-headless"
             .parse()
             .expect("valid service name");
-        // Second replica of the *same* role group as `default_group_pod` — must not produce
+        // Second replica of the *same* role group as `default_group_pod` - must not produce
         // a second entry for that Service.
         let default_group_pod_replica_1 = {
             let mut pod = pod_descriptor(KafkaRole::Controller, 1, 9093);

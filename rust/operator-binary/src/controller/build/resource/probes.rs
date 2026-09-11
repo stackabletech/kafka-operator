@@ -27,9 +27,7 @@ pub enum Error {
 /// The broker `kafka` container's readiness probe.
 ///
 /// Uses `kcat` rather than the official Kafka tools, since they incur a lot of unacceptable perf
-/// overhead when run repeatedly as a probe. Only allow the global load balancing service to send
-/// traffic to pods that are members of the quorum. This also acts as a hint to the StatefulSet
-/// controller to wait for each pod to enter quorum before taking down the next.
+/// overhead when run repeatedly as a probe.
 pub fn broker_kcat_readiness_probe(
     kafka_security: &ValidatedKafkaSecurity,
 ) -> Result<Probe, Error> {
@@ -49,14 +47,9 @@ pub fn broker_kcat_readiness_probe(
     })
 }
 
-/// A `Probe` combining a plain TCP check of the broker's client listener with a check that the
+/// The broker startup and liveness probe.
+/// Combines a plain TCP check of the broker's client listener with a check that the
 /// broker's own JMX `BrokerState` metric reports `RUNNING` (state `3`).
-///
-/// Used for both the `startupProbe` (so the `livenessProbe` doesn't start counting failures
-/// until the broker has actually finished starting - the client port can accept connections
-/// before the broker reaches `RUNNING`, e.g. while still replaying its log) and the
-/// `livenessProbe` (restarting a broker stuck in some other state, e.g. `RECOVERY` after a
-/// crash); only the timing parameters differ between the two uses.
 pub fn broker_running_probe(
     client_port: Port,
     metrics_port: Port,
@@ -81,12 +74,7 @@ pub fn broker_running_probe(
     })
 }
 
-/// A `Probe` that dials the controller's KRaft listener socket via a plain TCP connect.
-///
-/// This only proves the socket is open, not that the node has a healthy Raft state (leader,
-/// follower, or voted). Used for `startupProbe`: there is no meaningful Raft state to check
-/// yet while the process is still starting, so a bare TCP check is all that's meaningful this
-/// early.
+/// The controller startup probe.
 pub fn controller_tcp_probe(
     port: Port,
     timeout_seconds: u64,
@@ -106,7 +94,9 @@ pub fn controller_tcp_probe(
     })
 }
 
-/// A `Probe` that curls the JMX Prometheus exporter's `/metrics` endpoint and checks that the
+/// The controller readiness probe.
+///
+/// Curls the JMX Prometheus exporter's `/metrics` endpoint and checks that the
 /// controller's Raft state is one of the healthy states (`leader`, `follower`, or `voted`)
 /// rather than stuck in `unattached` or `candidate`.
 pub fn controller_raft_state_probe(
@@ -131,6 +121,8 @@ pub fn controller_raft_state_probe(
     })
 }
 
+/// The controller liveness probe.
+///
 /// A `Probe` combining a plain TCP check of the controller's KRaft listener with a check that
 /// its local Raft state isn't stuck in `unattached`.
 ///

@@ -222,16 +222,6 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
 /// (e.g. `kafka-metadata-quorum.sh`) talking to the CONTROLLER listener from *inside* a
 /// controller pod, over the `tls-kafka-internal` volume mounted by
 /// `add_controller_volume_and_volume_mounts`.
-///
-/// This is deliberately separate from `client_properties()`: that function points at
-/// `/stackable/tls-kafka-server`, a directory that is only mounted on broker pods.
-///
-/// Internal (broker/controller) TLS is mandatory (see [`ValidatedKafkaSecurity::tls_internal_secret_class`]),
-/// and `add_controller_volume_and_volume_mounts` unconditionally mounts both the keystore and
-/// truststore on controller pods, independent of the external client TLS/authentication
-/// settings. So, mirroring how `controller_config_settings` unconditionally writes the
-/// CONTROLLER listener's keystore/truststore settings, this function always returns SSL
-/// properties - there is no plaintext variant for the CONTROLLER listener.
 pub fn controller_admin_client_properties(
     _security: &ValidatedKafkaSecurity,
 ) -> Vec<(String, Option<String>)> {

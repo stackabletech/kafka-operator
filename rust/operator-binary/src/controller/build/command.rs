@@ -39,8 +39,6 @@ pub fn kafka_log_opts(product_version: &str) -> String {
 // The env var carrying the Kafka log4j options (see [`kafka_log_opts`]).
 constant!(pub KAFKA_LOG4J_OPTS: EnvVarName = "KAFKA_LOG4J_OPTS");
 
-/// Shell snippet setting `$POD_INDEX` to this pod's ordinal, parsed from the trailing digits
-/// of `$POD_NAME` (e.g. `2` for `..-controller-default-2`).
 const DERIVE_POD_INDEX: &str = r#"POD_INDEX=$(echo "$POD_NAME" | grep -oE '[0-9]+$')"#;
 
 const EXPORT_REPLICA_ID: &str = "export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))";
@@ -117,20 +115,14 @@ fn broker_start_command(kraft_mode: bool) -> String {
     }
 }
 
-/// Chooses exactly one controller (the one with the numerically lowest KRaft `node_id` among
-/// all controller pod descriptors, a value that is stable across scale-up/down of an existing
-/// controller role group, since new replicas only ever get higher node ids) to bootstrap the
-/// dynamic KRaft quorum by itself, via `kafka-storage.sh format --standalone`, the first time
-/// it is ever formatted.
+/// Selects the quorum format flag for the given controller.
 ///
-/// Every other controller — whether it is part of the cluster's initial desired replica count
-/// or added later on scale-up — is formatted with `--no-initial-controllers` and relies
-/// entirely on the `quorum-manager` sidecar's `add-controller` loop to join the quorum.
+/// The controller with lowest `node_id` starts with `--standalone` while all others
+/// start with `--no-initial-controllers` and are added later to the voter list
+/// by the `quorum-manager`.
 ///
-/// Known limitation: this rule is only safe for a cluster's *original* bootstrap. If the
-/// designated node's persistent volume is ever lost and needs to reformat after the cluster has
-/// already formed a quorum elsewhere, reformatting it with `--standalone` would bootstrap a
-/// second, conflicting one-node quorum instead of rejoining the existing one.
+/// Known limitation: If the controller with the lowest `node_id` loses it's PVC it will
+/// create a new conflicting quorum upon restart.
 fn controller_quorum_format_flag(controller_descriptors: &[KafkaPodDescriptor]) -> String {
     let bootstrap_node_id = controller_descriptors
         .iter()

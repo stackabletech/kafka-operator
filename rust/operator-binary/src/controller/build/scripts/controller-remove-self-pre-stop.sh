@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # The `preStop` hook of a KRaft controller pod's `kafka` container: remove this pod from the
-# KRaft voter set before it terminates -- unless that would remove the *last* voter.
+# KRaft voter set before it terminates.
+#
+# The last pod (the one with the lowest `node.id`) is never removed as that would effectively
+# lead to all cluster state being lost.
 #
 # Inputs:
 #   REPLICA_ID                this pod's KRaft `node.id`
@@ -11,10 +14,6 @@
 #   CLI_KILL_AFTER_SECONDS    grace period before `timeout` escalates to `SIGKILL`
 #   REMOVAL_DEADLINE_SECONDS  total budget for retrying the removal
 #   RETRY_INTERVAL_SECONDS    pause between two attempts
-#
-# IMPORTANT: the last voter must never be removed from the quorum, because that breaks
-# cluster restarts -- a restart would reformat the Raft metadata, losing all metadata of the
-# previous incarnation.
 #
 # Always exits 0 (a missing input aside, which is an operator bug): a failed or stuck removal
 # must never be the reason a pod fails to terminate.
@@ -37,7 +36,7 @@ quorum_cli() {
 
 # One removal attempt.
 #
-# Returns 0 when there is nothing left to do -- either this pod was removed, or it never was
+# Returns 0 when there is nothing left to do - either this pod was removed, or it never was
 # (or no longer is) a voter, or removing it would leave zero voters. Returns 1 when the
 # attempt was inconclusive and is worth retrying while the deadline holds.
 attempt_removal() {
@@ -59,8 +58,8 @@ attempt_removal() {
   fi
 
   # Fewer than two voters means this pod is the last one, so removing it would leave zero.
-  # This can never become safe later during this pod's own termination -- nothing else will
-  # add a voter on its behalf -- so give up instead of retrying until the deadline.
+  # This can never become safe later during this pod's own termination - nothing else will
+  # add a voter on its behalf - so give up instead of retrying until the deadline.
   if [ "$total_voters" -lt 2 ]; then
     echo "Removing self would leave zero voters, skipping (this can't become safe later during my own termination -- nothing else will add a voter for me)"
     return 0
