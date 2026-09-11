@@ -233,7 +233,7 @@ const QUORUM_MANAGER_STABILITY_REQUIRED_POLLS: u32 = 4;
 const QUORUM_MANAGER_VOTER_STALE_FETCH_SECONDS: u32 = 30;
 
 const CONTROLLER_QUORUM_MANAGER_LOOP_SCRIPT: &str =
-    include_str!("controller-quorum-manager-loop.sh");
+    include_str!("scripts/controller-quorum-manager-loop.sh");
 
 /// The sidecar's main-loop command: while this controller's local Raft state is `observer`,
 /// admit it into the quorum's voter set once that is safe.
@@ -320,7 +320,7 @@ fn pre_stop_deadline_seconds(graceful_shutdown_timeout: Option<Duration>) -> u64
 const PRE_STOP_RETRY_INTERVAL_SECONDS: u32 = 2;
 
 const CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT: &str =
-    include_str!("controller-remove-self-pre-stop.sh");
+    include_str!("scripts/controller-remove-self-pre-stop.sh");
 
 /// Drops whole-line `#` comments, and the blank runs they leave behind, from a shell script.
 fn strip_shell_comments(script: &str) -> String {
