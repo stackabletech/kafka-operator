@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Support floating tag in product image selection ([#1021]).
+
 ### Changed
 
 - Internal operator refactoring: introduce a build() step in the reconciler that
@@ -43,6 +47,7 @@ All notable changes to this project will be documented in this file.
 [#1011]: https://github.com/stackabletech/kafka-operator/pull/1011
 [#1014]: https://github.com/stackabletech/kafka-operator/pull/1014
 [#1017]: https://github.com/stackabletech/kafka-operator/pull/1017
+[#1021]: https://github.com/stackabletech/kafka-operator/pull/1021
 
 ## [26.7.0] - 2026-07-21
 
