@@ -17,7 +17,7 @@
 *** xref:kafka:usage-guide/operations/znode-id.adoc[]
 * xref:kafka:reference/index.adoc[]
 ** xref:kafka:reference/crds.adoc[]
-*** {crd-docs}/kafka.stackable.tech/kafkacluster/v1alpha1/[KafkaCluster {external-link-icon}^]
+*** {crd-ref}/kafka.stackable.tech/v1alpha1/kafkacluster{crd-ref-release}[KafkaCluster {external-link-icon}^]
 ** xref:kafka:reference/discovery.adoc[]
 ** xref:kafka:reference/commandline-parameters.adoc[]
 ** xref:kafka:reference/environment-variables.adoc[]
