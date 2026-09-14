@@ -29,6 +29,11 @@ set -uo pipefail
 : "${REMOVAL_DEADLINE_SECONDS:?must be set by the operator-generated preStop preamble}"
 : "${RETRY_INTERVAL_SECONDS:?must be set by the operator-generated preStop preamble}"
 
+# Logs a single line, prefixed with an RFC 3339 UTC timestamp.
+log() {
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*"
+}
+
 quorum_cli() {
   timeout --kill-after="$CLI_KILL_AFTER_SECONDS" "$CLI_TIMEOUT_SECONDS" "$QUORUM_CLI" \
     --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config "$ADMIN_CLIENT_CONFIG" "$@"
@@ -44,7 +49,7 @@ attempt_removal() {
 
   describe=$(quorum_cli describe --replication 2>/dev/null)
   if [ -z "$describe" ]; then
-    echo "Could not describe the quorum (unreachable or the call timed out), will retry"
+    log "Could not describe the quorum (unreachable or the call timed out), will retry"
     return 1
   fi
 
@@ -53,7 +58,7 @@ attempt_removal() {
   voters=$(echo "$describe" | tail -n +2 | awk '$NF == "Leader" || $NF == "Follower"')
   total_voters=$(echo "$voters" | grep -c .)
   if [ "$total_voters" -eq 0 ]; then
-    echo "Could not identify any voters in the describe output (unrecognized format), skipping removal for safety and retrying..."
+    log "Could not identify any voters in the describe output (unrecognized format), skipping removal for safety and retrying..."
     return 1
   fi
 
@@ -61,20 +66,20 @@ attempt_removal() {
   # This can never become safe later during this pod's own termination - nothing else will
   # add a voter on its behalf - so give up instead of retrying until the deadline.
   if [ "$total_voters" -lt 2 ]; then
-    echo "Removing self would leave zero voters, skipping (this can't become safe later during my own termination -- nothing else will add a voter for me)"
+    log "Removing self would leave zero voters, skipping (this can't become safe later during my own termination -- nothing else will add a voter for me)"
     return 0
   fi
 
   directory_id=$(echo "$voters" | awk -v id="$REPLICA_ID" '$1 == id { print $2 }')
   if [ -z "$directory_id" ]; then
-    echo "Could not find own node $REPLICA_ID among current voters (already removed?), nothing to do"
+    log "Could not find own node $REPLICA_ID among current voters (already removed?), nothing to do"
     return 0
   fi
 
-  echo "Removing self (node $REPLICA_ID, directory $directory_id) from the voter set..."
+  log "Removing self (node $REPLICA_ID, directory $directory_id) from the voter set..."
   if ! quorum_cli remove-controller \
     --controller-id "$REPLICA_ID" --controller-directory-id "$directory_id"; then
-    echo "remove-controller attempt failed, will retry if time remains"
+    log "remove-controller attempt failed, will retry if time remains"
     return 1
   fi
 
@@ -90,5 +95,5 @@ while [ "$SECONDS" -lt "$DEADLINE" ]; do
 done
 
 # Loud on purpose (`ERROR:`, so it is greppable and alertable in the container logs)
-echo "ERROR: could not remove self (node $REPLICA_ID) from the voter set before terminating (every attempt within ${REMOVAL_DEADLINE_SECONDS}s failed or the quorum was unreachable throughout); the on-disk voter set may now list this pod even though it is gone -- if nothing else corrects this, a later restart may get stuck and require manual recovery, see kraft-controller.adoc"
+log "ERROR: could not remove self (node $REPLICA_ID) from the voter set before terminating (every attempt within ${REMOVAL_DEADLINE_SECONDS}s failed or the quorum was unreachable throughout); the on-disk voter set may now list this pod even though it is gone -- if nothing else corrects this, a later restart may get stuck and require manual recovery, see kraft-controller.adoc"
 exit 0

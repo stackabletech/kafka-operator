@@ -45,6 +45,11 @@ set -uo pipefail
 : "${STABILITY_REQUIRED_POLLS:?must be set by the operator-generated preamble}"
 : "${VOTER_STALE_FETCH_SECONDS:?must be set by the operator-generated preamble}"
 
+# Logs a single line, prefixed with an RFC 3339 UTC timestamp.
+log() {
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*"
+}
+
 ADD_CONTROLLER_PID=""
 
 handle_term_signal() {
@@ -89,7 +94,7 @@ stale_voters() {
     '(now - $5) > max_age { print $1 }'
 }
 
-echo "Starting KRaft voter admission loop against bootstrap servers: $BOOTSTRAP_SERVERS"
+log "Starting KRaft voter admission loop against bootstrap servers: $BOOTSTRAP_SERVERS"
 
 # Consecutive polls that found this controller up and reporting `observer`. Reset by anything
 # that interrupts that run, so a flapping controller never accumulates a stable streak.
@@ -99,10 +104,10 @@ while true; do
   state=$(local_raft_state)
 
   if [ -z "$state" ]; then
-    echo "Could not determine local Raft state (metrics scrape returned nothing), will retry"
+    log "Could not determine local Raft state (metrics scrape returned nothing), will retry"
     stable_polls=0
   elif [ "$state" != "observer" ]; then
-    echo "Local Raft state is '$state', nothing to do"
+    log "Local Raft state is '$state', nothing to do"
     stable_polls=0
   else
     stable_polls=$((stable_polls + 1))
@@ -111,21 +116,21 @@ while true; do
     voter_count=$(echo "$voters" | grep -c .)
 
     if [ "$voter_count" -eq 0 ]; then
-      echo "Local Raft state is observer, but the quorum could not be described (unreachable, or its output was unrecognized); deferring add-controller"
+      log "Local Raft state is observer, but the quorum could not be described (unreachable, or its output was unrecognized); deferring add-controller"
     elif [ -n "$(stale_voters "$voters")" ]; then
-      echo "Local Raft state is observer, but the existing quorum is degraded (voter(s) $(stale_voters "$voters" | tr '\n' ' ')have not fetched within ${VOTER_STALE_FETCH_SECONDS}s); deferring add-controller rather than perturbing it"
+      log "Local Raft state is observer, but the existing quorum is degraded (voter(s) $(stale_voters "$voters" | tr '\n' ' ')have not fetched within ${VOTER_STALE_FETCH_SECONDS}s); deferring add-controller rather than perturbing it"
     elif [ "$voter_count" -eq 1 ] && [ "$stable_polls" -lt "$STABILITY_REQUIRED_POLLS" ]; then
       # Joining the single existing voter makes both nodes load-bearing, so this controller
       # has to prove it stays up first. Waiting costs nothing: the quorum stays at one voter.
-      echo "Local Raft state is observer and the quorum has a single voter; proving stability before joining it ($stable_polls/$STABILITY_REQUIRED_POLLS consecutive healthy polls)"
+      log "Local Raft state is observer and the quorum has a single voter; proving stability before joining it ($stable_polls/$STABILITY_REQUIRED_POLLS consecutive healthy polls)"
     else
-      echo "Local Raft state is observer, attempting add-controller..."
+      log "Local Raft state is observer, attempting add-controller..."
       timeout --kill-after="$CLI_KILL_AFTER_SECONDS" "$CLI_TIMEOUT_SECONDS" "$QUORUM_CLI" \
         --bootstrap-controller "$BOOTSTRAP_SERVERS" --command-config "$ADD_CONTROLLER_CONFIG" \
         add-controller &
       ADD_CONTROLLER_PID=$!
       wait "$ADD_CONTROLLER_PID" \
-        || echo "add-controller attempt failed (this is expected if it already succeeded or a leader election is in progress), will retry"
+        || log "add-controller attempt failed (this is expected if it already succeeded or a leader election is in progress), will retry"
       ADD_CONTROLLER_PID=""
     fi
   fi
