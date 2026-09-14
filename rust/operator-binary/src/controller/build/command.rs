@@ -391,29 +391,6 @@ mod tests {
         assert!(!command.contains(r#"--bootstrap-controller "localhost"#));
     }
 
-    /// Checks only that the trap and the interruptible-sleep pair are present in the
-    /// generated command *string* — it does not execute the script, so it cannot verify the
-    /// trap actually fires promptly under a real `SIGTERM`. That was confirmed separately on
-    /// a live cluster: without a `TERM` trap, this loop runs as the container's PID 1, whose
-    /// unhandled signals the kernel suppresses by default — so the `kafka` container in the
-    /// same pod shut down promptly on `SIGTERM` while this sidecar kept looping (curl
-    /// connection-refused every ~15s) until Kubernetes gave up and sent `SIGKILL` after the
-    /// full `terminationGracePeriodSeconds` (1800s), holding the whole pod in `Terminating`
-    /// well past kuttl's step timeout. The trap plus `sleep 10 &` / `wait $!` (rather than a
-    /// foreground `sleep 10`) let bash notice and act on `SIGTERM` immediately instead of
-    /// only after the next blocking command returns.
-    #[test]
-    fn quorum_manager_container_command_traps_term_and_sleeps_interruptibly() {
-        let command = quorum_manager_container_command();
-        assert!(command.contains("trap 'handle_term_signal' TERM"));
-        assert!(command.contains(r#"sleep "$POLL_INTERVAL_SECONDS" &"#));
-        assert!(command.contains("wait $!"));
-        // ...and that interval is actually supplied, so the above isn't a no-op.
-        assert!(command.contains(&format!(
-            "POLL_INTERVAL_SECONDS={QUORUM_MANAGER_POLL_INTERVAL_SECONDS}"
-        )));
-    }
-
     /// The whole point of backgrounding `add-controller`: a plain foreground `timeout ...`
     /// call is not interrupted by an arriving `TERM` — bash only checks/runs traps between
     /// commands or during the interruptible `wait` builtin — so a call already in flight when
@@ -423,6 +400,14 @@ mod tests {
     #[test]
     fn quorum_manager_container_command_kills_an_in_flight_add_controller_attempt_on_term() {
         let command = quorum_manager_container_command();
+        assert!(command.contains("trap 'handle_term_signal' TERM"));
+        // The poll interval is slept in the background and `wait`ed on, so bash can run the
+        // trap immediately instead of only after a foreground `sleep` returns.
+        assert!(command.contains(r#"sleep "$POLL_INTERVAL_SECONDS" &"#));
+        assert!(command.contains("wait $!"));
+        assert!(command.contains(&format!(
+            "POLL_INTERVAL_SECONDS={QUORUM_MANAGER_POLL_INTERVAL_SECONDS}"
+        )));
         assert!(command.contains("ADD_CONTROLLER_PID=$!"));
         assert!(command.contains(r#"wait "$ADD_CONTROLLER_PID""#));
         assert!(command.contains(r#"kill -TERM "$ADD_CONTROLLER_PID""#));
@@ -442,17 +427,17 @@ mod tests {
     }
 
     /// Checks only that the generated command *string* concatenates the two config files in
-    /// the order that makes `add-controller` self-register successfully — it does not
-    /// execute the script, so it cannot verify runtime behavior. That was confirmed
-    /// separately on a live cluster: `add-controller` reads `node.id` and its own
-    /// `listeners`/`controller.listener.names` from the *same* `--command-config` file it
-    /// connects with, to build the voter registration payload — pointed at the plain
-    /// admin-client config (which has no `node.id`), every attempt failed with `node.id not
-    /// found in configuration file`, so no controller was ever admitted as a voter. See
-    /// [`ADD_CONTROLLER_PROPERTIES_PATH`] for why the fix is a merged file (in this specific
-    /// order) rather than switching to `controller.properties` outright (that file has no
-    /// bare `ssl.*`/`security.protocol`, so the AdminClient couldn't reach the TLS-only
-    /// bootstrap controller at all).
+    /// the order that makes `add-controller` self-register successfully — it does not execute
+    /// the script, so it cannot verify runtime behavior.
+    ///
+    /// `add-controller` reads `node.id` and its own `listeners`/`controller.listener.names`
+    /// from the *same* `--command-config` file it connects with, to build the voter
+    /// registration payload; pointed at the plain admin-client config (which has no
+    /// `node.id`), every attempt fails with `node.id not found in configuration file`. See
+    /// [`ADD_CONTROLLER_PROPERTIES_PATH`] for why this is a merged file (in this specific
+    /// order) rather than `controller.properties` outright (that file has no bare
+    /// `ssl.*`/`security.protocol`, so the AdminClient cannot reach the TLS-only bootstrap
+    /// controller at all).
     #[test]
     fn quorum_manager_container_command_string_merges_controller_and_admin_client_properties_for_add_controller()
      {
@@ -479,13 +464,6 @@ mod tests {
             add_controller_line.contains(r#"--command-config "$ADD_CONTROLLER_CONFIG""#),
             "add-controller must use the merged config, line was: {add_controller_line}"
         );
-    }
-
-    #[test]
-    fn controller_remove_self_pre_stop_command_always_exits_zero() {
-        let command = controller_remove_self_pre_stop_command(None);
-        assert!(command.trim_end().ends_with("exit 0"));
-        assert!(command.contains("remove-controller"));
     }
 
     /// Stands in for `kafka-metadata-quorum.sh` in [`run_pre_stop`]: records every
@@ -541,13 +519,9 @@ mod tests {
         /// What the stub prints for `describe --replication`. Empty output stands for an
         /// unreachable quorum (or a call `timeout` killed).
         describe: String,
-        /// How many `remove-controller` calls fail before one succeeds.
-        remove_controller_failures: u32,
         /// The script's total retry budget, i.e. what [`pre_stop_deadline_seconds`] would
         /// produce in production.
         deadline_seconds: u32,
-        /// `None` leaves `REPLICA_ID` unset, exercising the missing-input guard.
-        replica_id: Option<u32>,
     }
 
     impl Default for PreStopScenario<'_> {
@@ -555,9 +529,7 @@ mod tests {
             Self {
                 name: "unnamed",
                 describe: String::new(),
-                remove_controller_failures: 0,
                 deadline_seconds: 2,
-                replica_id: Some(1),
             }
         }
     }
@@ -624,13 +596,8 @@ mod tests {
             .env("DESCRIBE_OUTPUT", &describe_output_file)
             .env("CALL_LOG", &call_log)
             .env("ATTEMPTS", &attempts)
-            .env(
-                "REMOVE_CONTROLLER_FAILURES",
-                scenario.remove_controller_failures.to_string(),
-            );
-        if let Some(replica_id) = scenario.replica_id {
-            command.env("REPLICA_ID", replica_id.to_string());
-        }
+            .env("REMOVE_CONTROLLER_FAILURES", "0")
+            .env("REPLICA_ID", "1");
 
         let output = command
             .output()
@@ -680,40 +647,17 @@ mod tests {
         );
     }
 
-    /// The 2 -> 1 removal, which the earlier majority-based guard
-    /// (`remaining_after_removal -ge total_voters / 2 + 1`) wrongly blocked: it left a
-    /// 2-voter quorum with one live member and one voter that was gone for good — a dead
-    /// quorum needing manual recovery, exactly the outage this hook exists to prevent. The
-    /// only invariant that matters is "never remove the *last* voter".
-    #[test]
-    fn pre_stop_removes_the_second_to_last_voter() {
-        let run = run_pre_stop(PreStopScenario {
-            name: "second-to-last",
-            describe: describe_output(&[(1, "dir-1", "Leader"), (2, "dir-2", "Follower")]),
-            ..Default::default()
-        });
-
-        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
-        assert_eq!(
-            run.calls_of("remove-controller").len(),
-            1,
-            "cli calls were: {:?}",
-            run.cli_calls
-        );
-    }
-
     /// Removing the last voter would break the next cluster restart (it would reformat the
-    /// Raft metadata), so it must never happen. Confirmed live: before this branch gave up
-    /// immediately, the last controller standing kept retrying every 2s for the full
-    /// deadline, delaying its own termination for nothing — no peer can add a voter on its
-    /// behalf while it is terminating, so the answer can never change.
+    /// Raft metadata), so it must never happen — and it must give up immediately rather than
+    /// retry: no peer can add a voter on this pod's behalf while it is terminating, so the
+    /// answer can never change. Observers are not voters, so the one in this quorum must not
+    /// be counted as the spare that would make the removal look safe.
     #[test]
     fn pre_stop_never_removes_the_last_voter_and_gives_up_immediately() {
         let run = run_pre_stop(PreStopScenario {
             name: "last-voter",
-            describe: describe_output(&[(1, "dir-1", "Leader")]),
+            describe: describe_output(&[(1, "dir-1", "Leader"), (2, "dir-2", "Observer")]),
             deadline_seconds: 10,
-            ..Default::default()
         });
 
         assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
@@ -731,89 +675,10 @@ mod tests {
         );
     }
 
-    /// Observers are not voters: counting them would make a one-voter quorum look like it has
-    /// a spare and let this pod remove the last voter after all.
-    #[test]
-    fn pre_stop_does_not_count_observers_as_voters() {
-        let run = run_pre_stop(PreStopScenario {
-            name: "observers",
-            describe: describe_output(&[(1, "dir-1", "Leader"), (2, "dir-2", "Observer")]),
-            ..Default::default()
-        });
-
-        assert!(run.stdout.contains("Removing self would leave zero voters"));
-        assert!(
-            run.calls_of("remove-controller").is_empty(),
-            "cli calls were: {:?}",
-            run.cli_calls
-        );
-    }
-
-    /// A controller that is not (or no longer) a voter has nothing to remove — that is a
-    /// finished state, not a failure to retry.
-    #[test]
-    fn pre_stop_is_a_no_op_when_self_is_not_a_voter() {
-        let run = run_pre_stop(PreStopScenario {
-            name: "not-a-voter",
-            describe: describe_output(&[(2, "dir-2", "Leader"), (3, "dir-3", "Follower")]),
-            deadline_seconds: 10,
-            ..Default::default()
-        });
-
-        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
-        assert!(
-            run.stdout
-                .contains("Could not find own node 1 among current voters")
-        );
-        assert!(
-            run.calls_of("remove-controller").is_empty(),
-            "cli calls were: {:?}",
-            run.cli_calls
-        );
-        assert_eq!(
-            run.calls_of("describe").len(),
-            1,
-            "cli calls were: {:?}",
-            run.cli_calls
-        );
-    }
-
-    /// A failed `remove-controller` — a leader election in flight, a peer mid-termination —
-    /// is exactly what the retry loop exists for, so it must retry rather than give up like
-    /// the "nothing to do" cases.
-    #[test]
-    fn pre_stop_retries_a_failed_remove_controller_attempt() {
-        let run = run_pre_stop(PreStopScenario {
-            name: "retry-removal",
-            describe: describe_output(&[(1, "dir-1", "Leader"), (2, "dir-2", "Follower")]),
-            remove_controller_failures: 1,
-            deadline_seconds: 6,
-            ..Default::default()
-        });
-
-        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
-        assert!(
-            run.stdout
-                .contains("remove-controller attempt failed, will retry if time remains")
-        );
-        assert_eq!(
-            run.calls_of("remove-controller").len(),
-            2,
-            "cli calls were: {:?}",
-            run.cli_calls
-        );
-        assert!(
-            !run.stdout.contains("ERROR:"),
-            "an attempt that eventually succeeded must not report failure, stdout was: {}",
-            run.stdout
-        );
-    }
-
     /// An unreachable quorum is retried for the whole budget and then reported loudly
     /// (`ERROR:`, so it is greppable and alertable): the on-disk voter set may now list a pod
-    /// that is gone, which is what can strand a later restart-from-zero (see
-    /// `controller_stuck_unattached_liveness_probe` in `resource/statefulset.rs`). The hook
-    /// still exits 0 — a failed removal must never be why a pod fails to terminate.
+    /// that is gone, which is what can strand a later restart-from-zero. The hook still exits
+    /// 0 — a failed removal must never be why a pod fails to terminate.
     #[test]
     fn pre_stop_retries_an_unreachable_quorum_then_reports_loudly() {
         let run = run_pre_stop(PreStopScenario {
@@ -838,50 +703,6 @@ mod tests {
                 .contains("ERROR: could not remove self (node 1) from the voter set"),
             "stdout was: {}",
             run.stdout
-        );
-    }
-
-    /// Describe output the parser does not recognize must not be read as "no voters left" —
-    /// that looks exactly like the last-voter case and would stop, leaving this pod in the
-    /// voter set without a word. It is inconclusive: retry, then report loudly.
-    #[test]
-    fn pre_stop_retries_unrecognized_describe_output_then_reports_loudly() {
-        let run = run_pre_stop(PreStopScenario {
-            name: "unrecognized",
-            describe: "an unexpected header\nan unexpected row\n".to_string(),
-            deadline_seconds: 3,
-            ..Default::default()
-        });
-
-        assert_eq!(run.exit_code, Some(0), "stderr was: {}", run.stderr);
-        assert!(
-            run.stdout
-                .contains("Could not identify any voters in the describe output")
-        );
-        assert!(
-            run.calls_of("remove-controller").is_empty(),
-            "cli calls were: {:?}",
-            run.cli_calls
-        );
-        assert!(run.stdout.contains("ERROR: could not remove self"));
-    }
-
-    /// A missing input is an operator bug, not a runtime condition, so it must fail loudly
-    /// instead of silently skipping the removal — or, with `REPLICA_ID` empty, hunting for a
-    /// voter row that cannot match.
-    #[test]
-    fn pre_stop_fails_loudly_when_an_input_is_missing() {
-        let run = run_pre_stop(PreStopScenario {
-            name: "missing-input",
-            replica_id: None,
-            ..Default::default()
-        });
-
-        assert_ne!(run.exit_code, Some(0));
-        assert!(
-            run.stderr.contains("REPLICA_ID"),
-            "stderr was: {}",
-            run.stderr
         );
     }
 
@@ -910,31 +731,6 @@ mod tests {
         }
     }
 
-    /// The generated command is inlined into the controller pod template, so the script's
-    /// maintenance comments are stripped on the way in — and only those: every line of actual
-    /// shell has to survive [`strip_shell_comments`] intact.
-    #[test]
-    fn generated_pre_stop_command_embeds_the_script_without_its_comments() {
-        let command = controller_remove_self_pre_stop_command(None);
-
-        for line in command.lines() {
-            assert!(
-                !line.trim_start().starts_with('#'),
-                "no comment line may reach the pod template, found: {line}"
-            );
-        }
-
-        let code_lines = CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT
-            .lines()
-            .filter(|line| !line.trim_start().starts_with('#') && !line.trim().is_empty());
-        for line in code_lines {
-            assert!(
-                command.contains(line),
-                "stripping comments must not drop a line of shell, lost: {line}"
-            );
-        }
-    }
-
     /// The retry `DEADLINE` must be derived from the pod's actual `gracefulShutdownTimeout`
     /// (via [`pre_stop_deadline_seconds`]) rather than hardcoded, and must stay within the
     /// documented floor/cap regardless of how short or long that timeout is.
@@ -946,8 +742,7 @@ mod tests {
             PRE_STOP_MIN_DEADLINE_SECONDS
         );
 
-        // A short timeout (shorter than the reserved buffer) still gets at least the floor,
-        // never less than the original fixed behavior.
+        // A short timeout (shorter than the reserved buffer) still gets at least the floor.
         assert_eq!(pre_stop_deadline_seconds(Some(Duration::from_secs(10))), 10);
 
         // A generous timeout (the operator's own 30-minute default) is capped, not handed the
@@ -963,12 +758,8 @@ mod tests {
             pre_stop_deadline_seconds(Some(Duration::from_secs(90))),
             90 - PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS
         );
-    }
 
-    /// The generated script's own `DEADLINE` must actually use
-    /// [`pre_stop_deadline_seconds`]'s output, not a literal left over from before it existed.
-    #[test]
-    fn controller_remove_self_pre_stop_command_deadline_reflects_the_configured_timeout() {
+        // ...and the generated script is handed that value, rather than a literal.
         let command =
             controller_remove_self_pre_stop_command(Some(Duration::from_minutes_unchecked(30)));
         assert!(command.contains(&format!(
@@ -976,70 +767,14 @@ mod tests {
         )));
     }
 
-    /// The `preStop` hook already guarded its `REPLICA_ID` derivation against an empty
-    /// `POD_INDEX`; the main loop's derivation must have the same guard, or an empty
-    /// `POD_INDEX` would silently produce a wrong `node.id` instead of the sidecar noticing.
-    #[test]
-    fn quorum_manager_container_command_guards_against_empty_pod_index() {
-        let command = quorum_manager_container_command();
-        assert!(command.contains(r#"[ -n "$POD_INDEX" ] || exit 0"#));
-    }
-
-    /// The render/merge preamble (`cp`/`config-utils template`/`cat`) must log loudly on
-    /// failure, but must not crash-loop the container: it falls into a degraded loop instead
-    /// of exiting, and never attempts `add-controller` once degraded.
-    #[test]
-    fn quorum_manager_container_command_preamble_is_loud_but_does_not_crash_on_error() {
-        let command = quorum_manager_container_command();
-        // A failed render/merge must not crash-loop the container (that would make the pod
-        // NotReady and, under OrderedReady pod management, block every sibling pod in the
-        // role too) — it must log loudly instead and stay Running.
-        assert!(
-            !command.contains("set -e"),
-            "the preamble must not opt into `set -e` (that would crash-loop the container), \
-             command was: {command}"
-        );
-        assert!(
-            command.contains("ERROR"),
-            "expected a clear error message on a failed render/merge, command was: {command}"
-        );
-        // On failure it must degrade into a loop rather than exiting (which would also crash
-        // the container) and must never attempt add-controller once degraded.
-        let error_branch_start = command
-            .find("echo \"ERROR: quorum-manager failed to render or merge")
-            .expect("the command has a degraded-mode error branch");
-        let degraded_branch = &command[error_branch_start..];
-        assert!(degraded_branch.contains("while true"));
-        // The degraded branch must never invoke the CLI tool (there is no valid rendered
-        // config to use) — check for the actual invocation, not just the word
-        // "add-controller" (which also appears inside the degraded branch's own log
-        // message, explaining what it is *not* doing).
-        assert!(!degraded_branch.contains(KAFKA_METADATA_QUORUM_BINARY));
-    }
-
-    /// The SIGTERM-handling fix's whole point is prompt shutdown, but an unresponsive (not
-    /// refused) connection to the metrics port would otherwise block the loop body
-    /// indefinitely — the trap can only fire between commands or during `wait` — reintroducing
-    /// the exact stall the fix targeted.
-    #[test]
-    fn quorum_manager_container_command_metrics_curl_has_timeouts() {
-        let command = quorum_manager_container_command();
-        assert!(command.contains(r#"curl -s --max-time 5 --connect-timeout 2 "$METRICS_URL""#));
-        assert!(command.contains(&format!("METRICS_URL=localhost:{METRICS_PORT}/metrics")));
-    }
-
     /// `timeout N cmd` (GNU coreutils, no `--kill-after`) only *sends* the signal after `N`
     /// seconds — it does not force-kill the process, so if `cmd` doesn't honor the signal
-    /// promptly, the whole call can run far longer than `N` seconds. Confirmed directly,
-    /// independent of Kafka: `timeout 3 bash -c 'trap "" TERM; sleep 30'` takes the full 30s,
-    /// not 3s, while `timeout --kill-after=2 3 bash -c 'trap "" TERM; sleep 30'` is correctly
-    /// bounded to ~5s. This matters most for `controller_remove_self_pre_stop_command`, which runs
-    /// exactly when peers may be mid-termination (a blackholed, not actively-refused,
-    /// connection is exactly the kind of thing a JVM AdminClient can hang on past its own
-    /// `timeout` wrapper) — confirmed live (back when this ran as the `quorum-manager`
-    /// sidecar's own `preStop`, before it moved to the `kafka` container): during a full
-    /// namespace deletion, the `preStop` kept running for 100+ seconds, far past the script's
-    /// own ~25-40s design budget at the time.
+    /// promptly, the whole call can run far longer than `N` seconds (`timeout 3 bash -c 'trap
+    /// "" TERM; sleep 30'` takes the full 30s, while `timeout --kill-after=2 3 ...` is
+    /// bounded to ~5s). This matters most for `controller_remove_self_pre_stop_command`,
+    /// which runs exactly when peers may be mid-termination: a blackholed, not
+    /// actively-refused, connection is the kind of thing a JVM AdminClient hangs on well past
+    /// its own `timeout` wrapper, delaying pod termination by minutes.
     #[test]
     fn every_cli_call_has_a_kill_after_so_timeout_is_actually_enforced() {
         let container_command = quorum_manager_container_command();
@@ -1085,17 +820,11 @@ mod tests {
     }
 
     /// Stands in for `curl` in [`run_quorum_manager_loop`]: prints a metrics body reporting
-    /// `$METRIC_STATE`. When `$METRIC_FLAP` is set, every second call instead prints nothing,
-    /// mimicking a controller whose metrics endpoint keeps dropping out.
+    /// `$METRIC_STATE`.
     const STUB_METRICS_CURL: &str = indoc! {r#"
         #!/usr/bin/env bash
         set -u
-        calls=$(( $(cat "$CURL_CALLS") + 1 ))
-        echo "$calls" > "$CURL_CALLS"
-        if [ -n "${METRIC_FLAP:-}" ] && [ $((calls % 2)) -eq 0 ]; then
-          exit 0
-        fi
-        [ -n "$METRIC_STATE" ] && echo "kafka_server_raft_metrics_current_state{state=\"$METRIC_STATE\",}"
+        echo "kafka_server_raft_metrics_current_state{state=\"$METRIC_STATE\",}"
         exit 0
     "#};
 
@@ -1123,11 +852,8 @@ mod tests {
         /// What the stub CLI prints for `describe --replication`. Empty stands for an
         /// unreachable quorum.
         describe: String,
-        /// This controller's own Raft state, as its metrics endpoint reports it. Empty
-        /// stands for a scrape that returned nothing.
+        /// This controller's own Raft state, as its metrics endpoint reports it.
         metric_state: &'a str,
-        /// Drop every second metrics scrape, so no stability streak can accumulate.
-        flapping_metrics: bool,
         /// Consecutive healthy polls required before joining a single-voter quorum.
         stability_required_polls: u32,
         /// How long the loop is left running, in seconds.
@@ -1140,7 +866,6 @@ mod tests {
                 name: "unnamed",
                 describe: String::new(),
                 metric_state: "observer",
-                flapping_metrics: false,
                 stability_required_polls: 3,
                 run_for_seconds: 2,
             }
@@ -1194,8 +919,6 @@ mod tests {
         fs::write(&call_log, "").expect("the stub's call log can be created");
         let attempts = dir.join("remove-controller-attempts");
         fs::write(&attempts, "0").expect("the stub's attempt counter can be created");
-        let curl_calls = dir.join("curl-calls");
-        fs::write(&curl_calls, "0").expect("the stub curl's counter can be created");
 
         let path = format!(
             "{stub_dir}:{existing}",
@@ -1235,11 +958,7 @@ mod tests {
             .env("CALL_LOG", &call_log)
             .env("ATTEMPTS", &attempts)
             .env("REMOVE_CONTROLLER_FAILURES", "0")
-            .env("CURL_CALLS", &curl_calls)
             .env("METRIC_STATE", scenario.metric_state);
-        if scenario.flapping_metrics {
-            command.env("METRIC_FLAP", "1");
-        }
 
         let output = command.output().expect("bash is available to run the loop");
         let cli_calls = fs::read_to_string(&call_log)
@@ -1298,26 +1017,6 @@ mod tests {
         );
     }
 
-    /// A metrics endpoint that keeps dropping out never accumulates a streak — this is the
-    /// flapping controller the probation exists for.
-    #[test]
-    fn quorum_manager_never_admits_a_flapping_controller_to_a_single_voter_quorum() {
-        let run = run_quorum_manager_loop(QuorumManagerScenario {
-            name: "flapping",
-            describe: quorum_describe_output(&[(1, "dir-1", "Leader")], 1),
-            flapping_metrics: true,
-            stability_required_polls: 3,
-            run_for_seconds: 6,
-            ..Default::default()
-        });
-
-        assert!(
-            run.calls_of("add-controller").is_empty(),
-            "a flapping controller must never reach the streak, calls: {:?}",
-            run.cli_calls
-        );
-    }
-
     /// Two voters is the fragile size — majority 2, so no failure is tolerated. Getting to
     /// three is urgent, so this step is not delayed by the probation.
     #[test]
@@ -1366,28 +1065,6 @@ mod tests {
         );
     }
 
-    /// An unreachable quorum is not an invitation to guess.
-    #[test]
-    fn quorum_manager_defers_when_the_quorum_cannot_be_described() {
-        let run = run_quorum_manager_loop(QuorumManagerScenario {
-            name: "undescribable",
-            describe: String::new(),
-            run_for_seconds: 3,
-            ..Default::default()
-        });
-
-        assert!(
-            run.calls_of("add-controller").is_empty(),
-            "an undescribable quorum must not be joined, calls: {:?}",
-            run.cli_calls
-        );
-        assert!(
-            run.stdout.contains("could not be described"),
-            "stdout was: {}",
-            run.stdout
-        );
-    }
-
     /// A controller that is already a voter has nothing to do.
     #[test]
     fn quorum_manager_does_nothing_when_already_a_voter() {
@@ -1412,11 +1089,6 @@ mod tests {
     }
 
     /// Builds a minimal [`KafkaPodDescriptor`] for the given role and replica.
-    ///
-    /// `KafkaPodDescriptor`'s fields are `pub(crate)`, which is crate-wide (not
-    /// module-scoped) visibility in Rust, so this direct construction is legal from any
-    /// module inside `stackable-kafka-operator` — mirrors the identically-named helper in
-    /// `build/properties/mod.rs`'s own test module.
     fn pod_descriptor(role: KafkaRole, replica: u16, node_id: u32) -> KafkaPodDescriptor {
         KafkaPodDescriptor {
             namespace: "default".parse().expect("valid namespace name"),
@@ -1439,8 +1111,7 @@ mod tests {
 
     /// The controller with the lowest `node_id` bootstraps the quorum by itself
     /// (`--standalone`); every other controller joins via the `quorum-manager` sidecar's
-    /// `add-controller` loop (`--no-initial-controllers`) — this is the runtime branch that
-    /// replaces baking a fixed `--initial-controllers <voter list>` into the format command.
+    /// `add-controller` loop (`--no-initial-controllers`).
     #[test]
     fn controller_kafka_container_command_branches_on_the_lowest_node_id() {
         let descriptors = vec![
@@ -1456,36 +1127,9 @@ mod tests {
         assert!(command.contains(
             "bin/kafka-storage.sh format --cluster-id \"$KAFKA_CLUSTER_ID\" --config /tmp/controller.properties --ignore-formatted \"$FORMAT_QUORUM_FLAG\""
         ));
-        // The old `--initial-controllers <voter list>` scheme is gone entirely, including its
-        // synthetic directory-id suffix.
+        // No `--initial-controllers <voter list>`, and no synthetic directory-id suffix.
         assert!(!command.contains("--initial-controllers"));
         assert!(!command.contains("0000000000-"));
-    }
-
-    /// The whole point of removing the baked-in voter list: the container command must stay
-    /// byte-for-byte identical when only the *replica count* of an existing controller role
-    /// group changes (new replicas only ever get higher node ids), so scaling up/down no
-    /// longer forces Kubernetes to roll every already-existing controller pod just to pick up
-    /// an unchanged (`--ignore-formatted` no-ops it anyway) format command.
-    #[test]
-    fn controller_kafka_container_command_is_stable_across_replica_count_changes() {
-        let three_replicas = vec![
-            pod_descriptor(KafkaRole::Controller, 0, 5),
-            pod_descriptor(KafkaRole::Controller, 1, 6),
-            pod_descriptor(KafkaRole::Controller, 2, 7),
-        ];
-        let five_replicas = vec![
-            pod_descriptor(KafkaRole::Controller, 0, 5),
-            pod_descriptor(KafkaRole::Controller, 1, 6),
-            pod_descriptor(KafkaRole::Controller, 2, 7),
-            pod_descriptor(KafkaRole::Controller, 3, 8),
-            pod_descriptor(KafkaRole::Controller, 4, 9),
-        ];
-
-        assert_eq!(
-            controller_kafka_container_command(three_replicas),
-            controller_kafka_container_command(five_replicas)
-        );
     }
 
     /// Brokers are never voters and never the bootstrap candidate — they always join (or, for

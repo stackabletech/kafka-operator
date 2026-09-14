@@ -573,13 +573,6 @@ mod tests {
         assert_eq!(cluster_id_value(&env), None);
     }
 
-    /// Confirmed live: scaling a KRaft cluster's only controller role group down to 0 replicas
-    /// while brokers keep running used to pass validation and fail much later and much more
-    /// confusingly, as `NoKraftControllersFound` while building the *broker* role group's
-    /// ConfigMap (which also reads the controller quorum's pod descriptors, to render
-    /// `controller.quorum.bootstrap.servers`). Brokers with zero controllers have no metadata
-    /// quorum to talk to at all, so this combination must be rejected here, at validation time,
-    /// with a message that actually names the real problem.
     #[test]
     fn kraft_mode_rejects_zero_controller_replicas_while_brokers_are_running() {
         let kafka = minimal_kafka(
@@ -619,8 +612,6 @@ mod tests {
         );
     }
 
-    /// KRaft mode without a `controllers` role at all: the CRD marks the role optional (it is,
-    /// in ZooKeeper mode), so this has to be caught in validation rather than by the schema.
     #[test]
     fn kraft_mode_rejects_missing_controller_role() {
         let kafka = minimal_kafka(
@@ -652,8 +643,6 @@ mod tests {
         );
     }
 
-    /// The same zero-sum check, but split across two controller role groups (0 + 0): neither
-    /// group alone looks suspicious, only their sum does.
     #[test]
     fn kraft_mode_rejects_zero_controller_replicas_summed_across_role_groups() {
         let kafka = minimal_kafka(
@@ -695,10 +684,7 @@ mod tests {
         );
     }
 
-    /// Controllers *and* brokers at zero together is not rejected: that is exactly what
-    /// `clusterOperation.stopped` already does today, unconditionally, for every Stackable
-    /// operator, bypassing this check entirely. A coordinated whole-cluster stop is already a
-    /// supported shape, not a broken half-state the way controllers-only-at-zero is.
+    /// Controllers *and* brokers at zero together is not rejected
     #[test]
     fn kraft_mode_allows_controllers_and_brokers_at_zero_together() {
         let kafka = minimal_kafka(

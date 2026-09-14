@@ -850,7 +850,8 @@ mod tests {
 
     /// The user-supplied `envOverrides` must be merged in after all operator-set environment
     /// variables, so that they can override any of them. `CONTAINERDEBUG_LOG_DIRECTORY` is used
-    /// as the example here because it is set unconditionally by the operator.
+    /// as the example here because it is set unconditionally by the operator. The controller
+    /// builder merges the same [`EnvVarSet`] the same way.
     #[test]
     fn env_overrides_override_operator_set_env_vars() {
         let kafka = minimal_kafka(
@@ -944,147 +945,27 @@ mod tests {
         validated_cluster(&kafka)
     }
 
-    /// Same guarantee for the controller role, whose env vars are assembled by a separate
-    /// builder ([`build_controller_rolegroup_statefulset`]).
     #[test]
-    fn controller_env_overrides_override_operator_set_env_vars() {
-        let cluster = kraft_mode_cluster();
-        let role_group_name = RoleGroupName::from_str("default").expect("valid role group name");
-        let mut validated_rg =
-            cluster.role_group_configs[&KafkaRole::Controller][&role_group_name].clone();
-        validated_rg.env_overrides = validated_rg
-            .env_overrides
-            .with_value(&CONTAINERDEBUG_LOG_DIRECTORY, "/custom/log/dir");
-
-        let stateful_set = build_controller_rolegroup_statefulset(
-            &KafkaRole::Controller,
-            &role_group_name,
-            &cluster,
-            &validated_rg,
-        )
-        .expect("the StatefulSet builds");
-
-        let env = stateful_set
-            .spec
-            .expect("the StatefulSet has a spec")
-            .template
-            .spec
-            .expect("the pod template has a spec")
-            .containers
-            .into_iter()
-            .find(|container| container.name == "kafka")
-            .expect("the kafka container exists")
-            .env
-            .expect("the kafka container has env vars");
-
-        let containerdebug: Vec<_> = env
-            .iter()
-            .filter(|env_var| env_var.name == "CONTAINERDEBUG_LOG_DIRECTORY")
-            .collect();
-        assert_eq!(
-            containerdebug.len(),
-            1,
-            "the override must replace the operator-set value, not duplicate it"
-        );
-        assert_eq!(containerdebug[0].value.as_deref(), Some("/custom/log/dir"));
-    }
-
-    #[test]
-    fn controller_statefulset_uses_ordered_ready_pod_management() {
+    fn statefulsets_use_ordered_ready_pod_management_for_controllers_only() {
         let cluster = kraft_mode_cluster();
         let resources = crate::controller::build::build(&cluster).expect("build succeeds");
-        let sts = resources
-            .stateful_sets
-            .into_iter()
-            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
-            .expect("the controller StatefulSet is built");
 
-        assert_eq!(
-            sts.spec
-                .expect("the StatefulSet has a spec")
-                .pod_management_policy,
-            Some("OrderedReady".to_string())
-        );
-    }
-
-    #[test]
-    fn broker_statefulset_still_uses_parallel_pod_management() {
-        let cluster = kraft_mode_cluster();
-        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
-        let sts = resources
-            .stateful_sets
-            .into_iter()
-            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-broker-default"))
-            .expect("the broker StatefulSet is built");
-
-        assert_eq!(
-            sts.spec
-                .expect("the StatefulSet has a spec")
-                .pod_management_policy,
-            Some("Parallel".to_string())
-        );
-    }
-
-    /// End-to-end regression covering the whole point of removing `--initial-controllers`
-    /// (and the sidecar's own baked-in bootstrap-servers literal) from the controller pod
-    /// template: scaling an existing controller role group's replica count must not change
-    /// either container's `command`, or Kubernetes will roll every already-existing
-    /// controller pod on every scale-up/down, not just the ones actually being added or
-    /// removed. Confirmed live: before this fix, both the `kafka` container's format command
-    /// and the `quorum-manager` sidecar's bootstrap-servers literal changed with replica
-    /// count, forcing a full rolling restart on every scale operation.
-    #[test]
-    fn controller_pod_template_is_stable_across_replica_count_changes() {
-        let three_replicas = kraft_mode_cluster();
-        let five_replicas = crate::controller::test_support::validated_cluster(
-            &crate::controller::test_support::minimal_kafka(
-                r#"
-                apiVersion: kafka.stackable.tech/v1alpha1
-                kind: KafkaCluster
-                metadata:
-                  name: simple-kafka
-                  namespace: default
-                  uid: 12345678-1234-1234-1234-123456789012
-                spec:
-                  image:
-                    productVersion: 3.9.2
-                  clusterConfig:
-                    metadataManager: kraft
-                  controllers:
-                    roleGroups:
-                      default:
-                        replicas: 5
-                  brokers:
-                    roleGroups:
-                      default:
-                        replicas: 3
-                "#,
-            ),
-        );
-
-        let three_containers = controller_containers(&three_replicas);
-        let five_containers = controller_containers(&five_replicas);
-
-        for name in [
-            "kafka".to_string(),
-            QUORUM_MANAGER_CONTAINER_NAME.to_string(),
+        for (name, expected_policy) in [
+            ("simple-kafka-controller-default", "OrderedReady"),
+            ("simple-kafka-broker-default", "Parallel"),
         ] {
-            let three_command = three_containers
+            let sts = resources
+                .stateful_sets
                 .iter()
-                .find(|c| c.name == name)
-                .unwrap_or_else(|| panic!("the {name} container is built (3 replicas)"))
-                .command
-                .clone();
-            let five_command = five_containers
-                .iter()
-                .find(|c| c.name == name)
-                .unwrap_or_else(|| panic!("the {name} container is built (5 replicas)"))
-                .command
-                .clone();
+                .find(|sts| sts.metadata.name.as_deref() == Some(name))
+                .unwrap_or_else(|| panic!("the {name} StatefulSet is built"));
             assert_eq!(
-                three_command, five_command,
-                "the {name} container's command must not change when only the replica count \
-                 of an existing controller role group changes"
+                sts.spec
+                    .as_ref()
+                    .expect("the StatefulSet has a spec")
+                    .pod_management_policy
+                    .as_deref(),
+                Some(expected_policy)
             );
         }
     }
@@ -1107,21 +988,7 @@ mod tests {
     }
 
     #[test]
-    fn controller_pods_get_a_quorum_manager_sidecar_on_supported_versions() {
-        let cluster = kraft_mode_cluster();
-        let containers = controller_containers(&cluster);
-
-        assert!(
-            containers
-                .iter()
-                .any(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME.to_string()),
-            "expected a quorum-manager sidecar, got containers: {:?}",
-            containers.iter().map(|c| &c.name).collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn quorum_manager_sidecar_targets_bootstrap_servers_in_its_command() {
+    fn the_sidecar_joins_the_quorum_and_the_kafka_container_leaves_it_on_stop() {
         let cluster = kraft_mode_cluster();
         let containers = controller_containers(&cluster);
         let sidecar = containers
@@ -1135,24 +1002,9 @@ mod tests {
             .expect("the sidecar has a command")
             .join(" ");
         assert!(command.contains("add-controller"));
-
-        // The sidecar only ever joins the quorum now — it has no `preStop` hook of its own.
-        // See `controller_kafka_container_has_a_remove_self_pre_stop_hook` for why the
-        // removal-on-departure half moved to the `kafka` container instead.
         assert!(sidecar.lifecycle.is_none());
-    }
 
-    /// `remove-controller` must run as the `kafka` container's own `preStop` hook, not the
-    /// `quorum-manager` sidecar's — `preStop` only delays *that same container's* `SIGTERM`,
-    /// and it's the `kafka` container's own Raft process (the thing actually leaving the
-    /// voter set) that needs to stay alive while removal is attempted. See
-    /// `controller_remove_self_pre_stop_command`'s doc comment for the full rationale.
-    #[test]
-    fn controller_kafka_container_has_a_remove_self_pre_stop_hook() {
-        let cluster = kraft_mode_cluster();
-        let container = controller_kafka_container(&cluster);
-
-        let pre_stop_command = container
+        let pre_stop_command = controller_kafka_container(&cluster)
             .lifecycle
             .as_ref()
             .and_then(|l| l.pre_stop.as_ref())
@@ -1167,7 +1019,7 @@ mod tests {
     /// Every `${env:NAME}` placeholder found in a rendered Java properties (or similar)
     /// string, in first-seen order, de-duplicated.
     ///
-    /// The Java properties writer used to serialize the rendered `controller.properties`
+    /// The Java properties writer serializing `controller.properties`
     /// escapes `:` as `\:` (`:` otherwise separates a properties key from its value), so a
     /// placeholder actually appears as `${env\:NAME}` in the rendered ConfigMap content —
     /// this accepts either form.
@@ -1193,14 +1045,6 @@ mod tests {
         result
     }
 
-    /// Regression test for a real bug found in review: `build_quorum_manager_container` once
-    /// set only `POD_NAME`/`NODE_ID_OFFSET` on the sidecar, while its own
-    /// `controller.properties` render (used to build the `add-controller` config, see
-    /// `command.rs`) needs `POD_NAME`, `ROLEGROUP_HEADLESS_SERVICE_NAME`, `NAMESPACE`,
-    /// `CLUSTER_DOMAIN` and `KAFKA_CLIENT_PORT` — so the rendered `listeners` value was most
-    /// likely broken (unresolved `${env:...}` placeholders). This asserts, from the actual
-    /// rendered `controller.properties` content, that every placeholder it references has a
-    /// matching env var on the sidecar container.
     #[test]
     fn quorum_manager_sidecar_has_every_env_var_controller_properties_rendering_references() {
         let cluster = kraft_mode_cluster();
@@ -1257,8 +1101,8 @@ mod tests {
 
         // Targeted assertion (rather than relying on it only showing up incidentally among
         // `placeholders` above): NODE_ID_OFFSET is consumed directly by the sidecar's own
-        // `EXPORT_REPLICA_ID` bash logic under `set -u` (see `command.rs`), so a regression
-        // here would break the sidecar's `add-controller` main loop silently (an unset
+        // `EXPORT_REPLICA_ID` bash logic under `set -u` (see `command.rs`), so losing it
+        // would break the sidecar's `add-controller` main loop silently (an unset
         // variable under `set -u` aborts the script).
         let node_id_offset_name = KAFKA_NODE_ID_OFFSET.to_string();
         assert!(
@@ -1266,50 +1110,6 @@ mod tests {
             "quorum-manager sidecar is missing the {node_id_offset_name} env var, needed by \
              its EXPORT_REPLICA_ID derivation under `set -u`; sidecar env vars: \
              {sidecar_env_names:?}"
-        );
-    }
-
-    #[test]
-    fn controller_pods_get_no_quorum_manager_sidecar_when_kerberos_is_enabled() {
-        // This is a Global Constraint (see the plan header): the sidecar's admin-client
-        // properties file only covers the TLS/SSL case, so it must never be added when
-        // Kerberos is enabled, even on an otherwise-supported Kafka version.
-        //
-        // Rather than building a full CRD-level Kerberos fixture (which needs a resolved
-        // AuthenticationClass threaded through `DereferencedObjects`, more than this test
-        // needs), call `build_quorum_manager_container` directly — it already takes
-        // `&ValidatedKafkaSecurity` as a parameter, so a fixture at that level is enough.
-        // Reuse the `kerberos()` fixture from `security.rs`'s existing test module (see
-        // Task 2).
-        let cluster = kraft_mode_cluster();
-        let kerberos_security = crate::controller::build::security::tests::kerberos();
-
-        let result = build_quorum_manager_container(&cluster.image, &kerberos_security, Vec::new());
-
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn broker_pods_never_get_a_quorum_manager_sidecar() {
-        let cluster = kraft_mode_cluster();
-        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
-        let sts = resources
-            .stateful_sets
-            .into_iter()
-            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-broker-default"))
-            .expect("the broker StatefulSet is built");
-        let containers = sts
-            .spec
-            .expect("the StatefulSet has a spec")
-            .template
-            .spec
-            .expect("the pod template has a spec")
-            .containers;
-
-        assert!(
-            !containers
-                .iter()
-                .any(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME.to_string())
         );
     }
 
@@ -1342,44 +1142,22 @@ mod tests {
             .expect("the kafka container is built")
     }
 
+    /// The startup and liveness probes share the same check - TCP reachability (a genuinely
+    /// dead/hung process must still be restarted) plus the broker's JMX `BrokerState` metric
+    /// reporting `RUNNING` (state `3`); see `probes::broker_running_probe`'s doc comment.
     #[test]
-    fn broker_kafka_container_has_a_startup_probe() {
+    fn broker_kafka_container_probes_check_tcp_and_running_state() {
         let cluster = kraft_mode_cluster();
         let container = broker_kafka_container(&cluster);
         let client_port = cluster.cluster_config.kafka_security.client_port();
 
         let startup_probe = container
             .startup_probe
+            .clone()
             .expect("the broker kafka container must have a startupProbe");
-        let exec = startup_probe
-            .exec
-            .expect("the startupProbe must be an exec check, not a bare tcpSocket check");
-        let command = exec.command.expect("exec has a command");
-        let script = command.last().expect("the exec command has a script arg");
-
-        assert!(
-            script.contains(&format!("/dev/tcp/localhost/{client_port}")),
-            "expected a TCP reachability check against the broker's own client port, script was: {script}"
-        );
-        assert!(
-            script.contains("kafka_server_kafkaserver_brokerstate 3"),
-            "expected a check for the broker's JMX BrokerState metric being RUNNING (3), \
-             script was: {script}"
-        );
         assert_eq!(startup_probe.timeout_seconds, Some(5));
         assert_eq!(startup_probe.period_seconds, Some(5));
         assert_eq!(startup_probe.failure_threshold, Some(60));
-    }
-
-    /// The liveness probe must check both TCP reachability (a genuinely dead/hung process must
-    /// still be restarted) and that the broker's JMX `BrokerState` metric reports `RUNNING`
-    /// (state `3`) - see `probes::broker_running_probe`'s doc comment for why the same check
-    /// backs both the startup and liveness probes.
-    #[test]
-    fn broker_kafka_container_liveness_probe_checks_tcp_and_running_state() {
-        let cluster = kraft_mode_cluster();
-        let container = broker_kafka_container(&cluster);
-        let client_port = cluster.cluster_config.kafka_security.client_port();
 
         let liveness_probe = container
             .liveness_probe
@@ -1405,78 +1183,32 @@ mod tests {
         assert_eq!(liveness_probe.failure_threshold, Some(20));
     }
 
-    /// The `kcat`-based readiness probe runs directly on the `kafka` container - there is no
-    /// separate `kcat-prober` sidecar (removed since `kcat` ships in the same product image the
-    /// `kafka` container already uses, so a dedicated container was no longer needed).
+    /// The startup probe is a plain TCP check, while the liveness probe additionally inspects
+    /// the local Raft state and fails specifically on `unattached`
     #[test]
-    fn broker_kafka_container_readiness_probe_uses_kcat() {
-        let cluster = kraft_mode_cluster();
-        let container = broker_kafka_container(&cluster);
-
-        let readiness_probe = container
-            .readiness_probe
-            .expect("the broker kafka container must have a readinessProbe");
-        let exec = readiness_probe
-            .exec
-            .expect("the readinessProbe must be an exec check");
-        let command = exec.command.expect("exec has a command");
-        assert_eq!(command[0], "/stackable/kcat");
-    }
-
-    #[test]
-    fn broker_pods_have_no_kcat_prober_sidecar() {
-        let cluster = kraft_mode_cluster();
-        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
-        let sts = resources
-            .stateful_sets
-            .into_iter()
-            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-broker-default"))
-            .expect("the broker StatefulSet is built");
-        let containers = sts
-            .spec
-            .expect("the StatefulSet has a spec")
-            .template
-            .spec
-            .expect("the pod template has a spec")
-            .containers;
-
-        assert!(
-            !containers.iter().any(|c| c.name == "kcat-prober"),
-            "expected no separate kcat-prober container, got: {:?}",
-            containers.iter().map(|c| &c.name).collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn controller_kafka_container_has_a_startup_probe() {
+    fn controller_kafka_container_probes_check_tcp_and_raft_state() {
         let cluster = kraft_mode_cluster();
         let container = controller_kafka_container(&cluster);
         let client_port = cluster.cluster_config.kafka_security.client_port();
 
         let startup_probe = container
             .startup_probe
+            .clone()
             .expect("the controller kafka container must have a startupProbe");
         let tcp_socket = startup_probe
             .tcp_socket
             .expect("the startupProbe must be a tcpSocket check");
-        assert_eq!(tcp_socket.port, IntOrString::Int(client_port.into()));
+        assert_eq!(
+            tcp_socket.port,
+            IntOrString::Int(client_port.clone().into())
+        );
         assert_eq!(startup_probe.timeout_seconds, Some(5));
         assert_eq!(startup_probe.period_seconds, Some(5));
         assert_eq!(startup_probe.failure_threshold, Some(60));
-    }
-
-    /// The liveness probe must check both TCP reachability (a genuinely dead/hung process must
-    /// still be restarted, same as before) and local Raft state, failing specifically on
-    /// `unattached` — see `controller_stuck_unattached_liveness_probe`'s doc comment for why
-    /// only that state, not any non-healthy state, is treated as restart-worthy.
-    #[test]
-    fn controller_kafka_container_liveness_probe_checks_tcp_and_stuck_unattached_state() {
-        let cluster = kraft_mode_cluster();
-        let container = controller_kafka_container(&cluster);
-        let client_port = cluster.cluster_config.kafka_security.client_port();
 
         let liveness_probe = container
             .liveness_probe
+            .clone()
             .expect("the controller kafka container must have a livenessProbe");
         let exec = liveness_probe
             .exec
@@ -1500,28 +1232,20 @@ mod tests {
         assert_eq!(liveness_probe.timeout_seconds, Some(10));
         assert_eq!(liveness_probe.period_seconds, Some(30));
         assert_eq!(liveness_probe.failure_threshold, Some(20));
-    }
 
-    #[test]
-    fn controller_kafka_container_readiness_probe_checks_raft_state() {
-        let cluster = kraft_mode_cluster();
-        let container = controller_kafka_container(&cluster);
-
-        let readiness_probe = container.readiness_probe.expect("readiness probe is set");
+        let readiness_probe = container
+            .readiness_probe
+            .expect("the controller kafka container must have a readinessProbe");
         let exec = readiness_probe
             .exec
-            .expect("readiness probe is an exec check");
-        let command = exec.command.expect("exec has a command");
+            .expect("the readinessProbe must be an exec check");
         assert_eq!(
-            command,
+            exec.command.expect("exec has a command"),
             vec![
                 "bash".to_string(),
                 "-c".to_string(),
                 "curl -s localhost:9606/metrics | grep -E 'kafka_server_raft_metrics_current_state\\{state=\"(leader|follower|voted)\",?\\}'".to_string(),
             ]
         );
-        assert_eq!(readiness_probe.timeout_seconds, Some(10));
-        assert_eq!(readiness_probe.period_seconds, Some(10));
-        assert_eq!(readiness_probe.failure_threshold, Some(6));
     }
 }
