@@ -615,7 +615,7 @@ pub(crate) mod test_support {
     }
 
     /// Runs the real validate step against a minimal (auth/OPA-free) fixture, without unwrapping
-    /// the result -- for tests asserting on a specific validation failure.
+    /// the result. Used for tests asserting on a specific validation failure.
     pub fn validate_err(
         kafka: &v1alpha1::KafkaCluster,
     ) -> Result<ValidatedCluster, super::validate::Error> {

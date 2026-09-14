@@ -697,7 +697,7 @@ mod tests {
 
     /// Controllers *and* brokers at zero together is not rejected: that is exactly what
     /// `clusterOperation.stopped` already does today, unconditionally, for every Stackable
-    /// operator, bypassing this check entirely -- a coordinated whole-cluster stop is already a
+    /// operator, bypassing this check entirely. A coordinated whole-cluster stop is already a
     /// supported shape, not a broken half-state the way controllers-only-at-zero is.
     #[test]
     fn kraft_mode_allows_controllers_and_brokers_at_zero_together() {
