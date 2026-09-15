@@ -1,3 +1,9 @@
+#
+# This is a test helper to ensure that all broker pods are deleted before
+# the test namespace is terminated.
+# The brokers must be deleted because otherwise they are left dangling until
+# the test timeouts and fails.
+#
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
@@ -15,9 +21,9 @@ spec:
 {% else %}
     productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
 {% endif %}
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
   clusterConfig:
     metadataManager: kraft
-{% if lookup('env', 'VECTOR_AGGREGATOR') %}
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
   controllers:
@@ -26,14 +32,14 @@ spec:
         enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
     roleGroups:
       default:
-        replicas: 5
+        replicas: 0
   brokers:
     config:
       logging:
         enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
     roleGroups:
       default:
-        replicas: 3
+        replicas: 0
   clusterOperation:
     stopped: false
     reconciliationPaused: false

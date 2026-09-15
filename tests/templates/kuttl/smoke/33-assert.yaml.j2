@@ -64,14 +64,6 @@ spec:
             requests:
               cpu: 300m # From podOverrides
               memory: 2Gi
-        - name: kcat-prober
-          resources:
-            limits:
-              cpu: 200m
-              memory: 128Mi
-            requests:
-              cpu: 100m
-              memory: 128Mi
 {% if vector_enabled %}
         - name: vector
           env:

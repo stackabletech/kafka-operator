@@ -4,7 +4,6 @@
 # The brokers must be deleted because otherwise they are left dangling until
 # the test timeouts and fails.
 #
-{% if not test_scenario['values']['kafka-kraft'].startswith("3.7") %}
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
@@ -44,4 +43,3 @@ spec:
   clusterOperation:
     stopped: false
     reconciliationPaused: false
-{% endif %}

@@ -85,33 +85,29 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 * `cluster-id`: This is set to the `metadata.name` of the KafkaCluster resource during initial formatting
 * `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
 * `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not supported.
-* The operator configures a static voter list containing the controller pods. Controllers are not dynamically managed.
+* Each controller pod runs an additional `quorum-manager` sidecar container that, on startup, admits the pod into
+  the KRaft voter set.
+  On pod restart or termination, the controller is removed from the voter set by the `preStop` hook on the `kafka` container.
+* Exactly one controller (the one with the numerically lowest `node.id` among all controller pod descriptors) formats
+  with `kafka-storage.sh format --standalone`, bootstrapping a single-node quorum by itself.
+  Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
+  Brokers always format with `--no-initial-controllers` too; they are never voters.
+* `controller.quorum.bootstrap.servers` points at each controller role group's own headless Service DNS name, not
+  individual pod addresses.
 
 == Known Issues
 
 * Automatic migration from Apache ZooKeeper to KRaft is not supported.
-* Scaling controller replicas might lead to unstable clusters.
 * Kerberos is currently not supported for KRaft in all versions.
+* The quorum is created once by the controller with the lowest `node.id` using `--standalone`. If this controller
+  loses it's PVC, a new conflicting quorum is created on restart.
+* A Controller that loses its persistent volume is not re-admitted to the voter set automatically, because it
+  returns with a new directory ID while the quorum still lists the old one.
 
-== Troubleshooting
+==== Prevention
 
-=== Cluster does not start
-
-Check that at least a quorum (majority) of controllers are reachable.
-
-=== Frequent leader elections
-
-Likely caused by controller resource starvation or unstable Kubernetes scheduling.
-
-=== Migration issues (ZooKeeper to KRaft)
-
-Ensure Kafka version 3.9.x and higher and follow the official migration documentation.
-The Stackable Kafka operator currently does not support the migration.
-
-=== Scaling issues
-
-The https://developers.redhat.com/articles/2024/11/27/dynamic-kafka-controller-quorum[Dynamic scaling] is only supported from Kafka version 3.9.0.
-If you are using older versions, automatic scaling may not work properly (e.g. adding or removing controller replicas).
+* Use a StorageClass backed by network-attached storage, so that a node failure does not imply volume loss.
+* Do not delete Controller PVCs as part of routine maintenance.
 
 == Kraft migration guide
 
