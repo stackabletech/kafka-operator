@@ -29,7 +29,7 @@ use crate::{
     },
 };
 
-constant!(KERBEROS_VOLUME_NAME: VolumeName = "kerberos");
+constant!(pub KERBEROS_VOLUME_NAME: VolumeName = "kerberos");
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -97,7 +97,7 @@ pub fn add_kerberos_pod_config(
     Ok(())
 }
 
-constant!(KRB5_CONFIG: EnvVarName = "KRB5_CONFIG");
+constant!(pub KRB5_CONFIG: EnvVarName = "KRB5_CONFIG");
 constant!(KAFKA_OPTS: EnvVarName = "KAFKA_OPTS");
 
 /// The environment variables the Kerberos configuration requires on the Kafka container, or an

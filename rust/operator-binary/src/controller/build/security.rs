@@ -981,6 +981,40 @@ pub(crate) mod tests {
 
     // ---- controller_admin_client_properties ----
 
+    /// Renders the admin-client properties exactly as `build_rolegroup_config_map` does, so we
+    /// see what the Java properties writer actually puts on disk (it escapes `:` as `\:`, which
+    /// `config-utils` and the AdminClient must still be able to read back).
+    #[test]
+    fn admin_client_rendered_file_keeps_the_jaas_config_on_one_line() {
+        use stackable_operator::v2::config_file_writer::to_java_properties_string;
+
+        let rendered = to_java_properties_string(
+            controller_admin_client_properties(&kerberos())
+                .iter()
+                .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
+        )
+        .expect("admin-client properties serialize");
+
+        let jaas_line = rendered
+            .lines()
+            .find(|l| l.starts_with("sasl.jaas.config"))
+            .expect("sasl.jaas.config must be present");
+        assert!(
+            jaas_line.trim_end().ends_with(';'),
+            "the whole login module config must fit on one line, got: {jaas_line}"
+        );
+        assert!(jaas_line.contains("Krb5LoginModule"));
+        // The writer escapes ` `, `=` and `:`, so the placeholders land as `${env\:NAME}`.
+        // Java's `Properties.load` unescapes all three on read, and `config-utils` already
+        // resolves this escaped form (`controller.properties` relies on it — see
+        // `extract_env_placeholders` in `statefulset.rs`), so the AdminClient ends up with
+        // the intended single-line value.
+        assert!(
+            jaas_line.contains("${env\\:POD_NAME}"),
+            "expected the escaped placeholder form, got: {jaas_line}"
+        );
+    }
+
     #[test]
     fn admin_client_uses_gssapi_over_sasl_ssl_with_kerberos() {
         let props = as_map(controller_admin_client_properties(&kerberos()));
