@@ -719,7 +719,7 @@ pub(crate) mod tests {
     }
 
     /// Plaintext: no TLS, no authentication, no OPA.
-    fn plaintext() -> ValidatedKafkaSecurity {
+    pub(crate) fn plaintext() -> ValidatedKafkaSecurity {
         ValidatedKafkaSecurity::new(
             no_auth(),
             SecretClassName::from_str("tls").expect("tls secret class name is valid"),

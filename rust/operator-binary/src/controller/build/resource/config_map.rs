@@ -24,7 +24,7 @@ use crate::{
     crd::{
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, node_address_cmd},
-        role::AnyConfig,
+        role::{AnyConfig, KafkaRole},
     },
 };
 
@@ -177,7 +177,7 @@ pub fn build_rolegroup_config_map(
         // and this tool currently doesn't support the JAAS login configuration format.
         .add_data(
             ConfigFileName::Jaas.to_string(),
-            jaas_config_file(kafka_security.has_kerberos_enabled()),
+            jaas_config_file(kafka_security.has_kerberos_enabled(), &role),
         );
 
     // `admin-client.properties` is only needed by the controller-side sidecar running
@@ -223,10 +223,43 @@ pub fn build_rolegroup_config_map(
 // Generate JAAS configuration file for Kerberos authentication
 // or an empty string if Kerberos is not enabled.
 // See https://docs.oracle.com/javase/8/docs/technotes/guides/security/jgss/tutorials/LoginConfigFile.html
-fn jaas_config_file(is_kerberos_enabled: bool) -> String {
-    match is_kerberos_enabled {
-        false => String::new(),
-        true => formatdoc! {"
+fn jaas_config_file(is_kerberos_enabled: bool, role: &KafkaRole) -> String {
+    if !is_kerberos_enabled {
+        return String::new();
+    }
+
+    // Broker pods reach the CONTROLLER listener as SASL clients; the only principals in
+    // their keytab (see `add_kerberos_pod_config`) are for the broker and bootstrap listener
+    // addresses, so their CONTROLLER section must reuse the broker address.
+    // Controller pods have no listener-operator `Listener` volume; their keytab is
+    // pod-scoped, so their CONTROLLER section uses their own pod FQDN — the same expression
+    // already used for `KAFKA_LISTENERS` in `controller_properties.rs`.
+    let controller_principal_address = match role {
+        KafkaRole::Broker => node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
+        KafkaRole::Controller => {
+            "${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}"
+                .to_string()
+        }
+    };
+
+    // Unlike the bootstrap and client sections below, this context is used for BOTH sides of
+    // every CONTROLLER-listener connection: brokers connect out to controllers, and
+    // controllers connect to each other for Raft. This is the only listener in this operator
+    // where the process must act as a GSSAPI initiator as well as an acceptor, so
+    // `isInitiator` is intentionally left at its default (`true`).
+    let controller_section = formatdoc! {"
+        controller.KafkaServer {{
+            com.sun.security.auth.module.Krb5LoginModule required
+            useKeyTab=true
+            storeKey=true
+            keyTab=\"/stackable/kerberos/keytab\"
+            principal=\"kafka/{controller_principal_address}@${{env:KERBEROS_REALM}}\";
+        }};
+    "};
+
+    match role {
+        KafkaRole::Controller => controller_section,
+        KafkaRole::Broker => formatdoc! {"
         bootstrap.KafkaServer {{
             com.sun.security.auth.module.Krb5LoginModule required
             useKeyTab=true
@@ -245,6 +278,7 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
             principal=\"kafka/{broker_address}@${{env:KERBEROS_REALM}}\";
         }};
 
+        {controller_section}
     ",
         bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
         broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
@@ -255,15 +289,19 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::jaas_config_file;
+    use crate::crd::role::KafkaRole;
+
+    const CONTROLLER_POD_FQDN: &str = "${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}";
 
     #[test]
     fn jaas_config_file_empty_without_kerberos() {
-        assert_eq!(jaas_config_file(false), "");
+        assert_eq!(jaas_config_file(false, &KafkaRole::Broker), "");
+        assert_eq!(jaas_config_file(false, &KafkaRole::Controller), "");
     }
 
     #[test]
     fn jaas_config_file_renders_bootstrap_and_client_sections_with_kerberos() {
-        let jaas = jaas_config_file(true);
+        let jaas = jaas_config_file(true, &KafkaRole::Broker);
         assert!(jaas.contains("bootstrap.KafkaServer"));
         assert!(jaas.contains("client.KafkaServer"));
         assert!(jaas.contains("Krb5LoginModule"));
@@ -271,5 +309,48 @@ mod tests {
         // The bootstrap and client principals embed distinct listener addresses.
         assert!(jaas.contains("/stackable/listener-bootstrap"));
         assert!(jaas.contains("/stackable/listener-broker"));
+    }
+
+    #[test]
+    fn broker_controller_section_uses_the_broker_listener_address() {
+        let jaas = jaas_config_file(true, &KafkaRole::Broker);
+        assert!(jaas.contains("controller.KafkaServer {"));
+        // Brokers connect *out* to controllers. The only principals in a broker's keytab are
+        // for its own listener addresses, so this section must reuse the broker address.
+        assert!(jaas.contains(
+            "kafka/${file:UTF-8:/stackable/listener-broker/default-address/address}@${env:KERBEROS_REALM}"
+        ));
+    }
+
+    #[test]
+    fn controller_jaas_has_only_the_controller_section_with_a_pod_fqdn_principal() {
+        let jaas = jaas_config_file(true, &KafkaRole::Controller);
+        assert!(jaas.contains("controller.KafkaServer {"));
+        assert!(jaas.contains(&format!(
+            "kafka/{CONTROLLER_POD_FQDN}@${{env:KERBEROS_REALM}}"
+        )));
+        // Controllers have no listener-operator Listener volume, so the broker-only
+        // sections must not appear in their JAAS file.
+        assert!(!jaas.contains("bootstrap.KafkaServer"));
+        assert!(!jaas.contains("client.KafkaServer"));
+    }
+
+    #[test]
+    fn controller_section_allows_the_process_to_act_as_a_gssapi_initiator() {
+        for role in [KafkaRole::Broker, KafkaRole::Controller] {
+            let jaas = jaas_config_file(true, &role);
+            let start = jaas
+                .find("controller.KafkaServer {")
+                .expect("controller.KafkaServer section must be present");
+            // Unlike the other sections, this context is used for BOTH sides of every
+            // CONTROLLER-listener connection: brokers connect out to controllers, and
+            // controllers connect to each other for Raft. So `isInitiator` must stay at its
+            // default (`true`). Scoped to this section so a broker-side `isInitiator=false`
+            // elsewhere stays fine.
+            assert!(
+                !jaas[start..].contains("isInitiator=false"),
+                "controller.KafkaServer for {role:?} must not disable GSSAPI initiation"
+            );
+        }
     }
 }

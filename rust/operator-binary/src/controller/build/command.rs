@@ -142,6 +142,7 @@ fn controller_quorum_format_flag(controller_descriptors: &[KafkaPodDescriptor]) 
 }
 
 pub fn controller_kafka_container_command(
+    kafka_security: &ValidatedKafkaSecurity,
     controller_descriptors: Vec<KafkaPodDescriptor>,
 ) -> String {
     formatdoc! {"
@@ -149,6 +150,7 @@ pub fn controller_kafka_container_command(
         {remove_vector_shutdown_file_command}
         prepare_signal_handlers
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
+        {set_realm_env}
 
         {derive_pod_index}
         {export_replica_id}
@@ -156,6 +158,9 @@ pub fn controller_kafka_container_command(
         cp {config_dir}/{properties_file} /tmp/{properties_file}
 
         config-utils template /tmp/{properties_file}
+
+        cp {config_dir}/{jaas_file} /tmp/{jaas_file}
+        config-utils template /tmp/{jaas_file}
 
         {quorum_format_flag}
         bin/kafka-storage.sh format --cluster-id \"$KAFKA_CLUSTER_ID\" --config /tmp/{properties_file} --ignore-formatted \"$FORMAT_QUORUM_FLAG\"
@@ -165,10 +170,16 @@ pub fn controller_kafka_container_command(
         {create_vector_shutdown_file_command}
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+        // Mirrors `broker_kafka_container_commands`: empty when Kerberos is disabled.
+        set_realm_env = match kafka_security.has_kerberos_enabled() {
+            true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})"),
+            false => "".to_string(),
+        },
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = ConfigFileName::ControllerProperties,
+        jaas_file = ConfigFileName::Jaas,
         quorum_format_flag = controller_quorum_format_flag(&controller_descriptors),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
     }
@@ -378,6 +389,30 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+    use crate::controller::build::security::tests::{kerberos, plaintext};
+
+    #[test]
+    fn controller_command_exports_the_kerberos_realm_when_enabled() {
+        let command = controller_kafka_container_command(&kerberos(), vec![]);
+        assert!(command.contains("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*'"));
+    }
+
+    #[test]
+    fn controller_command_does_not_export_a_realm_without_kerberos() {
+        let command = controller_kafka_container_command(&plaintext(), vec![]);
+        assert!(!command.contains("KERBEROS_REALM"));
+    }
+
+    #[test]
+    fn controller_command_always_templates_the_jaas_file() {
+        // `jaas.properties` is always present in the ConfigMap (empty when Kerberos is off),
+        // so the copy is unconditional, matching `broker_start_command`.
+        for security in [kerberos(), plaintext()] {
+            let command = controller_kafka_container_command(&security, vec![]);
+            assert!(command.contains("cp /stackable/config/jaas.properties /tmp/jaas.properties"));
+            assert!(command.contains("config-utils template /tmp/jaas.properties"));
+        }
+    }
 
     #[test]
     fn quorum_manager_container_command_targets_the_bootstrap_servers_not_localhost() {
@@ -1119,7 +1154,7 @@ mod tests {
             pod_descriptor(KafkaRole::Controller, 1, 6),
             pod_descriptor(KafkaRole::Controller, 2, 7),
         ];
-        let command = controller_kafka_container_command(descriptors);
+        let command = controller_kafka_container_command(&plaintext(), descriptors);
 
         assert!(command.contains(r#"if [ "$REPLICA_ID" = "5" ]; then"#));
         assert!(command.contains("FORMAT_QUORUM_FLAG=--standalone"));

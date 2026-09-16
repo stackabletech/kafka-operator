@@ -493,6 +493,7 @@ pub fn build_controller_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![controller_kafka_container_command(
+            kafka_security,
             controller_pod_descriptors,
         )]);
 
