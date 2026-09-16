@@ -98,7 +98,7 @@ pub fn add_kerberos_pod_config(
 }
 
 constant!(pub KRB5_CONFIG: EnvVarName = "KRB5_CONFIG");
-constant!(KAFKA_OPTS: EnvVarName = "KAFKA_OPTS");
+constant!(pub KAFKA_OPTS: EnvVarName = "KAFKA_OPTS");
 
 /// The environment variables the Kerberos configuration requires on the Kafka container, or an
 /// empty set when Kerberos is disabled.

@@ -20,9 +20,12 @@ All notable changes to this project will be documented in this file.
   that adds the new controller to the voter list.
   On termination, a new `preStop` hook on the controller container (`kafka`) removes the pod from
   the voter list before shutdown.
-  The property `controller.quorum.bootstrap.servers` now contains the headless service names
-  of all controller role groups instead of individual peer host names. This prevents the
-  restart controller from restarting all pods in the quorum when a new one is added/deleted.
+  The property `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all
+  controllers. It briefly used the role group headless Service names instead, to stop the
+  restart controller rolling the quorum whenever a controller was added or removed, but that
+  is incompatible with Kerberos: a GSSAPI client derives the service principal from the
+  hostname it dials, and the CONTROLLER listener can only offer the pod's own principal
+  ([#999]).
   The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
 - Internal operator refactoring: introduce a build() step in the reconciler that

@@ -51,7 +51,8 @@ use crate::{
             },
             graceful_shutdown::add_graceful_shutdown_config,
             kerberos::{
-                KERBEROS_VOLUME_NAME, KRB5_CONFIG, add_kerberos_pod_config, kerberos_env_vars,
+                KAFKA_OPTS, KERBEROS_VOLUME_NAME, KRB5_CONFIG, add_kerberos_pod_config,
+                kerberos_env_vars,
             },
             properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
             recommended_labels_for_role_group_resources,
@@ -804,6 +805,16 @@ fn build_quorum_manager_container(
         cb.add_volume_mount(&*KERBEROS_VOLUME_NAME, STACKABLE_KERBEROS_DIR)
             .expect("The mount paths are statically defined and there should be no duplicates.");
         cb.add_env_var(KRB5_CONFIG.to_string(), STACKABLE_KERBEROS_KRB5_PATH);
+        // `KRB5_CONFIG` only reaches native MIT tools; the JVM reads the
+        // `java.security.krb5.conf` system property, without which the admin client fails
+        // with "Unable to locate KDC for realm". Unlike the `kafka` container's `KAFKA_OPTS`
+        // this deliberately omits `java.security.auth.login.config`: that points at
+        // `/tmp/jaas.properties`, which only the `kafka` container renders. This container
+        // authenticates with the inline `sasl.jaas.config` in `admin-client.properties`.
+        cb.add_env_var(
+            KAFKA_OPTS.to_string(),
+            format!("-Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}"),
+        );
     }
 
     cb.build()
@@ -1037,11 +1048,27 @@ mod tests {
             .map(|e| e.name.as_str())
             .collect();
         assert!(env.contains(&"KRB5_CONFIG"));
-        // `KAFKA_OPTS` points the JVM at `/tmp/jaas.properties`, which only the `kafka`
-        // container renders. The sidecar uses an inline `sasl.jaas.config` instead.
+
+        let kafka_opts = sidecar
+            .env
+            .as_ref()
+            .expect("sidecar must have env vars")
+            .iter()
+            .find(|e| e.name == "KAFKA_OPTS")
+            .and_then(|e| e.value.clone())
+            .expect("sidecar needs KAFKA_OPTS to point the JVM at krb5.conf");
+        // The JVM reads `java.security.krb5.conf`, *not* the `KRB5_CONFIG` env var (that only
+        // reaches native MIT tools), so without this the admin client cannot locate the KDC.
         assert!(
-            !env.contains(&"KAFKA_OPTS"),
-            "sidecar must not inherit the kafka container's JAAS login config"
+            kafka_opts.contains("-Djava.security.krb5.conf=/stackable/kerberos/krb5.conf"),
+            "got: {kafka_opts}"
+        );
+        // But it must NOT inherit the kafka container's JAAS login config: that points at
+        // /tmp/jaas.properties, which only the `kafka` container renders. The sidecar
+        // authenticates with the inline `sasl.jaas.config` in admin-client.properties.
+        assert!(
+            !kafka_opts.contains("java.security.auth.login.config"),
+            "got: {kafka_opts}"
         );
     }
 
