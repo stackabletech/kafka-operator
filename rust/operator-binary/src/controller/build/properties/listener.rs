@@ -108,8 +108,14 @@ pub fn get_kafka_listener_config(
         port: kafka_security.internal_port().to_string(),
     });
     listener_security_protocol_map.insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
-    listener_security_protocol_map
-        .insert(KafkaListenerName::Controller, KafkaListenerProtocol::Ssl);
+    listener_security_protocol_map.insert(
+        KafkaListenerName::Controller,
+        if kafka_security.has_kerberos_enabled() {
+            KafkaListenerProtocol::SaslSsl
+        } else {
+            KafkaListenerProtocol::Ssl
+        },
+    );
 
     // BOOTSTRAP
     if kafka_security.has_kerberos_enabled() {
@@ -492,8 +498,59 @@ mod tests {
                 bootstrap_name = KafkaListenerName::Bootstrap,
                 bootstrap_protocol = KafkaListenerProtocol::SaslSsl,
                 controller_name = KafkaListenerName::Controller,
-                controller_protocol = KafkaListenerProtocol::Ssl,
+                controller_protocol = KafkaListenerProtocol::SaslSsl,
             )
+        );
+    }
+
+    #[test]
+    fn controller_listener_stays_ssl_without_kerberos() {
+        // Regression guard: only Kerberos may move CONTROLLER off plain SSL.
+        let kafka_cluster = r#"
+        apiVersion: kafka.stackable.tech/v1alpha1
+        kind: KafkaCluster
+        metadata:
+          name: simple-kafka
+          namespace: default
+          uid: 12345678-1234-1234-1234-123456789012
+        spec:
+          image:
+            productVersion: 3.9.2
+          clusterConfig:
+            metadataManager: kraft
+          controllers:
+            roleGroups:
+              default:
+                replicas: 3
+          brokers:
+            roleGroups:
+              default:
+                replicas: 1
+        "#;
+        let kafka = minimal_kafka(kafka_cluster);
+        let validated = validated_cluster(&kafka);
+        let kafka_security = ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![]),
+            "internal-tls".parse().unwrap(),
+            Some("tls".parse().unwrap()),
+            None,
+        );
+        let role_group_name: RoleGroupName = "default".parse().unwrap();
+        let config = get_kafka_listener_config(
+            &validated,
+            &kafka_security,
+            &KafkaRole::Controller,
+            &role_group_name,
+        );
+
+        assert!(
+            config.listener_security_protocol_map().contains(&format!(
+                "{name}:{protocol}",
+                name = KafkaListenerName::Controller,
+                protocol = KafkaListenerProtocol::Ssl
+            )),
+            "got: {}",
+            config.listener_security_protocol_map()
         );
     }
 }

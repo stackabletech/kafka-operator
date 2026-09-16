@@ -51,6 +51,7 @@ const PROPERTY_SECURITY_PROTOCOL: &str = "security.protocol";
 const PROPERTY_SASL_ENABLED_MECHANISMS: &str = "sasl.enabled.mechanisms";
 const PROPERTY_SASL_KERBEROS_SERVICE_NAME: &str = "sasl.kerberos.service.name";
 const PROPERTY_SASL_INTER_BROKER_MECHANISM: &str = "sasl.mechanism.inter.broker.protocol";
+const PROPERTY_SASL_CONTROLLER_MECHANISM: &str = "sasl.mechanism.controller.protocol";
 pub(crate) const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &str = "/stackable/tls-kafka-internal";
 constant!(pub(crate) STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: VolumeName = "tls-kafka-internal");
 const STACKABLE_TLS_KAFKA_SERVER_DIR: &str = "/stackable/tls-kafka-server";
@@ -473,6 +474,10 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
             PROPERTY_SASL_INTER_BROKER_MECHANISM.to_string(),
             SASL_MECHANISM_GSSAPI.to_string(),
         );
+        config.insert(
+            PROPERTY_SASL_CONTROLLER_MECHANISM.to_string(),
+            SASL_MECHANISM_GSSAPI.to_string(),
+        );
         tracing::debug!("Kerberos configs added: [{:#?}]", config);
     }
 
@@ -564,6 +569,10 @@ pub fn controller_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap
         );
         config.insert(
             PROPERTY_SASL_INTER_BROKER_MECHANISM.to_string(),
+            SASL_MECHANISM_GSSAPI.to_string(),
+        );
+        config.insert(
+            PROPERTY_SASL_CONTROLLER_MECHANISM.to_string(),
             SASL_MECHANISM_GSSAPI.to_string(),
         );
         tracing::debug!("Kerberos configs added: [{:#?}]", config);
@@ -1065,6 +1074,36 @@ pub(crate) mod tests {
         let config = controller_config_settings(&internal_tls());
         assert!(config.contains_key("listener.name.controller.ssl.keystore.location"));
         assert!(config.contains_key("listener.name.internal.ssl.keystore.location"));
+    }
+
+    #[test]
+    fn broker_config_sets_the_controller_sasl_mechanism_with_kerberos() {
+        let config = broker_config_settings(&kerberos());
+        assert_eq!(
+            config.get("sasl.mechanism.controller.protocol"),
+            Some(&"GSSAPI".to_string())
+        );
+    }
+
+    #[test]
+    fn controller_config_sets_the_controller_sasl_mechanism_with_kerberos() {
+        let config = controller_config_settings(&kerberos());
+        assert_eq!(
+            config.get("sasl.mechanism.controller.protocol"),
+            Some(&"GSSAPI".to_string())
+        );
+    }
+
+    #[test]
+    fn controller_sasl_mechanism_is_absent_without_kerberos() {
+        assert!(
+            !broker_config_settings(&internal_tls())
+                .contains_key("sasl.mechanism.controller.protocol")
+        );
+        assert!(
+            !controller_config_settings(&internal_tls())
+                .contains_key("sasl.mechanism.controller.protocol")
+        );
     }
 
     #[test]
