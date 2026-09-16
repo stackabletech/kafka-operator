@@ -182,35 +182,25 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
         ));
         push_client_ssl_stores(&mut props, STACKABLE_TLS_KAFKA_SERVER_DIR);
     } else if security.has_kerberos_enabled() {
-        // TODO: to make this configuration file usable out of the box the operator needs to be
-        // refactored to write out Java jaas files instead of passing command line parameters
-        // to the Kafka daemon scripts.
-        // This will simplify the code and the command lines lot.
-        // It will also make the jaas files reusable by the Kafka shell scripts.
         props.push((
             PROPERTY_SECURITY_PROTOCOL.to_string(),
             Some(KafkaListenerProtocol::SaslSsl.to_string()),
         ));
         push_client_ssl_stores(&mut props, STACKABLE_TLS_KAFKA_SERVER_DIR);
+        // `sasl.mechanism` is the client-side selector. `sasl.enabled.mechanisms` is the
+        // broker-side list of accepted mechanisms and has no effect in a client config.
         props.push((
-            PROPERTY_SASL_ENABLED_MECHANISMS.to_string(),
+            PROPERTY_SASL_MECHANISM.to_string(),
             Some(SASL_MECHANISM_GSSAPI.to_string()),
         ));
         props.push((
             PROPERTY_SASL_KERBEROS_SERVICE_NAME.to_string(),
             Some(KafkaRole::Broker.kerberos_service_name().to_string()),
         ));
-        props.push((
-            PROPERTY_SASL_INTER_BROKER_MECHANISM.to_string(),
-            Some(SASL_MECHANISM_GSSAPI.to_string()),
-        ));
-        props.push((
-            "sasl.jaas.config".to_string(),
-            Some(format!("com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true storeKey=true keyTab=\"{keytab}\" principal=\"{service}/{pod}@{realm}\"",
-                keytab="/stackable/kerberos/keytab",
-                service=KafkaRole::Broker.kerberos_service_name(),
-                pod="todo",
-                realm="$KERBEROS_REALM"))));
+        // Deliberately no `sasl.jaas.config`: this file is consumed by clients running
+        // outside Kafka pods, which have neither the keytab at /stackable/kerberos/keytab nor
+        // a per-pod principal, so any value here would be wrong. They supply their own login
+        // configuration; see docs/modules/kafka/pages/usage-guide/security.adoc.
     } else if security.tls_server_secret_class().is_some() {
         props.push((
             PROPERTY_SECURITY_PROTOCOL.to_string(),
@@ -968,15 +958,51 @@ pub(crate) mod tests {
             props.get("security.protocol"),
             Some(&Some("SASL_SSL".to_string()))
         );
+        // `sasl.mechanism`, not the broker-side `sasl.enabled.mechanisms`; and no
+        // `sasl.jaas.config`, which this out-of-pod consumer cannot use. See
+        // `discovery_client_properties_carry_no_server_side_or_pod_local_settings`.
         assert_eq!(
-            props.get("sasl.enabled.mechanisms"),
+            props.get("sasl.mechanism"),
+            Some(&Some("GSSAPI".to_string()))
+        );
+        assert!(!props.contains_key("sasl.enabled.mechanisms"));
+        assert_eq!(
+            props.get("sasl.kerberos.service.name"),
+            Some(&Some("kafka".to_string()))
+        );
+        assert!(!props.contains_key("sasl.jaas.config"));
+    }
+
+    #[test]
+    fn discovery_client_properties_carry_no_server_side_or_pod_local_settings() {
+        let props = as_map(client_properties(&kerberos()));
+
+        // The consumer runs outside Kafka pods: it has no keytab and no pod principal, so a
+        // `sasl.jaas.config` here could only ever be wrong. Clients supply their own.
+        assert!(!props.contains_key("sasl.jaas.config"));
+        // Broker-side properties with no meaning in a client config.
+        assert!(!props.contains_key("sasl.mechanism.inter.broker.protocol"));
+        assert!(!props.contains_key("sasl.enabled.mechanisms"));
+
+        // What a client actually needs.
+        assert_eq!(
+            props.get("security.protocol"),
+            Some(&Some("SASL_SSL".to_string()))
+        );
+        assert_eq!(
+            props.get("sasl.mechanism"),
             Some(&Some("GSSAPI".to_string()))
         );
         assert_eq!(
             props.get("sasl.kerberos.service.name"),
             Some(&Some("kafka".to_string()))
         );
-        assert!(props.contains_key("sasl.jaas.config"));
+        assert_eq!(
+            props.get("ssl.truststore.location"),
+            Some(&Some(
+                "/stackable/tls-kafka-server/truststore.p12".to_string()
+            ))
+        );
     }
 
     // ---- controller_admin_client_properties ----
