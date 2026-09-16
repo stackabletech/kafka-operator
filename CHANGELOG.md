@@ -4,8 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Support floating tags for product images via the new `spec.image.stackableVersionPolicy` field
+  ([#1021]).
+
 ### Changed
 
+- BREAKING: `spec.image.stackableVersion` must now be a full, valid semver version, e.g. `26.7.1`.
+  Abbreviated values such as `26.7` are no longer accepted ([#1021]).
+- BREAKING: `spec.image.pullPolicy` now defaults to `IfNotPresent` for non-floating tags instead of
+  always defaulting to `Always` ([#1021]).
 - The dynamic KRaft quorum created by the operator is now scaled automatically. Previously,
   manual intervention was needed after every scale operation.
   This change introduces a new side-car container (`quorum-manager`) to all controller pods
@@ -19,7 +28,7 @@ All notable changes to this project will be documented in this file.
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
-- Bump stackable-operator to 0.116.0 ([#994], [#1011]).
+- Bump stackable-operator to 0.118.0 ([#994], [#1011], [#1021]).
 - The RBAC ServiceAccount and RoleBinding are now built with the operator-rs `v2::rbac`
   functions and carry the full set of recommended labels ([#990]).
 - BREAKING: The `brokers` role is now required by the CRD; a KafkaCluster without it was
@@ -66,6 +75,7 @@ All notable changes to this project will be documented in this file.
 [#1011]: https://github.com/stackabletech/kafka-operator/pull/1011
 [#1014]: https://github.com/stackabletech/kafka-operator/pull/1014
 [#1017]: https://github.com/stackabletech/kafka-operator/pull/1017
+[#1021]: https://github.com/stackabletech/kafka-operator/pull/1021
 
 ## [26.7.0] - 2026-07-21
 
