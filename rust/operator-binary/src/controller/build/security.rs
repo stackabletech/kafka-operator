@@ -52,6 +52,14 @@ const PROPERTY_SASL_ENABLED_MECHANISMS: &str = "sasl.enabled.mechanisms";
 const PROPERTY_SASL_KERBEROS_SERVICE_NAME: &str = "sasl.kerberos.service.name";
 const PROPERTY_SASL_INTER_BROKER_MECHANISM: &str = "sasl.mechanism.inter.broker.protocol";
 const PROPERTY_SASL_CONTROLLER_MECHANISM: &str = "sasl.mechanism.controller.protocol";
+const PROPERTY_SASL_MECHANISM: &str = "sasl.mechanism";
+const PROPERTY_SASL_JAAS_CONFIG: &str = "sasl.jaas.config";
+const STACKABLE_KERBEROS_KEYTAB_PATH: &str = "/stackable/kerberos/keytab";
+
+/// The controller pod's own FQDN, as `config-utils template` placeholders. Matches the address
+/// used for `KAFKA_LISTENERS` in `controller_properties.rs` and for the `controller.KafkaServer`
+/// JAAS principal in `jaas_config_file`.
+const CONTROLLER_POD_FQDN_TEMPLATE: &str = "${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}";
 pub(crate) const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &str = "/stackable/tls-kafka-internal";
 constant!(pub(crate) STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: VolumeName = "tls-kafka-internal");
 const STACKABLE_TLS_KAFKA_SERVER_DIR: &str = "/stackable/tls-kafka-server";
@@ -223,15 +231,55 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
 /// (e.g. `kafka-metadata-quorum.sh`) talking to the CONTROLLER listener from *inside* a
 /// controller pod, over the `tls-kafka-internal` volume mounted by
 /// `add_controller_volume_and_volume_mounts`.
+/// When Kerberos is enabled the CONTROLLER listener is `SASL_SSL` (see
+/// [`get_kafka_listener_config`][glc]), so these calls must authenticate with GSSAPI. They do
+/// so as the controller's *own* pod principal, from the pod-scoped keytab mounted by
+/// [`add_kerberos_pod_config`][akpc] — the correct identity for a voter registering itself.
+///
+/// The principal contains `${env:…}` placeholders, so the rendered file must be passed
+/// through `config-utils template` before use; see [`quorum_manager_container_command`][qmcc].
+///
+/// [glc]: crate::controller::build::properties::listener::get_kafka_listener_config
+/// [akpc]: crate::controller::build::kerberos::add_kerberos_pod_config
+/// [qmcc]: crate::controller::build::command::quorum_manager_container_command
 pub fn controller_admin_client_properties(
-    _security: &ValidatedKafkaSecurity,
+    security: &ValidatedKafkaSecurity,
 ) -> Vec<(String, Option<String>)> {
     let mut properties = vec![];
 
-    properties.push((
-        PROPERTY_SECURITY_PROTOCOL.to_string(),
-        Some(KafkaListenerProtocol::Ssl.to_string()),
-    ));
+    if security.has_kerberos_enabled() {
+        properties.push((
+            PROPERTY_SECURITY_PROTOCOL.to_string(),
+            Some(KafkaListenerProtocol::SaslSsl.to_string()),
+        ));
+        // Client-side mechanism selection. `sasl.enabled.mechanisms` is the *broker-side*
+        // list of accepted mechanisms and has no effect here.
+        properties.push((
+            PROPERTY_SASL_MECHANISM.to_string(),
+            Some(SASL_MECHANISM_GSSAPI.to_string()),
+        ));
+        properties.push((
+            PROPERTY_SASL_KERBEROS_SERVICE_NAME.to_string(),
+            Some(KafkaRole::Controller.kerberos_service_name().to_string()),
+        ));
+        properties.push((
+            PROPERTY_SASL_JAAS_CONFIG.to_string(),
+            Some(format!(
+                "com.sun.security.auth.module.Krb5LoginModule required useKeyTab=true \
+                 storeKey=true keyTab=\"{keytab}\" \
+                 principal=\"{service}/{pod_fqdn}@${{env:KERBEROS_REALM}}\";",
+                keytab = STACKABLE_KERBEROS_KEYTAB_PATH,
+                service = KafkaRole::Controller.kerberos_service_name(),
+                pod_fqdn = CONTROLLER_POD_FQDN_TEMPLATE,
+            )),
+        ));
+    } else {
+        properties.push((
+            PROPERTY_SECURITY_PROTOCOL.to_string(),
+            Some(KafkaListenerProtocol::Ssl.to_string()),
+        ));
+    }
+
     push_client_ssl_stores(&mut properties, STACKABLE_TLS_KAFKA_INTERNAL_DIR);
 
     properties
@@ -932,6 +980,70 @@ pub(crate) mod tests {
     }
 
     // ---- controller_admin_client_properties ----
+
+    #[test]
+    fn admin_client_uses_gssapi_over_sasl_ssl_with_kerberos() {
+        let props = as_map(controller_admin_client_properties(&kerberos()));
+        assert_eq!(
+            props.get("security.protocol"),
+            Some(&Some("SASL_SSL".to_string()))
+        );
+        assert_eq!(
+            props.get("sasl.mechanism"),
+            Some(&Some("GSSAPI".to_string()))
+        );
+        assert_eq!(
+            props.get("sasl.kerberos.service.name"),
+            Some(&Some("kafka".to_string()))
+        );
+        // The internal TLS stores stay: SASL_SSL is still SSL underneath.
+        assert_eq!(
+            props.get("ssl.truststore.location"),
+            Some(&Some(
+                "/stackable/tls-kafka-internal/truststore.p12".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn admin_client_jaas_config_is_a_single_line_pod_principal() {
+        let props = as_map(controller_admin_client_properties(&kerberos()));
+        let jaas = props
+            .get("sasl.jaas.config")
+            .and_then(|v| v.as_ref())
+            .expect("sasl.jaas.config must be set when Kerberos is enabled");
+        // Must be one logical line: a raw newline would truncate the value when the
+        // properties file is parsed.
+        assert!(
+            !jaas.contains('\n'),
+            "sasl.jaas.config must be a single line, got: {jaas}"
+        );
+        assert!(jaas.contains("com.sun.security.auth.module.Krb5LoginModule required"));
+        assert!(jaas.contains("keyTab=\"/stackable/kerberos/keytab\""));
+        // The controller's own pod-scoped principal, resolved by `config-utils template`
+        // at container start.
+        assert!(jaas.contains(
+            "principal=\"kafka/${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}@${env:KERBEROS_REALM}\""
+        ));
+        assert!(jaas.trim_end().ends_with(';'));
+    }
+
+    #[test]
+    fn admin_client_is_unchanged_without_kerberos() {
+        let props = as_map(controller_admin_client_properties(&internal_tls()));
+        assert_eq!(
+            props.get("security.protocol"),
+            Some(&Some("SSL".to_string()))
+        );
+        assert!(!props.contains_key("sasl.mechanism"));
+        assert!(!props.contains_key("sasl.jaas.config"));
+        assert_eq!(
+            props.get("ssl.keystore.location"),
+            Some(&Some(
+                "/stackable/tls-kafka-internal/keystore.p12".to_string()
+            ))
+        );
+    }
 
     #[test]
     fn controller_admin_client_properties_uses_the_internal_tls_directory() {
