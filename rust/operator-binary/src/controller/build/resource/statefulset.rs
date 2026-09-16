@@ -427,6 +427,11 @@ pub fn build_controller_rolegroup_statefulset(
 
     let mut pod_builder = PodBuilder::new();
 
+    if kafka_security.has_kerberos_enabled() {
+        add_kerberos_pod_config(kafka_security, kafka_role, &mut cb_kafka, &mut pod_builder)
+            .context(AddKerberosConfigSnafu)?;
+    }
+
     let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
 
     // Operator-set env vars first (common + controller-specific); the user's `envOverrides`
@@ -447,6 +452,10 @@ pub fn build_controller_rolegroup_statefulset(
             kafka_role,
             role_group_name,
         )?)
+        // Kerberos env goes on the `kafka` container only. `controller_shared_env` is also
+        // the `quorum-manager` sidecar's base, and `KAFKA_OPTS` points the JVM at
+        // `/tmp/jaas.properties`, which only the `kafka` container renders.
+        .merge(kerberos_env_vars(kafka_security))
         .merge(validated_rg.env_overrides.clone())
         .into();
 

@@ -57,16 +57,31 @@ pub fn add_kerberos_pod_config(
 ) -> Result<(), Error> {
     if let Some(kerberos_secret_class) = kafka_security.kerberos_secret_class() {
         // Mount keytab
-        let kerberos_secret_operator_volume = SecretOperatorVolumeSourceBuilder::new(
+        let mut volume_builder = SecretOperatorVolumeSourceBuilder::new(
             kerberos_secret_class,
             // We need both public (krb5.conf) and private (keytab) parts.
             SecretClassVolumeProvisionParts::PublicPrivate,
-        )
-        .with_listener_volume_scope(&*LISTENER_BROKER_VOLUME_NAME)
-        .with_listener_volume_scope(&*LISTENER_BOOTSTRAP_VOLUME_NAME)
-        .with_kerberos_service_name(role.kerberos_service_name())
-        .build()
-        .context(KerberosSecretVolumeSnafu)?;
+        );
+        match role {
+            // Brokers are exposed through listener-operator `Listener` volumes (the broker
+            // and bootstrap listeners), so the keytab principal must cover both.
+            KafkaRole::Broker => {
+                volume_builder
+                    .with_listener_volume_scope(&*LISTENER_BROKER_VOLUME_NAME)
+                    .with_listener_volume_scope(&*LISTENER_BOOTSTRAP_VOLUME_NAME);
+            }
+            // KRaft controllers have no listener-operator `Listener` volume: they are only
+            // reachable through their own StatefulSet pod DNS name, so the keytab must be
+            // pod-scoped, matching how the controller's internal TLS cert is provisioned in
+            // `add_controller_volume_and_volume_mounts`.
+            KafkaRole::Controller => {
+                volume_builder.with_pod_scope();
+            }
+        }
+        let kerberos_secret_operator_volume = volume_builder
+            .with_kerberos_service_name(role.kerberos_service_name())
+            .build()
+            .context(KerberosSecretVolumeSnafu)?;
         pb.add_volume(
             VolumeBuilder::new(&*KERBEROS_VOLUME_NAME)
                 .ephemeral(kerberos_secret_operator_volume)
@@ -106,7 +121,84 @@ pub fn kerberos_env_vars(kafka_security: &ValidatedKafkaSecurity) -> EnvVarSet {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use stackable_operator::builder::pod::container::ContainerBuilder;
+
     use super::*;
+    use crate::controller::build::security::tests::kerberos;
+
+    /// Reads the `secrets.stackable.tech/*` annotations off the `kerberos` ephemeral volume.
+    fn kerberos_volume_annotations(pb: &mut PodBuilder) -> BTreeMap<String, String> {
+        pb.build_template()
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.volumes.as_ref())
+            .and_then(|volumes| {
+                volumes
+                    .iter()
+                    .find(|v| v.name == KERBEROS_VOLUME_NAME.to_string())
+            })
+            .expect("kerberos volume must be present")
+            .ephemeral
+            .as_ref()
+            .expect("kerberos volume must be an ephemeral secret-operator volume")
+            .volume_claim_template
+            .as_ref()
+            .and_then(|t| t.metadata.as_ref())
+            .and_then(|m| m.annotations.clone())
+            .expect("volume claim template must carry secrets.stackable.tech annotations")
+    }
+
+    fn kerberos_volume_annotations_for(role: &KafkaRole) -> BTreeMap<String, String> {
+        let mut pb = PodBuilder::new();
+        let mut cb_kafka = ContainerBuilder::new("kafka").expect("valid container name");
+
+        add_kerberos_pod_config(&kerberos(), role, &mut cb_kafka, &mut pb)
+            .expect("kerberos pod config");
+
+        kerberos_volume_annotations(&mut pb)
+    }
+
+    #[test]
+    fn controller_keytab_is_pod_scoped() {
+        let annotations = kerberos_volume_annotations_for(&KafkaRole::Controller);
+
+        // Controllers have no listener-operator Listener volume, so the keytab must be
+        // scoped to the pod's own DNS name, matching how their internal TLS cert is
+        // provisioned in `add_controller_volume_and_volume_mounts`.
+        assert_eq!(
+            annotations
+                .get("secrets.stackable.tech/scope")
+                .map(String::as_str),
+            Some("pod"),
+            "controller keytab must be pod-scoped, got: {annotations:?}"
+        );
+        assert_eq!(
+            annotations
+                .get("secrets.stackable.tech/kerberos.service.names")
+                .map(String::as_str),
+            Some("kafka")
+        );
+    }
+
+    #[test]
+    fn broker_keytab_stays_listener_scoped() {
+        let annotations = kerberos_volume_annotations_for(&KafkaRole::Broker);
+
+        let scope = annotations
+            .get("secrets.stackable.tech/scope")
+            .expect("scope annotation must be present");
+        assert!(
+            scope.contains("listener-volume=listener-broker")
+                && scope.contains("listener-volume=listener-bootstrap"),
+            "broker keytab must stay listener-volume-scoped, got: {scope}"
+        );
+        assert!(
+            !scope.split(',').any(|s| s == "pod"),
+            "broker keytab must not be pod-scoped, got: {scope}"
+        );
+    }
 
     #[test]
     fn test_constants() {
