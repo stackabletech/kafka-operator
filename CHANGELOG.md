@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Support Kerberos (GSSAPI) authentication on KRaft controllers, covering both
+  broker-to-controller and controller-to-controller (Raft) traffic on the `CONTROLLER`
+  listener. Controller keytabs are pod-scoped, as controllers are reachable only under their
+  own StatefulSet pod DNS name. Dynamic quorum scaling continues to work with Kerberos
+  enabled ([#999]).
+
 ### Changed
 
 - The dynamic KRaft quorum created by the operator is now scaled automatically. Previously,
@@ -40,6 +48,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- The discovery ConfigMap's `client.properties` no longer carries a `sasl.jaas.config` whose
+  principal was the placeholder `kafka/todo@$KERBEROS_REALM`. Its consumers run outside the
+  Kafka pods and have neither the pods' keytabs nor their per-pod principals, so they must
+  supply their own login configuration. The broker-side `sasl.enabled.mechanisms` and
+  `sasl.mechanism.inter.broker.protocol` entries were removed from that file for the same
+  reason, and the client-side `sasl.mechanism` added ([#999]).
 - Fix a longstanding problem of including empty `categories`, `shortNames` and `additionalPrinterColumns` in the CRDs,
   which could cause problems with GitOps tools (e.g. ArgoCD) reporting a diff in the custom resources.
   See [our internal issue](https://github.com/stackabletech/hdfs-operator/issues/626) and [the fix](https://github.com/kube-rs/kube/pull/2042) for details ([#998]).
@@ -61,6 +75,7 @@ All notable changes to this project will be documented in this file.
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994
 [#998]: https://github.com/stackabletech/kafka-operator/pull/998
+[#999]: https://github.com/stackabletech/kafka-operator/pull/999
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
 [#1010]: https://github.com/stackabletech/kafka-operator/pull/1010
 [#1011]: https://github.com/stackabletech/kafka-operator/pull/1011
