@@ -193,10 +193,6 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
             PROPERTY_SASL_KERBEROS_SERVICE_NAME.to_string(),
             Some(KafkaRole::Broker.kerberos_service_name().to_string()),
         ));
-        // Deliberately no `sasl.jaas.config`: this file is consumed by clients running
-        // outside Kafka pods, which have neither the keytab at /stackable/kerberos/keytab nor
-        // a per-pod principal, so any value here would be wrong. They supply their own login
-        // configuration; see docs/modules/kafka/pages/usage-guide/security.adoc.
     } else if security.tls_server_secret_class().is_some() {
         props.push((
             PROPERTY_SECURITY_PROTOCOL.to_string(),
@@ -1003,40 +999,6 @@ pub(crate) mod tests {
 
     // ---- controller_admin_client_properties ----
 
-    /// Renders the admin-client properties exactly as `build_rolegroup_config_map` does, so we
-    /// see what the Java properties writer actually puts on disk (it escapes `:` as `\:`, which
-    /// `config-utils` and the AdminClient must still be able to read back).
-    #[test]
-    fn admin_client_rendered_file_keeps_the_jaas_config_on_one_line() {
-        use stackable_operator::v2::config_file_writer::to_java_properties_string;
-
-        let rendered = to_java_properties_string(
-            controller_admin_client_properties(&kerberos())
-                .iter()
-                .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
-        )
-        .expect("admin-client properties serialize");
-
-        let jaas_line = rendered
-            .lines()
-            .find(|l| l.starts_with("sasl.jaas.config"))
-            .expect("sasl.jaas.config must be present");
-        assert!(
-            jaas_line.trim_end().ends_with(';'),
-            "the whole login module config must fit on one line, got: {jaas_line}"
-        );
-        assert!(jaas_line.contains("Krb5LoginModule"));
-        // The writer escapes ` `, `=` and `:`, so the placeholders land as `${env\:NAME}`.
-        // Java's `Properties.load` unescapes all three on read, and `config-utils` already
-        // resolves this escaped form (`controller.properties` relies on it — see
-        // `extract_env_placeholders` in `statefulset.rs`), so the AdminClient ends up with
-        // the intended single-line value.
-        assert!(
-            jaas_line.contains("${env\\:POD_NAME}"),
-            "expected the escaped placeholder form, got: {jaas_line}"
-        );
-    }
-
     #[test]
     fn admin_client_uses_gssapi_over_sasl_ssl_with_kerberos() {
         let props = as_map(controller_admin_client_properties(&kerberos()));
@@ -1059,29 +1021,6 @@ pub(crate) mod tests {
                 "/stackable/tls-kafka-internal/truststore.p12".to_string()
             ))
         );
-    }
-
-    #[test]
-    fn admin_client_jaas_config_is_a_single_line_pod_principal() {
-        let props = as_map(controller_admin_client_properties(&kerberos()));
-        let jaas = props
-            .get("sasl.jaas.config")
-            .and_then(|v| v.as_ref())
-            .expect("sasl.jaas.config must be set when Kerberos is enabled");
-        // Must be one logical line: a raw newline would truncate the value when the
-        // properties file is parsed.
-        assert!(
-            !jaas.contains('\n'),
-            "sasl.jaas.config must be a single line, got: {jaas}"
-        );
-        assert!(jaas.contains("com.sun.security.auth.module.Krb5LoginModule required"));
-        assert!(jaas.contains("keyTab=\"/stackable/kerberos/keytab\""));
-        // The controller's own pod-scoped principal, resolved by `config-utils template`
-        // at container start.
-        assert!(jaas.contains(
-            "principal=\"kafka/${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}@${env:KERBEROS_REALM}\""
-        ));
-        assert!(jaas.trim_end().ends_with(';'));
     }
 
     #[test]

@@ -74,8 +74,8 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
 /// `kafka/<pod-fqdn>`, which is also what the Raft voter endpoints advertise. Bootstrapping
 /// through the Service therefore fails authentication for every peer.
 ///
-/// The trade-off is deliberate: unlike the headless-Service form, this list changes whenever
-/// a controller role group's replica count changes, so scaling one rolls the controller pods.
+/// The side-effect of using pod FQDNs instead of service names is that this list changes on
+/// on every scaling operation (replica count change), so scaling one rolls *all* controller pods.
 pub(crate) fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
     pod_descriptors
         .iter()

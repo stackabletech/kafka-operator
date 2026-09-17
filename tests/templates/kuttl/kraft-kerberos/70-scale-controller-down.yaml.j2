@@ -6,15 +6,6 @@ commands:
   - script: |
       kubectl apply -n $NAMESPACE -f - <<EOF
       ---
-      apiVersion: authentication.stackable.tech/v1alpha1
-      kind: AuthenticationClass
-      metadata:
-        name: kerberos-auth-$NAMESPACE
-      spec:
-        provider:
-          kerberos:
-            kerberosSecretClass: kerberos-$NAMESPACE
-      ---
       apiVersion: kafka.stackable.tech/v1alpha1
       kind: KafkaCluster
       metadata:

@@ -619,29 +619,10 @@ pub(crate) mod test_support {
     pub fn validate_err(
         kafka: &v1alpha1::KafkaCluster,
     ) -> Result<ValidatedCluster, super::validate::Error> {
-        validate_with_auth_err(kafka, ResolvedAuthenticationClasses::new(Vec::new()))
-    }
-
-    /// Like [`validated_cluster`], but with the given already-resolved `AuthenticationClass`es,
-    /// for fixtures whose `spec.clusterConfig.authentication` references one (e.g. Kerberos).
-    pub fn validated_cluster_with_auth(
-        kafka: &v1alpha1::KafkaCluster,
-        authentication_classes: ResolvedAuthenticationClasses,
-    ) -> ValidatedCluster {
-        validate_with_auth_err(kafka, authentication_classes)
-            .expect("validate should succeed for the test fixture")
-    }
-
-    /// The shared body of [`validate_err`] and [`validated_cluster_with_auth`]: the real validate
-    /// step, parameterized on the resolved `AuthenticationClass`es.
-    pub fn validate_with_auth_err(
-        kafka: &v1alpha1::KafkaCluster,
-        authentication_classes: ResolvedAuthenticationClasses,
-    ) -> Result<ValidatedCluster, super::validate::Error> {
         validate(
             kafka,
             DereferencedObjects {
-                authentication_classes,
+                authentication_classes: ResolvedAuthenticationClasses::new(Vec::new()),
                 authorization_config: None,
                 kubernetes_cluster_info: cluster_info(),
                 bootstrap_listeners: Vec::new(),

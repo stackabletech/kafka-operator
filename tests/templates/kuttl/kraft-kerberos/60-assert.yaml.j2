@@ -11,16 +11,11 @@ commands:
       # Kerberos-specific: the admin client must use the *rendered* /tmp copy. The raw
       # ConfigMap file still has unresolved ${env:...} placeholders in sasl.jaas.config.
       #
-      # :9093 is the TLS client port of this test fixture's security config, not a fixed
-      # Kafka port - if the fixture's TLS/port config changes, update this too.
       kubectl exec -n $NAMESPACE test-kafka-controller-default-0 -c kafka -- \
         /stackable/kafka/bin/kafka-metadata-quorum.sh \
         --bootstrap-controller test-kafka-controller-default-0.test-kafka-controller-default-headless.$NAMESPACE.svc.cluster.local:9093 \
         --command-config /tmp/admin-client.properties \
         describe --replication | tail -n +2 | awk '$NF == "Leader" || $NF == "Follower"' | wc -l | grep -q '^5$'
-    # `timeout` is known-inert here: kuttl's TestAssert `commands` don't read this field (only
-    # TestStep commands do); left in place only as documentation of the intended budget.
-    timeout: 30
 ---
 apiVersion: apps/v1
 kind: StatefulSet

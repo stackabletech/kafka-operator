@@ -101,9 +101,7 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 
 Apache Kafka KRaft controllers support Kerberos (GSSAPI) authentication.
 Reference an `AuthenticationClass` with the Kerberos provider as described in
-xref:usage-guide/security.adoc#_kerberos[Security -- Kerberos]; it applies to the whole
-`KafkaCluster`, controllers included. As always with Kerberos, server and internal TLS are
-required.
+xref:usage-guide/security.adoc[Security].
 
 When Kerberos is enabled:
 
@@ -111,15 +109,13 @@ When Kerberos is enabled:
   (`sasl.mechanism.controller.protocol`). This covers both broker-to-controller traffic and
   the controller-to-controller (Raft) traffic between quorum members.
 * Controller keytabs are *pod-scoped*, unlike broker keytabs, which are scoped to their
-  listener volumes. Controllers are not exposed through a listener-operator `Listener`; they
-  are reachable only under their own StatefulSet pod DNS name, which is therefore the
-  principal in their keytab.
+  listener volumes. Controllers are reachable only under their own StatefulSet pod DNS name,
+  which is therefore the principal in their keytab.
 * Each pod's `jaas.properties` gains a `controller.KafkaServer` login context. Unlike the
   broker-side contexts it does not set `isInitiator=false`, because a controller must be able
   to initiate GSSAPI connections to its peers, not only accept them.
 * The `quorum-manager` sidecar and the `preStop` hook authenticate to the CONTROLLER listener
-  as the controller's own pod principal, so *dynamic quorum scaling works with Kerberos
-  enabled*. Scaling a controller role group up or down needs no manual intervention.
+  as the controller's own pod principal.
 
 == Known Issues
 

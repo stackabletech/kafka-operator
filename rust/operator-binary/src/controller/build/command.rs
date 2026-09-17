@@ -220,14 +220,6 @@ const CLI_CALL_KILL_AFTER_SECONDS: u32 = 5;
 /// Shell snippet setting `$BOOTSTRAP_SERVERS` by extracting
 /// `controller.quorum.bootstrap.servers` from the static, un-rendered `controller.properties`
 /// ConfigMap file.
-///
-/// Reading this at runtime, rather than baking the peer list into this script as a Rust
-/// literal, keeps both sidecar scripts' content identical across replica-count changes, so
-/// the peer list lives in exactly one place (the ConfigMap). Note that since
-/// [`kraft_controllers`][kc] lists individual pod FQDNs, that ConfigMap entry *does* change
-/// with the replica count, and the pods roll with it.
-///
-/// [kc]: super::properties::kraft_controllers
 fn extract_bootstrap_servers_command() -> String {
     format!(
         r#"BOOTSTRAP_SERVERS=$(grep '^controller.quorum.bootstrap.servers=' {config_dir}/{controller_properties_file} | cut -d= -f2- | sed 's/\\:/:/g')"#,

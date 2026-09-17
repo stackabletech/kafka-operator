@@ -6,13 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Support Kerberos (GSSAPI) authentication on KRaft controllers, covering both
-  broker-to-controller and controller-to-controller (Raft) traffic on the `CONTROLLER`
-  listener. Controller keytabs are pod-scoped, as controllers are reachable only under their
-  own StatefulSet pod DNS name. Dynamic quorum scaling continues to work with Kerberos
-  enabled ([#999]).
 - Support floating tags for product images via the new `spec.image.stackableVersionPolicy` field
   ([#1021]).
+- Support Kerberos (GSSAPI) authentication on KRaft controllers, covering both
+  broker-to-controller and controller-to-controller (Raft) traffic ([#1024]).
 
 ### Changed
 
@@ -26,12 +23,6 @@ All notable changes to this project will be documented in this file.
   that adds the new controller to the voter list.
   On termination, a new `preStop` hook on the controller container (`kafka`) removes the pod from
   the voter list before shutdown.
-  The property `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all
-  controllers. It briefly used the role group headless Service names instead, to stop the
-  restart controller rolling the quorum whenever a controller was added or removed, but that
-  is incompatible with Kerberos: a GSSAPI client derives the service principal from the
-  hostname it dials, and the CONTROLLER listener can only offer the pod's own principal
-  ([#999]).
   The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
@@ -57,12 +48,6 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- The discovery ConfigMap's `client.properties` no longer carries a `sasl.jaas.config` whose
-  principal was the placeholder `kafka/todo@$KERBEROS_REALM`. Its consumers run outside the
-  Kafka pods and have neither the pods' keytabs nor their per-pod principals, so they must
-  supply their own login configuration. The broker-side `sasl.enabled.mechanisms` and
-  `sasl.mechanism.inter.broker.protocol` entries were removed from that file for the same
-  reason, and the client-side `sasl.mechanism` added ([#999]).
 - Fix a longstanding problem of including empty `categories`, `shortNames` and `additionalPrinterColumns` in the CRDs,
   which could cause problems with GitOps tools (e.g. ArgoCD) reporting a diff in the custom resources.
   See [our internal issue](https://github.com/stackabletech/hdfs-operator/issues/626) and [the fix](https://github.com/kube-rs/kube/pull/2042) for details ([#998]).
@@ -84,13 +69,13 @@ All notable changes to this project will be documented in this file.
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990
 [#994]: https://github.com/stackabletech/kafka-operator/pull/994
 [#998]: https://github.com/stackabletech/kafka-operator/pull/998
-[#999]: https://github.com/stackabletech/kafka-operator/pull/999
 [#1000]: https://github.com/stackabletech/kafka-operator/pull/1000
 [#1010]: https://github.com/stackabletech/kafka-operator/pull/1010
 [#1011]: https://github.com/stackabletech/kafka-operator/pull/1011
 [#1014]: https://github.com/stackabletech/kafka-operator/pull/1014
 [#1017]: https://github.com/stackabletech/kafka-operator/pull/1017
 [#1021]: https://github.com/stackabletech/kafka-operator/pull/1021
+[#1024]: https://github.com/stackabletech/kafka-operator/pull/1024
 
 ## [26.7.0] - 2026-07-21
 
