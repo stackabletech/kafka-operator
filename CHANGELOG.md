@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 
 - Support floating tags for product images via the new `spec.image.stackableVersionPolicy` field
   ([#1021]).
+- Support Kerberos (GSSAPI) authentication on KRaft controllers, covering both
+  broker-to-controller and controller-to-controller (Raft) traffic ([#1024]).
 
 ### Changed
 
@@ -21,9 +23,6 @@ All notable changes to this project will be documented in this file.
   that adds the new controller to the voter list.
   On termination, a new `preStop` hook on the controller container (`kafka`) removes the pod from
   the voter list before shutdown.
-  The property `controller.quorum.bootstrap.servers` now contains the headless service names
-  of all controller role groups instead of individual peer host names. This prevents the
-  restart controller from restarting all pods in the quorum when a new one is added/deleted.
   The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
@@ -76,6 +75,7 @@ All notable changes to this project will be documented in this file.
 [#1014]: https://github.com/stackabletech/kafka-operator/pull/1014
 [#1017]: https://github.com/stackabletech/kafka-operator/pull/1017
 [#1021]: https://github.com/stackabletech/kafka-operator/pull/1021
+[#1024]: https://github.com/stackabletech/kafka-operator/pull/1024
 
 ## [26.7.0] - 2026-07-21
 

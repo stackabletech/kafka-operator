@@ -162,13 +162,55 @@ NOTE: When Kerberos is enabled it is also required to enable TLS for maximum sec
 
 ==== Clients
 
-In order to keep client configuration as uncluttered as possible, each kerberized Kafka broker has two principals: one for the broker itself and one for the bootstrap service.
-The client can connect to the bootstrap service, which returns the broker quorum for use in subsequent operations.
-This is transparent as each connection dynamically uses the relevant principal (broker or bootstrap).
-In order for this to work, it is necessary for kerberized clusters to define an extra Kafka listener for the bootstrap with a corresponding service (and port).
-The bootstrap address is written to the discovery ConfigMap, using the Stackable bootstrap listener with the port being 9095 (secure) for kerberized clusters, and 9092 (non-secure) or 9093 (secure) for non-kerberized ones.
+===== Why each broker has two principals
 
-NOTE: Port 9094 is reserved for non-secure kerberized connections which is not currently implemented.
+A GSSAPI client derives the service principal it asks the KDC for from the *hostname it connects to*.
+Connecting to a Kafka cluster takes two hops over two different addresses: a client first contacts a bootstrap address, receives the cluster metadata, and then connects to individual brokers directly.
+Each of those addresses therefore needs its own principal.
+
+Every broker consequently gets two principals, `kafka/<bootstrap-address>` and `kafka/<broker-address>`, both provisioned into its keytab by the Secret Operator.
+The broker's JAAS configuration declares both, as the `bootstrap.KafkaServer` and `client.KafkaServer` login contexts.
+No client-side configuration is needed to switch between them: whichever address a client dials, the broker already holds the matching principal.
+
+To make this work, a kerberized cluster exposes an additional Kafka listener, container port and `Listener` port for the bootstrap address.
+These exist only when Kerberos is enabled; without it, clients reach brokers over the client listener alone.
+
+===== Bootstrap address and ports
+
+The bootstrap address is published in the xref:reference/discovery.adoc[discovery ConfigMap] under the `KAFKA` key, read from the ingress addresses of the Stackable bootstrap `Listener`.
+The port depends on whether Kerberos and TLS are enabled:
+
+[cols="1,1,1"]
+|===
+| Cluster | Port name | Port
+
+| Kerberos (always TLS)
+| `bootstrap`
+| 9095
+
+| TLS, no Kerberos
+| `kafka-tls`
+| 9093
+
+| No TLS, no Kerberos
+| `kafka`
+| 9092
+|===
+
+NOTE: Kerberos requires TLS, so a kerberized cluster always uses port 9095 for bootstrapping.
+
+===== Client configuration
+
+The discovery ConfigMap's `client.properties` carries the properties needed to *reach* the cluster:
+
+- `security.protocol`
+- `sasl.mechanism`
+- `sasl.kerberos.service.name`
+- and the truststore settings
+
+But the operator adds *no login configuration* to 'client.properties` because supplying credentials is the client's responsibility.
+The operator cannot do it: these clients run outside the Kafka Pods, so they have neither the Pods' keytabs nor their principals.
+Add your own `sasl.jaas.config`, or point the JVM at a JAAS file with `java.security.auth.login.config`, naming the principal and keytab the client should authenticate with.
 
 == [[authorization]]Authorization
 

@@ -11,8 +11,11 @@ use stackable_operator::{
     v2::types::common::Port,
 };
 
-use crate::controller::{
-    build::security::kcat_prober_container_commands, security::ValidatedKafkaSecurity,
+use crate::{
+    controller::{
+        build::security::kcat_prober_container_commands, security::ValidatedKafkaSecurity,
+    },
+    crd::CONTROLLER_POD_FQDN_SHELL,
 };
 
 #[derive(Snafu, Debug)]
@@ -142,7 +145,7 @@ pub fn controller_stuck_unattached_liveness_probe(
         "bash".to_string(),
         "-c".to_string(),
         format!(
-            "timeout 2 bash -c 'cat < /dev/null > /dev/tcp/localhost/{client_port}' || exit 1\n\
+            "timeout 2 bash -c 'cat < /dev/null > /dev/tcp/{CONTROLLER_POD_FQDN_SHELL}/{client_port}' || exit 1\n\
              state=$(curl -s --max-time 2 localhost:{metrics_port}/metrics | grep -oE 'kafka_server_raft_metrics_current_state\\{{state=\"[a-z]+\",?\\}}' | grep -oE '\"[a-z]+\"' | tr -d '\"')\n\
              [ \"$state\" != \"unattached\" ]"
         ),

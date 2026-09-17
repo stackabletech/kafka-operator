@@ -92,13 +92,34 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
   with `kafka-storage.sh format --standalone`, bootstrapping a single-node quorum by itself.
   Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
   Brokers always format with `--no-initial-controllers` too; they are never voters.
-* `controller.quorum.bootstrap.servers` points at each controller role group's own headless Service DNS name, not
-  individual pod addresses.
+* `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers.
+  This is required by Kerberos -- a GSSAPI client derives the service principal from the hostname it dials, and the
+  CONTROLLER listener can only offer the pod's own principal -- but it means the property changes whenever a
+  controller role group is scaled, so the controller pods are rolled by the restart controller on scale.
+
+== Kerberos
+
+Apache Kafka KRaft controllers support Kerberos (GSSAPI) authentication.
+Reference an `AuthenticationClass` with the Kerberos provider as described in
+xref:usage-guide/security.adoc[Security].
+
+When Kerberos is enabled:
+
+* The `CONTROLLER` listener uses `SASL_SSL` instead of `SSL`, with `GSSAPI` as the mechanism
+  (`sasl.mechanism.controller.protocol`). This covers both broker-to-controller traffic and
+  the controller-to-controller (Raft) traffic between quorum members.
+* Controller keytabs are *pod-scoped*, unlike broker keytabs, which are scoped to their
+  listener volumes. Controllers are reachable only under their own StatefulSet pod DNS name,
+  which is therefore the principal in their keytab.
+* Each pod's `jaas.properties` gains a `controller.KafkaServer` login context. Unlike the
+  broker-side contexts it does not set `isInitiator=false`, because a controller must be able
+  to initiate GSSAPI connections to its peers, not only accept them.
+* The `quorum-manager` sidecar and the `preStop` hook authenticate to the CONTROLLER listener
+  as the controller's own pod principal.
 
 == Known Issues
 
 * Automatic migration from Apache ZooKeeper to KRaft is not supported.
-* Kerberos is currently not supported for KRaft in all versions.
 * The quorum is created once by the controller with the lowest `node.id` using `--standalone`. If this controller
   loses it's PVC, a new conflicting quorum is created on restart.
 * A Controller that loses its persistent volume is not re-admitted to the voter set automatically, because it
