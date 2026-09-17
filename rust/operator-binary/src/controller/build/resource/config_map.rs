@@ -22,7 +22,8 @@ use crate::{
         },
     },
     crd::{
-        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
+        CONTROLLER_POD_FQDN_TEMPLATE, STACKABLE_LISTENER_BOOTSTRAP_DIR,
+        STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, node_address_cmd},
         role::{AnyConfig, KafkaRole},
     },
@@ -236,10 +237,7 @@ fn jaas_config_file(is_kerberos_enabled: bool, role: &KafkaRole) -> String {
     // already used for `KAFKA_LISTENERS` in `controller_properties.rs`.
     let controller_principal_address = match role {
         KafkaRole::Broker => node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-        KafkaRole::Controller => {
-            "${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}"
-                .to_string()
-        }
+        KafkaRole::Controller => CONTROLLER_POD_FQDN_TEMPLATE.to_string(),
     };
 
     // Unlike the bootstrap and client sections below, this context is used for BOTH sides of

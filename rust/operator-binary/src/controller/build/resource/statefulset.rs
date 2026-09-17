@@ -1357,8 +1357,10 @@ mod tests {
         let script = command.last().expect("the exec command has a script arg");
 
         assert!(
-            script.contains(&format!("/dev/tcp/localhost/{client_port}")),
-            "expected a TCP reachability check against the controller's own port, script was: {script}"
+            script.contains(&format!(
+                "/dev/tcp/$POD_NAME.$ROLEGROUP_HEADLESS_SERVICE_NAME.$NAMESPACE.svc.$CLUSTER_DOMAIN/{client_port}"
+            )),
+            "expected the TCP check to dial the address the controller actually binds, script was: {script}"
         );
         assert!(
             script.contains(r#"[ "$state" != "unattached" ]"#),

@@ -26,8 +26,8 @@ use stackable_operator::{
 use crate::{
     controller::security::ValidatedKafkaSecurity,
     crd::{
-        LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_KERBEROS_KRB5_PATH,
-        STACKABLE_LISTENER_BROKER_DIR,
+        CONTROLLER_POD_FQDN_TEMPLATE, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
+        STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BROKER_DIR,
         listener::{
             self, KafkaListenerName, KafkaListenerProtocol, node_address_cmd_env, node_port_cmd_env,
         },
@@ -56,10 +56,6 @@ const PROPERTY_SASL_MECHANISM: &str = "sasl.mechanism";
 const PROPERTY_SASL_JAAS_CONFIG: &str = "sasl.jaas.config";
 const STACKABLE_KERBEROS_KEYTAB_PATH: &str = "/stackable/kerberos/keytab";
 
-/// The controller pod's own FQDN, as `config-utils template` placeholders. Matches the address
-/// used for `KAFKA_LISTENERS` in `controller_properties.rs` and for the `controller.KafkaServer`
-/// JAAS principal in `jaas_config_file`.
-const CONTROLLER_POD_FQDN_TEMPLATE: &str = "${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}";
 pub(crate) const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &str = "/stackable/tls-kafka-internal";
 constant!(pub(crate) STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: VolumeName = "tls-kafka-internal");
 const STACKABLE_TLS_KAFKA_SERVER_DIR: &str = "/stackable/tls-kafka-server";
