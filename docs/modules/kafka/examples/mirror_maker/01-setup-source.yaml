@@ -13,7 +13,7 @@ metadata:
   namespace: mm-migration
 spec:
   image:
-    productVersion: 3.9.5
+    productVersion: 3.9.6
     pullPolicy: IfNotPresent
   servers:
     roleGroups:
