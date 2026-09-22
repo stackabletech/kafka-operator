@@ -85,12 +85,6 @@ constant!(pub BROKER_ID_POD_MAP_DIR_NAME: VolumeName = "broker-id-pod-map-dir");
 /// - when Kerberos is enabled, it is also the host in the controller's Kerberos service principal.
 pub const CONTROLLER_POD_FQDN_TEMPLATE: &str = "${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}";
 
-/// Same as above ([`CONTROLLER_POD_FQDN_TEMPLATE`]) but for use in scripts
-/// the operator generates (probes, startup commands) where the shell expands the value
-/// rather than `config-utils`.
-pub const CONTROLLER_POD_FQDN_SHELL: &str =
-    "$POD_NAME.$ROLEGROUP_HEADLESS_SERVICE_NAME.$NAMESPACE.svc.$CLUSTER_DOMAIN";
-
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display(

@@ -16,7 +16,8 @@ use stackable_operator::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec, StatefulSetUpdateStrategy},
             core::v1::{
-                ConfigMapVolumeSource, ContainerPort, EnvVar, ExecAction, LifecycleHandler, Volume,
+                ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource, ExecAction,
+                LifecycleHandler, ObjectFieldSelector, Volume,
             },
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
@@ -87,6 +88,7 @@ stackable_operator::constant!(VECTOR_LOG_VOLUME_NAME: VolumeName = "log");
 
 // Env vars the operator sets on the Kafka containers.
 stackable_operator::constant!(POD_NAME: EnvVarName = "POD_NAME");
+stackable_operator::constant!(POD_IP: EnvVarName = "POD_IP");
 stackable_operator::constant!(KAFKA_CLIENT_PORT: EnvVarName = "KAFKA_CLIENT_PORT");
 stackable_operator::constant!(NAMESPACE: EnvVarName = "NAMESPACE");
 stackable_operator::constant!(ROLEGROUP_HEADLESS_SERVICE_NAME: EnvVarName = "ROLEGROUP_HEADLESS_SERVICE_NAME");
@@ -136,6 +138,21 @@ fn controller_pod_shared_env_vars(
     kafka_security: &ValidatedKafkaSecurity,
     resource_names: &ResourceNames,
 ) -> EnvVarSet {
+    // TODO: for op-rs
+    // `FieldPathEnvVar` has no `status.podIP` variant, so this one is built by hand rather
+    // than through `with_field_path`.
+    let pod_ip_env_var = EnvVar {
+        name: POD_IP.to_string(),
+        value: None,
+        value_from: Some(EnvVarSource {
+            field_ref: Some(ObjectFieldSelector {
+                field_path: "status.podIP".to_string(),
+                ..ObjectFieldSelector::default()
+            }),
+            ..EnvVarSource::default()
+        }),
+    };
+
     common_operator_env_vars(validated_cluster, kafka_security)
         .with_field_path(&NAMESPACE, &FieldPathEnvVar::Namespace)
         .with_value(
@@ -146,6 +163,8 @@ fn controller_pod_shared_env_vars(
             &CLUSTER_DOMAIN,
             validated_cluster.cluster_domain.to_string(),
         )
+        .with_env_var(pod_ip_env_var)
+        .expect("the env var name is a valid EnvVarName")
 }
 
 const POD_MANAGEMENT_POLICY_PARALLEL: &str = "Parallel";
@@ -863,6 +882,7 @@ mod tests {
         let _ = *VECTOR_CONFIG_VOLUME_NAME;
         let _ = *VECTOR_LOG_VOLUME_NAME;
         let _ = *POD_NAME;
+        let _ = *POD_IP;
         let _ = *KAFKA_CLIENT_PORT;
         let _ = *NAMESPACE;
         let _ = *ROLEGROUP_HEADLESS_SERVICE_NAME;
@@ -1242,10 +1262,9 @@ mod tests {
         let script = command.last().expect("the exec command has a script arg");
 
         assert!(
-            script.contains(&format!(
-                "/dev/tcp/$POD_NAME.$ROLEGROUP_HEADLESS_SERVICE_NAME.$NAMESPACE.svc.$CLUSTER_DOMAIN/{client_port}"
-            )),
-            "expected the TCP check to dial the address the controller actually binds, script was: {script}"
+            script.contains(&format!("/dev/tcp/$POD_IP/{client_port}")),
+            "expected the TCP check to dial this pod's own IP (from the downward API), not a \
+             DNS name that could be affected by CoreDNS being unavailable, script was: {script}"
         );
         assert!(
             script.contains(r#"[ "$state" != "unattached" ]"#),
