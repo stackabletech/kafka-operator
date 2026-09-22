@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
   ([#1021]).
 - Support Kerberos (GSSAPI) authentication on KRaft controllers, covering both
   broker-to-controller and controller-to-controller (Raft) traffic ([#1024]).
+- Support for Kafka 4.3.1 ([#1022]).
 
 ### Changed
 
@@ -64,6 +65,7 @@ All notable changes to this project will be documented in this file.
   shipped in the same product image as `kafka` since #527, so the dedicated container/image was
   no longer needed). The `kcat-prober` value is no longer accepted in a broker's
   `logging.containers` CRD field ([#1010]).
+- Support for Kafka 4.1.1 and 4.2.1 ([#1022])
 
 [#985]: https://github.com/stackabletech/kafka-operator/pull/985
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990
@@ -75,6 +77,7 @@ All notable changes to this project will be documented in this file.
 [#1014]: https://github.com/stackabletech/kafka-operator/pull/1014
 [#1017]: https://github.com/stackabletech/kafka-operator/pull/1017
 [#1021]: https://github.com/stackabletech/kafka-operator/pull/1021
+[#1022]: https://github.com/stackabletech/kafka-operator/pull/1022
 [#1024]: https://github.com/stackabletech/kafka-operator/pull/1024
 
 ## [26.7.0] - 2026-07-21
