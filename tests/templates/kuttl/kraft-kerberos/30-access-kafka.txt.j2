@@ -81,7 +81,9 @@ data:
     set -euxo pipefail
 
     export KCAT_CONFIG=/stackable/kcat.conf
-    TOPIC=test-topic
+    # Topic is unique per run to avoid failures when the Job is retried without resetting
+    # anything on the Kafka-side.
+    TOPIC=test-topic-$(date +%s%N)
     CONSUMER_GROUP=test-consumer-group
 
     echo -e -n "\
@@ -112,8 +114,8 @@ data:
     # ("Failed to query logical offset BEGINNING: Local: Required feature not supported by
     # broker") even though the broker supports it fine -- see
     # https://github.com/confluentinc/librdkafka/issues/4948. This is unrelated to SASL/Kerberos:
-    # authentication succeeds either way. The topic is freshly created and this is the only
-    # message ever produced to it, so offset 0 is always the message we just sent.
+    # authentication succeeds either way. The topic name is unique to this run (see above), so
+    # it's guaranteed to be freshly created and offset 0 is always the message we just sent.
     received_message=$(kcat \
       -G $CONSUMER_GROUP \
       -o 0 \
