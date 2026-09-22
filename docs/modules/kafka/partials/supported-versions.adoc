@@ -7,6 +7,6 @@
 * 3.9.2 (LTS)
 * 3.9.1 (deprecated)
 
-Starting with Apache Kafka >=4.x, the quorum manager has been changed from Apache Zookeeper to the built in KRaft.
+Starting with Apache Kafka 4, the quorum manager has been changed from Apache Zookeeper to the built-in KRaft.
 
 If you are running an older Kafka version and plan to upgrade, head on to the xref:kafka:usage-guide/kraft-controller.adoc[Kraft migration guide] for details on how to do so.

@@ -75,7 +75,7 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
 /// through the Service therefore fails authentication for every peer.
 ///
 /// The side-effect of using pod FQDNs instead of service names is that this list changes on
-/// on every scaling operation (replica count change), so scaling one rolls *all* controller pods.
+/// every scaling operation (replica count change), so scaling one rolls *all* controller pods.
 pub(crate) fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
     pod_descriptors
         .iter()

@@ -208,7 +208,7 @@ The discovery ConfigMap's `client.properties` carries the properties needed to *
 - `sasl.kerberos.service.name`
 - and the truststore settings
 
-But the operator adds *no login configuration* to 'client.properties` because supplying credentials is the client's responsibility.
+But the operator adds *no login configuration* to `client.properties` because supplying credentials is the client's responsibility.
 The operator cannot do it: these clients run outside the Kafka Pods, so they have neither the Pods' keytabs nor their principals.
 Add your own `sasl.jaas.config`, or point the JVM at a JAAS file with `java.security.auth.login.config`, naming the principal and keytab the client should authenticate with.
 

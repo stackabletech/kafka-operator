@@ -93,8 +93,8 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
   Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
   Brokers always format with `--no-initial-controllers` too; they are never voters.
 * `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers.
-  This is required by Kerberos -- a GSSAPI client derives the service principal from the hostname it dials, and the
-  CONTROLLER listener can only offer the pod's own principal -- but it means the property changes whenever a
+  This is required by Kerberos. A GSSAPI client derives the service principal from the hostname it dials, and the
+  CONTROLLER listener can only offer the pod's own principal. But it means the property changes whenever a
   controller role group is scaled, so the controller pods are rolled by the restart controller on scale.
 
 == Kerberos
