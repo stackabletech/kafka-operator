@@ -24,10 +24,12 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::security::ValidatedKafkaSecurity,
+    controller::{
+        build::command::set_kerberos_realm_env_command, security::ValidatedKafkaSecurity,
+    },
     crd::{
         CONTROLLER_POD_FQDN_TEMPLATE, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
-        STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LISTENER_BROKER_DIR,
+        STACKABLE_LISTENER_BROKER_DIR,
         listener::{
             self, KafkaListenerName, KafkaListenerProtocol, node_address_cmd_env, node_port_cmd_env,
         },
@@ -118,13 +120,7 @@ pub fn kcat_prober_container_commands(security: &ValidatedKafkaSecurity) -> Vec<
         // the entire command needs to be subject to the -c directive
         // to prevent short-circuiting
         let mut bash_args = vec![];
-        bash_args.push(
-            format!(
-                "export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {});",
-                STACKABLE_KERBEROS_KRB5_PATH
-            )
-            .to_string(),
-        );
+        bash_args.push(format!("{};", set_kerberos_realm_env_command()));
         bash_args.push(
             format!(
                 "export POD_BROKER_LISTENER_ADDRESS={};",

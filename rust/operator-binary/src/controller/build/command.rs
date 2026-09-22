@@ -43,6 +43,14 @@ const DERIVE_POD_INDEX: &str = r#"POD_INDEX=$(echo "$POD_NAME" | grep -oE '[0-9]
 
 const EXPORT_REPLICA_ID: &str = "export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))";
 
+/// Shell snippet that safely exports `$KERBEROS_REALM`, extracted from the `default_realm`
+/// line of the mounted krb5.conf.
+pub fn set_kerberos_realm_env_command() -> String {
+    format!(
+        "KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH} 2>/dev/null) && export KERBEROS_REALM || true"
+    )
+}
+
 /// Returns the commands to start the main Kafka container
 pub fn broker_kafka_container_commands(
     kraft_mode: bool,
@@ -65,8 +73,8 @@ pub fn broker_kafka_container_commands(
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         set_realm_env = match kafka_security.has_kerberos_enabled() {
-            true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})"),
-            false => "".to_string(),
+            true => set_kerberos_realm_env_command(),
+            false => String::new(),
         },
         import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
         broker_start_command = broker_start_command(kraft_mode),
@@ -175,8 +183,8 @@ pub fn controller_kafka_container_command(
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         // Mirrors `broker_kafka_container_commands`: empty when Kerberos is disabled.
         set_realm_env = match kafka_security.has_kerberos_enabled() {
-            true => format!("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH})"),
-            false => "".to_string(),
+            true => set_kerberos_realm_env_command(),
+            false => String::new(),
         },
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
@@ -248,9 +256,7 @@ pub fn quorum_manager_container_command() -> String {
     // The sidecar is a separate container and inherits nothing from the kafka container's
     // startup, so it derives the realm itself. Harmless when krb5.conf is absent: only the
     // Kerberos case has a `${env:KERBEROS_REALM}` placeholder for `config-utils` to resolve.
-    let set_realm_env = format!(
-        "KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH} 2>/dev/null) && export KERBEROS_REALM || true"
-    );
+    let set_realm_env = set_kerberos_realm_env_command();
     format!(
         r#"
         set -uo pipefail
@@ -409,7 +415,7 @@ mod tests {
     #[test]
     fn controller_command_exports_the_kerberos_realm_when_enabled() {
         let command = controller_kafka_container_command(&kerberos(), vec![]);
-        assert!(command.contains("export KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*'"));
+        assert!(command.contains(&set_kerberos_realm_env_command()));
     }
 
     #[test]
