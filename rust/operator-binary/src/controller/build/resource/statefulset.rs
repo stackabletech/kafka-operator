@@ -771,7 +771,6 @@ fn build_quorum_manager_container(
         // JVM's max heap plus its base/metaspace/SSL-buffer overhead stays comfortably
         // under the container's memory limit below.
         .add_env_var(KAFKA_HEAP_OPTS.to_string(), "-Xmx128M")
-        .add_env_vars(env)
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -816,6 +815,9 @@ fn build_quorum_manager_container(
             format!("-Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}"),
         );
     }
+
+    // This allows to override explicit env vars set in this function.
+    cb.add_env_vars(env);
 
     cb.build()
 }
