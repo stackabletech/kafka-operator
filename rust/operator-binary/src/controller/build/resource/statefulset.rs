@@ -450,10 +450,8 @@ pub fn build_controller_rolegroup_statefulset(
 
     let mut pod_builder = PodBuilder::new();
 
-    if kafka_security.has_kerberos_enabled() {
-        add_kerberos_pod_config(kafka_security, kafka_role, &mut cb_kafka, &mut pod_builder)
-            .context(AddKerberosConfigSnafu)?;
-    }
+    add_kerberos_pod_config(kafka_security, kafka_role, &mut cb_kafka, &mut pod_builder)
+        .context(AddKerberosConfigSnafu)?;
 
     let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
 
