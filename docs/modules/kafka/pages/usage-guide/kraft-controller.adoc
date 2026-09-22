@@ -104,7 +104,7 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
 * A Controller that loses its persistent volume is not re-admitted to the voter set automatically, because it
   returns with a new directory ID while the quorum still lists the old one.
 
-==== Prevention
+=== Prevention
 
 * Use a StorageClass backed by network-attached storage, so that a node failure does not imply volume loss.
 * Do not delete Controller PVCs as part of routine maintenance.
