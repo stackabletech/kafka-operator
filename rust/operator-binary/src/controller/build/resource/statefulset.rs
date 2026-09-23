@@ -781,7 +781,7 @@ fn build_quorum_manager_container(
         .command(vec![
             "/bin/bash".to_string(),
             "-c".to_string(),
-            quorum_manager_container_command(),
+            quorum_manager_container_command(kafka_security),
         ])
         // `kafka-metadata-quorum.sh` goes through `kafka-run-class.sh`, which defaults
         // `KAFKA_HEAP_OPTS` to `-Xmx256M` when unset. Set an explicit, modest heap so the

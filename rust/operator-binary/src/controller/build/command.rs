@@ -16,7 +16,7 @@ use crate::{
     controller::{build::security::copy_opa_tls_cert_command, security::ValidatedKafkaSecurity},
     crd::{
         BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, METRICS_PORT, STACKABLE_CONFIG_DIR,
-        STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LOG_CONFIG_DIR, role::KafkaRole,
+        STACKABLE_LOG_CONFIG_DIR, role::KafkaRole,
     },
 };
 
@@ -43,14 +43,6 @@ const DERIVE_POD_INDEX: &str = r#"POD_INDEX=$(echo "$POD_NAME" | grep -oE '[0-9]
 
 const EXPORT_REPLICA_ID: &str = "export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))";
 
-/// Shell snippet that safely exports `$KERBEROS_REALM`, extracted from the `default_realm`
-/// line of the mounted krb5.conf.
-pub fn set_kerberos_realm_env_command() -> String {
-    format!(
-        "KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH} 2>/dev/null) && export KERBEROS_REALM || true"
-    )
-}
-
 /// Returns the commands to start the main Kafka container
 pub fn broker_kafka_container_commands(
     kraft_mode: bool,
@@ -72,10 +64,7 @@ pub fn broker_kafka_container_commands(
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
-        set_realm_env = match kafka_security.has_kerberos_enabled() {
-            true => set_kerberos_realm_env_command(),
-            false => String::new(),
-        },
+        set_realm_env = kafka_security.kerberos_realm().unwrap_or_default(),
         import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
         broker_start_command = broker_start_command(kraft_mode),
     }
@@ -182,10 +171,7 @@ pub fn controller_kafka_container_command(
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         // Mirrors `broker_kafka_container_commands`: empty when Kerberos is disabled.
-        set_realm_env = match kafka_security.has_kerberos_enabled() {
-            true => set_kerberos_realm_env_command(),
-            false => String::new(),
-        },
+        set_realm_env = kafka_security.kerberos_realm().unwrap_or_default(),
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
         config_dir = STACKABLE_CONFIG_DIR,
@@ -252,11 +238,7 @@ const CONTROLLER_QUORUM_MANAGER_LOOP_SCRIPT: &str =
 
 /// The sidecar's main-loop command: while this controller's local Raft state is `observer`,
 /// admit it into the quorum's voter set once that is safe.
-pub fn quorum_manager_container_command() -> String {
-    // The sidecar is a separate container and inherits nothing from the kafka container's
-    // startup, so it derives the realm itself. Harmless when krb5.conf is absent: only the
-    // Kerberos case has a `${env:KERBEROS_REALM}` placeholder for `config-utils` to resolve.
-    let set_realm_env = set_kerberos_realm_env_command();
+pub fn quorum_manager_container_command(security: &ValidatedKafkaSecurity) -> String {
     format!(
         r#"
         set -uo pipefail
@@ -296,7 +278,7 @@ pub fn quorum_manager_container_command() -> String {
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
         extract_bootstrap_servers = extract_bootstrap_servers_command(),
-        set_realm_env = set_realm_env,
+        set_realm_env = security.kerberos_realm().unwrap_or_default(),
         config_dir = STACKABLE_CONFIG_DIR,
         controller_properties_file = ConfigFileName::ControllerProperties,
         admin_client_source = ADMIN_CLIENT_PROPERTIES_SOURCE_PATH,
@@ -413,12 +395,6 @@ mod tests {
     use crate::controller::build::security::tests::{kerberos, plaintext};
 
     #[test]
-    fn controller_command_exports_the_kerberos_realm_when_enabled() {
-        let command = controller_kafka_container_command(&kerberos(), vec![]);
-        assert!(command.contains(&set_kerberos_realm_env_command()));
-    }
-
-    #[test]
     fn controller_command_does_not_export_a_realm_without_kerberos() {
         let command = controller_kafka_container_command(&plaintext(), vec![]);
         assert!(!command.contains("KERBEROS_REALM"));
@@ -437,7 +413,7 @@ mod tests {
 
     #[test]
     fn quorum_manager_templates_the_admin_client_config() {
-        let command = quorum_manager_container_command();
+        let command = quorum_manager_container_command(&kerberos());
         assert!(
             command.contains(
                 "cp /stackable/config/admin-client.properties /tmp/admin-client.properties"
@@ -455,7 +431,7 @@ mod tests {
         // The sidecar is a separate container: it inherits nothing from the kafka container's
         // startup, so it must derive $KERBEROS_REALM itself for `config-utils template` to
         // resolve the principal.
-        let command = quorum_manager_container_command();
+        let command = quorum_manager_container_command(&kerberos());
         assert!(command.contains("KERBEROS_REALM"));
     }
 
@@ -472,7 +448,7 @@ mod tests {
 
     #[test]
     fn quorum_manager_container_command_targets_the_bootstrap_servers_not_localhost() {
-        let command = quorum_manager_container_command();
+        let command = quorum_manager_container_command(&kerberos());
         assert!(command.contains(
             "grep '^controller.quorum.bootstrap.servers=' /stackable/config/controller.properties"
         ));
@@ -490,7 +466,7 @@ mod tests {
     /// removed. Backgrounding it and having the trap actively `kill` it closes that window.
     #[test]
     fn quorum_manager_container_command_kills_an_in_flight_add_controller_attempt_on_term() {
-        let command = quorum_manager_container_command();
+        let command = quorum_manager_container_command(&kerberos());
         assert!(command.contains("trap 'handle_term_signal' TERM"));
         // The poll interval is slept in the background and `wait`ed on, so bash can run the
         // trap immediately instead of only after a foreground `sleep` returns.
@@ -532,7 +508,7 @@ mod tests {
     #[test]
     fn quorum_manager_container_command_string_merges_controller_and_admin_client_properties_for_add_controller()
      {
-        let command = quorum_manager_container_command();
+        let command = quorum_manager_container_command(&kerberos());
         // Renders this controller's own `controller.properties` (carries `node.id` and
         // `listeners`) via the same REPLICA_ID derivation used by the `kafka` container.
         assert!(command.contains("export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))"));
@@ -868,7 +844,7 @@ mod tests {
     /// its own `timeout` wrapper, delaying pod termination by minutes.
     #[test]
     fn every_cli_call_has_a_kill_after_so_timeout_is_actually_enforced() {
-        let container_command = quorum_manager_container_command();
+        let container_command = quorum_manager_container_command(&kerberos());
 
         // Both scripts are handed the CLI path by their operator-generated preamble and
         // then refer to it by variable, so that assignment is the only place the literal
