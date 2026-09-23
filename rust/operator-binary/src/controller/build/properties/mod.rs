@@ -63,37 +63,64 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
     product_version.starts_with("3.")
 }
 
-/// `controller.quorum.bootstrap.servers` addresses: one individual pod FQDN per controller,
-/// across all controller role groups.
+/// Builds the contents of the `controller.quorum.bootstrap.servers` property.
 ///
-/// # Why pod FQDNs rather than the role group's headless Service
+/// When Kerberos is enabled, the list contains the FQDN pod names of the KRaft controllers.
 ///
-/// Kerberos forces this. A GSSAPI client derives the service principal from the hostname it
-/// dials, so dialling the headless Service asks for `kafka/<service>`, while the CONTROLLER
-/// listener's acceptor can offer only a single principal -- the pod's own
-/// `kafka/<pod-fqdn>`, which is also what the Raft voter endpoints advertise. Bootstrapping
-/// through the Service therefore fails authentication for every peer.
+/// For non-kerberized clusters, this list contains the headless service names
+/// of controller role groups.
 ///
-/// The side-effect of using pod FQDNs instead of service names is that this list changes on
-/// every scaling operation (replica count change), so scaling one rolls *all* controller pods.
-pub(crate) fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
-    pod_descriptors
+/// # Why pod FQDNs under Kerberos
+///
+/// The CONTROLLER listener's acceptor offers the principal `kafka/<pod-fqdn>`, which
+/// is also what the Raft voter endpoints advertise.
+/// When a GSSAPI client uses the headless Service to ask for `kafka/<service>`,
+/// the authentication fails for every peer, so Kerberos-enabled clusters must list
+/// individual pod FQDNs.
+///
+/// That has a cost: the pod-FQDN list changes on every scaling operation (replica count change),
+/// so scaling a controller role group rolls *all* controller pods.
+/// Non-Kerberos clusters don't need pod-level addressing, so they keep the headless
+/// Service form and avoid that churn.
+pub(crate) fn kraft_controllers(
+    pod_descriptors: &[KafkaPodDescriptor],
+    kerberos_enabled: bool,
+) -> Vec<String> {
+    let controllers = pod_descriptors
         .iter()
-        .filter(|pd| pd.role == KafkaRole::Controller)
-        .map(|desc| {
-            format!(
-                "{sts}-{replica}.{service}.{namespace}.svc.{cluster_domain}:{client_port}",
-                sts = desc.role_group_statefulset_name,
-                replica = desc.replica,
-                service = desc.role_group_service_name,
-                namespace = desc.namespace,
-                cluster_domain = desc.cluster_domain,
-                client_port = desc.client_port,
-            )
-        })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+        .filter(|pd| pd.role == KafkaRole::Controller);
+
+    if kerberos_enabled {
+        controllers
+            .map(|desc| {
+                format!(
+                    "{sts}-{replica}.{service}.{namespace}.svc.{cluster_domain}:{client_port}",
+                    sts = desc.role_group_statefulset_name,
+                    replica = desc.replica,
+                    service = desc.role_group_service_name,
+                    namespace = desc.namespace,
+                    cluster_domain = desc.cluster_domain,
+                    client_port = desc.client_port,
+                )
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    } else {
+        controllers
+            .map(|desc| {
+                format!(
+                    "{service}.{namespace}.svc.{cluster_domain}:{client_port}",
+                    service = desc.role_group_service_name,
+                    namespace = desc.namespace,
+                    cluster_domain = desc.cluster_domain,
+                    client_port = desc.client_port,
+                )
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -142,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn kraft_controllers_lists_individual_pod_fqdns() {
+    fn kraft_controllers_lists_individual_pod_fqdns_under_kerberos() {
         let pod_descriptors = vec![
             pod_descriptor(KafkaRole::Controller, 0, 9093),
             pod_descriptor(KafkaRole::Controller, 1, 9093),
@@ -151,7 +178,7 @@ mod tests {
             pod_descriptor(KafkaRole::Broker, 0, 9092),
         ];
 
-        let quorum_bootstrap_servers = kraft_controllers(&pod_descriptors).join(",");
+        let quorum_bootstrap_servers = kraft_controllers(&pod_descriptors, true).join(",");
 
         // Individual pod FQDNs, *not* the role group's headless Service. Under Kerberos the
         // GSSAPI service principal is derived from the hostname the peer dials, and the
@@ -166,7 +193,38 @@ mod tests {
     }
 
     #[test]
-    fn kraft_controllers_grows_with_the_replica_count() {
+    fn kraft_controllers_lists_headless_services_without_kerberos() {
+        let mut other_group_pod = pod_descriptor(KafkaRole::Controller, 0, 9093);
+        other_group_pod.role_group_statefulset_name = "kafka-controller-other"
+            .parse()
+            .expect("valid statefulset name");
+        other_group_pod.role_group_service_name = "kafka-controller-other-headless"
+            .parse()
+            .expect("valid service name");
+
+        // Two replicas of the *default* role group and one of an *other* role group - the
+        // default group's Service entry must appear only once, regardless of replica count.
+        let pod_descriptors = vec![
+            pod_descriptor(KafkaRole::Controller, 0, 9093),
+            pod_descriptor(KafkaRole::Controller, 1, 9093),
+            other_group_pod,
+            // Brokers must be filtered out of the controller quorum bootstrap servers list.
+            pod_descriptor(KafkaRole::Broker, 0, 9092),
+        ];
+
+        let quorum_bootstrap_servers = kraft_controllers(&pod_descriptors, false);
+
+        assert_eq!(
+            quorum_bootstrap_servers,
+            vec![
+                "kafka-controller-default-headless.default.svc.cluster.local:9093".to_string(),
+                "kafka-controller-other-headless.default.svc.cluster.local:9093".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn kraft_controllers_grows_with_the_replica_count_under_kerberos() {
         let three_replicas = vec![
             pod_descriptor(KafkaRole::Controller, 0, 9093),
             pod_descriptor(KafkaRole::Controller, 1, 9093),
@@ -180,42 +238,37 @@ mod tests {
             pod_descriptor(KafkaRole::Controller, 4, 9093),
         ];
 
-        // Deliberate consequence of per-pod addressing: unlike the previous headless-Service
-        // form, this list changes with the replica count, so scaling a controller role group
-        // rolls the controller pods.
-        assert_eq!(kraft_controllers(&three_replicas).len(), 3);
-        assert_eq!(kraft_controllers(&five_replicas).len(), 5);
+        // Deliberate consequence of per-pod addressing: unlike the headless-Service form used
+        // without Kerberos, this list changes with the replica count, so scaling a controller
+        // role group rolls the controller pods.
+        assert_eq!(kraft_controllers(&three_replicas, true).len(), 3);
+        assert_eq!(kraft_controllers(&five_replicas, true).len(), 5);
         assert_ne!(
-            kraft_controllers(&three_replicas),
-            kraft_controllers(&five_replicas)
+            kraft_controllers(&three_replicas, true),
+            kraft_controllers(&five_replicas, true)
         );
     }
 
     #[test]
-    fn kraft_controllers_lists_pods_from_every_role_group() {
-        let mut other_group_pod = pod_descriptor(KafkaRole::Controller, 0, 9093);
-        other_group_pod.role_group_statefulset_name = "kafka-controller-other"
-            .parse()
-            .expect("valid statefulset name");
-        other_group_pod.role_group_service_name = "kafka-controller-other-headless"
-            .parse()
-            .expect("valid service name");
-
-        let pod_descriptors = vec![
+    fn kraft_controllers_is_stable_across_replica_count_changes_without_kerberos() {
+        let three_replicas = vec![
             pod_descriptor(KafkaRole::Controller, 0, 9093),
             pod_descriptor(KafkaRole::Controller, 1, 9093),
-            other_group_pod,
+            pod_descriptor(KafkaRole::Controller, 2, 9093),
+        ];
+        let five_replicas = vec![
+            pod_descriptor(KafkaRole::Controller, 0, 9093),
+            pod_descriptor(KafkaRole::Controller, 1, 9093),
+            pod_descriptor(KafkaRole::Controller, 2, 9093),
+            pod_descriptor(KafkaRole::Controller, 3, 9093),
+            pod_descriptor(KafkaRole::Controller, 4, 9093),
         ];
 
-        let quorum_bootstrap_servers = kraft_controllers(&pod_descriptors);
-
+        // Without Kerberos, only adding or removing a whole role group changes this list, so
+        // scaling replicas within a role group does not roll the controller pods.
         assert_eq!(
-            quorum_bootstrap_servers,
-            vec![
-                "kafka-controller-default-0.kafka-controller-default-headless.default.svc.cluster.local:9093".to_string(),
-                "kafka-controller-default-1.kafka-controller-default-headless.default.svc.cluster.local:9093".to_string(),
-                "kafka-controller-other-0.kafka-controller-other-headless.default.svc.cluster.local:9093".to_string(),
-            ]
+            kraft_controllers(&three_replicas, false),
+            kraft_controllers(&five_replicas, false)
         );
     }
 }

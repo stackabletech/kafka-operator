@@ -92,10 +92,8 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
   with `kafka-storage.sh format --standalone`, bootstrapping a single-node quorum by itself.
   Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
   Brokers always format with `--no-initial-controllers` too; they are never voters.
-* `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers.
-  This is required by Kerberos. A GSSAPI client derives the service principal from the hostname it dials, and the
-  CONTROLLER listener can only offer the pod's own principal. But it means the property changes whenever a
-  controller role group is scaled, so the controller pods are rolled by the restart controller on scale.
+* `controller.quorum.bootstrap.servers` points at each controller role group's own headless Service DNS name, not
+  individual pod addresses -- unless Kerberos is enabled. See below for details related to Kerberos.
 
 == Kerberos
 
@@ -116,6 +114,11 @@ When Kerberos is enabled:
   to initiate GSSAPI connections to its peers, not only accept them.
 * The `quorum-manager` sidecar and the `preStop` hook authenticate to the CONTROLLER listener
   as the controller's own pod principal.
+* `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers.
+  This is required by Kerberos: a GSSAPI client derives the service principal from the hostname
+  it dials, and the CONTROLLER listener can only offer the pod's own principal.
+  It means that, with Kerberos enabled, the property changes whenever a controller role group is scaled,
+  so the controller pods are rolled by the restart controller on scale.
 
 == Known Issues
 
