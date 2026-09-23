@@ -90,9 +90,9 @@ pub(crate) fn kraft_controllers(
         .iter()
         .filter(|pd| pd.role == KafkaRole::Controller);
 
-    if kerberos_enabled {
-        controllers
-            .map(|desc| {
+    controllers
+        .map(|desc| {
+            if kerberos_enabled {
                 format!(
                     "{sts}-{replica}.{service}.{namespace}.svc.{cluster_domain}:{client_port}",
                     sts = desc.role_group_statefulset_name,
@@ -102,13 +102,7 @@ pub(crate) fn kraft_controllers(
                     cluster_domain = desc.cluster_domain,
                     client_port = desc.client_port,
                 )
-            })
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    } else {
-        controllers
-            .map(|desc| {
+            } else {
                 format!(
                     "{service}.{namespace}.svc.{cluster_domain}:{client_port}",
                     service = desc.role_group_service_name,
@@ -116,11 +110,11 @@ pub(crate) fn kraft_controllers(
                     cluster_domain = desc.cluster_domain,
                     client_port = desc.client_port,
                 )
-            })
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
-    }
+            }
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 #[cfg(test)]
