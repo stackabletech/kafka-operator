@@ -1,11 +1,7 @@
 //! The Stackable Kafka agent: a per-cluster controller that reconciles in-cluster resources like `KafkaTopic`s.
 
 use clap::Parser;
-use stackable_operator::{
-    cli::CommonOptions,
-    telemetry::Tracing,
-    utils::signal::SignalWatcher,
-};
+use stackable_operator::{cli::CommonOptions, telemetry::Tracing, utils::signal::SignalWatcher};
 
 use crate::framework::AgentCommand;
 

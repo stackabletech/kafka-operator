@@ -14,7 +14,7 @@ use stackable_operator::{
     crd::listener,
     eos::EndOfSupportChecker,
     k8s_openapi::api::{
-        apps::v1::StatefulSet,
+        apps::v1::{Deployment, StatefulSet},
         core::v1::{ConfigMap, Service, ServiceAccount},
         policy::v1::PodDisruptionBudget,
         rbac::v1::RoleBinding,
@@ -37,12 +37,13 @@ use stackable_operator::{
 
 use crate::{
     controller::KAFKA_FULL_CONTROLLER_NAME,
-    crd::{KAFKA_OPERATOR_NAME, KafkaCluster, KafkaClusterVersion, v1alpha1},
+    crd::{KAFKA_OPERATOR_NAME, KafkaCluster, KafkaClusterVersion, default_agent_image, v1alpha1},
     webhooks::conversion::create_webhook_server,
 };
 
 mod controller;
 mod crd;
+mod framework;
 mod webhooks;
 
 mod built_info {
@@ -67,6 +68,10 @@ struct Opts {
 struct KafkaRun {
     #[clap(flatten)]
     common: RunArguments,
+
+    /// The agent image. Defaults to the agent image belonging to this operator release.
+    #[arg(long, env)]
+    agent_image: Option<String>,
 }
 
 #[tokio::main]
@@ -83,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
                     maintenance,
                     common,
                 },
-            ..
+            agent_image,
         }) => {
             // NOTE (@NickLarsenNZ): Before stackable-telemetry was used:
             // - The console log level was set by `KAFKA_OPERATOR_LOG`, and is now `CONSOLE_LOG` (when using Tracing::pre_configured).
@@ -171,6 +176,10 @@ async fn main() -> anyhow::Result<()> {
                     watch_namespace.get_api::<DeserializeGuard<StatefulSet>>(&client),
                     watcher::Config::default(),
                 )
+                .owns(
+                    watch_namespace.get_api::<DeserializeGuard<Deployment>>(&client),
+                    watcher::Config::default(),
+                )
                 .watches(
                     watch_namespace.get_api::<DeserializeGuard<ConfigMap>>(&client),
                     watcher::Config::default(),
@@ -188,6 +197,9 @@ async fn main() -> anyhow::Result<()> {
                     controller::error_policy,
                     Arc::new(controller::Ctx {
                         client: client.clone(),
+                        agent_image: agent_image.unwrap_or_else(|| {
+                            default_agent_image(&operator_environment.image_repository)
+                        }),
                         operator_environment,
                     }),
                 )
