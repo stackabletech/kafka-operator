@@ -636,7 +636,7 @@ mod tests {
               uid: 12345678-1234-1234-1234-123456789012
             spec:
               image:
-                productVersion: 4.1.1
+                productVersion: 4.3.1
               brokers:
                 roleGroups:
                   default:

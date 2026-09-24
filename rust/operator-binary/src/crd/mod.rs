@@ -630,13 +630,13 @@ mod tests {
         Ok(MetadataManager::ZooKeeper)
     )]
     #[case("3.9.2", Some(MetadataManager::KRaft), Ok(MetadataManager::KRaft))]
-    #[case("4.1.1", None, Ok(MetadataManager::KRaft))]
+    #[case("4.3.1", None, Ok(MetadataManager::KRaft))]
     #[case(
-        "4.1.1",
+        "4.3.1",
         Some(MetadataManager::ZooKeeper),
         Err(Error::Kafka4RequiresKraftMetadataManager)
     )]
-    #[case("4.1.1", Some(MetadataManager::KRaft), Ok(MetadataManager::KRaft))]
+    #[case("4.3.1", Some(MetadataManager::KRaft), Ok(MetadataManager::KRaft))]
     fn test_effective_metadata_manager(
         #[case] product_version: &str,
         #[case] metadata_manager: Option<MetadataManager>,
