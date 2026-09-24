@@ -13,6 +13,7 @@ target/
 *.tgz
 
 result
+result-agent
 image.tar
 
 tilt_options.json

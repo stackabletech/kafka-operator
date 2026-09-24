@@ -34,7 +34,22 @@ custom_build(
 # We need to set the correct image annotation on the operator Deployment to use e.g.
 # oci.stackable.tech/sandbox/opa-operator:7y19m3d8clwxlv34v5q2x4p7v536s00g instead of
 # oci.stackable.tech/sandbox/opa-operator:0.0.0-dev (which does not exist)
-k8s_kind('Deployment', image_json_path='{.spec.template.metadata.annotations.internal\\.stackable\\.tech/image}')
+deployment_image_json_paths = ['{.spec.template.metadata.annotations.internal\\.stackable\\.tech/image}']
+
+# Operators that ship an agent (see `agent` in nix/meta.json) also build the agent image and pass
+# it to the operator via the `internal.stackable.tech/agent-image` annotation.
+if 'agent' in meta:
+    agent_image_name = operator_repository + '/' + meta['agent']['name']
+    custom_build(
+        agent_image_name,
+        'nix-build . -A dockerAgent --argstr dockerNameAgent "' + agent_image_name + '" -o result-agent && ./result-agent/load-image | docker load',
+        deps=['rust', 'Cargo.toml', 'Cargo.lock', 'default.nix', "nix", 'build.rs', 'vendor'],
+        ignore=['*.~undo-tree~'],
+        outputs_image_ref_to='result-agent/ref',
+    )
+    deployment_image_json_paths.append('{.spec.template.metadata.annotations.internal\\.stackable\\.tech/agent-image}')
+
+k8s_kind('Deployment', image_json_path=deployment_image_json_paths)
 k8s_kind('DaemonSet', image_json_path='{.spec.template.metadata.annotations.internal\\.stackable\\.tech/image}')
 
 # Optionally specify a custom Helm values file to be passed to the Helm deployment below.
