@@ -27,7 +27,7 @@ use crate::{
     controller::{build::command::export_kerberos_realm_command, security::ValidatedKafkaSecurity},
     crd::{
         CONTROLLER_POD_FQDN_TEMPLATE, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
-        STACKABLE_LISTENER_BROKER_DIR,
+        STACKABLE_KERBEROS_KEYTAB_PATH, STACKABLE_LISTENER_BROKER_DIR,
         listener::{
             self, KafkaListenerName, KafkaListenerProtocol, node_address_cmd_env, node_port_cmd_env,
         },
@@ -54,7 +54,6 @@ const PROPERTY_SASL_INTER_BROKER_MECHANISM: &str = "sasl.mechanism.inter.broker.
 const PROPERTY_SASL_CONTROLLER_MECHANISM: &str = "sasl.mechanism.controller.protocol";
 const PROPERTY_SASL_MECHANISM: &str = "sasl.mechanism";
 const PROPERTY_SASL_JAAS_CONFIG: &str = "sasl.jaas.config";
-const STACKABLE_KERBEROS_KEYTAB_PATH: &str = "/stackable/kerberos/keytab";
 
 pub(crate) const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &str = "/stackable/tls-kafka-internal";
 constant!(pub(crate) STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: VolumeName = "tls-kafka-internal");
@@ -699,7 +698,7 @@ fn kcat_client_sasl_ssl(cert_directory: &str, service_name: &str) -> Vec<String>
         "-X".to_string(),
         format!("ssl.ca.location={cert_directory}/ca.crt"),
         "-X".to_string(),
-        "sasl.kerberos.keytab=/stackable/kerberos/keytab".to_string(),
+        format!("sasl.kerberos.keytab={STACKABLE_KERBEROS_KEYTAB_PATH}"),
         "-X".to_string(),
         format!("sasl.mechanism={SASL_MECHANISM_GSSAPI}"),
         "-X".to_string(),

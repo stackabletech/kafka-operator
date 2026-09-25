@@ -22,8 +22,8 @@ use crate::{
         },
     },
     crd::{
-        CONTROLLER_POD_FQDN_TEMPLATE, STACKABLE_LISTENER_BOOTSTRAP_DIR,
-        STACKABLE_LISTENER_BROKER_DIR,
+        CONTROLLER_POD_FQDN_TEMPLATE, STACKABLE_KERBEROS_KEYTAB_PATH,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, node_address_cmd},
         role::{AnyConfig, KafkaRole},
     },
@@ -250,7 +250,7 @@ fn jaas_config_file(is_kerberos_enabled: bool, role: &KafkaRole) -> String {
             com.sun.security.auth.module.Krb5LoginModule required
             useKeyTab=true
             storeKey=true
-            keyTab=\"/stackable/kerberos/keytab\"
+            keyTab=\"{STACKABLE_KERBEROS_KEYTAB_PATH}\"
             principal=\"kafka/{controller_principal_address}@${{env:KERBEROS_REALM}}\";
         }};
     "};
@@ -263,7 +263,7 @@ fn jaas_config_file(is_kerberos_enabled: bool, role: &KafkaRole) -> String {
             useKeyTab=true
             storeKey=true
             isInitiator=false
-            keyTab=\"/stackable/kerberos/keytab\"
+            keyTab=\"{STACKABLE_KERBEROS_KEYTAB_PATH}\"
             principal=\"kafka/{bootstrap_address}@${{env:KERBEROS_REALM}}\";
         }};
 
@@ -272,7 +272,7 @@ fn jaas_config_file(is_kerberos_enabled: bool, role: &KafkaRole) -> String {
             useKeyTab=true
             storeKey=true
             isInitiator=false
-            keyTab=\"/stackable/kerberos/keytab\"
+            keyTab=\"{STACKABLE_KERBEROS_KEYTAB_PATH}\"
             principal=\"kafka/{broker_address}@${{env:KERBEROS_REALM}}\";
         }};
 

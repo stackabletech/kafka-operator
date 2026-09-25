@@ -8,6 +8,7 @@ pub mod tls;
 use std::str::FromStr;
 
 use authentication::KafkaAuthentication;
+use const_format::concatcp;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 use stackable_operator::{
@@ -68,7 +69,8 @@ pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 constant!(pub STACKABLE_CONFIG_DIR_NAME: VolumeName = "config");
 // kerberos
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
-pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
+pub const STACKABLE_KERBEROS_KRB5_PATH: &str = concatcp!(STACKABLE_KERBEROS_DIR, "/krb5.conf");
+pub const STACKABLE_KERBEROS_KEYTAB_PATH: &str = concatcp!(STACKABLE_KERBEROS_DIR, "/keytab");
 // logging
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
 constant!(pub STACKABLE_LOG_CONFIG_DIR_NAME: VolumeName = "log-config");
