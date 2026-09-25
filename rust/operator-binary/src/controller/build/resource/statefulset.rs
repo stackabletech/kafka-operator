@@ -16,7 +16,8 @@ use stackable_operator::{
         api::{
             apps::v1::{StatefulSet, StatefulSetSpec, StatefulSetUpdateStrategy},
             core::v1::{
-                ConfigMapVolumeSource, ContainerPort, EnvVar, ExecAction, LifecycleHandler, Volume,
+                ConfigMapVolumeSource, ContainerPort, EnvVar, EnvVarSource, ExecAction,
+                LifecycleHandler, ObjectFieldSelector, Volume,
             },
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
@@ -50,7 +51,10 @@ use crate::{
                 kafka_log_opts, quorum_manager_container_command,
             },
             graceful_shutdown::add_graceful_shutdown_config,
-            kerberos::{add_kerberos_pod_config, kerberos_env_vars},
+            kerberos::{
+                KAFKA_OPTS, KERBEROS_VOLUME_NAME, KRB5_CONFIG, add_kerberos_pod_config,
+                kerberos_env_vars,
+            },
             properties::product_logging::MAX_KAFKA_LOG_FILES_SIZE,
             recommended_labels_for_role_group_resources,
             recommended_labels_for_unversioned_role_group_resources, role_group_selector,
@@ -67,8 +71,9 @@ use crate::{
         BROKER_ID_POD_MAP_DIR, BROKER_ID_POD_MAP_DIR_NAME, KAFKA_HEAP_OPTS,
         LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, LOG_DIRS_VOLUME_NAME,
         METRICS_PORT, METRICS_PORT_NAME, STACKABLE_CONFIG_DIR, STACKABLE_CONFIG_DIR_NAME,
-        STACKABLE_DATA_DIR, STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
-        STACKABLE_LOG_CONFIG_DIR, STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_DIR_NAME,
+        STACKABLE_DATA_DIR, STACKABLE_KERBEROS_DIR, STACKABLE_KERBEROS_KRB5_PATH,
+        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
+        STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_DIR_NAME,
         role::{
             AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
             controller::ControllerContainer,
@@ -83,6 +88,7 @@ stackable_operator::constant!(VECTOR_LOG_VOLUME_NAME: VolumeName = "log");
 
 // Env vars the operator sets on the Kafka containers.
 stackable_operator::constant!(POD_NAME: EnvVarName = "POD_NAME");
+stackable_operator::constant!(POD_IP: EnvVarName = "POD_IP");
 stackable_operator::constant!(KAFKA_CLIENT_PORT: EnvVarName = "KAFKA_CLIENT_PORT");
 stackable_operator::constant!(NAMESPACE: EnvVarName = "NAMESPACE");
 stackable_operator::constant!(ROLEGROUP_HEADLESS_SERVICE_NAME: EnvVarName = "ROLEGROUP_HEADLESS_SERVICE_NAME");
@@ -132,6 +138,21 @@ fn controller_pod_shared_env_vars(
     kafka_security: &ValidatedKafkaSecurity,
     resource_names: &ResourceNames,
 ) -> EnvVarSet {
+    // TODO: for op-rs
+    // `FieldPathEnvVar` has no `status.podIP` variant, so this one is built by hand rather
+    // than through `with_field_path`.
+    let pod_ip_env_var = EnvVar {
+        name: POD_IP.to_string(),
+        value: None,
+        value_from: Some(EnvVarSource {
+            field_ref: Some(ObjectFieldSelector {
+                field_path: "status.podIP".to_string(),
+                ..ObjectFieldSelector::default()
+            }),
+            ..EnvVarSource::default()
+        }),
+    };
+
     common_operator_env_vars(validated_cluster, kafka_security)
         .with_field_path(&NAMESPACE, &FieldPathEnvVar::Namespace)
         .with_value(
@@ -142,6 +163,8 @@ fn controller_pod_shared_env_vars(
             &CLUSTER_DOMAIN,
             validated_cluster.cluster_domain.to_string(),
         )
+        .with_env_var(pod_ip_env_var)
+        .expect("the env var name is a valid EnvVarName")
 }
 
 const POD_MANAGEMENT_POLICY_PARALLEL: &str = "Parallel";
@@ -427,6 +450,9 @@ pub fn build_controller_rolegroup_statefulset(
 
     let mut pod_builder = PodBuilder::new();
 
+    add_kerberos_pod_config(kafka_security, kafka_role, &mut cb_kafka, &mut pod_builder)
+        .context(AddKerberosConfigSnafu)?;
+
     let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
 
     // Operator-set env vars first (common + controller-specific); the user's `envOverrides`
@@ -447,13 +473,16 @@ pub fn build_controller_rolegroup_statefulset(
             kafka_role,
             role_group_name,
         )?)
+        // Kerberos env goes on the `kafka` container only. `controller_shared_env` is also
+        // the `quorum-manager` sidecar's base, and `KAFKA_OPTS` points the JVM at
+        // `/tmp/jaas.properties`, which only the `kafka` container renders.
+        .merge(kerberos_env_vars(kafka_security))
         .merge(validated_rg.env_overrides.clone())
         .into();
 
-    let quorum_manager_env: Vec<EnvVar> = controller_shared_env
+    let quorum_manager_env = controller_shared_env
         .with_value(&KAFKA_NODE_ID_OFFSET, &node_id_offset)
-        .merge(validated_rg.env_overrides.clone())
-        .into();
+        .merge(validated_rg.env_overrides.clone());
 
     let controller_pod_descriptors = validated_cluster
         .pod_descriptors(Some(kafka_role))
@@ -484,6 +513,7 @@ pub fn build_controller_rolegroup_statefulset(
             "-c".to_string(),
         ])
         .args(vec![controller_kafka_container_command(
+            kafka_security,
             controller_pod_descriptors,
         )]);
 
@@ -502,23 +532,16 @@ pub fn build_controller_rolegroup_statefulset(
         .startup_probe(controller_startup_probe)
         .liveness_probe(controller_liveness_probe)
         .readiness_probe(controller_readiness_probe);
-    // Skipped when Kerberos is enabled, matching `build_quorum_manager_container`'s own
-    // gating — `admin-client.properties` (the file this removal call relies on) only covers
-    // the TLS/SSL case.
-    if !kafka_security.has_kerberos_enabled() {
-        cb_kafka.lifecycle_pre_stop(LifecycleHandler {
-            exec: Some(ExecAction {
-                command: Some(vec![
-                    "/bin/bash".to_string(),
-                    "-c".to_string(),
-                    controller_remove_self_pre_stop_command(
-                        merged_config.graceful_shutdown_timeout,
-                    ),
-                ]),
-            }),
-            ..LifecycleHandler::default()
-        });
-    }
+    cb_kafka.lifecycle_pre_stop(LifecycleHandler {
+        exec: Some(ExecAction {
+            command: Some(vec![
+                "/bin/bash".to_string(),
+                "-c".to_string(),
+                controller_remove_self_pre_stop_command(merged_config.graceful_shutdown_timeout),
+            ]),
+        }),
+        ..LifecycleHandler::default()
+    });
 
     add_log_config_volume(
         &mut pod_builder,
@@ -551,11 +574,11 @@ pub fn build_controller_rolegroup_statefulset(
         .add_container(kafka_container)
         .affinity(&merged_config.affinity);
 
-    if let Some(quorum_manager_container) =
-        build_quorum_manager_container(resolved_product_image, kafka_security, quorum_manager_env)
-    {
-        pod_builder.add_container(quorum_manager_container);
-    }
+    pod_builder.add_container(build_quorum_manager_container(
+        resolved_product_image,
+        kafka_security,
+        quorum_manager_env,
+    ));
 
     add_common_pod_config(
         &mut pod_builder,
@@ -745,31 +768,27 @@ fn add_common_pod_config(
 // Name of the controller's `quorum-manager` sidecar container.
 stackable_operator::constant!(QUORUM_MANAGER_CONTAINER_NAME: ContainerName = "quorum-manager");
 
-/// Builds the `quorum-manager` sidecar for a controller pod. Returns `None` when Kerberos is
-/// enabled (the sidecar's admin-client properties file only covers the TLS/SSL case).
+/// Builds the `quorum-manager` sidecar for a controller pod.
 fn build_quorum_manager_container(
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &ValidatedKafkaSecurity,
-    env: Vec<EnvVar>,
-) -> Option<stackable_operator::k8s_openapi::api::core::v1::Container> {
-    if kafka_security.has_kerberos_enabled() {
-        return None;
-    }
-
+    env: EnvVarSet,
+) -> stackable_operator::k8s_openapi::api::core::v1::Container {
     let mut cb = new_container_builder(&QUORUM_MANAGER_CONTAINER_NAME);
+
+    let mut local_env = EnvVarSet::new()
+        // `kafka-metadata-quorum.sh` goes through `kafka-run-class.sh`, which defaults
+        // `KAFKA_HEAP_OPTS` to `-Xmx256M` when unset. Set an explicit, modest heap so the
+        // JVM's max heap plus its base/metaspace/SSL-buffer overhead stays comfortably
+        // under the container's memory limit below.
+        .with_value(&KAFKA_HEAP_OPTS, "-Xmx128M");
 
     cb.image_from_product_image(resolved_product_image)
         .command(vec![
             "/bin/bash".to_string(),
             "-c".to_string(),
-            quorum_manager_container_command(),
+            quorum_manager_container_command(kafka_security),
         ])
-        // `kafka-metadata-quorum.sh` goes through `kafka-run-class.sh`, which defaults
-        // `KAFKA_HEAP_OPTS` to `-Xmx256M` when unset. Set an explicit, modest heap so the
-        // JVM's max heap plus its base/metaspace/SSL-buffer overhead stays comfortably
-        // under the container's memory limit below.
-        .add_env_var(KAFKA_HEAP_OPTS.to_string(), "-Xmx128M")
-        .add_env_vars(env)
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -794,7 +813,33 @@ fn build_quorum_manager_container(
         .add_volume_mount(&*LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .expect("The mount paths are statically defined and there should be no duplicates.");
 
-    Some(cb.build())
+    if kafka_security.has_kerberos_enabled() {
+        // `controller_admin_client_properties` authenticates with the pod-scoped keytab
+        // mounted by `add_kerberos_pod_config`; the volume is already on the pod, this
+        // container just needs its own mount and `KRB5_CONFIG`. It deliberately does *not*
+        // get `KAFKA_OPTS`: that points the JVM at `/tmp/jaas.properties`, which only the
+        // `kafka` container renders.
+        cb.add_volume_mount(&*KERBEROS_VOLUME_NAME, STACKABLE_KERBEROS_DIR)
+            .expect("The mount paths are statically defined and there should be no duplicates.");
+
+        local_env = local_env
+            .with_value(&KRB5_CONFIG, STACKABLE_KERBEROS_KRB5_PATH)
+            // `KRB5_CONFIG` only reaches native MIT tools; the JVM reads the
+            // `java.security.krb5.conf` system property, without which the admin client fails
+            // with "Unable to locate KDC for realm". Unlike the `kafka` container's `KAFKA_OPTS`
+            // this deliberately omits `java.security.auth.login.config`: that points at
+            // `/tmp/jaas.properties`, which only the `kafka` container renders. This container
+            // authenticates with the inline `sasl.jaas.config` in `admin-client.properties`.
+            .with_value(
+                &KAFKA_OPTS,
+                format!("-Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}"),
+            );
+    }
+
+    // This allows to override explicit env vars set in this function.
+    cb.add_env_vars(local_env.merge(env));
+
+    cb.build()
 }
 
 /// Adds the Vector log-aggregation sidecar container, when the Vector agent is enabled.
@@ -838,6 +883,7 @@ mod tests {
         let _ = *VECTOR_CONFIG_VOLUME_NAME;
         let _ = *VECTOR_LOG_VOLUME_NAME;
         let _ = *POD_NAME;
+        let _ = *POD_IP;
         let _ = *KAFKA_CLIENT_PORT;
         let _ = *NAMESPACE;
         let _ = *ROLEGROUP_HEADLESS_SERVICE_NAME;
@@ -912,6 +958,59 @@ mod tests {
             "the override must replace the operator-set value, not duplicate it"
         );
         assert_eq!(containerdebug[0].value.as_deref(), Some("/custom/log/dir"));
+    }
+
+    /// A [`ResolvedProductImage`] good enough for tests that only care about the container
+    /// spec produced from it, not the actual image contents.
+    fn test_resolved_product_image() -> ResolvedProductImage {
+        ResolvedProductImage {
+            product_version: "3.9.2".to_string(),
+            app_version_label_value: "3.9.2-stackable0.0.0-dev"
+                .parse()
+                .expect("valid label value"),
+            image: "oci.stackable.tech/sdp/kafka:3.9.2-stackable0.0.0-dev".to_string(),
+            image_pull_policy: "Always".to_string(),
+            pull_secrets: None,
+        }
+    }
+
+    /// The `quorum-manager` sidecar sets `KAFKA_HEAP_OPTS` unconditionally, and
+    /// `KRB5_CONFIG`/`KAFKA_OPTS` when Kerberos is enabled. All three must still be
+    /// overridable by the caller's `env` (in practice, the rolegroup's `envOverrides`), the
+    /// same way [`env_overrides_override_operator_set_env_vars`] proves it for the `kafka`
+    /// container's env.
+    #[test]
+    fn quorum_manager_container_env_can_be_overridden() {
+        let resolved_product_image = test_resolved_product_image();
+        let kafka_security = crate::controller::build::security::tests::kerberos();
+        assert!(
+            kafka_security.has_kerberos_enabled(),
+            "sanity check failed: the fixture must have Kerberos enabled so that KRB5_CONFIG \
+             and KAFKA_OPTS are set in the first place"
+        );
+
+        let overrides = EnvVarSet::new()
+            .with_value(&KAFKA_HEAP_OPTS, "-Xmx999M")
+            .with_value(&KRB5_CONFIG, "/custom/krb5.conf")
+            .with_value(&KAFKA_OPTS, "-Doverridden=true");
+
+        let container =
+            build_quorum_manager_container(&resolved_product_image, &kafka_security, overrides);
+        let env = container.env.expect("the sidecar has env vars");
+
+        for (name, expected_value) in [
+            ("KAFKA_HEAP_OPTS", "-Xmx999M"),
+            ("KRB5_CONFIG", "/custom/krb5.conf"),
+            ("KAFKA_OPTS", "-Doverridden=true"),
+        ] {
+            let matching: Vec<_> = env.iter().filter(|env_var| env_var.name == name).collect();
+            assert_eq!(
+                matching.len(),
+                1,
+                "the override must replace the operator-set {name}, not duplicate it"
+            );
+            assert_eq!(matching[0].value.as_deref(), Some(expected_value));
+        }
     }
 
     /// A minimal KRaft cluster with one controller role group, resolved through the real
@@ -1217,8 +1316,9 @@ mod tests {
         let script = command.last().expect("the exec command has a script arg");
 
         assert!(
-            script.contains(&format!("/dev/tcp/localhost/{client_port}")),
-            "expected a TCP reachability check against the controller's own port, script was: {script}"
+            script.contains(&format!("/dev/tcp/$POD_IP/{client_port}")),
+            "expected the TCP check to dial this pod's own IP (from the downward API), not a \
+             DNS name that could be affected by CoreDNS being unavailable, script was: {script}"
         );
         assert!(
             script.contains(r#"[ "$state" != "unattached" ]"#),

@@ -129,6 +129,14 @@ tests:
       - zookeeper-latest
       - kafka-latest
       - openshift
+  - name: kraft-kerberos
+    dimensions:
+      - kafka-kraft
+      - krb5
+      - kerberos-realm
+      - kerberos-backend
+      - openshift
+      - broker-listener-class
   - name: kerberos
     dimensions:
       - kafka

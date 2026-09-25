@@ -8,6 +8,7 @@ pub mod tls;
 use std::str::FromStr;
 
 use authentication::KafkaAuthentication;
+use const_format::concatcp;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 use stackable_operator::{
@@ -68,13 +69,23 @@ pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 constant!(pub STACKABLE_CONFIG_DIR_NAME: VolumeName = "config");
 // kerberos
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
-pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
+pub const STACKABLE_KERBEROS_KRB5_PATH: &str = concatcp!(STACKABLE_KERBEROS_DIR, "/krb5.conf");
+pub const STACKABLE_KERBEROS_KEYTAB_PATH: &str = concatcp!(STACKABLE_KERBEROS_DIR, "/keytab");
 // logging
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
 constant!(pub STACKABLE_LOG_CONFIG_DIR_NAME: VolumeName = "log-config");
 constant!(pub STACKABLE_LOG_DIR_NAME: VolumeName = "log");
 pub const BROKER_ID_POD_MAP_DIR: &str = "/stackable/broker-id-pod-map";
 constant!(pub BROKER_ID_POD_MAP_DIR_NAME: VolumeName = "broker-id-pod-map-dir");
+
+/// A KRaft controller pod's own fully-qualified domain name, as `config-utils` placeholders
+/// resolved at container start.
+///
+/// Used for:
+/// - the address where the CONTROLLER listener is *bound*.
+/// - the endpoint registered with the quorum's voter.
+/// - when Kerberos is enabled, it is also the host in the controller's Kerberos service principal.
+pub const CONTROLLER_POD_FQDN_TEMPLATE: &str = "${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}";
 
 #[derive(Snafu, Debug)]
 pub enum Error {

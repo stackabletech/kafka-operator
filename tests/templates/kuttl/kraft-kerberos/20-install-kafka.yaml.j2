@@ -1,0 +1,65 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      kubectl apply -n $NAMESPACE -f - <<EOF
+      ---
+      apiVersion: authentication.stackable.tech/v1alpha1
+      kind: AuthenticationClass
+      metadata:
+        name: kerberos-auth-$NAMESPACE
+      spec:
+        provider:
+          kerberos:
+            kerberosSecretClass: kerberos-$NAMESPACE
+      ---
+      apiVersion: kafka.stackable.tech/v1alpha1
+      kind: KafkaCluster
+      metadata:
+        name: test-kafka
+      spec:
+        image:
+{% if test_scenario['values']['kafka-kraft'].find(",") > 0 %}
+          custom: "{{ test_scenario['values']['kafka-kraft'].split(',')[1] }}"
+          productVersion: "{{ test_scenario['values']['kafka-kraft'].split(',')[0] }}"
+{% else %}
+          productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
+{% endif %}
+          pullPolicy: IfNotPresent
+        clusterConfig:
+          # KRaft: metadata is managed by the controllers role, no ZooKeeper involved.
+          metadataManager: kraft
+          authentication:
+            - authenticationClass: kerberos-auth-$NAMESPACE
+          tls:
+            # Kerberos requires the use of server and internal TLS!
+            serverSecretClass: tls
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
+          vectorAggregatorConfigMapName: vector-aggregator-discovery
+{% endif %}
+        controllers:
+          config:
+            logging:
+              enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+            gracefulShutdownTimeout: 30s # speed up tests
+          roleGroups:
+            default:
+              # 3 controller replicas so that this test actually exercises inter-controller
+              # (Raft) Kerberos-authenticated traffic on the CONTROLLER listener, not just
+              # broker-to-controller traffic.
+              replicas: 3
+        brokers:
+          config:
+            logging:
+              enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+            brokerListenerClass: {{ test_scenario['values']['broker-listener-class'] }}
+            # bootstrap-listener-class is orthogonal to this test's focus on Kerberos over the
+            # CONTROLLER listener (that axis is already covered by the plain `kerberos` test
+            # case), so it is pinned here rather than parameterized as a test dimension.
+            bootstrapListenerClass: cluster-internal
+            gracefulShutdownTimeout: 30s # speed up tests
+          roleGroups:
+            default:
+              replicas: 3
+      EOF

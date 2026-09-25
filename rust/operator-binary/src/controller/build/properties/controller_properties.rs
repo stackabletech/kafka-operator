@@ -10,7 +10,7 @@ use crate::{
         },
     },
     crd::{
-        KafkaPodDescriptor,
+        CONTROLLER_POD_FQDN_TEMPLATE, KafkaPodDescriptor,
         listener::{KafkaListenerConfig, KafkaListenerName},
         role::{
             KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS, KAFKA_LISTENER_SECURITY_PROTOCOL_MAP,
@@ -25,34 +25,38 @@ pub fn build(
     pod_descriptors: &[KafkaPodDescriptor],
     overrides: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let kraft_controllers = kraft_controllers(pod_descriptors).join(",");
+    let kraft_controllers = kraft_controllers(
+        pod_descriptors,
+        cluster_config.kafka_security.has_kerberos_enabled(),
+    )
+    .join(",");
 
     let mut result = BTreeMap::from([
         (
             KAFKA_LOG_DIRS.to_string(),
             "/stackable/data/kraft".to_string(),
         ),
-        (KAFKA_PROCESS_ROLES.to_string(), KafkaRole::Controller.to_string()),
+        (
+            KAFKA_PROCESS_ROLES.to_string(),
+            KafkaRole::Controller.to_string(),
+        ),
         (
             "controller.listener.names".to_string(),
             KafkaListenerName::Controller.to_string(),
         ),
-        (
-            KAFKA_NODE_ID.to_string(),
-            "${env:REPLICA_ID}".to_string(),
-        ),
+        (KAFKA_NODE_ID.to_string(), "${env:REPLICA_ID}".to_string()),
         (
             KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS.to_string(),
             kraft_controllers.clone(),
         ),
         (
             KAFKA_LISTENERS.to_string(),
-            "CONTROLLER://${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}:${env:KAFKA_CLIENT_PORT}".to_string(),
+            format!("CONTROLLER://{CONTROLLER_POD_FQDN_TEMPLATE}:${{env:KAFKA_CLIENT_PORT}}"),
         ),
         (
             KAFKA_LISTENER_SECURITY_PROTOCOL_MAP.to_string(),
-            listener_config
-                .listener_security_protocol_map_for_controller()),
+            listener_config.listener_security_protocol_map_for_controller(),
+        ),
     ]);
 
     result.insert(
