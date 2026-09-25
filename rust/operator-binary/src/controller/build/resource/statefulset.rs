@@ -480,10 +480,9 @@ pub fn build_controller_rolegroup_statefulset(
         .merge(validated_rg.env_overrides.clone())
         .into();
 
-    let quorum_manager_env: Vec<EnvVar> = controller_shared_env
+    let quorum_manager_env = controller_shared_env
         .with_value(&KAFKA_NODE_ID_OFFSET, &node_id_offset)
-        .merge(validated_rg.env_overrides.clone())
-        .into();
+        .merge(validated_rg.env_overrides.clone());
 
     let controller_pod_descriptors = validated_cluster
         .pod_descriptors(Some(kafka_role))
@@ -773,9 +772,16 @@ stackable_operator::constant!(QUORUM_MANAGER_CONTAINER_NAME: ContainerName = "qu
 fn build_quorum_manager_container(
     resolved_product_image: &ResolvedProductImage,
     kafka_security: &ValidatedKafkaSecurity,
-    env: Vec<EnvVar>,
+    env: EnvVarSet,
 ) -> stackable_operator::k8s_openapi::api::core::v1::Container {
     let mut cb = new_container_builder(&QUORUM_MANAGER_CONTAINER_NAME);
+
+    let mut local_env = EnvVarSet::new()
+        // `kafka-metadata-quorum.sh` goes through `kafka-run-class.sh`, which defaults
+        // `KAFKA_HEAP_OPTS` to `-Xmx256M` when unset. Set an explicit, modest heap so the
+        // JVM's max heap plus its base/metaspace/SSL-buffer overhead stays comfortably
+        // under the container's memory limit below.
+        .with_value(&KAFKA_HEAP_OPTS, "-Xmx128M");
 
     cb.image_from_product_image(resolved_product_image)
         .command(vec![
@@ -783,11 +789,6 @@ fn build_quorum_manager_container(
             "-c".to_string(),
             quorum_manager_container_command(kafka_security),
         ])
-        // `kafka-metadata-quorum.sh` goes through `kafka-run-class.sh`, which defaults
-        // `KAFKA_HEAP_OPTS` to `-Xmx256M` when unset. Set an explicit, modest heap so the
-        // JVM's max heap plus its base/metaspace/SSL-buffer overhead stays comfortably
-        // under the container's memory limit below.
-        .add_env_var(KAFKA_HEAP_OPTS.to_string(), "-Xmx128M")
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -820,21 +821,23 @@ fn build_quorum_manager_container(
         // `kafka` container renders.
         cb.add_volume_mount(&*KERBEROS_VOLUME_NAME, STACKABLE_KERBEROS_DIR)
             .expect("The mount paths are statically defined and there should be no duplicates.");
-        cb.add_env_var(KRB5_CONFIG.to_string(), STACKABLE_KERBEROS_KRB5_PATH);
-        // `KRB5_CONFIG` only reaches native MIT tools; the JVM reads the
-        // `java.security.krb5.conf` system property, without which the admin client fails
-        // with "Unable to locate KDC for realm". Unlike the `kafka` container's `KAFKA_OPTS`
-        // this deliberately omits `java.security.auth.login.config`: that points at
-        // `/tmp/jaas.properties`, which only the `kafka` container renders. This container
-        // authenticates with the inline `sasl.jaas.config` in `admin-client.properties`.
-        cb.add_env_var(
-            KAFKA_OPTS.to_string(),
-            format!("-Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}"),
-        );
+
+        local_env = local_env
+            .with_value(&KRB5_CONFIG, STACKABLE_KERBEROS_KRB5_PATH)
+            // `KRB5_CONFIG` only reaches native MIT tools; the JVM reads the
+            // `java.security.krb5.conf` system property, without which the admin client fails
+            // with "Unable to locate KDC for realm". Unlike the `kafka` container's `KAFKA_OPTS`
+            // this deliberately omits `java.security.auth.login.config`: that points at
+            // `/tmp/jaas.properties`, which only the `kafka` container renders. This container
+            // authenticates with the inline `sasl.jaas.config` in `admin-client.properties`.
+            .with_value(
+                &KAFKA_OPTS,
+                format!("-Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}"),
+            );
     }
 
     // This allows to override explicit env vars set in this function.
-    cb.add_env_vars(env);
+    cb.add_env_vars(local_env.merge(env));
 
     cb.build()
 }
@@ -955,6 +958,59 @@ mod tests {
             "the override must replace the operator-set value, not duplicate it"
         );
         assert_eq!(containerdebug[0].value.as_deref(), Some("/custom/log/dir"));
+    }
+
+    /// A [`ResolvedProductImage`] good enough for tests that only care about the container
+    /// spec produced from it, not the actual image contents.
+    fn test_resolved_product_image() -> ResolvedProductImage {
+        ResolvedProductImage {
+            product_version: "3.9.2".to_string(),
+            app_version_label_value: "3.9.2-stackable0.0.0-dev"
+                .parse()
+                .expect("valid label value"),
+            image: "oci.stackable.tech/sdp/kafka:3.9.2-stackable0.0.0-dev".to_string(),
+            image_pull_policy: "Always".to_string(),
+            pull_secrets: None,
+        }
+    }
+
+    /// The `quorum-manager` sidecar sets `KAFKA_HEAP_OPTS` unconditionally, and
+    /// `KRB5_CONFIG`/`KAFKA_OPTS` when Kerberos is enabled. All three must still be
+    /// overridable by the caller's `env` (in practice, the rolegroup's `envOverrides`), the
+    /// same way [`env_overrides_override_operator_set_env_vars`] proves it for the `kafka`
+    /// container's env.
+    #[test]
+    fn quorum_manager_container_env_can_be_overridden() {
+        let resolved_product_image = test_resolved_product_image();
+        let kafka_security = crate::controller::build::security::tests::kerberos();
+        assert!(
+            kafka_security.has_kerberos_enabled(),
+            "sanity check failed: the fixture must have Kerberos enabled so that KRB5_CONFIG \
+             and KAFKA_OPTS are set in the first place"
+        );
+
+        let overrides = EnvVarSet::new()
+            .with_value(&KAFKA_HEAP_OPTS, "-Xmx999M")
+            .with_value(&KRB5_CONFIG, "/custom/krb5.conf")
+            .with_value(&KAFKA_OPTS, "-Doverridden=true");
+
+        let container =
+            build_quorum_manager_container(&resolved_product_image, &kafka_security, overrides);
+        let env = container.env.expect("the sidecar has env vars");
+
+        for (name, expected_value) in [
+            ("KAFKA_HEAP_OPTS", "-Xmx999M"),
+            ("KRB5_CONFIG", "/custom/krb5.conf"),
+            ("KAFKA_OPTS", "-Doverridden=true"),
+        ] {
+            let matching: Vec<_> = env.iter().filter(|env_var| env_var.name == name).collect();
+            assert_eq!(
+                matching.len(),
+                1,
+                "the override must replace the operator-set {name}, not duplicate it"
+            );
+            assert_eq!(matching[0].value.as_deref(), Some(expected_value));
+        }
     }
 
     /// A minimal KRaft cluster with one controller role group, resolved through the real
