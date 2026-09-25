@@ -24,7 +24,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::security::ValidatedKafkaSecurity,
+    controller::{build::command::export_kerberos_realm_command, security::ValidatedKafkaSecurity},
     crd::{
         CONTROLLER_POD_FQDN_TEMPLATE, LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME,
         STACKABLE_LISTENER_BROKER_DIR,
@@ -120,7 +120,7 @@ pub fn kcat_prober_container_commands(security: &ValidatedKafkaSecurity) -> Vec<
         let mut bash_args = vec![];
         bash_args.push(format!(
             "{};",
-            security.kerberos_realm().unwrap_or_default()
+            export_kerberos_realm_command(security).unwrap_or_default()
         ));
         bash_args.push(
             format!(

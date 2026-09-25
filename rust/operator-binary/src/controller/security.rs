@@ -10,9 +10,7 @@ use stackable_operator::{
     v2::types::{common::Port, kubernetes::SecretClassName},
 };
 
-use crate::crd::{
-    STACKABLE_KERBEROS_KRB5_PATH, authentication::ResolvedAuthenticationClasses, v1alpha1,
-};
+use crate::crd::{authentication::ResolvedAuthenticationClasses, v1alpha1};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -111,13 +109,6 @@ impl ValidatedKafkaSecurity {
 
     pub fn has_kerberos_enabled(&self) -> bool {
         self.kerberos_secret_class().is_some()
-    }
-
-    pub fn kerberos_realm(&self) -> Option<String> {
-        self.kerberos_secret_class().map(|_| format!(
-        "KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH} 2>/dev/null) && export KERBEROS_REALM || true"
-    )
-        )
     }
 
     /// Retrieve the optional OPA TLS `SecretClass`.

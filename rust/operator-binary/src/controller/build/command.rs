@@ -16,9 +16,17 @@ use crate::{
     controller::{build::security::copy_opa_tls_cert_command, security::ValidatedKafkaSecurity},
     crd::{
         BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, METRICS_PORT, STACKABLE_CONFIG_DIR,
-        STACKABLE_LOG_CONFIG_DIR, role::KafkaRole,
+        STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LOG_CONFIG_DIR, role::KafkaRole,
     },
 };
+
+/// Shell snippet exporting `$KERBEROS_REALM`, extracted from the pod's `krb5.conf`, when
+/// Kerberos is enabled. Empty when it is not.
+pub fn export_kerberos_realm_command(security: &ValidatedKafkaSecurity) -> Option<String> {
+    security.kerberos_secret_class().map(|_| format!(
+        "KERBEROS_REALM=$(grep -oP 'default_realm = \\K.*' {STACKABLE_KERBEROS_KRB5_PATH} 2>/dev/null) && export KERBEROS_REALM || true"
+    ))
+}
 
 /// The JVM options selecting the Kafka log4j/log4j2 config file. Kafka 3.x uses log4j,
 /// Kafka 4.0 and higher use log4j2.
@@ -64,7 +72,7 @@ pub fn broker_kafka_container_commands(
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
-        set_realm_env = kafka_security.kerberos_realm().unwrap_or_default(),
+        set_realm_env = export_kerberos_realm_command(kafka_security).unwrap_or_default(),
         import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
         broker_start_command = broker_start_command(kraft_mode),
     }
@@ -171,7 +179,7 @@ pub fn controller_kafka_container_command(
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         // Mirrors `broker_kafka_container_commands`: empty when Kerberos is disabled.
-        set_realm_env = kafka_security.kerberos_realm().unwrap_or_default(),
+        set_realm_env = export_kerberos_realm_command(kafka_security).unwrap_or_default(),
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
         config_dir = STACKABLE_CONFIG_DIR,
@@ -278,7 +286,7 @@ pub fn quorum_manager_container_command(security: &ValidatedKafkaSecurity) -> St
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
         extract_bootstrap_servers = extract_bootstrap_servers_command(),
-        set_realm_env = security.kerberos_realm().unwrap_or_default(),
+        set_realm_env = export_kerberos_realm_command(security).unwrap_or_default(),
         config_dir = STACKABLE_CONFIG_DIR,
         controller_properties_file = ConfigFileName::ControllerProperties,
         admin_client_source = ADMIN_CLIENT_PROPERTIES_SOURCE_PATH,
