@@ -39,13 +39,25 @@ use stackable_operator::{
 };
 use strum::{Display, EnumIter, EnumString};
 
-use crate::crd::{
-    authorization::KafkaAuthorization,
-    role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
-    tls::KafkaTls,
+use crate::{
+    crd::{
+        authorization::KafkaAuthorization,
+        role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
+        tls::KafkaTls,
+    },
+    framework::commons::platform_access::tls::TlsClientCredential,
 };
 
 pub const CONTAINER_IMAGE_BASE_NAME: &str = "kafka";
+pub const AGENT_IMAGE_BASE_NAME: &str = "kafka-agent";
+
+/// The agent image of the same release as the operator.
+pub fn default_agent_image(image_repository: &str) -> String {
+    format!(
+        "{image_repository}/{AGENT_IMAGE_BASE_NAME}:{}",
+        crate::built_info::PKG_VERSION
+    )
+}
 pub const APP_NAME: &str = "kafka";
 pub const KAFKA_OPERATOR_NAME: &str = "kafka.stackable.tech";
 pub const FIELD_MANAGER: &str = "kafka-operator";
@@ -109,6 +121,26 @@ pub type ControllerRole = Role<
     JavaCommonConfig,
 >;
 
+/// Access of the Stackable Data Platform to this Kafka cluster, used by an agent to manage resources
+/// like `KafkaTopic`s. The credential must be authorized in Kafka by the user.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KafkaPlatformAccess {
+    /// Whether the operator deploys the agent. False by default.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// The credential the agent authenticates to Kafka with.
+    pub authentication: KafkaPlatformAccessAuthentication,
+}
+
+/// How the agent authenticates to Kafka.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum KafkaPlatformAccessAuthentication {
+    Tls(TlsClientCredential),
+}
+
 #[versioned(
     version(name = "v1alpha1"),
     crates(
@@ -148,6 +180,10 @@ pub mod versioned {
         /// The settings in the `clusterConfig` are cluster wide settings that do not need to be configurable at role or role group level.
         #[serde(default)]
         pub cluster_config: v1alpha1::KafkaClusterConfig,
+
+        /// Access of the Stackable Data Platform to this cluster.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub platform_access: Option<KafkaPlatformAccess>,
 
         // no doc - docs in ClusterOperation struct.
         #[serde(default)]

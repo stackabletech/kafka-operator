@@ -38,23 +38,21 @@ rec {
   # "public" attributes that we attempt to keep stable with new versions of crate2nix.
   #
 
-  rootCrate = rec {
-    packageId = "stackable-kafka-operator";
 
-    # Use this attribute to refer to the derivation building your root crate package.
-    # You can override the features with rootCrate.build.override { features = [ "default" "feature1" ... ]; }.
-    build = internal.buildRustCrateWithFeatures {
-      inherit packageId;
-    };
-
-    # Debug support which might change between releases.
-    # File a bug if you depend on any for non-debug work!
-    debug = internal.debugCrate { inherit packageId; };
-  };
   # Refer your crate build derivation by name here.
   # You can override the features with
   # workspaceMembers."${crateName}".build.override { features = [ "default" "feature1" ... ]; }.
   workspaceMembers = {
+    "stackable-kafka-agent" = rec {
+      packageId = "stackable-kafka-agent";
+      build = internal.buildRustCrateWithFeatures {
+        packageId = "stackable-kafka-agent";
+      };
+
+      # Debug support which might change between releases.
+      # File a bug if you depend on any for non-debug work!
+      debug = internal.debugCrate { inherit packageId; };
+    };
     "stackable-kafka-operator" = rec {
       packageId = "stackable-kafka-operator";
       build = internal.buildRustCrateWithFeatures {
@@ -10422,6 +10420,54 @@ rec {
           "rustls" = [ "dep:tokio-rustls" ];
         };
         resolvedDefaultFeatures = [ "default" "rustls" ];
+      };
+      "stackable-kafka-agent" = rec {
+        crateName = "stackable-kafka-agent";
+        version = "0.0.0-dev";
+        edition = "2024";
+        crateBin = [
+          {
+            name = "stackable-kafka-agent";
+            path = "src/main.rs";
+            requiredFeatures = [ ];
+          }
+        ];
+        src = lib.cleanSourceWith { filter = sourceFilter;  src = ./rust/agent-binary; };
+        authors = [
+          "Stackable GmbH <info@stackable.tech>"
+        ];
+        dependencies = [
+          {
+            name = "anyhow";
+            packageId = "anyhow";
+          }
+          {
+            name = "clap";
+            packageId = "clap";
+          }
+          {
+            name = "stackable-operator";
+            packageId = "stackable-operator";
+            features = [ "crds" "webhook" ];
+          }
+          {
+            name = "tokio";
+            packageId = "tokio";
+            features = [ "full" ];
+          }
+          {
+            name = "tracing";
+            packageId = "tracing";
+          }
+        ];
+        buildDependencies = [
+          {
+            name = "built";
+            packageId = "built";
+            features = [ "chrono" "git2" ];
+          }
+        ];
+
       };
       "stackable-kafka-operator" = rec {
         crateName = "stackable-kafka-operator";

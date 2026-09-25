@@ -62,8 +62,22 @@ jobs:
             - '**/Cargo.toml'
             - 'Cargo.lock'
             - '**/*.rs'
+            - 'nix/meta.json'
+
+      # Operators that ship an agent (see `agent` in nix/meta.json) also build and publish its image.
+      - name: Determine Container Images
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGES=$(jq -c --arg operator "$OPERATOR_NAME" '
+            [{component: "operator", name: $operator, "container-file": "docker/Dockerfile"}]
+            + if .agent then [{component: "agent", name: .agent.name, "container-file": "docker/Dockerfile.agent"}] else [] end
+          ' nix/meta.json)
+          echo "IMAGES=$IMAGES" | tee -a "$GITHUB_OUTPUT"
     outputs:
       detected: ${{ steps.check.outputs.detected }}
+      images: ${{ steps.images.outputs.IMAGES }}
 
   helm-lint:
     name: Lint Helm Chart
@@ -131,7 +145,7 @@ jobs:
         run: cargo udeps --workspace --all-targets
 
   build-container-image:
-    name: Build/Publish ${{ matrix.runner.arch }} Image
+    name: Build/Publish ${{ matrix.image.component }} ${{ matrix.runner.arch }} Image
     if: |
       github.repository_owner == 'stackabletech'
       && (github.event_name != 'merge_group')
@@ -146,6 +160,7 @@ jobs:
         runner:
           - { name: "ubuntu-latest", arch: "amd64" }
           - { name: "ubicloud-standard-8-arm", arch: "arm64" }
+        image: ${{ fromJSON(needs.detect-changes.outputs.images) }}
     runs-on: ${{ matrix.runner.name }}
     outputs:
       operator-version: ${{ steps.version.outputs.OPERATOR_VERSION }}
@@ -208,10 +223,10 @@ jobs:
         id: build
         uses: stackabletech/actions/build-container-image@34a64229959b15db6c5f307db8809805ba7edc55 # v0.18.3
         with:
-          image-name: ${{ env.OPERATOR_NAME }}
+          image-name: ${{ matrix.image.name }}
           image-index-manifest-tag: ${{ steps.version.outputs.OPERATOR_VERSION }}
           build-arguments: VERSION=${{ steps.version.outputs.OPERATOR_VERSION }}
-          container-file: docker/Dockerfile
+          container-file: ${{ matrix.image.container-file }}
 
       - name: Publish Container Image to oci.stackable.tech
         if: ${{ !github.event.pull_request.head.repo.fork }}
@@ -220,7 +235,7 @@ jobs:
           image-registry-uri: oci.stackable.tech
           image-registry-username: robot$sdp+github-action-build
           image-registry-password: ${{ secrets.HARBOR_ROBOT_SDP_GITHUB_ACTION_BUILD_SECRET }}
-          image-repository: sdp/${{ env.OPERATOR_NAME }}
+          image-repository: sdp/${{ matrix.image.name }}
           canonical-image-manifest-tag: ${{ steps.build.outputs.image-manifest-tag }}
           canonical-source-image-uri: ${{ steps.build.outputs.image-manifest-uri }}
 
@@ -231,12 +246,12 @@ jobs:
           image-registry-uri: quay.io
           image-registry-username: stackable+robot_sdp_github_action_build
           image-registry-password: ${{ secrets.QUAY_ROBOT_SDP_GITHUB_ACTION_BUILD_SECRET }}
-          image-repository: stackable/sdp/${{ env.OPERATOR_NAME }}
+          image-repository: stackable/sdp/${{ matrix.image.name }}
           canonical-image-manifest-tag: ${{ steps.build.outputs.image-manifest-tag }}
           canonical-source-image-uri: ${{ steps.build.outputs.image-manifest-uri }}
 
   publish-index-manifest:
-    name: Publish/Sign ${{ needs.build-container-image.outputs.operator-version }} Index
+    name: Publish/Sign ${{ matrix.image.component }} ${{ needs.build-container-image.outputs.operator-version }} Index
     if: |
       github.repository_owner == 'stackabletech'
       && (github.event_name != 'merge_group')
@@ -248,6 +263,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.detect-changes.outputs.images) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -261,7 +280,7 @@ jobs:
           image-registry-uri: oci.stackable.tech
           image-registry-username: robot$sdp+github-action-build
           image-registry-password: ${{ secrets.HARBOR_ROBOT_SDP_GITHUB_ACTION_BUILD_SECRET }}
-          image-repository: sdp/${{ env.OPERATOR_NAME }}
+          image-repository: sdp/${{ matrix.image.name }}
           canonical-image-index-manifest-tag: ${{ needs.build-container-image.outputs.operator-version }}
 
       - name: Publish and Sign Image Index to quay.io
@@ -270,7 +289,7 @@ jobs:
           image-registry-uri: quay.io
           image-registry-username: stackable+robot_sdp_github_action_build
           image-registry-password: ${{ secrets.QUAY_ROBOT_SDP_GITHUB_ACTION_BUILD_SECRET }}
-          image-repository: stackable/sdp/${{ env.OPERATOR_NAME }}
+          image-repository: stackable/sdp/${{ matrix.image.name }}
           canonical-image-index-manifest-tag: ${{ needs.build-container-image.outputs.operator-version }}
 
   publish-helm-chart:
@@ -320,7 +339,7 @@ jobs:
           helm-version: v3.17.4 # This is currently the latest version which supports pushing to quay.io
 
   openshift-preflight-check:
-    name: Run OpenShift Preflight Check for ${{ needs.build-container-image.outputs.operator-version }}-${{ matrix.arch }}
+    name: Run OpenShift Preflight Check for ${{ matrix.image.component }} ${{ needs.build-container-image.outputs.operator-version }}-${{ matrix.arch }}
     if: |
       github.repository_owner == 'stackabletech'
       && (github.event_name != 'merge_group')
@@ -336,18 +355,19 @@ jobs:
         arch:
           - amd64
           - arm64
+        image: ${{ fromJSON(needs.detect-changes.outputs.images) }}
     runs-on: ubuntu-latest
     steps:
       - name: Run OpenShift Preflight Check for oci.stackable.tech
         uses: stackabletech/actions/run-openshift-preflight@34a64229959b15db6c5f307db8809805ba7edc55 # v0.18.3
         with:
-          image-index-uri: oci.stackable.tech/sdp/${{ env.OPERATOR_NAME }}:${{ needs.build-container-image.outputs.operator-version }}
+          image-index-uri: oci.stackable.tech/sdp/${{ matrix.image.name }}:${{ needs.build-container-image.outputs.operator-version }}
           image-architecture: ${{ matrix.arch }}
 
       - name: Run OpenShift Preflight Check for quay.io
         uses: stackabletech/actions/run-openshift-preflight@34a64229959b15db6c5f307db8809805ba7edc55 # v0.18.3
         with:
-          image-index-uri: quay.io/stackable/sdp/${{ env.OPERATOR_NAME }}:${{ needs.build-container-image.outputs.operator-version }}
+          image-index-uri: quay.io/stackable/sdp/${{ matrix.image.name }}:${{ needs.build-container-image.outputs.operator-version }}
           image-architecture: ${{ matrix.arch }}
 
   # This job is a required check in GitHub Settings for this repository.

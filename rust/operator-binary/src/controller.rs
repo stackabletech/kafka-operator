@@ -22,7 +22,7 @@ use stackable_operator::{
     constant,
     crd::listener,
     k8s_openapi::api::{
-        apps::v1::StatefulSet,
+        apps::v1::{Deployment, StatefulSet},
         core::v1::{ConfigMap, Service, ServiceAccount},
         policy::v1::PodDisruptionBudget,
         rbac::v1::RoleBinding,
@@ -65,7 +65,8 @@ use crate::{
         update_status::update_status,
     },
     crd::{
-        APP_NAME, KAFKA_OPERATOR_NAME, KafkaPodDescriptor, MetadataManager,
+        APP_NAME, KAFKA_OPERATOR_NAME, KafkaPlatformAccessAuthentication, KafkaPodDescriptor,
+        MetadataManager,
         authorization::KafkaAuthorizationConfig,
         role::{AnyConfig, AnyConfigOverrides, KafkaRole},
         v1alpha1,
@@ -112,6 +113,7 @@ pub struct Applied;
 /// bootstrap [`Listener`](listener)s.
 pub struct KubernetesResources<T> {
     pub stateful_sets: Vec<StatefulSet>,
+    pub deployments: Vec<Deployment>,
     pub services: Vec<Service>,
     pub listeners: Vec<listener::v1alpha1::Listener>,
     pub config_maps: Vec<ConfigMap>,
@@ -151,6 +153,7 @@ pub struct ValidatedCluster {
     /// address-less around the first reconcile runs; the listener-operator populates the ingress
     /// addresses and the `Listener` watch triggers a new run once it does.
     pub bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
+    pub agent_config: Option<ValidatedAgentConfig>,
 }
 
 impl ValidatedCluster {
@@ -165,6 +168,7 @@ impl ValidatedCluster {
         role_configs: BTreeMap<KafkaRole, ValidatedRoleConfig>,
         role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
         bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
+        agent_config: Option<ValidatedAgentConfig>,
     ) -> Self {
         // `app_version_label_value` is constructed to be a valid label value, so it is also a
         // valid `ProductVersion`.
@@ -187,6 +191,7 @@ impl ValidatedCluster {
             role_configs,
             role_group_configs,
             bootstrap_listeners,
+            agent_config,
         }
     }
 
@@ -339,6 +344,12 @@ impl ValidatedClusterConfig {
     }
 }
 
+/// The configuration of the agent deployed with the cluster.
+pub struct ValidatedAgentConfig {
+    pub image: String,
+    pub authentication: KafkaPlatformAccessAuthentication,
+}
+
 /// Per-role configuration extracted during validation.
 ///
 /// Resolved from the raw [`v1alpha1::KafkaCluster`] spec during validation so the reconcile loop
@@ -397,6 +408,7 @@ pub type ValidatedRoleGroupConfig = stackable_operator::v2::role_utils::RoleGrou
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
     pub operator_environment: OperatorEnvironmentOptions,
+    pub agent_image: String,
 }
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
@@ -466,9 +478,13 @@ pub async fn reconcile_kafka(
         .context(DereferenceSnafu)?;
 
     // validate (no client required)
-    let validated_cluster =
-        validate::validate(kafka, dereferenced_objects, &ctx.operator_environment)
-            .context(ValidateClusterSnafu)?;
+    let validated_cluster = validate::validate(
+        kafka,
+        dereferenced_objects,
+        &ctx.operator_environment,
+        &ctx.agent_image,
+    )
+    .context(ValidateClusterSnafu)?;
 
     tracing::debug!(
         kerberos_enabled = validated_cluster.cluster_config.kafka_security.has_kerberos_enabled(),
@@ -628,6 +644,7 @@ pub(crate) mod test_support {
                 bootstrap_listeners: Vec::new(),
             },
             &operator_environment(),
+            &crate::crd::default_agent_image(&operator_environment().image_repository),
         )
     }
 }
@@ -780,6 +797,7 @@ spec: {}
                         operator_service_name: "kafka-operator".to_owned(),
                         image_repository: "oci.stackable.tech/sdp".to_owned(),
                     },
+                    agent_image: crate::crd::default_agent_image("oci.stackable.tech/sdp"),
                 });
 
                 reconcile_kafka(Arc::new(kafka), ctx).await

@@ -16,6 +16,7 @@ spec:
     metadata:
       annotations:
         internal.stackable.tech/image: {{ include "kafka-operator.image" . }}
+        internal.stackable.tech/agent-image: {{ include "kafka-operator.agentImage" . }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -69,6 +70,13 @@ spec:
             # The product image repository, like "oci.stackable.tech/sdp".
             - name: IMAGE_REPOSITORY
               value: {{ .Values.image.productRepository | default .Values.image.repository }}
+
+            # The image of the agent the operator deploys alongside a cluster.
+            - name: AGENT_IMAGE
+              # Tilt can use annotations as image paths, but not env variables
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['internal.stackable.tech/agent-image']
 
             # Operators need to know the node name they are running on, to e.g. discover the
             # Kubernetes domain name from the kubelet API.

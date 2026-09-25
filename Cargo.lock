@@ -3174,6 +3174,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "stackable-kafka-agent"
+version = "0.0.0-dev"
+dependencies = [
+ "anyhow",
+ "built",
+ "clap",
+ "stackable-operator",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "stackable-kafka-operator"
 version = "0.0.0-dev"
 dependencies = [
