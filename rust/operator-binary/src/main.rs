@@ -33,6 +33,7 @@ use stackable_operator::{
     shared::yaml::SerializeOptions,
     telemetry::Tracing,
     utils::signal::{self, SignalWatcher},
+    webhook::health::HealthCheckRegistry,
 };
 
 use crate::{
@@ -117,9 +118,16 @@ async fn main() -> anyhow::Result<()> {
             )
             .await?;
 
+            let mut readiness_checks = HealthCheckRegistry::new();
+            let kafka_cluster_check = readiness_checks.register(format!(
+                "CRD {crd} installed",
+                crd = v1alpha1::KafkaCluster::crd_name()
+            ));
+
             let webhook_server = create_webhook_server(
                 &operator_environment,
                 maintenance.disable_crd_maintenance,
+                readiness_checks,
                 client.as_kube_client(),
             )
             .await?;
@@ -211,7 +219,8 @@ async fn main() -> anyhow::Result<()> {
                 .map(anyhow::Ok);
 
             let delayed_kafka_controller = async {
-                signal::crd_established(&client, v1alpha1::KafkaCluster::crd_name(), None).await?;
+                signal::crd_established(&client, v1alpha1::KafkaCluster::crd_name()).await?;
+                kafka_cluster_check.mark_passed();
                 kafka_controller.await
             };
 
