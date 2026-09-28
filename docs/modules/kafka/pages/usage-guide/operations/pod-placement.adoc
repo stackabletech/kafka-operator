@@ -20,3 +20,13 @@ affinity:
 ----
 
 In the example above `cluster-name` is the name of the Kafka custom resource that owns this Pod.
+
+When OPA authorization is configured, Kafka brokers also prefer to run on the same node as the
+OPA server Pods. This preferred Pod affinity has weight `50` and uses
+`kubernetes.io/hostname` as its topology key. It matches the OPA server Pods by
+`app.kubernetes.io/name=opa`, `app.kubernetes.io/instance=<OPA cluster name>`, and
+`app.kubernetes.io/component=server`.
+The configured OPA discovery ConfigMap is assumed to have the same name as the OpaCluster and
+to be in the KafkaCluster's namespace.
+This is a scheduling preference, not a guarantee of co-location, and it does not change how
+Kafka brokers route requests to the OPA service.

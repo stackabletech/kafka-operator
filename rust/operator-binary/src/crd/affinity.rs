@@ -1,13 +1,31 @@
 use stackable_operator::{
-    commons::affinity::{StackableAffinityFragment, affinity_between_role_pods},
-    k8s_openapi::api::core::v1::PodAntiAffinity,
+    commons::{
+        affinity::{StackableAffinityFragment, affinity_between_role_pods},
+        opa::OpaConfig,
+    },
+    k8s_openapi::api::core::v1::{PodAffinity, PodAntiAffinity},
 };
 
 use crate::crd::APP_NAME;
 
-pub fn get_affinity(cluster_name: &str, role: &str) -> StackableAffinityFragment {
+pub fn get_affinity(
+    cluster_name: &str,
+    role: &str,
+    opa_config: Option<&OpaConfig>,
+) -> StackableAffinityFragment {
+    // Only brokers use the OPA authorizer. The discovery ConfigMap has the same name as the
+    // OpaCluster, and Kafka resolves it in its own namespace.
+    let pod_affinity = opa_config
+        .filter(|_| role == "broker")
+        .map(|opa_config| PodAffinity {
+            preferred_during_scheduling_ignored_during_execution: Some(vec![
+                affinity_between_role_pods("opa", &opa_config.config_map_name, "server", 50),
+            ]),
+            required_during_scheduling_ignored_during_execution: None,
+        });
+
     StackableAffinityFragment {
-        pod_affinity: None,
+        pod_affinity,
         pod_anti_affinity: Some(PodAntiAffinity {
             preferred_during_scheduling_ignored_during_execution: Some(vec![
                 affinity_between_role_pods(APP_NAME, cluster_name, role, 70),
@@ -27,7 +45,9 @@ mod tests {
     use stackable_operator::{
         commons::affinity::StackableAffinity,
         k8s_openapi::{
-            api::core::v1::{PodAffinityTerm, PodAntiAffinity, WeightedPodAffinityTerm},
+            api::core::v1::{
+                PodAffinity, PodAffinityTerm, PodAntiAffinity, WeightedPodAffinityTerm,
+            },
             apimachinery::pkg::apis::meta::v1::LabelSelector,
         },
     };
@@ -38,8 +58,9 @@ mod tests {
     };
 
     #[rstest]
-    #[case(KafkaRole::Broker)]
-    fn test_affinity_defaults(#[case] role: KafkaRole) {
+    #[case(false)]
+    #[case(true)]
+    fn test_affinity_defaults(#[case] with_opa: bool) {
         let input = r#"
         apiVersion: kafka.stackable.tech/v1alpha1
         kind: KafkaCluster
@@ -58,11 +79,19 @@ mod tests {
                 replicas: 1
         "#;
 
-        let kafka = minimal_kafka(input);
+        let input = if with_opa {
+            input.replace(
+                "            zookeeperConfigMapName: xyz",
+                "            zookeeperConfigMapName: xyz\n            authorization:\n              opa:\n                configMapName: test-opa",
+            )
+        } else {
+            input.to_string()
+        };
+        let kafka = minimal_kafka(&input);
         let validated = validated_cluster(&kafka);
         let merged_config = validated
             .role_group_configs
-            .get(&role)
+            .get(&KafkaRole::Broker)
             .and_then(|groups| groups.get(&"default".parse().unwrap()))
             .map(|rg| &rg.config.config)
             .expect("role group should exist");
@@ -70,7 +99,32 @@ mod tests {
         assert_eq!(
             merged_config.affinity,
             StackableAffinity {
-                pod_affinity: None,
+                pod_affinity: with_opa.then_some(PodAffinity {
+                    preferred_during_scheduling_ignored_during_execution: Some(vec![
+                        WeightedPodAffinityTerm {
+                            pod_affinity_term: PodAffinityTerm {
+                                label_selector: Some(LabelSelector {
+                                    match_expressions: None,
+                                    match_labels: Some(BTreeMap::from([
+                                        ("app.kubernetes.io/name".to_string(), "opa".to_string()),
+                                        (
+                                            "app.kubernetes.io/instance".to_string(),
+                                            "test-opa".to_string(),
+                                        ),
+                                        (
+                                            "app.kubernetes.io/component".to_string(),
+                                            "server".to_string(),
+                                        ),
+                                    ])),
+                                }),
+                                topology_key: "kubernetes.io/hostname".to_string(),
+                                ..PodAffinityTerm::default()
+                            },
+                            weight: 50,
+                        },
+                    ]),
+                    required_during_scheduling_ignored_during_execution: None,
+                }),
                 pod_anti_affinity: Some(PodAntiAffinity {
                     preferred_during_scheduling_ignored_during_execution: Some(vec![
                         WeightedPodAffinityTerm {
@@ -100,6 +154,15 @@ mod tests {
                 node_affinity: None,
                 node_selector: None,
             }
+        );
+    }
+
+    #[test]
+    fn controller_has_no_opa_affinity() {
+        let opa_config = serde_yaml::from_str("configMapName: test-opa").unwrap();
+        assert_eq!(
+            super::get_affinity("simple-kafka", "controller", Some(&opa_config)).pod_affinity,
+            None
         );
     }
 }

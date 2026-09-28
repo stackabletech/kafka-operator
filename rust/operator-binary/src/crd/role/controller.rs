@@ -80,7 +80,7 @@ pub struct ControllerConfig {
 impl ControllerConfig {
     pub fn default_config(cluster_name: &str, role: &str) -> ControllerConfigFragment {
         ControllerConfigFragment {
-            common_config: CommonConfig::default_config(cluster_name, role),
+            common_config: CommonConfig::default_config(cluster_name, role, None),
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {
