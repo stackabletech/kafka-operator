@@ -119,8 +119,8 @@ async fn main() -> anyhow::Result<()> {
             .await?;
 
             let mut readiness_checks = HealthCheckRegistry::new();
-            let kafka_cluster_check = readiness_checks.register(format!(
-                "CRD {crd} installed",
+            let kafka_cluster_crd_check = readiness_checks.register(format!(
+                "CRD {crd} established",
                 crd = v1alpha1::KafkaCluster::crd_name()
             ));
 
@@ -220,7 +220,7 @@ async fn main() -> anyhow::Result<()> {
 
             let delayed_kafka_controller = async {
                 signal::crd_established(&client, v1alpha1::KafkaCluster::crd_name()).await?;
-                kafka_cluster_check.mark_passed();
+                kafka_cluster_crd_check.mark_passed();
                 kafka_controller.await
             };
 
