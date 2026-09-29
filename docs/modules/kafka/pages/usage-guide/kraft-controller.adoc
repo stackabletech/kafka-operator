@@ -167,8 +167,8 @@ The example cluster will be kept minimal without any additional configuration.
 
 We'll use Kafka version `3.9.2` for this purpose. This is because this is the last version from the 3.x Kafka series that runs on ZooKeeper mode and is supported by the SDP.
 
-We'll also assign broker ids manually from the beginning to simplify this guide. In a real-workd scenario, you do not have this option at this step because your cluster is already running.
-In a real world-scenario you'll have to collect these ids and configure manual assignment at the second step of the migration.
+We'll also assign broker ids manually from the beginning to simplify this guide. In a real-world scenario, you do not have this option at cluster creation because your cluster is already running.
+Instead, you'll have to collect these ids from the running cluster and configure manual assignment as part of step 1 below.
 
 We start by creating a dedicated namespace to work in and deploy the Kafka cluster including ZooKeeper and credentials.
 
