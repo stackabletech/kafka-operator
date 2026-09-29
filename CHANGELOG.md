@@ -57,6 +57,9 @@ All notable changes to this project will be documented in this file.
 - A KRaft cluster without a `controllers` role is now rejected during validation.
   Previously, the operator would create a cluster consisting only of `brokers` which would never
   become healthy ([#1010]).
+- `spec.clusterConfig.metadataManager` now uses PascalCase values (`ZooKeeper` and `KRaft`) as per
+  Kubernetes conventions. The lowercase values `zookeeper` and `kraft` are deprecated, but are still
+  accepted for backwards compatibility and may be removed in a future release ([#1034]).
 
 ### Removed
 
@@ -79,6 +82,7 @@ All notable changes to this project will be documented in this file.
 [#1021]: https://github.com/stackabletech/kafka-operator/pull/1021
 [#1022]: https://github.com/stackabletech/kafka-operator/pull/1022
 [#1024]: https://github.com/stackabletech/kafka-operator/pull/1024
+[#1034]: https://github.com/stackabletech/kafka-operator/pull/1034
 
 ## [26.7.0] - 2026-07-21
 
