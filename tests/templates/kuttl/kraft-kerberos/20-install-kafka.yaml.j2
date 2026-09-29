@@ -29,7 +29,7 @@ commands:
           pullPolicy: IfNotPresent
         clusterConfig:
           # KRaft: metadata is managed by the controllers role, no ZooKeeper involved.
-          metadataManager: kraft
+          metadataManager: KRaft
           authentication:
             - authenticationClass: kerberos-auth-$NAMESPACE
           tls:

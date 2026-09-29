@@ -57,6 +57,10 @@ All notable changes to this project will be documented in this file.
 - A KRaft cluster without a `controllers` role is now rejected during validation.
   Previously, the operator would create a cluster consisting only of `brokers` which would never
   become healthy ([#1010]).
+- `spec.clusterConfig.metadataManager` now uses PascalCase values (`ZooKeeper` and `KRaft`) as per
+  Kubernetes conventions. The lowercase values `zookeeper` and `kraft` are deprecated, but are still
+  accepted for backwards compatibility and may be removed in a future release ([#TODO]).
+- TODO: Add to deprecation board
 
 ### Removed
 

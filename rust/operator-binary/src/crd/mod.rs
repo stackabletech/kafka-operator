@@ -194,16 +194,17 @@ pub mod versioned {
         ///
         /// IMPORTANT: This property will be removed as soon as Kafka 3.x support is dropped.
         ///
-        /// Possible values are `zookeeper` and `kraft`.
+        /// Possible values are `ZooKeeper` and `KRaft`. The lowercase values `zookeeper` and `kraft`
+        /// are deprecated, but still accepted.
         ///
         /// If not set, defaults to:
         ///
-        /// - `zookeeper` for Kafka versions below `4.0.0`.
-        /// - `kraft` for Kafka versions `4.0.0` and higher.
+        /// - `ZooKeeper` for Kafka versions below `4.0.0`.
+        /// - `KRaft` for Kafka versions `4.0.0` and higher.
         ///
-        /// Using `zookeeper` for Kafka versions `4.0.0` and higher is not supported.
+        /// Using `ZooKeeper` for Kafka versions `4.0.0` and higher is not supported.
         ///
-        /// When set to `kraft`, the operator will perform the following actions:
+        /// When set to `KRaft`, the operator will perform the following actions:
         ///
         /// * Generate the Kafka cluster id.
         /// * Assign broker roles and configure controller quorum voters in the `broker.properties` files.
@@ -365,9 +366,15 @@ pub struct KafkaClusterStatus {
     Serialize,
     EnumString,
 )]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "PascalCase")]
+// schemars ignores `#[serde(alias)]` (https://github.com/GREsau/schemars/issues/338), so we need to
+// list the aliases in the schema manually. Otherwise the API server rejects them.
+#[schemars(extend("enum" = ["ZooKeeper", "KRaft", "zookeeper", "kraft"]))]
 pub enum MetadataManager {
+    // The lowercase aliases are deprecated and only kept for backwards compatibility.
+    #[serde(alias = "zookeeper")]
     ZooKeeper,
+    #[serde(alias = "kraft")]
     KRaft,
 }
 
@@ -669,7 +676,7 @@ mod tests {
                   reconciliationPaused: false
                   stopped: true
                 clusterConfig:
-                  metadataManager: kraft
+                  metadataManager: KRaft
                   authentication:
                     - authenticationClass: my-kerberos
                   authorization:
