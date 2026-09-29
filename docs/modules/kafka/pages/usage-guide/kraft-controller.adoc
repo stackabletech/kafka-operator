@@ -114,7 +114,7 @@ KRaft mode requires major configuration changes compared to ZooKeeper mode:
   Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
   Brokers always format with `--no-initial-controllers` too; they are never voters.
 * `controller.quorum.bootstrap.servers` points at each controller role group's own headless Service DNS name, not
-  individual pod addresses -- unless Kerberos is enabled. See below for details related to Kerberos.
+  individual pod addresses, unless Kerberos is enabled. See below for details related to Kerberos.
 
 == Kerberos
 
