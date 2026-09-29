@@ -46,7 +46,7 @@ NOTE: Using `spec.controllers` is mutually exclusive with `spec.clusterConfig.zo
 Each Pod's https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[resource requirements]
 are the sum of its containers. Controller Pods run an additional `quorum-manager` sidecar
 (see <<_internal_operator_details, Internal operator details>>) whose resources are fixed and *not* configurable through
-`spec.controllers.config.resources` -- only the `kafka` container is.
+`spec.controllers.config.resources`. Only the `kafka` container is eligible.
 
 [cols="2,3,2,2,2,2", options="header"]
 |===
