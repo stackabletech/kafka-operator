@@ -16,7 +16,7 @@ WARNING: The Stackable Operator for Apache Kafka currently does not support auto
 
 == Configuration
 
-Enable KRaft mode by adding `spec.clusterConfig.metadataManager: kraft` and a `Controller` xref:concepts:roles-and-role-groups.adoc[role] to your cluster manifest as in the example below:
+Enable KRaft mode by adding `spec.clusterConfig.metadataManager: KRaft` and a `Controller` xref:concepts:roles-and-role-groups.adoc[role] to your cluster manifest as in the example below:
 
 [source,yaml]
 ----
