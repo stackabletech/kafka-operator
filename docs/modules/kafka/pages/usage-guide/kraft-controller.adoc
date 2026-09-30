@@ -1,7 +1,5 @@
-= KRaft mode (experimental)
+= KRaft mode
 :description: Apache Kafka KRaft mode with the Stackable Operator for Apache Kafka
-
-WARNING: The Kafka KRaft mode is currently experimental, and subject to change.
 
 Apache Kafka's KRaft mode replaces Apache ZooKeeper with Kafka’s own built-in consensus mechanism based on the Raft protocol.
 This simplifies Kafka’s architecture, reducing operational complexity by consolidating cluster metadata management into Kafka itself.
@@ -18,8 +16,7 @@ WARNING: The Stackable Operator for Apache Kafka currently does not support auto
 
 == Configuration
 
-The Stackable Kafka operator introduces a new xref:concepts:roles-and-role-groups.adoc[role] in the KafkaCluster CRD called KRaft `Controller`.
-Configuring the `Controller` will put Kafka into KRaft mode. Apache ZooKeeper will not be required anymore.
+Enable KRaft mode by adding `spec.clusterConfig.metadataManager: KRaft` and a `Controller` xref:concepts:roles-and-role-groups.adoc[role] to your cluster manifest as in the example below:
 
 [source,yaml]
 ----
@@ -29,7 +26,7 @@ metadata:
   name: kafka
 spec:
   clusterConfig:
-    metadataManager: kraft
+    metadataManager: KRaft
   image:
     productVersion: "3.9.2"
   brokers:
@@ -42,22 +39,39 @@ spec:
         replicas: 3
 ----
 
-NOTE: Using `spec.controllers` is mutually exclusive with `spec.clusterConfig.zookeeperConfigMapName`.
-
-=== Recommendations
-
-A minimal KRaft setup consisting of at least 3 Controllers has the following https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[resource requirements]:
-
-* `600m` CPU request
-* `3000m` CPU limit
-* `3000Mi` memory request and limit
-* `6Gi` persistent storage
-
-NOTE: The Controller replicas should sum up to an odd number for the Raft consensus.
+NOTE: Using `spec.controllers` is mutually exclusive with `spec.clusterConfig.zookeeperConfigMapName`. Configuring both would result in an error.
 
 === Resources
 
-Corresponding to the values above, the operator uses the following resource defaults:
+Each Pod's https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[resource requirements]
+are the sum of its containers. Controller Pods run an additional `quorum-manager` sidecar
+(see <<_internal_operator_details, Internal operator details>>) whose resources are fixed and *not* configurable through
+`spec.controllers.config.resources`. Only the `kafka` container is eligible.
+
+[cols="2,3,2,2,2,2", options="header"]
+|===
+| Role | Container | CPU request | CPU limit | Memory (request = limit) | Storage (`logDirs`)
+
+| Controller | `kafka` (configurable) | 250m | 1000m | 1Gi | 2Gi
+| Controller | `quorum-manager` (fixed) | 100m | 500m | 512Mi | --
+| Controller | *Pod total* | *350m* | *1500m* | *1.5Gi* | *2Gi*
+| Broker | `kafka` (configurable) | 250m | 1000m | 2Gi | 2Gi
+|===
+
+A minimal KRaft setup consists of 3 Controllers and 3 Brokers:
+
+[cols="2,2,2,2,2", options="header"]
+|===
+| | CPU request | CPU limit | Memory | Storage
+
+| 3 Controllers | 1050m | 4500m | 4.5Gi | 6Gi
+| 3 Brokers | 750m | 3000m | 6Gi | 6Gi
+| *Total* | *1800m* | *7500m* | *10.5Gi* | *12Gi*
+|===
+
+NOTE: The Controller replicas should sum up to an odd number for the Raft consensus.
+
+Corresponding to the `kafka` container values above, the operator uses the following resource defaults:
 
 [source,yaml]
 ----
@@ -72,15 +86,22 @@ controllers:
       storage:
         logDirs:
           capacity: 2Gi
+brokers:
+  config:
+    resources:
+      memory:
+        limit: 2Gi
+      cpu:
+        min: 250m
+        max: 1000m
+      storage:
+        logDirs:
+          capacity: 2Gi
 ----
-
-=== Overrides
-
-The configuration of overrides, JVM arguments etc. is similar to the Broker and documented on the xref:concepts:overrides.adoc[concepts page].
 
 == Internal operator details
 
-KRaft mode requires major configuration changes compared to ZooKeeper:
+KRaft mode requires major configuration changes compared to ZooKeeper mode:
 
 * `cluster-id`: This is set to the `metadata.name` of the KafkaCluster resource during initial formatting
 * `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
@@ -93,7 +114,7 @@ KRaft mode requires major configuration changes compared to ZooKeeper:
   Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
   Brokers always format with `--no-initial-controllers` too; they are never voters.
 * `controller.quorum.bootstrap.servers` points at each controller role group's own headless Service DNS name, not
-  individual pod addresses -- unless Kerberos is enabled. See below for details related to Kerberos.
+  individual pod addresses, unless Kerberos is enabled. See below for details related to Kerberos.
 
 == Kerberos
 
@@ -146,8 +167,8 @@ The example cluster will be kept minimal without any additional configuration.
 
 We'll use Kafka version `3.9.2` for this purpose. This is because this is the last version from the 3.x Kafka series that runs on ZooKeeper mode and is supported by the SDP.
 
-We'll also assign broker ids manually from the beginning to simplify this guide. In a real-workd scenario, you do not have this option at this step because your cluster is already running.
-In a real world-scenario you'll have to collect these ids and configure manual assignment at the second step of the migration.
+We'll also assign broker ids manually from the beginning to simplify this guide. In a real-world scenario, you do not have this option at cluster creation because your cluster is already running.
+Instead, you'll have to collect these ids from the running cluster and configure manual assignment as part of step 1 below.
 
 We start by creating a dedicated namespace to work in and deploy the Kafka cluster including ZooKeeper and credentials.
 
