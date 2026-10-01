@@ -1376,9 +1376,9 @@ rec {
       };
       "convert_case" = rec {
         crateName = "convert_case";
-        version = "0.11.0";
+        version = "0.12.0";
         edition = "2021";
-        sha256 = "0jfv1ajyr65bjlx533n5alfkfjdl8ks4zxfywdiz1jnj1qcz1yxg";
+        sha256 = "06zxk7w9jwlsrp4nvlalzckcpycy7f5wgj6zx99bym1lygqhkxqs";
         authors = [
           "rutrum <dave@rutrum.net>"
         ];
@@ -1389,25 +1389,6 @@ rec {
           }
         ];
 
-      };
-      "convert_case_extras" = rec {
-        crateName = "convert_case_extras";
-        version = "0.2.0";
-        edition = "2021";
-        sha256 = "1fyfc5vdblw15k8w7xahmif7bmslx3mdamvmg0brvapqzbq7172q";
-        authors = [
-          "rutrum <dave@rutrum.net>"
-        ];
-        dependencies = [
-          {
-            name = "convert_case";
-            packageId = "convert_case";
-          }
-        ];
-        features = {
-          "rand" = [ "dep:rand" ];
-          "random" = [ "rand" ];
-        };
       };
       "core-foundation" = rec {
         crateName = "core-foundation";
@@ -2378,11 +2359,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "Clone" "Debug" "Hash" "PartialEq" ];
       };
-      "educe 0.7.6" = rec {
+      "educe 0.8.1" = rec {
         crateName = "educe";
-        version = "0.7.6";
+        version = "0.8.1";
         edition = "2024";
-        sha256 = "1par14babv60xrk4vbdnibfzv43frvpz2jv06iif3v4dvp4gllg4";
+        sha256 = "0vg925v5bfkr2aynhfshlhk21j230fhpv6ingfz5p0fjz3wb3g8y";
         procMacro = true;
         authors = [
           "Magic Len <len@magiclen.org>"
@@ -2405,13 +2386,7 @@ rec {
           {
             name = "syn";
             packageId = "syn 3.0.4";
-          }
-        ];
-        devDependencies = [
-          {
-            name = "syn";
-            packageId = "syn 3.0.4";
-            features = [ "full" ];
+            features = [ "visit" "visit-mut" ];
           }
         ];
         features = {
@@ -5410,7 +5385,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "bc6c84025c2dcc834b94bfb57ec72810ae5f5eb1";
+          rev = "7cb677e73bd218bcafb4ed4d4b459dda319fcbac";
           sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
         };
         libName = "k8s_version";
@@ -6459,7 +6434,7 @@ rec {
           }
           {
             name = "rand";
-            packageId = "rand 0.8.7";
+            packageId = "rand 0.8.8";
             optional = true;
             usesDefaultFeatures = false;
           }
@@ -6478,7 +6453,7 @@ rec {
         devDependencies = [
           {
             name = "rand";
-            packageId = "rand 0.8.7";
+            packageId = "rand 0.8.8";
             features = [ "small_rng" ];
           }
         ];
@@ -6625,9 +6600,9 @@ rec {
       };
       "opentelemetry" = rec {
         crateName = "opentelemetry";
-        version = "0.32.0";
+        version = "0.33.0";
         edition = "2021";
-        sha256 = "10ln14d1jgc8rvw97mblc9blzcgpg1bimim4d170b7ia4mijq55h";
+        sha256 = "1db15c0f4csj7v8zkbd9h3i503divafysd5l64rxpfby4qdhpnvc";
         dependencies = [
           {
             name = "futures-core";
@@ -6679,9 +6654,9 @@ rec {
       };
       "opentelemetry-appender-tracing" = rec {
         crateName = "opentelemetry-appender-tracing";
-        version = "0.32.0";
+        version = "0.33.0";
         edition = "2021";
-        sha256 = "0dyq4myan64sl8wly02jx0gb3jjz7575mn3w8rpphz0xvkq8001c";
+        sha256 = "1ns05asawxbi8cra6s3jnsbx6z5gg9fcm6ba6sx2c4ziv3l09cz2";
         libName = "opentelemetry_appender_tracing";
         dependencies = [
           {
@@ -6730,9 +6705,9 @@ rec {
       };
       "opentelemetry-http" = rec {
         crateName = "opentelemetry-http";
-        version = "0.32.0";
+        version = "0.33.0";
         edition = "2021";
-        sha256 = "0ca3drvm4fx5nskl7yn42dimy3bg35ppzc85y1p27pz215fh30sn";
+        sha256 = "003kp3rsb332b77yma9qza3rdnj4h2y17r81gsgj015ap0jkcb7f";
         libName = "opentelemetry_http";
         dependencies = [
           {
@@ -6768,16 +6743,15 @@ rec {
           "internal-logs" = [ "opentelemetry/internal-logs" ];
           "reqwest" = [ "dep:reqwest" ];
           "reqwest-blocking" = [ "dep:reqwest" "reqwest/blocking" ];
-          "reqwest-rustls" = [ "dep:reqwest" "reqwest/default-tls" ];
-          "reqwest-rustls-webpki-roots" = [ "dep:reqwest" "reqwest/default-tls" "reqwest/webpki-roots" ];
+          "reqwest-rustls" = [ "dep:reqwest" "reqwest/rustls" ];
         };
         resolvedDefaultFeatures = [ "reqwest" "reqwest-blocking" ];
       };
       "opentelemetry-otlp" = rec {
         crateName = "opentelemetry-otlp";
-        version = "0.32.0";
+        version = "0.33.0";
         edition = "2021";
-        sha256 = "0d9cys2flpidfxbr6h1103hjc633cax47ihnqgbj0xnicscr4rlr";
+        sha256 = "0i534gxld0zh27z8xpx5kwhqnhky2nd0bfam34ijm5i1bqs6g6k9";
         libName = "opentelemetry_otlp";
         dependencies = [
           {
@@ -6786,6 +6760,11 @@ rec {
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
+          }
+          {
+            name = "httpdate";
+            packageId = "httpdate";
+            optional = true;
           }
           {
             name = "opentelemetry";
@@ -6829,7 +6808,7 @@ rec {
             packageId = "tokio";
             optional = true;
             usesDefaultFeatures = false;
-            features = [ "sync" "rt" ];
+            features = [ "sync" "rt" "time" ];
           }
           {
             name = "tonic";
@@ -6865,17 +6844,15 @@ rec {
         ];
         features = {
           "default" = [ "http-proto" "reqwest-blocking-client" "trace" "metrics" "logs" "internal-logs" ];
-          "experimental-grpc-retry" = [ "grpc-tonic" "opentelemetry_sdk/experimental_async_runtime" "opentelemetry_sdk/rt-tokio" ];
-          "experimental-http-retry" = [ "opentelemetry_sdk/experimental_async_runtime" "opentelemetry_sdk/rt-tokio" "tokio" "httpdate" ];
           "flate2" = [ "dep:flate2" ];
           "grpc-tonic" = [ "tonic" "tonic-types" "prost" "http" "tokio" "opentelemetry-proto/gen-tonic" ];
           "gzip-http" = [ "flate2" ];
           "gzip-tonic" = [ "tonic/gzip" ];
           "http" = [ "dep:http" ];
-          "http-json" = [ "serde_json" "prost" "opentelemetry-http" "opentelemetry-proto/gen-tonic-messages" "opentelemetry-proto/with-serde" "http" "trace" "metrics" ];
-          "http-proto" = [ "prost" "opentelemetry-http" "opentelemetry-proto/gen-tonic-messages" "http" "trace" "metrics" ];
+          "http-json" = [ "serde_json" "prost" "opentelemetry-http" "opentelemetry-proto/gen-tonic-messages" "opentelemetry-proto/with-serde" "http" "httpdate" "trace" "metrics" ];
+          "http-proto" = [ "prost" "opentelemetry-http" "opentelemetry-proto/gen-tonic-messages" "http" "httpdate" "trace" "metrics" ];
           "httpdate" = [ "dep:httpdate" ];
-          "hyper-client" = [ "opentelemetry-http/hyper" ];
+          "hyper-client" = [ "opentelemetry-http/hyper" "tokio" ];
           "integration-testing" = [ "tonic" "prost" "tokio/full" "trace" "logs" ];
           "internal-logs" = [ "opentelemetry_sdk/internal-logs" "opentelemetry/internal-logs" ];
           "logs" = [ "opentelemetry/logs" "opentelemetry_sdk/logs" "opentelemetry-proto/logs" ];
@@ -6884,13 +6861,9 @@ rec {
           "prost" = [ "dep:prost" ];
           "reqwest" = [ "dep:reqwest" ];
           "reqwest-blocking-client" = [ "reqwest/blocking" "opentelemetry-http/reqwest-blocking" ];
-          "reqwest-client" = [ "reqwest" "opentelemetry-http/reqwest" ];
+          "reqwest-client" = [ "reqwest" "opentelemetry-http/reqwest" "tokio" ];
           "reqwest-rustls" = [ "reqwest" "opentelemetry-http/reqwest-rustls" ];
-          "reqwest-rustls-webpki-roots" = [ "reqwest" "opentelemetry-http/reqwest-rustls-webpki-roots" ];
-          "serde" = [ "dep:serde" ];
           "serde_json" = [ "dep:serde_json" ];
-          "serialize" = [ "serde" "serde_json" ];
-          "tls" = [ "tls-ring" ];
           "tls-aws-lc" = [ "tonic/tls-aws-lc" ];
           "tls-provider-agnostic" = [ "tonic/_tls-any" ];
           "tls-ring" = [ "tonic/tls-ring" ];
@@ -6904,13 +6877,13 @@ rec {
           "zstd-http" = [ "zstd" ];
           "zstd-tonic" = [ "tonic/zstd" ];
         };
-        resolvedDefaultFeatures = [ "default" "grpc-tonic" "gzip-tonic" "http" "http-proto" "internal-logs" "logs" "metrics" "opentelemetry-http" "prost" "reqwest" "reqwest-blocking-client" "tokio" "tonic" "tonic-types" "trace" ];
+        resolvedDefaultFeatures = [ "default" "grpc-tonic" "gzip-tonic" "http" "http-proto" "httpdate" "internal-logs" "logs" "metrics" "opentelemetry-http" "prost" "reqwest" "reqwest-blocking-client" "tokio" "tonic" "tonic-types" "trace" ];
       };
       "opentelemetry-proto" = rec {
         crateName = "opentelemetry-proto";
-        version = "0.32.0";
+        version = "0.33.0";
         edition = "2021";
-        sha256 = "0f5ny4rpnpq6q5q34b8k2q548rf31rpbxkwjqjwzfqxg3yx5imjn";
+        sha256 = "0pgnw8h6nb50jind8npn821szb8mhwsf0zppswwczv0a3b0imni5";
         libName = "opentelemetry_proto";
         dependencies = [
           {
@@ -6974,9 +6947,9 @@ rec {
       };
       "opentelemetry-semantic-conventions" = rec {
         crateName = "opentelemetry-semantic-conventions";
-        version = "0.32.1";
+        version = "0.33.0";
         edition = "2021";
-        sha256 = "0izyyi148774fndrdgcfwxx68l9y2ifn5x2mw8g6clf4lqbsq4y9";
+        sha256 = "11vvl60n1bdph9jypfhzrwi91pa8y9g663wgpcphb41mpkhv326j";
         libName = "opentelemetry_semantic_conventions";
         features = {
         };
@@ -6984,21 +6957,24 @@ rec {
       };
       "opentelemetry_sdk" = rec {
         crateName = "opentelemetry_sdk";
-        version = "0.32.1";
+        version = "0.33.0";
         edition = "2021";
-        sha256 = "1ycl11syranrinhgn4c2hlzhyzyvpa06ryxq5mxgzmf4387ghncv";
+        sha256 = "083myvvimjw7im65pq8cnqbnkl991iz1vm6pxwij348wklym6ffb";
         dependencies = [
           {
             name = "futures-channel";
             packageId = "futures-channel";
+            optional = true;
           }
           {
             name = "futures-executor";
             packageId = "futures-executor";
+            optional = true;
           }
           {
             name = "futures-util";
             packageId = "futures-util";
+            optional = true;
             usesDefaultFeatures = false;
             features = [ "std" "sink" "async-await-macro" ];
           }
@@ -7029,6 +7005,7 @@ rec {
           {
             name = "thiserror";
             packageId = "thiserror 2.0.20";
+            optional = true;
             usesDefaultFeatures = false;
           }
           {
@@ -7053,6 +7030,7 @@ rec {
         ];
         features = {
           "default" = [ "trace" "metrics" "logs" "internal-logs" ];
+          "experimental_async_runtime" = [ "dep:futures-channel" "dep:futures-executor" "dep:futures-util" "dep:thiserror" ];
           "experimental_logs_batch_log_processor_with_async_runtime" = [ "logs" "experimental_async_runtime" ];
           "experimental_metrics_bound_instruments" = [ "metrics" "opentelemetry/experimental_metrics_bound_instruments" ];
           "experimental_metrics_custom_reader" = [ "metrics" ];
@@ -7062,8 +7040,8 @@ rec {
           "http" = [ "dep:http" ];
           "internal-logs" = [ "opentelemetry/internal-logs" ];
           "jaeger_remote_sampler" = [ "trace" "opentelemetry-http" "http" "serde" "serde_json" "url" "experimental_async_runtime" ];
-          "logs" = [ "opentelemetry/logs" ];
-          "metrics" = [ "opentelemetry/metrics" ];
+          "logs" = [ "opentelemetry/logs" "dep:futures-channel" "dep:futures-executor" "dep:futures-util" ];
+          "metrics" = [ "opentelemetry/metrics" "dep:futures-channel" "dep:futures-executor" "dep:futures-util" "dep:thiserror" ];
           "opentelemetry-http" = [ "dep:opentelemetry-http" ];
           "percent-encoding" = [ "dep:percent-encoding" ];
           "rand" = [ "dep:rand" ];
@@ -7075,7 +7053,7 @@ rec {
           "testing" = [ "opentelemetry/testing" "trace" "metrics" "logs" "tokio/sync" ];
           "tokio" = [ "dep:tokio" ];
           "tokio-stream" = [ "dep:tokio-stream" ];
-          "trace" = [ "opentelemetry/trace" "rand" "percent-encoding" ];
+          "trace" = [ "opentelemetry/trace" "rand" "percent-encoding" "dep:futures-channel" "dep:futures-executor" "dep:futures-util" "dep:thiserror" ];
           "url" = [ "dep:url" ];
         };
         resolvedDefaultFeatures = [ "default" "experimental_async_runtime" "internal-logs" "logs" "metrics" "percent-encoding" "rand" "rt-tokio" "tokio" "tokio-stream" "trace" ];
@@ -7901,11 +7879,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "alloc" "default" "std" "std_rng" "sys_rng" "thread_rng" ];
       };
-      "rand 0.8.7" = rec {
+      "rand 0.8.8" = rec {
         crateName = "rand";
-        version = "0.8.7";
+        version = "0.8.8";
         edition = "2018";
-        sha256 = "06iaf16fr0z8zly7anmn8ky0p80xnx9yv0gdcm30fwn9vqmigxi2";
+        sha256 = "0k3d9psya5icpiylff1w1wjbnc3q4pb1953n1iw7gbr61ggcfn70";
         authors = [
           "The Rand Project Developers"
           "The Rust Project Developers"
@@ -10325,7 +10303,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "bc6c84025c2dcc834b94bfb57ec72810ae5f5eb1";
+          rev = "7cb677e73bd218bcafb4ed4d4b459dda319fcbac";
           sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
         };
         libName = "stackable_certs";
@@ -10563,12 +10541,12 @@ rec {
       };
       "stackable-operator" = rec {
         crateName = "stackable-operator";
-        version = "0.118.0";
+        version = "0.119.0";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "bc6c84025c2dcc834b94bfb57ec72810ae5f5eb1";
+          rev = "7cb677e73bd218bcafb4ed4d4b459dda319fcbac";
           sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
         };
         libName = "stackable_operator";
@@ -10599,7 +10577,7 @@ rec {
           }
           {
             name = "educe";
-            packageId = "educe 0.7.6";
+            packageId = "educe 0.8.1";
             usesDefaultFeatures = false;
             features = [ "Clone" "Debug" "Default" "PartialEq" "Eq" ];
           }
@@ -10767,7 +10745,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "bc6c84025c2dcc834b94bfb57ec72810ae5f5eb1";
+          rev = "7cb677e73bd218bcafb4ed4d4b459dda319fcbac";
           sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
         };
         procMacro = true;
@@ -10802,7 +10780,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "bc6c84025c2dcc834b94bfb57ec72810ae5f5eb1";
+          rev = "7cb677e73bd218bcafb4ed4d4b459dda319fcbac";
           sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
         };
         libName = "stackable_shared";
@@ -10883,7 +10861,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "bc6c84025c2dcc834b94bfb57ec72810ae5f5eb1";
+          rev = "7cb677e73bd218bcafb4ed4d4b459dda319fcbac";
           sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
         };
         libName = "stackable_telemetry";
@@ -10993,7 +10971,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "bc6c84025c2dcc834b94bfb57ec72810ae5f5eb1";
+          rev = "7cb677e73bd218bcafb4ed4d4b459dda319fcbac";
           sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
         };
         libName = "stackable_versioned";
@@ -11043,7 +11021,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "bc6c84025c2dcc834b94bfb57ec72810ae5f5eb1";
+          rev = "7cb677e73bd218bcafb4ed4d4b459dda319fcbac";
           sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
         };
         procMacro = true;
@@ -11055,10 +11033,6 @@ rec {
           {
             name = "convert_case";
             packageId = "convert_case";
-          }
-          {
-            name = "convert_case_extras";
-            packageId = "convert_case_extras";
           }
           {
             name = "darling";
@@ -11106,12 +11080,12 @@ rec {
       };
       "stackable-webhook" = rec {
         crateName = "stackable-webhook";
-        version = "0.9.2";
+        version = "0.10.0";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "bc6c84025c2dcc834b94bfb57ec72810ae5f5eb1";
+          rev = "7cb677e73bd218bcafb4ed4d4b459dda319fcbac";
           sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
         };
         libName = "stackable_webhook";
@@ -11217,7 +11191,7 @@ rec {
           }
           {
             name = "tower-http";
-            packageId = "tower-http 0.7.0";
+            packageId = "tower-http 0.7.1";
             features = [ "trace" ];
           }
           {
@@ -11422,7 +11396,7 @@ rec {
           "proc-macro" = [ "proc-macro2/proc-macro" "quote?/proc-macro" ];
           "test" = [ "syn-test-suite/all-features" ];
         };
-        resolvedDefaultFeatures = [ "clone-impls" "default" "derive" "extra-traits" "full" "parsing" "printing" "proc-macro" "visit-mut" ];
+        resolvedDefaultFeatures = [ "clone-impls" "default" "derive" "extra-traits" "full" "parsing" "printing" "proc-macro" "visit" "visit-mut" ];
       };
       "sync_wrapper" = rec {
         crateName = "sync_wrapper";
@@ -12588,11 +12562,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "auth" "base64" "default" "follow-redirect" "futures-util" "map-response-body" "mime" "tower" "trace" "tracing" "util" "validate-request" ];
       };
-      "tower-http 0.7.0" = rec {
+      "tower-http 0.7.1" = rec {
         crateName = "tower-http";
-        version = "0.7.0";
+        version = "0.7.1";
         edition = "2018";
-        sha256 = "0cz2k1a6gj54lcqx9cxb6k7rfgwcgc2zi31xnq0vxhmh2blpa7xi";
+        sha256 = "172v4iw852pzl0v0k0nlklavlsnaw3zmbmx1w2xirmpxlik5m808";
         libName = "tower_http";
         authors = [
           "Tower Maintainers <team@tower-rs.com>"
@@ -12890,9 +12864,9 @@ rec {
       };
       "tracing-opentelemetry" = rec {
         crateName = "tracing-opentelemetry";
-        version = "0.33.0";
+        version = "0.34.0";
         edition = "2021";
-        sha256 = "09nvxy5m7nxmifz4b6szdcyczapp2jcgxcac0jw4ax8klz5n9g5d";
+        sha256 = "1zp8wg0yhj6nhv2vc0a182sf6iq8clmgyxxn70vg80mrl414i40a";
         libName = "tracing_opentelemetry";
         dependencies = [
           {

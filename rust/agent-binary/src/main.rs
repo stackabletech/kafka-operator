@@ -1,11 +1,11 @@
 //! The Stackable Kafka agent: a per-cluster controller that reconciles in-cluster resources like `KafkaTopic`s.
 
 use clap::Parser;
-use stackable_operator::{cli::CommonOptions, telemetry::Tracing, utils::signal::SignalWatcher};
-
-use crate::framework::AgentCommand;
-
-mod framework;
+use stackable_operator::{
+    cli::{Command, CommonOptions},
+    telemetry::Tracing,
+    utils::signal::SignalWatcher,
+};
 
 mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
@@ -15,13 +15,14 @@ mod built_info {
 #[clap(about, author)]
 struct Opts {
     #[clap(subcommand)]
-    cmd: AgentCommand,
+    cmd: Command<CommonOptions>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     match Opts::parse().cmd {
-        AgentCommand::Run(CommonOptions { telemetry, .. }) => {
+        Command::Crd => anyhow::bail!("this agent has no CRDs, they are owned by the operator"),
+        Command::Run(CommonOptions { telemetry, .. }) => {
             let _tracing_guard = Tracing::pre_configured(built_info::PKG_NAME, telemetry).init()?;
 
             tracing::info!(

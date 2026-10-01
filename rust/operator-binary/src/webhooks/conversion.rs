@@ -4,6 +4,7 @@ use stackable_operator::{
     kube::{Client, core::crd::MergeError},
     webhook::{
         WebhookServer, WebhookServerError, WebhookServerOptions,
+        health::HealthCheckRegistry,
         webhooks::{ConversionWebhook, ConversionWebhookOptions},
     },
 };
@@ -46,7 +47,11 @@ pub async fn create_webhook_server(
         webhook_service_name: operator_environment.operator_service_name.to_owned(),
     };
 
-    WebhookServer::new(vec![Box::new(conversion_webhook)], webhook_server_options)
-        .await
-        .context(CreateWebhookSnafu)
+    WebhookServer::new(
+        vec![Box::new(conversion_webhook)],
+        webhook_server_options,
+        HealthCheckRegistry::new(),
+    )
+    .await
+    .context(CreateWebhookSnafu)
 }

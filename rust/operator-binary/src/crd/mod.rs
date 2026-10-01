@@ -13,7 +13,7 @@ use snafu::Snafu;
 use stackable_operator::{
     commons::{
         cluster_operation::ClusterOperation, networking::DomainName,
-        product_image_selection::ProductImage,
+        platform_access::tls::TlsClientCredential, product_image_selection::ProductImage,
     },
     config::merge::Merge,
     constant,
@@ -38,13 +38,10 @@ use stackable_operator::{
 };
 use strum::{Display, EnumIter, EnumString};
 
-use crate::{
-    crd::{
-        authorization::KafkaAuthorization,
-        role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
-        tls::KafkaTls,
-    },
-    framework::commons::platform_access::tls::TlsClientCredential,
+use crate::crd::{
+    authorization::KafkaAuthorization,
+    role::{KafkaRole, broker::BrokerConfigFragment, controller::ControllerConfigFragment},
+    tls::KafkaTls,
 };
 
 pub const CONTAINER_IMAGE_BASE_NAME: &str = "kafka";

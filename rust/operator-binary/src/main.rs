@@ -43,7 +43,6 @@ use crate::{
 
 mod controller;
 mod crd;
-mod framework;
 mod webhooks;
 
 mod built_info {
@@ -223,7 +222,7 @@ async fn main() -> anyhow::Result<()> {
                 .map(anyhow::Ok);
 
             let delayed_kafka_controller = async {
-                signal::crd_established(&client, v1alpha1::KafkaCluster::crd_name(), None).await?;
+                signal::crd_established(&client, v1alpha1::KafkaCluster::crd_name()).await?;
                 kafka_controller.await
             };
 

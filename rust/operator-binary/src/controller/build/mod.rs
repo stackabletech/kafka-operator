@@ -30,7 +30,6 @@ use crate::{
         },
     },
     crd::role::{AnyConfig, KafkaRole},
-    framework::kvp::label as framework_label,
 };
 
 pub mod command;
@@ -186,7 +185,7 @@ pub(crate) fn recommended_labels_for_cluster_resources(cluster: &ValidatedCluste
 }
 
 pub(crate) fn recommended_labels_for_agent_resources(cluster: &ValidatedCluster) -> Labels {
-    framework_label::recommended_labels_for_agent_resources(
+    label::recommended_labels_for_agent_resources(
         &cluster.name,
         &PRODUCT_NAME,
         &cluster.product_version,
@@ -242,7 +241,7 @@ pub(crate) fn recommended_labels_for_unversioned_role_group_resources(
 
 /// Selector labels matching the pods of a role group.
 pub(crate) fn agent_selector(cluster: &ValidatedCluster) -> Labels {
-    framework_label::agent_selector(&cluster.name, &PRODUCT_NAME)
+    label::agent_selector(&cluster.name, &PRODUCT_NAME)
 }
 
 pub(crate) fn role_group_selector(
