@@ -14,6 +14,9 @@ use crate::{
                 listener::get_kafka_listener_config, product_logging::vector_config_file_content,
             },
             resource::{
+                agent::{
+                    build_agent_deployment, build_agent_role_binding, build_agent_service_account,
+                },
                 config_map::build_rolegroup_config_map,
                 discovery::build_discovery_configmap,
                 listener::build_broker_rolegroup_bootstrap_listener,
@@ -27,6 +30,7 @@ use crate::{
         },
     },
     crd::role::{AnyConfig, KafkaRole},
+    framework::kvp::label as framework_label,
 };
 
 pub mod command;
@@ -149,20 +153,40 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>
 
     config_maps.push(build_discovery_configmap(cluster).context(DiscoveryConfigMapSnafu)?);
 
+    let mut deployments = vec![];
+    let mut service_accounts = vec![build_service_account(cluster)];
+    let mut role_bindings = vec![build_role_binding(cluster)];
+    if let Some(agent_config) = &cluster.agent_config {
+        deployments.push(build_agent_deployment(cluster, agent_config));
+        service_accounts.push(build_agent_service_account(cluster));
+        role_bindings.push(build_agent_role_binding(cluster));
+    }
+
     Ok(KubernetesResources {
         stateful_sets,
+        deployments,
         services,
         listeners,
         config_maps,
         pod_disruption_budgets,
-        service_accounts: vec![build_service_account(cluster)],
-        role_bindings: vec![build_role_binding(cluster)],
+        service_accounts,
+        role_bindings,
         status: PhantomData,
     })
 }
 
 pub(crate) fn recommended_labels_for_cluster_resources(cluster: &ValidatedCluster) -> Labels {
     label::recommended_labels_for_cluster_resources(
+        &cluster.name,
+        &PRODUCT_NAME,
+        &cluster.product_version,
+        &OPERATOR_NAME,
+        &CONTROLLER_NAME,
+    )
+}
+
+pub(crate) fn recommended_labels_for_agent_resources(cluster: &ValidatedCluster) -> Labels {
+    framework_label::recommended_labels_for_agent_resources(
         &cluster.name,
         &PRODUCT_NAME,
         &cluster.product_version,
@@ -217,6 +241,10 @@ pub(crate) fn recommended_labels_for_unversioned_role_group_resources(
 }
 
 /// Selector labels matching the pods of a role group.
+pub(crate) fn agent_selector(cluster: &ValidatedCluster) -> Labels {
+    framework_label::agent_selector(&cluster.name, &PRODUCT_NAME)
+}
+
 pub(crate) fn role_group_selector(
     cluster: &ValidatedCluster,
     role_name: &RoleName,
@@ -363,6 +391,8 @@ mod tests {
             sorted_names(&resources.role_bindings),
             ["simple-kafka-rolebinding"]
         );
+        // No agent without platform access.
+        assert!(resources.deployments.is_empty());
     }
 
     #[test]

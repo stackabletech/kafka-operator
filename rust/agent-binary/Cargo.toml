@@ -1,0 +1,24 @@
+[package]
+name = "stackable-kafka-agent"
+description = "Stackable Agent for Apache Kafka"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+stackable-operator.workspace = true
+
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[build-dependencies]
+built.workspace = true
+
+[[bin]]
+name = "stackable-kafka-agent"
+path = "src/main.rs"

@@ -101,6 +101,8 @@
   }
 , meta ? pkgsLocal.lib.importJSON ./nix/meta.json
 , dockerName ? "oci.stackable.tech/sandbox/${meta.operator.name}"
+# Only used by operators that ship an agent (see `agent` in nix/meta.json)
+, dockerNameAgent ? "oci.stackable.tech/sandbox/${meta.agent.name}"
 , dockerTag ? null
 # Controls the amount of debug information included in the built operator binaries,
 # see https://doc.rust-lang.org/rustc/codegen-options/index.html#debuginfo
@@ -125,7 +127,11 @@ rec {
   inherit cargo sources pkgsLocal pkgsTarget meta;
   inherit (pkgsLocal) lib;
   pkgs = lib.warn "pkgs is not cross-compilation-aware, explicitly use either pkgsLocal or pkgsTarget" pkgsLocal;
-  build = cargo.allWorkspaceMembers;
+  # Operators that ship an agent (see `agent` in nix/meta.json) keep the agent binary out of the
+  # operator image, as it has its own image (`dockerAgent`).
+  build = if meta ? agent
+    then cargo.workspaceMembers."stackable-${meta.operator.name}".build
+    else cargo.allWorkspaceMembers;
   entrypoint = build+"/bin/stackable-${meta.operator.name}";
   # Run crds in the target environment, to avoid compiling everything twice
   crds = pkgsTarget.runCommand "${meta.operator.name}-crds.yaml" {}
@@ -143,13 +149,13 @@ rec {
   # build it in the local environment so that the generated load-image
   # can run locally.
   # That's still fine, as long as we only refer to pkgsTarget *inside* of the image.
-  dockerImage = pkgsLocal.dockerTools.streamLayeredImage {
+  dockerImageArgs = {
     name = dockerName;
     tag = dockerTag;
     contents = [
       # Kerberos 5 must be installed globally to load plugins correctly
       pkgsTarget.krb5
-      # Make the whole cargo workspace available on $PATH
+      # Make the operator binaries available on $PATH
       build
     ] ++ lib.optional includeShell [
       pkgsTarget.bashInteractive
@@ -189,6 +195,7 @@ rec {
       User = toString stackableUserUid;
     };
   };
+  dockerImage = pkgsLocal.dockerTools.streamLayeredImage dockerImageArgs;
   docker = pkgsLocal.linkFarm "${dockerImage.name}-docker" [
     {
       name = "load-image";
@@ -211,6 +218,29 @@ rec {
       path = crds;
     }
   ];
+
+  # The image of the agent, only built for operators that ship one.
+  dockerAgent = if meta ? agent then
+    let
+      agentBuild = cargo.workspaceMembers."stackable-${meta.agent.name}".build;
+      agentImage = pkgsLocal.dockerTools.streamLayeredImage (dockerImageArgs // {
+        name = dockerNameAgent;
+        contents = [ agentBuild ] ++ lib.optional includeShell [
+          pkgsTarget.bashInteractive
+          pkgsTarget.coreutils
+          pkgsTarget.util-linuxMinimal
+        ];
+        config = dockerImageArgs.config // {
+          Entrypoint = [ "${agentBuild}/bin/stackable-${meta.agent.name}" ];
+        };
+      });
+    in pkgsLocal.linkFarm "${agentImage.name}-docker" [
+      { name = "load-image"; path = agentImage; }
+      { name = "ref"; path = pkgsLocal.writeText "${agentImage.name}-image-tag" "${agentImage.imageName}:${agentImage.imageTag}"; }
+      { name = "image-repo"; path = pkgsLocal.writeText "${agentImage.name}-repo" agentImage.imageName; }
+      { name = "image-tag"; path = pkgsLocal.writeText "${agentImage.name}-tag" agentImage.imageTag; }
+    ]
+  else null;
 
   # need to use vendored crate2nix because of https://github.com/kolloch/crate2nix/issues/264
   crate2nix = import sources.crate2nix { pkgs = pkgsLocal; };

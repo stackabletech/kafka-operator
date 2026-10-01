@@ -41,7 +41,7 @@ rules:
       - list
       - patch
       - watch
-  # Required to bind the product ClusterRole to the per-cluster ServiceAccount.
+  # Required to bind the product and agent ClusterRoles to the per-cluster ServiceAccounts.
   - apiGroups:
       - rbac.authorization.k8s.io
     resources:
@@ -50,12 +50,25 @@ rules:
       - bind
     resourceNames:
       - {{ include "kafka-operator.name" . }}-clusterrole
+      - {{ include "kafka-operator.name" . }}-agent-clusterrole
   # StatefulSet created per role group (broker, KRaft controller). Applied via
   # SSA, tracked for orphan cleanup, and owned by the controller.
   - apiGroups:
       - apps
     resources:
       - statefulsets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+  # Deployment of the platform-access agent.
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
     verbs:
       - create
       - delete

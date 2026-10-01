@@ -2136,6 +2136,47 @@ spec:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
                 type: array
+              platformAccess:
+                description: Access of the Stackable Data Platform to this cluster.
+                nullable: true
+                properties:
+                  authentication:
+                    description: The credential the agent authenticates to Kafka with.
+                    oneOf:
+                    - required:
+                      - tls
+                    properties:
+                      tls:
+                        description: 'Source of a TLS client certificate: a secret-operator SecretClass or a static Secret.'
+                        oneOf:
+                        - required:
+                          - secretClass
+                        - required:
+                          - secret
+                        properties:
+                          secret:
+                            description: |-
+                              A static Secret holding the certificate in the keys `tls.crt` and `tls.key` (PEM), such as a
+                              Secret of type `kubernetes.io/tls`.
+                            maxLength: 253
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                            type: string
+                          secretClass:
+                            description: An AutoTLS SecretClass used to provision the certificate.
+                            maxLength: 253
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                            type: string
+                        type: object
+                    type: object
+                  enabled:
+                    default: false
+                    description: Whether the operator deploys the agent. False by default.
+                    type: boolean
+                required:
+                - authentication
+                type: object
             required:
             - brokers
             - image

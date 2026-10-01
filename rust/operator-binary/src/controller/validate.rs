@@ -30,8 +30,8 @@ use stackable_operator::{
 
 use crate::{
     controller::{
-        RoleGroupName, ValidatedCluster, ValidatedClusterConfig, ValidatedKafkaConfig,
-        ValidatedRoleConfig, ValidatedRoleGroupConfig,
+        RoleGroupName, ValidatedAgentConfig, ValidatedCluster, ValidatedClusterConfig,
+        ValidatedKafkaConfig, ValidatedRoleConfig, ValidatedRoleGroupConfig,
         dereference::DereferencedObjects,
         security::{self, ValidatedKafkaSecurity},
     },
@@ -199,6 +199,7 @@ pub fn validate(
     kafka: &v1alpha1::KafkaCluster,
     dereferenced_objects: DereferencedObjects,
     operator_environment: &OperatorEnvironmentOptions,
+    agent_image: &str,
 ) -> Result<ValidatedCluster> {
     let image = kafka
         .spec
@@ -333,6 +334,16 @@ pub fn validate(
         .cluster_domain
         .clone();
 
+    let agent_config = kafka
+        .spec
+        .platform_access
+        .as_ref()
+        .filter(|platform_access| platform_access.enabled)
+        .map(|platform_access| ValidatedAgentConfig {
+            image: agent_image.to_owned(),
+            authentication: platform_access.authentication.clone(),
+        });
+
     Ok(ValidatedCluster::new(
         name,
         namespace,
@@ -353,6 +364,7 @@ pub fn validate(
         role_configs,
         role_group_configs,
         dereferenced_objects.bootstrap_listeners,
+        agent_config,
     ))
 }
 
