@@ -82,6 +82,7 @@ pub fn build_agent_deployment(
                 .with_labels(recommended_labels_for_agent_resources(cluster))
                 .build(),
         )
+        .image_pull_secrets_from_product_image(&cluster.image)
         .add_container(cb_agent.build())
         .service_account_name(agent_name(cluster))
         .security_context(PodSecurityContextBuilder::with_stackable_defaults().build());
@@ -152,6 +153,10 @@ mod tests {
     };
 
     fn cluster(platform_access: &str) -> ValidatedCluster {
+        cluster_with_image("{productVersion: 3.9.2}", platform_access)
+    }
+
+    fn cluster_with_image(image: &str, platform_access: &str) -> ValidatedCluster {
         let kafka = minimal_kafka(&format!(
             r#"
             apiVersion: kafka.stackable.tech/v1alpha1
@@ -161,8 +166,7 @@ mod tests {
               namespace: default
               uid: 12345678-1234-1234-1234-123456789012
             spec:
-              image:
-                productVersion: 3.9.2
+              image: {image}
               clusterConfig:
                 zookeeperConfigMapName: xyz
               platformAccess: {platform_access}
@@ -235,9 +239,9 @@ mod tests {
         assert_eq!(pod_spec["containers"][0]["args"], json!(["run"]));
         assert_eq!(
             pod_spec["containers"][0]["volumeMounts"],
-            json!([{"mountPath": "/stackable/secrets/tls-tls-cert", "name": "tls-tls-cert"}])
+            json!([{"mountPath": "/stackable/secrets/tls-client-cert", "name": "tls-client-cert"}])
         );
-        assert_eq!(pod_spec["volumes"][0]["name"], "tls-tls-cert");
+        assert_eq!(pod_spec["volumes"][0]["name"], "tls-client-cert");
         assert_eq!(
             pod_spec["volumes"][0]["ephemeral"]["volumeClaimTemplate"]["metadata"]["annotations"]["secrets.stackable.tech/class"],
             "tls"
@@ -251,7 +255,26 @@ mod tests {
 
         assert_eq!(
             deployment["spec"]["template"]["spec"]["volumes"],
-            json!([{"name": "my-cert-tls-cert", "secret": {"secretName": "my-cert"}}])
+            json!([{"name": "tls-client-cert", "secret": {"secretName": "my-cert"}}])
+        );
+    }
+
+    #[test]
+    fn test_deployment_uses_product_image_pull_secrets() {
+        let cluster = cluster_with_image(
+            "{productVersion: 3.9.2, pullSecrets: [{name: regcred}]}",
+            "{enabled: true, authentication: {tls: {secretClass: tls}}}",
+        );
+        let agent_config = cluster
+            .agent_config
+            .as_ref()
+            .expect("platform access is enabled");
+        let deployment = serde_json::to_value(build_agent_deployment(&cluster, agent_config))
+            .expect("must be serializable");
+
+        assert_eq!(
+            deployment["spec"]["template"]["spec"]["imagePullSecrets"],
+            json!([{"name": "regcred"}])
         );
     }
 

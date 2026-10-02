@@ -50,7 +50,7 @@ rules:
       - bind
     resourceNames:
       - {{ include "kafka-operator.name" . }}-clusterrole
-      - {{ include "kafka-operator.name" . }}-agent-clusterrole
+      - {{ include "kafka-operator.productName" . }}-agent-clusterrole
   # StatefulSet created per role group (broker, KRaft controller). Applied via
   # SSA, tracked for orphan cleanup, and owned by the controller.
   - apiGroups:

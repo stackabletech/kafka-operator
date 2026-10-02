@@ -6,6 +6,14 @@ Expand the name of the chart.
 {{- end }}
 
 {{/*
+Fixed product name. Unlike kafka-operator.name it ignores nameOverride, because it must match
+names hardcoded in the operator and the published image names.
+*/}}
+{{- define "kafka-operator.productName" -}}
+kafka
+{{- end }}
+
+{{/*
 Expand the name of the chart.
 */}}
 {{- define "kafka-operator.appname" -}}
@@ -89,5 +97,5 @@ Build the full operator container image reference.
 Build the full agent container image reference. The agent is released together with the operator.
 */}}
 {{- define "kafka-operator.agentImage" -}}
-{{- printf "%s/%s-agent:%s" .Values.image.repository (include "kafka-operator.name" .) (.Values.image.tag | default .Chart.AppVersion) -}}
+{{- printf "%s/%s-agent:%s" .Values.image.repository (include "kafka-operator.productName" .) (.Values.image.tag | default .Chart.AppVersion) -}}
 {{- end }}

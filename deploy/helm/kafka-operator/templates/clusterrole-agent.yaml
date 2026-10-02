@@ -4,7 +4,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "kafka-operator.name" . }}-agent-clusterrole
+  name: {{ include "kafka-operator.productName" . }}-agent-clusterrole
   labels:
   {{- include "kafka-operator.labels" . | nindent 4 }}
 rules:
