@@ -1241,6 +1241,172 @@ mod tests {
             .expect("the kafka container is built")
     }
 
+    /// `spec.controllers.config.resources` and `spec.brokers.config.resources` must be applied
+    /// verbatim to each role's `kafka` container: CPU request/limit come from `cpu.min`/`cpu.max`
+    /// and memory request equals memory limit, both taken from `memory.limit` (there is no
+    /// separate memory request field in the CRD).
+    #[test]
+    fn kafka_container_resources_match_configured_role_resources() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                config:
+                  resources:
+                    memory:
+                      limit: 2Gi
+                    cpu:
+                      min: 260m
+                      max: 1024m
+                    storage:
+                      logDirs:
+                        capacity: 2Gi
+                roleGroups:
+                  default:
+                    replicas: 3
+              brokers:
+                config:
+                  resources:
+                    memory:
+                      limit: 2Gi
+                    cpu:
+                      min: 300m
+                      max: 500m
+                    storage:
+                      logDirs:
+                        capacity: 2Gi
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+        let cluster = validated_cluster(&kafka);
+
+        let controller_resources = controller_kafka_container(&cluster)
+            .resources
+            .expect("the controller kafka container has resources");
+        assert_cpu_and_memory(&controller_resources, "260m", "1024m", "2Gi", "2Gi");
+
+        let broker_resources = broker_kafka_container(&cluster)
+            .resources
+            .expect("the broker kafka container has resources");
+        assert_cpu_and_memory(&broker_resources, "300m", "500m", "2Gi", "2Gi");
+    }
+
+    /// Asserts the container's CPU request/limit and memory request/limit against the given
+    /// quantity strings (memory request and limit are always equal, see the CRD's
+    /// `Resources`/`MemoryLimits` type).
+    fn assert_cpu_and_memory(
+        resources: &stackable_operator::k8s_openapi::api::core::v1::ResourceRequirements,
+        expected_cpu_request: &str,
+        expected_cpu_limit: &str,
+        expected_memory_request: &str,
+        expected_memory_limit: &str,
+    ) {
+        use stackable_operator::k8s_openapi::apimachinery::pkg::api::resource::Quantity;
+
+        let requests = resources
+            .requests
+            .as_ref()
+            .expect("the container has resource requests");
+        let limits = resources
+            .limits
+            .as_ref()
+            .expect("the container has resource limits");
+
+        assert_eq!(
+            requests.get("cpu"),
+            Some(&Quantity(expected_cpu_request.to_string())),
+            "cpu request"
+        );
+        assert_eq!(
+            limits.get("cpu"),
+            Some(&Quantity(expected_cpu_limit.to_string())),
+            "cpu limit"
+        );
+        assert_eq!(
+            requests.get("memory"),
+            Some(&Quantity(expected_memory_request.to_string())),
+            "memory request"
+        );
+        assert_eq!(
+            limits.get("memory"),
+            Some(&Quantity(expected_memory_limit.to_string())),
+            "memory limit"
+        );
+    }
+
+    /// Unlike the `kafka` container, the `quorum-manager` sidecar's resources are hardcoded in
+    /// [`build_quorum_manager_container`] and not exposed through `config.resources` (which only
+    /// applies to the `kafka` container, see
+    /// [`kafka_container_resources_match_configured_role_resources`]). `podOverrides` is the only
+    /// way to change them, applied via a strategic merge on `spec.containers` keyed by container
+    /// `name` (see the `merge_from` call at the end of `build_controller_rolegroup_statefulset`).
+    #[test]
+    fn quorum_manager_resources_can_be_changed_by_pod_overrides() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              controllers:
+                podOverrides:
+                  spec:
+                    containers:
+                      - name: quorum-manager
+                        resources:
+                          requests:
+                            cpu: 200m
+                            memory: 256Mi
+                          limits:
+                            cpu: 750m
+                            memory: 768Mi
+                roleGroups:
+                  default:
+                    replicas: 3
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+        let cluster = validated_cluster(&kafka);
+
+        let containers = controller_containers(&cluster);
+        let sidecar = containers
+            .iter()
+            .find(|c| c.name == QUORUM_MANAGER_CONTAINER_NAME.to_string())
+            .expect("the quorum-manager sidecar is built");
+        let resources = sidecar
+            .resources
+            .as_ref()
+            .expect("the override gives the sidecar resources");
+
+        // Request and limit are asserted independently (unlike
+        // `kafka_container_resources_match_configured_role_resources`'s memory check) to show
+        // that `podOverrides` sets the raw Kubernetes fields directly, without the
+        // request-equals-limit constraint the CRD's `config.resources` memory field imposes.
+        assert_cpu_and_memory(resources, "200m", "750m", "256Mi", "768Mi");
+    }
+
     /// The startup and liveness probes share the same check - TCP reachability (a genuinely
     /// dead/hung process must still be restarted) plus the broker's JMX `BrokerState` metric
     /// reporting `RUNNING` (state `3`); see `probes::broker_running_probe`'s doc comment.

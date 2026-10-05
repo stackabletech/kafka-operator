@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Support Kerberos (GSSAPI) authentication on KRaft controllers, covering both
   broker-to-controller and controller-to-controller (Raft) traffic ([#1024]).
 - Support for Kafka 4.3.1 ([#1022]).
+- Add `/ready` endpoint to the operator Deployment, which reports the CRD installation status ([#1029]).
 
 ### Changed
 
@@ -46,6 +47,7 @@ All notable changes to this project will be documented in this file.
   operator upgrade, delete each broker StatefulSet so that the operator immediately recreates it
   with the new labels ([#1011]).
 - Make operations infallible where dependent on static inputs ([#1017]).
+- Bump stackable-operator to 0.119.0 ([#1029]).
 
 ### Fixed
 
@@ -82,6 +84,7 @@ All notable changes to this project will be documented in this file.
 [#1021]: https://github.com/stackabletech/kafka-operator/pull/1021
 [#1022]: https://github.com/stackabletech/kafka-operator/pull/1022
 [#1024]: https://github.com/stackabletech/kafka-operator/pull/1024
+[#1029]: https://github.com/stackabletech/kafka-operator/pull/1029
 [#1034]: https://github.com/stackabletech/kafka-operator/pull/1034
 
 ## [26.7.0] - 2026-07-21
