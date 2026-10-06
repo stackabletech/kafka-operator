@@ -22,7 +22,7 @@ affinity:
 In the example above `cluster-name` is the name of the Kafka custom resource that owns this Pod.
 
 If OPA authorization is configured, the broker Pods additionally prefer to run on the same Kubernetes nodes as the OPA Pods (weight 50).
-Only brokers are configured with the OPA authorizer.
+Only brokers are configured with the OPA authorizer, as they are the only role issuing OPA requests.
 
 [source,yaml]
 ----
