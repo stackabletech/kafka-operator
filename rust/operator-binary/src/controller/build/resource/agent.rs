@@ -47,6 +47,7 @@ pub fn build_agent_deployment(
         KafkaPlatformAccessAuthentication::Tls(credential) => {
             credential.add_volumes_and_mounts(&mut pod_builder, vec![&mut cb_agent])
         }
+        KafkaPlatformAccessAuthentication::Anonymous(_) => {}
     }
 
     cb_agent
@@ -257,6 +258,15 @@ mod tests {
             deployment["spec"]["template"]["spec"]["volumes"],
             json!([{"name": "tls-client-cert", "secret": {"secretName": "my-cert"}}])
         );
+    }
+
+    #[test]
+    fn deployment_with_anonymous_authentication_mounts_no_credential() {
+        let deployment = agent_deployment("{enabled: true, authentication: {anonymous: {}}}");
+
+        let pod_spec = &deployment["spec"]["template"]["spec"];
+        assert_eq!(pod_spec["volumes"], Value::Null);
+        assert_eq!(pod_spec["containers"][0]["volumeMounts"], Value::Null);
     }
 
     #[test]

@@ -12,8 +12,10 @@ use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 use stackable_operator::{
     commons::{
-        cluster_operation::ClusterOperation, networking::DomainName,
-        platform_access::tls::TlsClientCredential, product_image_selection::ProductImage,
+        cluster_operation::ClusterOperation,
+        networking::DomainName,
+        platform_access::{anonymous::Anonymous, tls::TlsClientCredential},
+        product_image_selection::ProductImage,
     },
     config::merge::Merge,
     constant,
@@ -116,7 +118,7 @@ pub struct KafkaPlatformAccess {
     #[serde(default)]
     pub enabled: bool,
 
-    /// The credential the agent authenticates to Kafka with.
+    /// How the agent authenticates to Kafka.
     pub authentication: KafkaPlatformAccessAuthentication,
 }
 
@@ -125,6 +127,7 @@ pub struct KafkaPlatformAccess {
 #[serde(rename_all = "camelCase")]
 pub enum KafkaPlatformAccessAuthentication {
     Tls(TlsClientCredential),
+    Anonymous(Anonymous),
 }
 
 #[versioned(

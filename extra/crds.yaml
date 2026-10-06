@@ -2141,11 +2141,16 @@ spec:
                 nullable: true
                 properties:
                   authentication:
-                    description: The credential the agent authenticates to Kafka with.
+                    description: How the agent authenticates to Kafka.
                     oneOf:
                     - required:
                       - tls
+                    - required:
+                      - anonymous
                     properties:
+                      anonymous:
+                        description: 'No credential: the product does not authenticate the agent.'
+                        type: object
                       tls:
                         description: 'Source of a TLS client certificate: a secret-operator SecretClass or a static Secret.'
                         oneOf:
