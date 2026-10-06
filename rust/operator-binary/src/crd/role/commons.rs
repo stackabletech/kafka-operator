@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
-    commons::{affinity::StackableAffinity, resources::PvcConfig},
+    commons::{affinity::StackableAffinity, opa::OpaConfig, resources::PvcConfig},
     config::{fragment::Fragment, merge::Merge},
     k8s_openapi::api::core::v1::PersistentVolumeClaim,
     schemars::{self, JsonSchema},
@@ -70,9 +70,13 @@ impl CommonConfig {
     // Auto TLS certificate lifetime
     const DEFAULT_SECRET_LIFETIME: Duration = Duration::from_days_unchecked(1);
 
-    pub fn default_config(cluster_name: &str, role: &str) -> CommonConfigFragment {
+    pub fn default_config(
+        cluster_name: &str,
+        role: &str,
+        opa_config: Option<&OpaConfig>,
+    ) -> CommonConfigFragment {
         CommonConfigFragment {
-            affinity: get_affinity(cluster_name, role),
+            affinity: get_affinity(cluster_name, role, opa_config),
             graceful_shutdown_timeout: Some(Self::DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT),
             requested_secret_lifetime: Some(Self::DEFAULT_SECRET_LIFETIME),
         }
