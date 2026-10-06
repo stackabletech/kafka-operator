@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
   broker-to-controller and controller-to-controller (Raft) traffic ([#1024]).
 - Support for Kafka 4.3.1 ([#1022]).
 - Add `/ready` endpoint to the operator Deployment, which reports the CRD installation status ([#1029]).
+- Brokers now have a default affinity to the OPA Pods when OPA authorization is configured ([#1035]).
 
 ### Changed
 
@@ -82,6 +83,7 @@ All notable changes to this project will be documented in this file.
 [#1022]: https://github.com/stackabletech/kafka-operator/pull/1022
 [#1024]: https://github.com/stackabletech/kafka-operator/pull/1024
 [#1029]: https://github.com/stackabletech/kafka-operator/pull/1029
+[#1035]: https://github.com/stackabletech/kafka-operator/pull/1035
 
 ## [26.7.0] - 2026-07-21
 
