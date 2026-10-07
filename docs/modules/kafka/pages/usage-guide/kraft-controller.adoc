@@ -236,7 +236,7 @@ broker.id=2000
 We then need to inform the operator to use these ids instead of generating new ones.
 This is done by creating a configmap map containing the id mapping and pointing the `spec.clusterProperties.brokerIdPodConfigMapName` property of the `KafkaCluster` resource to it.
 
-These two properties must be preserverd for the rest of the migration process and the lifetime of the cluster.
+These two properties must be preserved for the rest of the migration process and the lifetime of the cluster.
 
 The complete example `KafkaCluster` resource after applying the required changes looks as follows:
 
