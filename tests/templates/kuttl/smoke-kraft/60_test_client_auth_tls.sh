@@ -5,7 +5,7 @@
 unset TOPIC
 unset BAD_TOPIC
 
-echo "Connecting to boostrap address $KAFKA"
+echo "Connecting to bootstrap address $KAFKA"
 
 echo "Start client auth TLS testing..."
 ############################################################################
