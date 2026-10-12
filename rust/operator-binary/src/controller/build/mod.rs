@@ -3,58 +3,69 @@
 use std::marker::PhantomData;
 
 use snafu::{ResultExt, Snafu};
-use stackable_operator::{kvp::Labels, v2::kvp::label};
+use stackable_operator::{
+    k8s_openapi::api::{
+        apps::v1::StatefulSet,
+        core::v1::{ConfigMap, Service},
+        policy::v1::PodDisruptionBudget,
+    },
+    kvp::Labels,
+    v2::kvp::label,
+};
+use strum::IntoEnumIterator;
 
 use crate::{
     controller::{
         CONTROLLER_NAME, KubernetesResources, OPERATOR_NAME, PRODUCT_NAME, Prepared, RoleGroupName,
         RoleName, ValidatedCluster,
         build::{
-            properties::{
-                listener::get_kafka_listener_config, product_logging::vector_config_file_content,
-            },
             resource::{
-                config_map::{
-                    build_broker_rolegroup_config_map, build_controller_rolegroup_config_map,
-                },
                 discovery::build_discovery_configmap,
-                listener::build_broker_rolegroup_bootstrap_listener,
                 pdb::build_pdb,
                 rbac::{build_role_binding, build_service_account},
-                service::{build_rolegroup_headless_service, build_rolegroup_metrics_service},
-                statefulset::{
-                    build_broker_rolegroup_statefulset, build_controller_rolegroup_statefulset,
-                },
             },
+            role_group::{RoleGroupBuilder, build_broker_role_group, build_controller_role_group},
         },
     },
     crd::role::KafkaRole,
 };
 
 pub mod command;
+pub mod container;
 pub mod graceful_shutdown;
 pub mod jvm;
 pub mod kerberos;
 pub mod properties;
 pub mod resource;
+pub mod role_group;
 pub mod security;
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("failed to build ConfigMap for role group {role_group}"))]
-    ConfigMap {
-        source: resource::config_map::Error,
-        role_group: RoleGroupName,
-    },
-
-    #[snafu(display("failed to build StatefulSet for role group {role_group}"))]
-    StatefulSet {
-        source: resource::statefulset::Error,
-        role_group: RoleGroupName,
-    },
+    #[snafu(display("failed to build the resources of a role group"))]
+    RoleGroup { source: role_group::Error },
 
     #[snafu(display("failed to build discovery ConfigMap"))]
     DiscoveryConfigMap { source: resource::discovery::Error },
+}
+
+/// The resources of every role group, accumulated one role group at a time by [`build`].
+#[derive(Default)]
+struct RoleGroupResources {
+    services: Vec<Service>,
+    config_maps: Vec<ConfigMap>,
+    stateful_sets: Vec<StatefulSet>,
+}
+
+impl RoleGroupResources {
+    /// Builds the Services, ConfigMap and StatefulSet of one role group and adds them to the
+    /// collections.
+    fn add(&mut self, builder: &RoleGroupBuilder) -> Result<(), role_group::Error> {
+        self.services.extend(builder.build_services());
+        self.config_maps.push(builder.build_config_map()?);
+        self.stateful_sets.push(builder.build_statefulset()?);
+        Ok(())
+    }
 }
 
 /// Builds every Kubernetes resource for the given validated cluster.
@@ -62,140 +73,43 @@ pub enum Error {
 /// Does not need a Kubernetes client: every external reference is already dereferenced and
 /// validated by this point, so the only errors are resource-assembly failures.
 ///
+/// Each loop hands its role group's typed config to that role's builder, which is where
+/// everything specific to the role lives. The loops run in [`KafkaRole`] variant order, so each
+/// collection lists the brokers' resources before the controllers'.
+///
 /// This includes the discovery `ConfigMap`, built from the bootstrap `Listener`s fetched in the
 /// dereference step; see
 /// [`build_discovery_configmap`] for how its
 /// content depends on their ingress addresses.
 pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>, Error> {
-    let mut stateful_sets = vec![];
-    let mut services = vec![];
+    let mut built = RoleGroupResources::default();
     let mut listeners = vec![];
-    let mut config_maps = vec![];
-    let mut pod_disruption_budgets = vec![];
 
-    // Role-level resources first, then each role group's, in `KafkaRole` variant order.
-    let broker_role = KafkaRole::Broker;
-    // Kafka's `GenericRoleConfig` only carries the PodDisruptionBudget.
-    pod_disruption_budgets.extend(build_pdb(&cluster.broker_config.pdb, cluster, &broker_role));
-    for (role_group_name, validated_rg) in &cluster.broker_role_group_configs {
-        // The Vector agent config is the static `vector.yaml`, added to the rolegroup
-        // ConfigMap only when the Vector agent is enabled (resolved during validation).
-        let vector_config = validated_rg
-            .config
-            .logging
-            .vector_container
-            .is_some()
-            .then(vector_config_file_content);
+    for (role_group_name, rg_config) in &cluster.broker_role_group_configs {
+        let (builder, bootstrap_listener) =
+            build_broker_role_group(cluster, role_group_name, rg_config).context(RoleGroupSnafu)?;
 
-        services.push(build_rolegroup_headless_service(
-            cluster,
-            &broker_role,
-            role_group_name,
-            &cluster.cluster_config.kafka_security,
-        ));
-        services.push(build_rolegroup_metrics_service(
-            cluster,
-            &broker_role,
-            role_group_name,
-        ));
-
-        let kafka_listeners = get_kafka_listener_config(
-            cluster,
-            &cluster.cluster_config.kafka_security,
-            &broker_role,
-            role_group_name,
-        );
-
-        config_maps.push(
-            build_broker_rolegroup_config_map(
-                cluster,
-                role_group_name,
-                validated_rg,
-                &kafka_listeners,
-                vector_config,
-            )
-            .context(ConfigMapSnafu {
-                role_group: role_group_name.clone(),
-            })?,
-        );
-
-        stateful_sets.push(
-            build_broker_rolegroup_statefulset(
-                &broker_role,
-                role_group_name,
-                cluster,
-                validated_rg,
-            )
-            .context(StatefulSetSnafu {
-                role_group: role_group_name.clone(),
-            })?,
-        );
-
+        built.add(&builder).context(RoleGroupSnafu)?;
         // Only broker role groups get a bootstrap Listener.
-        listeners.push(build_broker_rolegroup_bootstrap_listener(
-            cluster,
-            &broker_role,
-            role_group_name,
-            &validated_rg.config.config,
-        ));
+        listeners.push(bootstrap_listener);
     }
 
-    let controller_role = KafkaRole::Controller;
-    if let Some(controller_config) = &cluster.controller_config {
-        pod_disruption_budgets.extend(build_pdb(&controller_config.pdb, cluster, &controller_role));
+    for (role_group_name, rg_config) in &cluster.controller_role_group_configs {
+        let builder = build_controller_role_group(cluster, role_group_name, rg_config)
+            .context(RoleGroupSnafu)?;
+
+        built.add(&builder).context(RoleGroupSnafu)?;
     }
-    for (role_group_name, validated_rg) in &cluster.controller_role_group_configs {
-        let vector_config = validated_rg
-            .config
-            .logging
-            .vector_container
-            .is_some()
-            .then(vector_config_file_content);
 
-        services.push(build_rolegroup_headless_service(
-            cluster,
-            &controller_role,
-            role_group_name,
-            &cluster.cluster_config.kafka_security,
-        ));
-        services.push(build_rolegroup_metrics_service(
-            cluster,
-            &controller_role,
-            role_group_name,
-        ));
+    let pod_disruption_budgets: Vec<PodDisruptionBudget> = KafkaRole::iter()
+        .filter_map(|role| build_pdb(cluster, &role))
+        .collect();
 
-        let kafka_listeners = get_kafka_listener_config(
-            cluster,
-            &cluster.cluster_config.kafka_security,
-            &controller_role,
-            role_group_name,
-        );
-
-        config_maps.push(
-            build_controller_rolegroup_config_map(
-                cluster,
-                role_group_name,
-                validated_rg,
-                &kafka_listeners,
-                vector_config,
-            )
-            .context(ConfigMapSnafu {
-                role_group: role_group_name.clone(),
-            })?,
-        );
-
-        stateful_sets.push(
-            build_controller_rolegroup_statefulset(
-                &controller_role,
-                role_group_name,
-                cluster,
-                validated_rg,
-            )
-            .context(StatefulSetSnafu {
-                role_group: role_group_name.clone(),
-            })?,
-        );
-    }
+    let RoleGroupResources {
+        services,
+        mut config_maps,
+        stateful_sets,
+    } = built;
 
     config_maps.push(build_discovery_configmap(cluster).context(DiscoveryConfigMapSnafu)?);
 
@@ -287,8 +201,15 @@ mod tests {
     use strum::IntoEnumIterator;
 
     use super::{
-        build, properties::ConfigFileName, resource::statefulset::QUORUM_MANAGER_CONTAINER_NAME,
-        security::STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+        build,
+        kerberos::KERBEROS_VOLUME_NAME,
+        properties::ConfigFileName,
+        role_group::QUORUM_MANAGER_CONTAINER_NAME,
+        security::{
+            OPA_TLS_VOLUME_NAME, STACKABLE_TLS_KAFKA_INTERNAL_DIR,
+            STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME, STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
+            STACKABLE_TLS_KCAT_VOLUME_NAME,
+        },
     };
     use crate::{
         controller::{
@@ -299,8 +220,10 @@ mod tests {
             },
         },
         crd::{
-            LISTENER_BOOTSTRAP_VOLUME_NAME, LISTENER_BROKER_VOLUME_NAME, STACKABLE_CONFIG_DIR,
-            STACKABLE_DATA_DIR, authorization::KafkaAuthorizationConfig, role::KafkaRole,
+            BROKER_ID_POD_MAP_DIR_NAME, LISTENER_BOOTSTRAP_VOLUME_NAME,
+            LISTENER_BROKER_VOLUME_NAME, STACKABLE_CONFIG_DIR, STACKABLE_CONFIG_DIR_NAME,
+            STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_DIR_NAME,
+            authorization::KafkaAuthorizationConfig, role::KafkaRole,
         },
     };
 
@@ -736,6 +659,48 @@ mod tests {
                 matches!(role, KafkaRole::Controller),
                 "{role:?} quorum-manager"
             );
+        }
+    }
+
+    /// A pod's `volumes` are an ordered list: reordering them changes the pod template of every
+    /// running StatefulSet and so restarts its pods. Pinned on the fixture that has every
+    /// optional volume, the role's own volumes first and the ones every role has last.
+    #[test]
+    fn pod_volumes_keep_their_order() {
+        let cluster = rich_kraft_mode_cluster();
+        let resources = build(&cluster).expect("build succeeds");
+        for role in KafkaRole::iter() {
+            let expected: Vec<String> = match role {
+                KafkaRole::Broker => vec![
+                    &*STACKABLE_TLS_KCAT_VOLUME_NAME,
+                    &*STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
+                    &*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
+                    &*OPA_TLS_VOLUME_NAME,
+                    &*KERBEROS_VOLUME_NAME,
+                    &*STACKABLE_LOG_CONFIG_DIR_NAME,
+                    &*LISTENER_BROKER_VOLUME_NAME,
+                    &*BROKER_ID_POD_MAP_DIR_NAME,
+                    &*STACKABLE_CONFIG_DIR_NAME,
+                    &*STACKABLE_LOG_DIR_NAME,
+                ],
+                KafkaRole::Controller => vec![
+                    &*KERBEROS_VOLUME_NAME,
+                    &*STACKABLE_LOG_CONFIG_DIR_NAME,
+                    &*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
+                    &*STACKABLE_CONFIG_DIR_NAME,
+                    &*STACKABLE_LOG_DIR_NAME,
+                ],
+            }
+            .into_iter()
+            .map(ToString::to_string)
+            .collect();
+            let actual: Vec<&str> = pod_spec(stateful_set_spec(&resources, &cluster, &role))
+                .volumes
+                .iter()
+                .flatten()
+                .map(|volume| volume.name.as_str())
+                .collect();
+            assert_eq!(actual, expected, "{role:?} pod volumes");
         }
     }
 
