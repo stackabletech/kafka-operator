@@ -213,21 +213,19 @@ impl ValidatedCluster {
         let mut seen_hashes = HashMap::<u32, (KafkaRole, RoleGroupName)>::new();
 
         // In `KafkaRole` variant order, which decides the reported side of a hash collision.
+        let broker_role_groups: Vec<(&RoleGroupName, Option<u16>)> = self
+            .broker_role_group_configs
+            .iter()
+            .map(|(role_group_name, rg)| (role_group_name, rg.replicas))
+            .collect();
+        let controller_role_groups: Vec<(&RoleGroupName, Option<u16>)> = self
+            .controller_role_group_configs
+            .iter()
+            .map(|(role_group_name, rg)| (role_group_name, rg.replicas))
+            .collect();
         let role_groups = [
-            (
-                KafkaRole::Broker,
-                self.broker_role_group_configs
-                    .iter()
-                    .map(|(role_group_name, rg)| (role_group_name, rg.replicas))
-                    .collect::<Vec<_>>(),
-            ),
-            (
-                KafkaRole::Controller,
-                self.controller_role_group_configs
-                    .iter()
-                    .map(|(role_group_name, rg)| (role_group_name, rg.replicas))
-                    .collect(),
-            ),
+            (KafkaRole::Broker, broker_role_groups),
+            (KafkaRole::Controller, controller_role_groups),
         ];
 
         for (role, role_groups) in &role_groups {
