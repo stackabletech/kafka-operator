@@ -793,8 +793,9 @@ mod tests {
 
     /// The predicted pods follow the StatefulSet's replica count: a role group scaled to zero
     /// predicts no pods, and one without a replica count predicts `DEFAULT_REPLICAS` pods, as
-    /// Kubernetes runs for `replicas: null`. Each predicted pod is named after the role group's
-    /// StatefulSet with its index, the name Kubernetes gives the pod.
+    /// Kubernetes runs for `replicas: null`. Each descriptor carries the role group's StatefulSet
+    /// name and the pod's index, from which its pod name (`<statefulset>-<index>`, the name
+    /// Kubernetes gives the pod) is rendered.
     #[test]
     fn pod_descriptors_follow_the_replica_count() {
         let kafka = minimal_kafka(
