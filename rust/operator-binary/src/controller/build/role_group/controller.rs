@@ -39,8 +39,8 @@ use crate::{
                 common_kafka_env, common_operator_env_vars, container_ports, log_config_volume,
             },
             kerberos::{
-                KAFKA_OPTS, KERBEROS_VOLUME_NAME, KRB5_CONFIG, add_kerberos_pod_config,
-                kerberos_env_vars,
+                KAFKA_OPTS, KERBEROS_VOLUME_NAME, KRB5_CONFIG, kerberos_env_vars,
+                mount_controller_kerberos_volume,
             },
             properties::{
                 ConfigFileName, controller_properties, listener::get_kafka_listener_config,
@@ -48,7 +48,7 @@ use crate::{
             resource::probes,
             security::{
                 STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
-                add_controller_volume_and_volume_mounts, controller_admin_client_properties,
+                controller_admin_client_properties, mount_controller_tls_volume,
             },
         },
         node_id_hasher::node_id_hash32_offset,
@@ -210,7 +210,7 @@ fn role_pod(
     let mut cb_kafka = new_container_builder(ControllerContainer::Kafka.name());
 
     let mut pod_volumes: Vec<Volume> =
-        add_kerberos_pod_config(kafka_security, kafka_role, &mut cb_kafka)
+        mount_controller_kerberos_volume(kafka_security, &mut cb_kafka)
             .with_context(|_| AddKerberosConfigSnafu {
                 role: ROLE,
                 role_group: role_group_name.clone(),
@@ -337,15 +337,11 @@ fn role_pod(
             role_group: role_group_name.clone(),
         })?;
     pod_volumes.push(
-        add_controller_volume_and_volume_mounts(
-            kafka_security,
-            &mut cb_kafka,
-            &requested_secret_lifetime,
-        )
-        .with_context(|_| AddVolumesAndVolumeMountsSnafu {
-            role: ROLE,
-            role_group: role_group_name.clone(),
-        })?,
+        mount_controller_tls_volume(kafka_security, &mut cb_kafka, &requested_secret_lifetime)
+            .with_context(|_| AddVolumesAndVolumeMountsSnafu {
+                role: ROLE,
+                role_group: role_group_name.clone(),
+            })?,
     );
 
     let kafka_container = cb_kafka.build();
@@ -441,7 +437,7 @@ fn build_quorum_manager_container(
 
     if kafka_security.has_kerberos_enabled() {
         // `controller_admin_client_properties` authenticates with the pod-scoped keytab
-        // mounted by `add_kerberos_pod_config`; the volume is already on the pod, this
+        // mounted by `mount_controller_kerberos_volume`; the volume is already on the pod, this
         // container just needs its own mount and `KRB5_CONFIG`. It deliberately does *not*
         // get `KAFKA_OPTS`: that points the JVM at `/tmp/jaas.properties`, which only the
         // `kafka` container renders.

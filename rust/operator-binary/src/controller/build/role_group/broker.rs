@@ -32,12 +32,12 @@ use crate::{
             container::{
                 common_kafka_env, common_operator_env_vars, container_ports, log_config_volume,
             },
-            kerberos::{add_kerberos_pod_config, kerberos_env_vars},
+            kerberos::{kerberos_env_vars, mount_broker_kerberos_volume},
             properties::{ConfigFileName, broker_properties, listener::get_kafka_listener_config},
             recommended_labels_for_role_group_resources,
             recommended_labels_for_unversioned_role_group_resources,
             resource::{listener::build_broker_rolegroup_bootstrap_listener, probes},
-            security::add_broker_volume_and_volume_mounts,
+            security::mount_broker_tls_volumes,
         },
     },
     crd::{
@@ -214,26 +214,21 @@ fn role_pod(
             role: ROLE,
             role_group: role_group_name.clone(),
         })?;
-    let mut pod_volumes = add_broker_volume_and_volume_mounts(
-        kafka_security,
-        &mut cb_kafka,
-        &requested_secret_lifetime,
-    )
-    .with_context(|_| AddVolumesAndVolumeMountsSnafu {
-        role: ROLE,
-        role_group: role_group_name.clone(),
-    })?;
+    let mut pod_volumes =
+        mount_broker_tls_volumes(kafka_security, &mut cb_kafka, &requested_secret_lifetime)
+            .with_context(|_| AddVolumesAndVolumeMountsSnafu {
+                role: ROLE,
+                role_group: role_group_name.clone(),
+            })?;
 
-    if kafka_security.has_kerberos_enabled() {
-        pod_volumes.extend(
-            add_kerberos_pod_config(kafka_security, kafka_role, &mut cb_kafka).with_context(
-                |_| AddKerberosConfigSnafu {
-                    role: ROLE,
-                    role_group: role_group_name.clone(),
-                },
-            )?,
-        );
-    }
+    pod_volumes.extend(
+        mount_broker_kerberos_volume(kafka_security, &mut cb_kafka).with_context(|_| {
+            AddKerberosConfigSnafu {
+                role: ROLE,
+                role_group: role_group_name.clone(),
+            }
+        })?,
+    );
 
     // Operator-set env vars first; the user's `envOverrides` are merged on top last and win.
     let env: Vec<EnvVar> = common_operator_env_vars(validated_cluster, kafka_security)
@@ -358,7 +353,7 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
     }
 
     // Broker pods reach the CONTROLLER listener as SASL clients; the only principals in
-    // their keytab (see `add_kerberos_pod_config`) are for the broker and bootstrap listener
+    // their keytab (see `mount_broker_kerberos_volume`) are for the broker and bootstrap listener
     // addresses, so their CONTROLLER section must reuse the broker address.
     let controller_section =
         controller_jaas_section(&node_address_cmd(STACKABLE_LISTENER_BROKER_DIR));

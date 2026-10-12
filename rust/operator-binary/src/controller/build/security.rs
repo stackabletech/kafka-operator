@@ -201,17 +201,17 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
 /// Client-side (unprefixed `security.protocol`/`ssl.*`) properties for an admin CLI tool
 /// (e.g. `kafka-metadata-quorum.sh`) talking to the CONTROLLER listener from *inside* a
 /// controller pod, over the `tls-kafka-internal` volume mounted by
-/// `add_controller_volume_and_volume_mounts`.
+/// `mount_controller_tls_volume`.
 /// When Kerberos is enabled the CONTROLLER listener is `SASL_SSL` (see
 /// [`get_kafka_listener_config`][glc]), so these calls must authenticate with GSSAPI. They do
 /// so as the controller's *own* pod principal, from the pod-scoped keytab mounted by
-/// [`add_kerberos_pod_config`][akpc] — the correct identity for a voter registering itself.
+/// [`mount_controller_kerberos_volume`] — the correct identity for a voter registering itself.
 ///
 /// The principal contains `${env:…}` placeholders, so the rendered file must be passed
 /// through `config-utils template` before use; see [`quorum_manager_container_command`][qmcc].
 ///
 /// [glc]: crate::controller::build::properties::listener::get_kafka_listener_config
-/// [akpc]: crate::controller::build::kerberos::add_kerberos_pod_config
+/// [`mount_controller_kerberos_volume`]: crate::controller::build::kerberos::mount_controller_kerberos_volume
 /// [qmcc]: crate::controller::build::command::quorum_manager_container_command
 pub fn controller_admin_client_properties(
     security: &ValidatedKafkaSecurity,
@@ -263,7 +263,7 @@ pub fn controller_admin_client_properties(
 ///
 /// Panics if the volume mounts cannot be added to the container builders. Only call this on
 /// container builders whose mount paths are still distinct from the ones added here.
-pub fn add_broker_volume_and_volume_mounts(
+pub fn mount_broker_tls_volumes(
     security: &ValidatedKafkaSecurity,
     cb_kafka: &mut ContainerBuilder,
     requested_secret_lifetime: &Duration,
@@ -338,7 +338,7 @@ pub fn add_broker_volume_and_volume_mounts(
 ///
 /// Panics if the volume mounts cannot be added to the container builder. Only call this on a
 /// container builder whose mount paths are still distinct from the ones added here.
-pub fn add_controller_volume_and_volume_mounts(
+pub fn mount_controller_tls_volume(
     security: &ValidatedKafkaSecurity,
     cb_kafka: &mut ContainerBuilder,
     requested_secret_lifetime: &Duration,
@@ -1054,7 +1054,7 @@ pub(crate) mod tests {
     #[test]
     fn controller_admin_client_properties_always_uses_tls_even_without_external_client_tls() {
         // Internal (broker/controller) TLS is mandatory (`tls_internal_secret_class()` always
-        // returns a SecretClass, defaulting to "tls"), and `add_controller_volume_and_volume_mounts`
+        // returns a SecretClass, defaulting to "tls"), and `mount_controller_tls_volume`
         // unconditionally mounts both the keystore and truststore on controller pods, independent
         // of the external client TLS/authentication settings. So even the "plaintext" fixture
         // (no external client TLS, no client-cert auth) still needs SSL to reach the CONTROLLER
