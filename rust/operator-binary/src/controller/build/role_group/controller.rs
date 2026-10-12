@@ -203,11 +203,18 @@ fn role_pod(
 
     let mut cb_kafka = new_container_builder(ControllerContainer::Kafka.name());
 
-    let mut pod_volumes: Vec<Volume> =
-        mount_controller_kerberos_volume(kafka_security, &mut cb_kafka)
-            .context(BuildKerberosVolumeSnafu)?
-            .into_iter()
-            .collect();
+    // The push order below (Kerberos, `log-config`, then the internal TLS volume, which is not
+    // next to Kerberos as it is for brokers) is part of the pod template: a pod's `volumes` is
+    // an ordered list, so changing the order changes the template of every deployed StatefulSet
+    // and restarts its pods. The order is pinned by `pod_volumes_keep_their_order` in
+    // `build/mod.rs`.
+    let mut pod_volumes: Vec<Volume> = Vec::new();
+
+    if let Some(kerberos_volume) = mount_controller_kerberos_volume(kafka_security, &mut cb_kafka)
+        .context(BuildKerberosVolumeSnafu)?
+    {
+        pod_volumes.push(kerberos_volume);
+    }
 
     let node_id_offset = node_id_hash32_offset(&ROLE, role_group_name.as_ref()).to_string();
 

@@ -201,6 +201,11 @@ fn role_pod(
 
     let mut cb_kafka = new_container_builder(BrokerContainer::Kafka.name());
 
+    // The push order below (TLS, Kerberos, `log-config`, the broker listener, the broker-id
+    // ConfigMap) is part of the pod template: a pod's `volumes` is an ordered list, so changing
+    // the order changes the template of every deployed StatefulSet and restarts its pods. The
+    // order is pinned by `pod_volumes_keep_their_order` in `build/mod.rs`.
+
     // The TLS certificates are requested with the role group's secret lifetime.
     let requested_secret_lifetime = config
         .common_config
@@ -210,10 +215,11 @@ fn role_pod(
         mount_broker_tls_volumes(kafka_security, &mut cb_kafka, &requested_secret_lifetime)
             .context(BuildTlsVolumesSnafu)?;
 
-    pod_volumes.extend(
-        mount_broker_kerberos_volume(kafka_security, &mut cb_kafka)
-            .context(BuildKerberosVolumeSnafu)?,
-    );
+    if let Some(kerberos_volume) = mount_broker_kerberos_volume(kafka_security, &mut cb_kafka)
+        .context(BuildKerberosVolumeSnafu)?
+    {
+        pod_volumes.push(kerberos_volume);
+    }
 
     // Operator-set env vars first; the user's `envOverrides` are merged on top last and win.
     let env: Vec<EnvVar> = common_operator_env_vars(cluster, kafka_security)
@@ -302,6 +308,10 @@ fn role_pod(
 /// The ephemeral listener volume through which the broker is reached directly, from the role
 /// group's `brokerListenerClass`. Unlike the bootstrap listener it is not persistent, so it is a
 /// pod volume rather than a claim template.
+///
+/// Built with the v1 [`ListenerOperatorVolumeSourceBuilder`], whose reference type is imported as
+/// `ListenerOperatorReference` to keep it apart from the v2 `ListenerReference` the bootstrap
+/// claim template uses: operator-rs has no v2 helper for the ephemeral form, only for the claim.
 fn broker_listener_volume(
     cluster: &ValidatedCluster,
     role_group_name: &RoleGroupName,
