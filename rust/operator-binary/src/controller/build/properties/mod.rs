@@ -8,10 +8,7 @@ pub mod security_properties;
 
 use std::collections::BTreeSet;
 
-use crate::crd::{
-    KafkaPodDescriptor,
-    role::{AnyConfig, KafkaRole},
-};
+use crate::crd::{KafkaPodDescriptor, role::KafkaRole};
 
 /// The names of the config files assembled into the rolegroup `ConfigMap`.
 ///
@@ -42,15 +39,6 @@ pub enum ConfigFileName {
     /// Used by Kafka 4.0 and later.
     #[strum(serialize = "log4j2.properties")]
     Log4j2,
-}
-
-/// The config file name for a role group, derived from its role (`broker.properties` for brokers,
-/// `controller.properties` for controllers).
-pub fn config_file_name(config: &AnyConfig) -> ConfigFileName {
-    match config {
-        AnyConfig::Broker(_) => ConfigFileName::BrokerProperties,
-        AnyConfig::Controller(_) => ConfigFileName::ControllerProperties,
-    }
 }
 
 /// Whether the given Kafka version uses the legacy log4j logging framework.
