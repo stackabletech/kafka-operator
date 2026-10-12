@@ -61,6 +61,9 @@ pub enum KafkaRole {
 
 impl fmt::Display for KafkaRole {
     /// The role's name, e.g. `broker`.
+    ///
+    /// `to_string()` already worked through the [`Deref`] to [`RoleName`]; this impl exists so a
+    /// role can be a `{role}` field in snafu `display` strings, which require `Display` itself.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.deref().fmt(f)
     }
