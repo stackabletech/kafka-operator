@@ -108,7 +108,7 @@ data:
     echo Sent message: \"$sent_message\"
 
     # Explicit numeric offset (not "-o stored"/"auto.offset.reset=beginning"): the bundled kcat's
-    # librdkafka (1.7.0) mis-detects broker feature support against Kafka >=4.0 brokers, which
+    # librdkafka (1.7.0) misdetects broker feature support against Kafka >=4.0 brokers, which
     # dropped old low-numbered API versions (KIP-896). It matches ApiVersions by exact version
     # instead of range, so it wrongly reports the ListOffsets logical-offset query as unsupported
     # ("Failed to query logical offset BEGINNING: Local: Required feature not supported by
