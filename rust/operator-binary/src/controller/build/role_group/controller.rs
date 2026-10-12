@@ -98,10 +98,6 @@ pub(crate) fn build<'a>(
         common: config.common_config.clone(),
         logging: rg_config.config.logging.clone(),
         kafka_container_name: ControllerContainer::Kafka.name(),
-        kafka_log_config: config
-            .logging
-            .for_container(&ControllerContainer::Kafka)
-            .into_owned(),
         vector_container_name: ControllerContainer::Vector.name(),
         role_containers,
         role_pod_volumes,

@@ -1,10 +1,10 @@
-use std::{borrow::Cow, collections::BTreeMap};
+use std::collections::BTreeMap;
 
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
     k8s_openapi::api::core::v1::ConfigMap,
-    product_logging::{framework::VECTOR_CONFIG_FILE, spec::ContainerLogConfig},
+    product_logging::framework::VECTOR_CONFIG_FILE,
     v2::{
         builder::meta::ownerreference_from_resource,
         config_file_writer::{PropertiesWriterError, to_java_properties_string},
@@ -41,14 +41,14 @@ pub enum Error {
 }
 
 /// The rolegroup [`ConfigMap`] entries every role has: `security.properties` with the role
-/// group's `security_overrides`, `client.properties`, the log config files of the role's `kafka`
-/// container and, if the Vector agent is enabled, `vector.yaml`.
+/// group's `security_overrides`, `client.properties`, the log config file of the role's `kafka`
+/// container (named `kafka_container_name`) unless it uses a custom log config, and `vector.yaml`
+/// if the Vector agent is enabled.
 pub(crate) fn common_config_map_data(
     validated_cluster: &ValidatedCluster,
-    security_overrides: BTreeMap<String, String>,
     kafka_container_name: &ContainerName,
-    kafka_log_config: &ContainerLogConfig,
     logging: &ValidatedLogging,
+    security_overrides: BTreeMap<String, String>,
 ) -> Result<Vec<(String, String)>, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
 
@@ -78,7 +78,7 @@ pub(crate) fn common_config_map_data(
     let log_config_data = role_group_config_map_data(
         &validated_cluster.image.product_version,
         kafka_container_name.as_ref(),
-        Cow::Borrowed(kafka_log_config),
+        &logging.kafka_container,
     );
     for (file_name, data_entry) in log_config_data {
         if let Some(data_entry) = data_entry {

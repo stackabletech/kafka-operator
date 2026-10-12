@@ -29,7 +29,6 @@ use stackable_operator::{
         apps::v1::{StatefulSet, StatefulSetUpdateStrategy},
         core::v1::{ConfigMap, Container, PersistentVolumeClaim, PodTemplateSpec, Service, Volume},
     },
-    product_logging::spec::ContainerLogConfig,
     v2::{config_file_writer::PropertiesWriterError, types::kubernetes::ContainerName},
 };
 
@@ -134,9 +133,6 @@ pub(crate) struct RoleGroupInputs<'a> {
     pub(crate) logging: ValidatedLogging,
     /// The name of the role's `kafka` container, under which its log config is rendered.
     pub(crate) kafka_container_name: &'static ContainerName,
-    /// The log config of the role's `kafka` container, rendered into the `ConfigMap`'s log4j or
-    /// log4j2 entries.
-    pub(crate) kafka_log_config: ContainerLogConfig,
     /// The name of the role's Vector sidecar container.
     pub(crate) vector_container_name: &'static ContainerName,
     /// The containers only this role runs, in pod order: the `kafka` container, and for
@@ -197,10 +193,9 @@ impl<'a> RoleGroupBuilder<'a> {
         config_map_data.extend(
             resource::config_map::common_config_map_data(
                 inputs.cluster,
-                inputs.security_properties_overrides,
                 inputs.kafka_container_name,
-                &inputs.kafka_log_config,
                 &inputs.logging,
+                inputs.security_properties_overrides,
             )
             .map_err(|source| Error::ConfigMap {
                 source,
