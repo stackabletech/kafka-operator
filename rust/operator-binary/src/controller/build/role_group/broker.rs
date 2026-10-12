@@ -1,4 +1,4 @@
-//! Gathering one broker role group.
+//! Building one broker role group.
 
 use indoc::formatdoc;
 use snafu::{OptionExt, ResultExt};
@@ -19,9 +19,9 @@ use stackable_operator::{
 };
 
 use super::{
-    AddKerberosConfigSnafu, AddListenerVolumeSnafu, AddVolumesAndVolumeMountsSnafu,
-    BuildPodDescriptorsSnafu, BuildProbeSnafu, ConstructJvmArgumentsSnafu, Error,
-    MissingSecretLifetimeSnafu, RoleGroupBuilder, RoleGroupInputs, SerializeConfigFileSnafu,
+    BuildKerberosVolumeSnafu, BuildListenerVolumeSnafu, BuildPodDescriptorsSnafu, BuildProbeSnafu,
+    BuildTlsVolumesSnafu, ConfigMapSnafu, ConstructJvmArgumentsSnafu, Error,
+    MissingSecretLifetimeSnafu, RoleGroupBuilder, SerializeConfigFileSnafu,
     controller_jaas_section,
 };
 use crate::{
@@ -36,7 +36,10 @@ use crate::{
             properties::{ConfigFileName, broker_properties, listener::get_kafka_listener_config},
             recommended_labels_for_role_group_resources,
             recommended_labels_for_unversioned_role_group_resources,
-            resource::{listener::build_broker_rolegroup_bootstrap_listener, probes},
+            resource::{
+                config_map::common_config_map_data,
+                listener::build_broker_rolegroup_bootstrap_listener, probes,
+            },
             security::mount_broker_tls_volumes,
         },
     },
@@ -59,48 +62,58 @@ const ROLE: KafkaRole = KafkaRole::Broker;
 
 const POD_MANAGEMENT_POLICY_PARALLEL: &str = "Parallel";
 
-/// Gathers one broker role group.
+/// Builds one broker role group: the [`RoleGroupBuilder`] for its Services, ConfigMap and
+/// StatefulSet, and its bootstrap `Listener`.
 ///
-/// Brokers are the only role with a bootstrap `Listener`, returned alongside the builder, and
-/// the only role exposed through listener-operator volumes: the bootstrap listener as a
-/// persistent claim template and the broker listener as an ephemeral pod volume.
+/// Brokers are the only role with a bootstrap `Listener` and the only role exposed through
+/// listener-operator volumes: the bootstrap listener as a persistent claim template and the
+/// broker listener as an ephemeral pod volume.
 pub(crate) fn build<'a>(
     cluster: &'a ValidatedCluster,
     role_group_name: &RoleGroupName,
     rg_config: &BrokerRoleGroupConfig,
 ) -> Result<(RoleGroupBuilder<'a>, listener::v1alpha1::Listener), Error> {
     let config = &rg_config.config.config;
+    let logging = &rg_config.config.logging;
 
-    let role_config_map_data = role_config_map_data(cluster, role_group_name, rg_config)?;
+    let mut config_map_data = role_config_map_data(cluster, role_group_name, rg_config)?;
+    config_map_data.extend(
+        common_config_map_data(
+            cluster,
+            BrokerContainer::Kafka.name(),
+            logging,
+            rg_config
+                .config_overrides
+                .security_properties
+                .overrides
+                .clone(),
+        )
+        .context(ConfigMapSnafu)?,
+    );
+
     let (role_containers, role_pod_volumes) = role_pod(cluster, role_group_name, rg_config)?;
 
-    let inputs = RoleGroupInputs {
+    let builder = RoleGroupBuilder {
         cluster,
         role: ROLE,
         role_group_name: role_group_name.clone(),
         common: config.common_config.clone(),
-        logging: rg_config.config.logging.clone(),
-        kafka_container_name: BrokerContainer::Kafka.name(),
+        logging: logging.clone(),
         vector_container_name: BrokerContainer::Vector.name(),
         role_containers,
         role_pod_volumes,
         volume_claim_templates: volume_claim_templates(cluster, role_group_name, config),
         pod_management_policy: POD_MANAGEMENT_POLICY_PARALLEL,
         update_strategy: None,
-        role_config_map_data,
-        security_properties_overrides: rg_config
-            .config_overrides
-            .security_properties
-            .overrides
-            .clone(),
         replicas: rg_config.replicas,
         pod_overrides: rg_config.pod_overrides.clone(),
+        config_map_data,
     };
 
     let bootstrap_listener =
         build_broker_rolegroup_bootstrap_listener(cluster, &ROLE, role_group_name, config);
 
-    Ok((RoleGroupBuilder::new(inputs)?, bootstrap_listener))
+    Ok((builder, bootstrap_listener))
 }
 
 /// `broker.properties` rendered with the role group's overrides, and the broker's JAAS config.
@@ -114,13 +127,9 @@ fn role_config_map_data(
     let listener_config =
         get_kafka_listener_config(cluster, kafka_security, &ROLE, role_group_name);
 
-    let pod_descriptors =
-        cluster
-            .pod_descriptors(None)
-            .with_context(|_| BuildPodDescriptorsSnafu {
-                role: ROLE,
-                role_group: role_group_name.clone(),
-            })?;
+    let pod_descriptors = cluster
+        .pod_descriptors(None)
+        .context(BuildPodDescriptorsSnafu)?;
 
     let kafka_config = broker_properties::build(
         &cluster.cluster_config,
@@ -138,12 +147,8 @@ fn role_config_map_data(
     Ok(vec![
         (
             ConfigFileName::BrokerProperties.to_string(),
-            to_java_properties_string(kafka_config.iter()).with_context(|_| {
-                SerializeConfigFileSnafu {
-                    file: ConfigFileName::BrokerProperties,
-                    role: ROLE,
-                    role_group: role_group_name.clone(),
-                }
+            to_java_properties_string(kafka_config.iter()).context(SerializeConfigFileSnafu {
+                file: ConfigFileName::BrokerProperties,
             })?,
         ),
         // This file contains the JAAS configuration for Kerberos authentication
@@ -159,25 +164,20 @@ fn role_config_map_data(
 
 /// The `StatefulSet`'s volume claim templates: the storage volumes and the bootstrap listener.
 fn volume_claim_templates(
-    validated_cluster: &ValidatedCluster,
+    cluster: &ValidatedCluster,
     role_group_name: &RoleGroupName,
-    merged_config: &BrokerConfig,
+    config: &BrokerConfig,
 ) -> Vec<PersistentVolumeClaim> {
-    let kafka_role = &ROLE;
     // Used for PVC templates, which cannot be modified once they are deployed. The version label
     // is omitted so the labels stay stable across version upgrades.
-    let unversioned_recommended_labels = recommended_labels_for_unversioned_role_group_resources(
-        validated_cluster,
-        kafka_role,
-        role_group_name,
-    );
+    let unversioned_recommended_labels =
+        recommended_labels_for_unversioned_role_group_resources(cluster, &ROLE, role_group_name);
 
-    let mut pvcs = merged_config.resources.storage.build_pvcs();
+    let mut pvcs = config.resources.storage.build_pvcs();
 
     // bootstrap listener should be persistent,
     // main broker listener is an ephemeral PVC instead
-    let bootstrap_listener_name =
-        validated_cluster.bootstrap_listener_name(kafka_role, role_group_name);
+    let bootstrap_listener_name = cluster.bootstrap_listener_name(&ROLE, role_group_name);
     pvcs.push(listener_operator_volume_source_builder_build_pvc(
         &ListenerReference::Listener(bootstrap_listener_name),
         &unversioned_recommended_labels,
@@ -189,82 +189,64 @@ fn volume_claim_templates(
 
 /// The broker pod's `kafka` container and the volumes only brokers have, in pod order.
 fn role_pod(
-    validated_cluster: &ValidatedCluster,
+    cluster: &ValidatedCluster,
     role_group_name: &RoleGroupName,
-    validated_rg: &BrokerRoleGroupConfig,
+    rg_config: &BrokerRoleGroupConfig,
 ) -> Result<(Vec<Container>, Vec<Volume>), Error> {
-    let kafka_role = &ROLE;
-    let kafka_security = &validated_cluster.cluster_config.kafka_security;
-    let resolved_product_image = &validated_cluster.image;
-    let merged_config = &validated_rg.config.config;
-    let resource_names = validated_cluster.role_group_resource_names(kafka_role, role_group_name);
-    let recommended_labels =
-        recommended_labels_for_role_group_resources(validated_cluster, kafka_role, role_group_name);
+    let config = &rg_config.config.config;
+    let logging = &rg_config.config.logging;
+    let kafka_security = &cluster.cluster_config.kafka_security;
+    let image = &cluster.image;
+    let resource_names = cluster.role_group_resource_names(&ROLE, role_group_name);
+
     let mut cb_kafka = new_container_builder(BrokerContainer::Kafka.name());
 
-    // Add TLS related volumes and volume mounts
-    let requested_secret_lifetime = merged_config
+    // The TLS certificates are requested with the role group's secret lifetime.
+    let requested_secret_lifetime = config
         .common_config
         .requested_secret_lifetime
-        .with_context(|| MissingSecretLifetimeSnafu {
-            role: ROLE,
-            role_group: role_group_name.clone(),
-        })?;
+        .context(MissingSecretLifetimeSnafu)?;
     let mut pod_volumes =
         mount_broker_tls_volumes(kafka_security, &mut cb_kafka, &requested_secret_lifetime)
-            .with_context(|_| AddVolumesAndVolumeMountsSnafu {
-                role: ROLE,
-                role_group: role_group_name.clone(),
-            })?;
+            .context(BuildTlsVolumesSnafu)?;
 
     pod_volumes.extend(
-        mount_broker_kerberos_volume(kafka_security, &mut cb_kafka).with_context(|_| {
-            AddKerberosConfigSnafu {
-                role: ROLE,
-                role_group: role_group_name.clone(),
-            }
-        })?,
+        mount_broker_kerberos_volume(kafka_security, &mut cb_kafka)
+            .context(BuildKerberosVolumeSnafu)?,
     );
 
     // Operator-set env vars first; the user's `envOverrides` are merged on top last and win.
-    let env: Vec<EnvVar> = common_operator_env_vars(validated_cluster, kafka_security)
+    let env: Vec<EnvVar> = common_operator_env_vars(cluster, kafka_security)
         .merge(
             common_kafka_env(
-                &merged_config.resources,
-                &validated_rg
+                &config.resources,
+                &rg_config
                     .product_specific_common_config
                     .jvm_argument_overrides,
-                resolved_product_image,
-                kafka_role,
+                image,
+                &ROLE,
                 role_group_name,
             )
-            .with_context(|_| ConstructJvmArgumentsSnafu {
-                role: ROLE,
-                role_group: role_group_name.clone(),
-            })?,
+            .context(ConstructJvmArgumentsSnafu)?,
         )
         .merge(kerberos_env_vars(kafka_security))
-        .merge(validated_rg.env_overrides.clone())
+        .merge(rg_config.env_overrides.clone())
         .into();
 
-    let probe_context = || BuildProbeSnafu {
-        role: ROLE,
-        role_group: role_group_name.clone(),
-    };
     // The client port can accept connections before the broker has replayed its log and
     // reached the JMX `RUNNING` state, so the startupProbe waits for both, giving it up to
     // 5 minutes (60 * 5s) before the livenessProbe is allowed to start counting failures.
-    let broker_startup_probe =
+    let startup_probe =
         probes::broker_running_probe(kafka_security.client_port(), METRICS_PORT, 5, 5, 60)
-            .with_context(|_| probe_context())?;
-    let broker_liveness_probe =
+            .context(BuildProbeSnafu)?;
+    let liveness_probe =
         probes::broker_running_probe(kafka_security.client_port(), METRICS_PORT, 10, 30, 20)
-            .with_context(|_| probe_context())?;
-    let broker_readiness_probe =
-        probes::broker_kcat_readiness_probe(kafka_security).with_context(|_| probe_context())?;
+            .context(BuildProbeSnafu)?;
+    let readiness_probe =
+        probes::broker_kcat_readiness_probe(kafka_security).context(BuildProbeSnafu)?;
 
     cb_kafka
-        .image_from_product_image(resolved_product_image)
+        .image_from_product_image(image)
         .command(vec![
             "/bin/bash".to_string(),
             "-x".to_string(),
@@ -273,7 +255,7 @@ fn role_pod(
             "-c".to_string(),
         ])
         .args(vec![broker_kafka_container_commands(
-            validated_cluster.cluster_config.is_kraft_mode(),
+            cluster.cluster_config.is_kraft_mode(),
             kafka_security,
         )]);
 
@@ -295,38 +277,15 @@ fn role_pod(
         .expect("The mount paths are statically defined and there should be no duplicates.")
         .add_volume_mount(&*STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
         .expect("The mount paths are statically defined and there should be no duplicates.")
-        .resources(merged_config.resources.clone().into())
-        .startup_probe(broker_startup_probe)
-        .liveness_probe(broker_liveness_probe)
-        .readiness_probe(broker_readiness_probe);
+        .resources(config.resources.clone().into())
+        .startup_probe(startup_probe)
+        .liveness_probe(liveness_probe)
+        .readiness_probe(readiness_probe);
 
-    pod_volumes.push(log_config_volume(
-        &validated_rg.config.logging,
-        &resource_names,
-    ));
+    pod_volumes.push(log_config_volume(logging, &resource_names));
+    pod_volumes.push(broker_listener_volume(cluster, role_group_name, config)?);
 
-    pod_volumes.push(Volume {
-        name: LISTENER_BROKER_VOLUME_NAME.to_string(),
-        ephemeral: Some(
-            ListenerOperatorVolumeSourceBuilder::new(
-                &ListenerOperatorReference::ListenerClass(
-                    merged_config.broker_listener_class.to_string(),
-                ),
-                &recommended_labels,
-            )
-            .build_ephemeral()
-            .with_context(|_| AddListenerVolumeSnafu {
-                role: ROLE,
-                role_group: role_group_name.clone(),
-            })?,
-        ),
-        ..Volume::default()
-    });
-
-    if let Some(broker_id_config_map_name) = &validated_cluster
-        .cluster_config
-        .broker_id_pod_config_map_name
-    {
+    if let Some(broker_id_config_map_name) = &cluster.cluster_config.broker_id_pod_config_map_name {
         pod_volumes.push(
             VolumeBuilder::new(&*BROKER_ID_POD_MAP_DIR_NAME)
                 .with_config_map(broker_id_config_map_name)
@@ -338,6 +297,30 @@ fn role_pod(
     }
 
     Ok((vec![cb_kafka.build()], pod_volumes))
+}
+
+/// The ephemeral listener volume through which the broker is reached directly, from the role
+/// group's `brokerListenerClass`. Unlike the bootstrap listener it is not persistent, so it is a
+/// pod volume rather than a claim template.
+fn broker_listener_volume(
+    cluster: &ValidatedCluster,
+    role_group_name: &RoleGroupName,
+    config: &BrokerConfig,
+) -> Result<Volume, Error> {
+    let recommended_labels =
+        recommended_labels_for_role_group_resources(cluster, &ROLE, role_group_name);
+    let listener_volume_source = ListenerOperatorVolumeSourceBuilder::new(
+        &ListenerOperatorReference::ListenerClass(config.broker_listener_class.to_string()),
+        &recommended_labels,
+    )
+    .build_ephemeral()
+    .context(BuildListenerVolumeSnafu)?;
+
+    Ok(Volume {
+        name: LISTENER_BROKER_VOLUME_NAME.to_string(),
+        ephemeral: Some(listener_volume_source),
+        ..Volume::default()
+    })
 }
 
 // Generate JAAS configuration file for Kerberos authentication

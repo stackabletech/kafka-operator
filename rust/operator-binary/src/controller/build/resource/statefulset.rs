@@ -216,7 +216,7 @@ mod tests {
     use super::*;
     use crate::{
         controller::{
-            build::role_group::QUORUM_MANAGER_CONTAINER_NAME,
+            build::role_group::controller::QUORUM_MANAGER_CONTAINER_NAME,
             test_support::{minimal_kafka, validated_cluster},
         },
         crd::role::KAFKA_NODE_ID_OFFSET,

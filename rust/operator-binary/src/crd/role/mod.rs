@@ -2,7 +2,7 @@ pub mod broker;
 pub mod commons;
 pub mod controller;
 
-use std::{ops::Deref, str::FromStr};
+use std::{fmt, ops::Deref, str::FromStr};
 
 use stackable_operator::{
     constant,
@@ -57,6 +57,13 @@ constant!(CONTROLLER_ROLE_NAME: RoleName = "controller");
 pub enum KafkaRole {
     Broker,
     Controller,
+}
+
+impl fmt::Display for KafkaRole {
+    /// The role's name, e.g. `broker`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.deref().fmt(f)
+    }
 }
 
 impl Deref for KafkaRole {

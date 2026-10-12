@@ -1,30 +1,23 @@
 //! Building the Kubernetes resources of one role group.
 //!
-//! Two phases, so neither has to reach into the other. First each role's module ([`broker`],
-//! [`controller`]) gathers its [`RoleGroupInputs`]: it builds the containers only that role runs
-//! (its `kafka` container, and for controllers the `quorum-manager` sidecar) together with the
-//! pod volumes they need, and renders the `ConfigMap` entries only that role has.
-//! [`RoleGroupBuilder::new`] adds the `ConfigMap` entries every role has. Then
-//! [`RoleGroupBuilder`]'s `build_*` methods emit the Kubernetes objects, adding what every role's
-//! pod has (the `config` and `log` volumes, the Vector sidecar and the pod-level settings).
+//! Each role's module ([`broker`], [`controller`]) fills in a [`RoleGroupBuilder`] for one role
+//! group. It builds the containers only that role runs (its `kafka` container, and for
+//! controllers the `quorum-manager` sidecar) together with the pod volumes they need, and renders
+//! the role group's `ConfigMap` entries. Kafka's roles differ in their main container (probes,
+//! `preStop`, command and environment) and in the sidecars they run, which is why the role
+//! modules build those containers themselves.
 //!
-//! The emit phase is identical for every role, so it lives here once. Everything that differs
-//! between roles happens in the two role modules' `build` functions. Kafka's roles differ in
-//! their main container (probes, `preStop`, command and environment) and in the sidecars they
-//! run, so the role modules build those containers themselves.
+//! [`RoleGroupBuilder`]'s `build_*` methods then emit the Kubernetes objects. They add what every
+//! role's pod has (the `config` and `log` volumes, the Vector sidecar and the pod-level settings)
+//! and never look at which role they are building.
 
-mod broker;
-mod controller;
+pub(crate) mod broker;
+pub(crate) mod controller;
 
-use std::collections::BTreeMap;
-
-pub(crate) use broker::build as build_broker_role_group;
-#[cfg(test)]
-pub(crate) use controller::QUORUM_MANAGER_CONTAINER_NAME;
-pub(crate) use controller::build as build_controller_role_group;
 use indoc::formatdoc;
-use snafu::Snafu;
+use snafu::{ResultExt, Snafu};
 use stackable_operator::{
+    builder::pod::volume::ListenerOperatorVolumeSourceBuilderError,
     k8s_openapi::api::{
         apps::v1::{StatefulSet, StatefulSetUpdateStrategy},
         core::v1::{ConfigMap, Container, PersistentVolumeClaim, PodTemplateSpec, Service, Volume},
@@ -32,7 +25,7 @@ use stackable_operator::{
     v2::{config_file_writer::PropertiesWriterError, types::kubernetes::ContainerName},
 };
 
-use super::{properties::ConfigFileName, resource};
+use super::{jvm, kerberos, properties::ConfigFileName, resource, security};
 use crate::{
     controller::{
         PodDescriptorsError, RoleGroupName, ValidatedCluster, validate::ValidatedLogging,
@@ -43,105 +36,70 @@ use crate::{
     },
 };
 
+/// Why building one role group failed. The caller adds which role and role group it was.
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("failed to build ConfigMap for role {role} role group {role_group}", role = &**role))]
-    ConfigMap {
-        source: resource::config_map::Error,
-        role: KafkaRole,
-        role_group: RoleGroupName,
-    },
+    #[snafu(display("failed to build ConfigMap"))]
+    ConfigMap { source: resource::config_map::Error },
 
-    #[snafu(display("failed to build StatefulSet for role {role} role group {role_group}", role = &**role))]
+    #[snafu(display("failed to build StatefulSet"))]
     StatefulSet {
         source: resource::statefulset::Error,
-        role: KafkaRole,
-        role_group: RoleGroupName,
     },
 
-    #[snafu(display("failed to serialize [{file}] for role {role} role group {role_group}", role = &**role))]
+    #[snafu(display("failed to serialize [{file}]"))]
     SerializeConfigFile {
         source: PropertiesWriterError,
         file: ConfigFileName,
-        role: KafkaRole,
-        role_group: RoleGroupName,
     },
 
-    #[snafu(display("failed to build pod descriptors for role {role} role group {role_group}", role = &**role))]
-    BuildPodDescriptors {
-        source: PodDescriptorsError,
-        role: KafkaRole,
-        role_group: RoleGroupName,
+    #[snafu(display("failed to build pod descriptors"))]
+    BuildPodDescriptors { source: PodDescriptorsError },
+
+    #[snafu(display("missing secret lifetime"))]
+    MissingSecretLifetime,
+
+    #[snafu(display("failed to build the TLS volumes"))]
+    BuildTlsVolumes { source: security::Error },
+
+    #[snafu(display("failed to build the Kerberos volume"))]
+    BuildKerberosVolume { source: kerberos::Error },
+
+    #[snafu(display("failed to build the broker listener volume"))]
+    BuildListenerVolume {
+        source: ListenerOperatorVolumeSourceBuilderError,
     },
 
-    #[snafu(display("missing secret lifetime for role {role} role group {role_group}", role = &**role))]
-    MissingSecretLifetime {
-        role: KafkaRole,
-        role_group: RoleGroupName,
-    },
+    #[snafu(display("failed to build container probe"))]
+    BuildProbe { source: resource::probes::Error },
 
-    #[snafu(display("failed to add Secret Volumes and VolumeMounts for role {role} role group {role_group}", role = &**role))]
-    AddVolumesAndVolumeMounts {
-        source: super::security::Error,
-        role: KafkaRole,
-        role_group: RoleGroupName,
-    },
-
-    #[snafu(display("failed to add kerberos config for role {role} role group {role_group}", role = &**role))]
-    AddKerberosConfig {
-        source: super::kerberos::Error,
-        role: KafkaRole,
-        role_group: RoleGroupName,
-    },
-
-    #[snafu(display("failed to build listener volume for role {role} role group {role_group}", role = &**role))]
-    AddListenerVolume {
-        source: stackable_operator::builder::pod::volume::ListenerOperatorVolumeSourceBuilderError,
-        role: KafkaRole,
-        role_group: RoleGroupName,
-    },
-
-    #[snafu(display("failed to build container probe for role {role} role group {role_group}", role = &**role))]
-    BuildProbe {
-        source: resource::probes::Error,
-        role: KafkaRole,
-        role_group: RoleGroupName,
-    },
-
-    #[snafu(display("failed to construct JVM arguments for role {role} role group {role_group}", role = &**role))]
-    ConstructJvmArguments {
-        source: super::jvm::Error,
-        role: KafkaRole,
-        role_group: RoleGroupName,
-    },
+    #[snafu(display("failed to construct JVM arguments"))]
+    ConstructJvmArguments { source: jvm::Error },
 }
 
-/// One role group's validated configuration, as its role's module reads it off the CRD, with
-/// the parts only that role has already built.
+/// Everything one role group's Kubernetes objects are built from.
 ///
-/// [`RoleGroupBuilder::new`] consumes this: every field is either resolved into the builder's
-/// `ConfigMap` entries, or carried over to the emit phase.
-pub(crate) struct RoleGroupInputs<'a> {
+/// The role's module fills this in with the role's containers already built and the `ConfigMap`
+/// entries already rendered, so the `build_*` methods read straight through it.
+pub(crate) struct RoleGroupBuilder<'a> {
     pub(crate) cluster: &'a ValidatedCluster,
+    /// Used for the names and labels of the role group's objects.
     pub(crate) role: KafkaRole,
     pub(crate) role_group_name: RoleGroupName,
-    /// The role group's merged config that is common to every role; carried for the pod's
-    /// affinity and its graceful shutdown timeout.
+    /// The role group's merged config that is common to every role; read for the pod's affinity
+    /// and its graceful shutdown timeout.
     pub(crate) common: CommonConfig,
-    /// The validated log configs of the `kafka` container and the Vector sidecar; the sidecar
-    /// runs only when the Vector agent is enabled for this role group.
+    /// The role group's validated logging; read for the Vector sidecar, which runs only when the
+    /// Vector agent is enabled.
     pub(crate) logging: ValidatedLogging,
-    /// The name of the role's `kafka` container, under which its log config is rendered.
-    pub(crate) kafka_container_name: &'static ContainerName,
-    /// The name of the role's Vector sidecar container.
+    /// The name of the Vector sidecar, from the role's container enum.
     pub(crate) vector_container_name: &'static ContainerName,
     /// The containers only this role runs, in pod order: the `kafka` container, and for
-    /// controllers the `quorum-manager` sidecar. The emit phase adds the Vector sidecar after
-    /// them.
+    /// controllers the `quorum-manager` sidecar. The Vector sidecar comes after them.
     pub(crate) role_containers: Vec<Container>,
-    /// The pod volumes only this role has, in the order the pod lists them; this includes the
-    /// `log-config` volume, which sits between role volumes. The emit phase adds the `config`
-    /// and `log` volumes after them.
+    /// The pod volumes only this role has, in the order the pod lists them, including the
+    /// `log-config` volume, which sits between them. The `config` and `log` volumes come after
+    /// them.
     pub(crate) role_pod_volumes: Vec<Volume>,
     /// The `StatefulSet`'s persistent volume claim templates. For brokers these include the
     /// bootstrap listener claim template.
@@ -149,79 +107,15 @@ pub(crate) struct RoleGroupInputs<'a> {
     pub(crate) pod_management_policy: &'static str,
     /// `None` leaves the Kubernetes default in place.
     pub(crate) update_strategy: Option<StatefulSetUpdateStrategy>,
-    /// The `ConfigMap` entries only this role has, as (file name, content): the role's
-    /// properties file rendered with its overrides, its JAAS config, and for controllers
-    /// `admin-client.properties`.
-    pub(crate) role_config_map_data: Vec<(String, String)>,
-    /// The role group's `security.properties` overrides.
-    pub(crate) security_properties_overrides: BTreeMap<String, String>,
-    /// The role group's replica count; `None` when unset, which counts as one replica.
+    /// The role group's replica count, passed to the StatefulSet as is; `None` makes Kubernetes
+    /// run one pod.
     pub(crate) replicas: Option<u16>,
     pub(crate) pod_overrides: PodTemplateSpec,
-}
-
-/// Everything one role group's Kubernetes objects are built from, already resolved.
-///
-/// These fields are outputs rather than configuration: the role's containers are built and the
-/// `ConfigMap` entries rendered. The `build_*` methods therefore read straight through, and
-/// nothing about which role this is reaches them.
-pub(crate) struct RoleGroupBuilder<'a> {
-    pub(crate) cluster: &'a ValidatedCluster,
-    pub(crate) role: KafkaRole,
-    pub(crate) role_group_name: RoleGroupName,
-    /// Carried for the pod's affinity and its graceful shutdown timeout.
-    pub(crate) common: CommonConfig,
-    /// Carried for the Vector sidecar.
-    pub(crate) logging: ValidatedLogging,
-    pub(crate) vector_container_name: &'static ContainerName,
-    pub(crate) role_containers: Vec<Container>,
-    pub(crate) role_pod_volumes: Vec<Volume>,
-    pub(crate) volume_claim_templates: Vec<PersistentVolumeClaim>,
-    pub(crate) pod_management_policy: &'static str,
-    pub(crate) update_strategy: Option<StatefulSetUpdateStrategy>,
-    pub(crate) replicas: Option<u16>,
-    pub(crate) pod_overrides: PodTemplateSpec,
-    /// The rendered `ConfigMap` entries, as (file name, content).
+    /// Every `ConfigMap` entry, as (file name, content).
     pub(crate) config_map_data: Vec<(String, String)>,
 }
 
-impl<'a> RoleGroupBuilder<'a> {
-    /// Resolves one role group: renders the `ConfigMap` entries every role has and adds them to
-    /// the ones the role rendered.
-    pub(crate) fn new(inputs: RoleGroupInputs<'a>) -> Result<Self, Error> {
-        let mut config_map_data = inputs.role_config_map_data;
-        config_map_data.extend(
-            resource::config_map::common_config_map_data(
-                inputs.cluster,
-                inputs.kafka_container_name,
-                &inputs.logging,
-                inputs.security_properties_overrides,
-            )
-            .map_err(|source| Error::ConfigMap {
-                source,
-                role: inputs.role.clone(),
-                role_group: inputs.role_group_name.clone(),
-            })?,
-        );
-
-        Ok(Self {
-            cluster: inputs.cluster,
-            role: inputs.role,
-            role_group_name: inputs.role_group_name,
-            common: inputs.common,
-            logging: inputs.logging,
-            vector_container_name: inputs.vector_container_name,
-            role_containers: inputs.role_containers,
-            role_pod_volumes: inputs.role_pod_volumes,
-            volume_claim_templates: inputs.volume_claim_templates,
-            pod_management_policy: inputs.pod_management_policy,
-            update_strategy: inputs.update_strategy,
-            replicas: inputs.replicas,
-            pod_overrides: inputs.pod_overrides,
-            config_map_data,
-        })
-    }
-
+impl RoleGroupBuilder<'_> {
     /// The headless and metrics `Service`s.
     pub(crate) fn build_services(&self) -> Vec<Service> {
         vec![
@@ -240,19 +134,11 @@ impl<'a> RoleGroupBuilder<'a> {
     }
 
     pub(crate) fn build_config_map(&self) -> Result<ConfigMap, Error> {
-        resource::config_map::build_config_map(self).map_err(|source| Error::ConfigMap {
-            source,
-            role: self.role.clone(),
-            role_group: self.role_group_name.clone(),
-        })
+        resource::config_map::build_config_map(self).context(ConfigMapSnafu)
     }
 
     pub(crate) fn build_statefulset(&self) -> Result<StatefulSet, Error> {
-        resource::statefulset::build_statefulset(self).map_err(|source| Error::StatefulSet {
-            source,
-            role: self.role.clone(),
-            role_group: self.role_group_name.clone(),
-        })
+        resource::statefulset::build_statefulset(self).context(StatefulSetSnafu)
     }
 }
 

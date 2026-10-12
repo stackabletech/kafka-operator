@@ -1,4 +1,4 @@
-//! Gathering one controller role group.
+//! Building one controller role group.
 
 use std::str::FromStr;
 
@@ -23,9 +23,9 @@ use stackable_operator::{
 };
 
 use super::{
-    AddKerberosConfigSnafu, AddVolumesAndVolumeMountsSnafu, BuildPodDescriptorsSnafu,
-    BuildProbeSnafu, ConstructJvmArgumentsSnafu, Error, MissingSecretLifetimeSnafu,
-    RoleGroupBuilder, RoleGroupInputs, SerializeConfigFileSnafu, controller_jaas_section,
+    BuildKerberosVolumeSnafu, BuildPodDescriptorsSnafu, BuildProbeSnafu, BuildTlsVolumesSnafu,
+    ConfigMapSnafu, ConstructJvmArgumentsSnafu, Error, MissingSecretLifetimeSnafu,
+    RoleGroupBuilder, SerializeConfigFileSnafu, controller_jaas_section,
 };
 use crate::{
     controller::{
@@ -45,7 +45,7 @@ use crate::{
             properties::{
                 ConfigFileName, controller_properties, listener::get_kafka_listener_config,
             },
-            resource::probes,
+            resource::{config_map::common_config_map_data, probes},
             security::{
                 STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                 controller_admin_client_properties, mount_controller_tls_volume,
@@ -76,7 +76,8 @@ stackable_operator::constant!(CLUSTER_DOMAIN: EnvVarName = "CLUSTER_DOMAIN");
 // Name of the controller's `quorum-manager` sidecar container.
 stackable_operator::constant!(pub(crate) QUORUM_MANAGER_CONTAINER_NAME: ContainerName = "quorum-manager");
 
-/// Gathers one controller role group.
+/// Builds one controller role group: the [`RoleGroupBuilder`] for its Services, ConfigMap and
+/// StatefulSet.
 ///
 /// Controllers run the `quorum-manager` sidecar next to their `kafka` container, and only they
 /// get `admin-client.properties`, which that sidecar reads. They have no listener-operator
@@ -87,17 +88,31 @@ pub(crate) fn build<'a>(
     rg_config: &ControllerRoleGroupConfig,
 ) -> Result<RoleGroupBuilder<'a>, Error> {
     let config = &rg_config.config.config;
+    let logging = &rg_config.config.logging;
 
-    let role_config_map_data = role_config_map_data(cluster, role_group_name, rg_config)?;
+    let mut config_map_data = role_config_map_data(cluster, role_group_name, rg_config)?;
+    config_map_data.extend(
+        common_config_map_data(
+            cluster,
+            ControllerContainer::Kafka.name(),
+            logging,
+            rg_config
+                .config_overrides
+                .security_properties
+                .overrides
+                .clone(),
+        )
+        .context(ConfigMapSnafu)?,
+    );
+
     let (role_containers, role_pod_volumes) = role_pod(cluster, role_group_name, rg_config)?;
 
-    let inputs = RoleGroupInputs {
+    Ok(RoleGroupBuilder {
         cluster,
         role: ROLE,
         role_group_name: role_group_name.clone(),
         common: config.common_config.clone(),
-        logging: rg_config.config.logging.clone(),
-        kafka_container_name: ControllerContainer::Kafka.name(),
+        logging: logging.clone(),
         vector_container_name: ControllerContainer::Vector.name(),
         role_containers,
         role_pod_volumes,
@@ -107,17 +122,10 @@ pub(crate) fn build<'a>(
             type_: Some("RollingUpdate".to_string()),
             ..StatefulSetUpdateStrategy::default()
         }),
-        role_config_map_data,
-        security_properties_overrides: rg_config
-            .config_overrides
-            .security_properties
-            .overrides
-            .clone(),
         replicas: rg_config.replicas,
         pod_overrides: rg_config.pod_overrides.clone(),
-    };
-
-    RoleGroupBuilder::new(inputs)
+        config_map_data,
+    })
 }
 
 /// `controller.properties` rendered with the role group's overrides, the controller's JAAS
@@ -132,13 +140,9 @@ fn role_config_map_data(
     let listener_config =
         get_kafka_listener_config(cluster, kafka_security, &ROLE, role_group_name);
 
-    let pod_descriptors =
-        cluster
-            .pod_descriptors(None)
-            .with_context(|_| BuildPodDescriptorsSnafu {
-                role: ROLE,
-                role_group: role_group_name.clone(),
-            })?;
+    let pod_descriptors = cluster
+        .pod_descriptors(None)
+        .context(BuildPodDescriptorsSnafu)?;
 
     let kafka_config = controller_properties::build(
         &cluster.cluster_config,
@@ -156,12 +160,8 @@ fn role_config_map_data(
     Ok(vec![
         (
             ConfigFileName::ControllerProperties.to_string(),
-            to_java_properties_string(kafka_config.iter()).with_context(|_| {
-                SerializeConfigFileSnafu {
-                    file: ConfigFileName::ControllerProperties,
-                    role: ROLE,
-                    role_group: role_group_name.clone(),
-                }
+            to_java_properties_string(kafka_config.iter()).context(SerializeConfigFileSnafu {
+                file: ConfigFileName::ControllerProperties,
             })?,
         ),
         // This file contains the JAAS configuration for Kerberos authentication
@@ -181,10 +181,8 @@ fn role_config_map_data(
                     .iter()
                     .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
             )
-            .with_context(|_| SerializeConfigFileSnafu {
+            .context(SerializeConfigFileSnafu {
                 file: ConfigFileName::AdminClient,
-                role: ROLE,
-                role_group: role_group_name.clone(),
             })?,
         ),
     ])
@@ -193,92 +191,77 @@ fn role_config_map_data(
 /// The controller pod's `kafka` container and `quorum-manager` sidecar, and the volumes only
 /// controllers have, in pod order.
 fn role_pod(
-    validated_cluster: &ValidatedCluster,
+    cluster: &ValidatedCluster,
     role_group_name: &RoleGroupName,
-    validated_rg: &ControllerRoleGroupConfig,
+    rg_config: &ControllerRoleGroupConfig,
 ) -> Result<(Vec<Container>, Vec<Volume>), Error> {
-    let kafka_role = &ROLE;
-    let kafka_security = &validated_cluster.cluster_config.kafka_security;
-    let resolved_product_image = &validated_cluster.image;
-    let merged_config = &validated_rg.config.config;
-    let resource_names = validated_cluster.role_group_resource_names(kafka_role, role_group_name);
+    let config = &rg_config.config.config;
+    let logging = &rg_config.config.logging;
+    let kafka_security = &cluster.cluster_config.kafka_security;
+    let image = &cluster.image;
+    let resource_names = cluster.role_group_resource_names(&ROLE, role_group_name);
 
     let mut cb_kafka = new_container_builder(ControllerContainer::Kafka.name());
 
     let mut pod_volumes: Vec<Volume> =
         mount_controller_kerberos_volume(kafka_security, &mut cb_kafka)
-            .with_context(|_| AddKerberosConfigSnafu {
-                role: ROLE,
-                role_group: role_group_name.clone(),
-            })?
+            .context(BuildKerberosVolumeSnafu)?
             .into_iter()
             .collect();
 
-    let node_id_offset = node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string();
+    let node_id_offset = node_id_hash32_offset(&ROLE, role_group_name.as_ref()).to_string();
 
     // Operator-set env vars first (common + controller-specific); the user's `envOverrides`
     // are merged on top and win. Shared between the `kafka` container and the
     // `quorum-manager` sidecar (see `controller_pod_shared_env_vars`) so they can't drift
     // apart; each container then layers its own additions on top.
     let controller_shared_env =
-        controller_pod_shared_env_vars(validated_cluster, kafka_security, &resource_names);
+        controller_pod_shared_env_vars(cluster, kafka_security, &resource_names);
 
     let env: Vec<EnvVar> = controller_shared_env
         .clone()
         .merge(
             common_kafka_env(
-                &merged_config.resources,
-                &validated_rg
+                &config.resources,
+                &rg_config
                     .product_specific_common_config
                     .jvm_argument_overrides,
-                resolved_product_image,
-                kafka_role,
+                image,
+                &ROLE,
                 role_group_name,
             )
-            .with_context(|_| ConstructJvmArgumentsSnafu {
-                role: ROLE,
-                role_group: role_group_name.clone(),
-            })?,
+            .context(ConstructJvmArgumentsSnafu)?,
         )
         // Kerberos env goes on the `kafka` container only. `controller_shared_env` is also
         // the `quorum-manager` sidecar's base, and `KAFKA_OPTS` points the JVM at
         // `/tmp/jaas.properties`, which only the `kafka` container renders.
         .merge(kerberos_env_vars(kafka_security))
-        .merge(validated_rg.env_overrides.clone())
+        .merge(rg_config.env_overrides.clone())
         .into();
 
     let quorum_manager_env = controller_shared_env
         .with_value(&KAFKA_NODE_ID_OFFSET, &node_id_offset)
-        .merge(validated_rg.env_overrides.clone());
+        .merge(rg_config.env_overrides.clone());
 
-    let controller_pod_descriptors = validated_cluster
-        .pod_descriptors(Some(kafka_role))
-        .with_context(|_| BuildPodDescriptorsSnafu {
-            role: ROLE,
-            role_group: role_group_name.clone(),
-        })?;
+    let controller_pod_descriptors = cluster
+        .pod_descriptors(Some(&ROLE))
+        .context(BuildPodDescriptorsSnafu)?;
 
-    let probe_context = || BuildProbeSnafu {
-        role: ROLE,
-        role_group: role_group_name.clone(),
-    };
-    let controller_startup_probe =
-        probes::controller_tcp_probe(kafka_security.client_port(), 5, 5, 60)
-            .with_context(|_| probe_context())?;
-
-    let controller_liveness_probe = probes::controller_stuck_unattached_liveness_probe(
+    let startup_probe = probes::controller_tcp_probe(kafka_security.client_port(), 5, 5, 60)
+        .context(BuildProbeSnafu)?;
+    let liveness_probe = probes::controller_stuck_unattached_liveness_probe(
         kafka_security.client_port(),
         METRICS_PORT,
         10,
         30,
         20,
     )
-    .with_context(|_| probe_context())?;
-    let controller_readiness_probe = probes::controller_raft_state_probe(METRICS_PORT, 10, 10, 6)
-        .with_context(|_| probe_context())?;
+    .context(BuildProbeSnafu)?;
+    let readiness_probe =
+        probes::controller_raft_state_probe(METRICS_PORT, 10, 10, 6).context(BuildProbeSnafu)?;
 
     cb_kafka
-        .image_from_product_image(resolved_product_image)
+        .image_from_product_image(image)
         .command(vec![
             "/bin/bash".to_string(),
             "-x".to_string(),
@@ -302,49 +285,38 @@ fn role_pod(
         .expect("The mount paths are statically defined and there should be no duplicates.")
         .add_volume_mount(&*STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
         .expect("The mount paths are statically defined and there should be no duplicates.")
-        .resources(merged_config.resources.clone().into())
-        .startup_probe(controller_startup_probe)
-        .liveness_probe(controller_liveness_probe)
-        .readiness_probe(controller_readiness_probe);
+        .resources(config.resources.clone().into())
+        .startup_probe(startup_probe)
+        .liveness_probe(liveness_probe)
+        .readiness_probe(readiness_probe);
     cb_kafka.lifecycle_pre_stop(LifecycleHandler {
         exec: Some(ExecAction {
             command: Some(vec![
                 "/bin/bash".to_string(),
                 "-c".to_string(),
                 controller_remove_self_pre_stop_command(
-                    merged_config.common_config.graceful_shutdown_timeout,
+                    config.common_config.graceful_shutdown_timeout,
                 ),
             ]),
         }),
         ..LifecycleHandler::default()
     });
 
-    pod_volumes.push(log_config_volume(
-        &validated_rg.config.logging,
-        &resource_names,
-    ));
+    pod_volumes.push(log_config_volume(logging, &resource_names));
 
-    // Add TLS related volumes and volume mounts
-    let requested_secret_lifetime = merged_config
+    // The TLS certificate is requested with the role group's secret lifetime.
+    let requested_secret_lifetime = config
         .common_config
         .requested_secret_lifetime
-        .with_context(|| MissingSecretLifetimeSnafu {
-            role: ROLE,
-            role_group: role_group_name.clone(),
-        })?;
+        .context(MissingSecretLifetimeSnafu)?;
     pod_volumes.push(
         mount_controller_tls_volume(kafka_security, &mut cb_kafka, &requested_secret_lifetime)
-            .with_context(|_| AddVolumesAndVolumeMountsSnafu {
-                role: ROLE,
-                role_group: role_group_name.clone(),
-            })?,
+            .context(BuildTlsVolumesSnafu)?,
     );
 
-    let kafka_container = cb_kafka.build();
-
     let containers = vec![
-        kafka_container,
-        build_quorum_manager_container(resolved_product_image, kafka_security, quorum_manager_env),
+        cb_kafka.build(),
+        build_quorum_manager_container(image, kafka_security, quorum_manager_env),
     ];
 
     Ok((containers, pod_volumes))

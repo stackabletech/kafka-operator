@@ -113,7 +113,8 @@ pub(crate) fn common_kafka_env(
         ))
 }
 
-/// We only expose client HTTP / HTTPS and Metrics ports.
+/// The ports the `kafka` container exposes: metrics and the client port, plus the bootstrap port
+/// when Kerberos is enabled.
 pub(crate) fn container_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<ContainerPort> {
     let mut ports = vec![
         ContainerPort {
