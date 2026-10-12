@@ -2,28 +2,13 @@ pub mod broker;
 pub mod commons;
 pub mod controller;
 
-use std::{borrow::Cow, ops::Deref, str::FromStr};
+use std::{ops::Deref, str::FromStr};
 
 use stackable_operator::{
-    commons::resources::{NoRuntimeLimits, Resources},
     constant,
-    product_logging::spec::ContainerLogConfig,
-    v2::{
-        builder::pod::container::EnvVarName,
-        config_overrides::KeyValueConfigOverrides,
-        types::{kubernetes::ListenerClassName, operator::RoleName},
-    },
+    v2::{builder::pod::container::EnvVarName, types::operator::RoleName},
 };
 use strum::{EnumIter, IntoEnumIterator};
-
-use crate::{
-    crd::role::{
-        broker::BrokerConfig,
-        commons::{CommonConfig, Storage},
-        controller::ControllerConfig,
-    },
-    v1alpha1,
-};
 
 constant!(pub KAFKA_NODE_ID_OFFSET: EnvVarName = "NODE_ID_OFFSET");
 
@@ -106,89 +91,6 @@ impl KafkaRole {
     /// [rn]: stackable_operator::v2::role_group_utils::ResourceNames
     pub fn role_name(&self) -> RoleName {
         RoleName::clone(self)
-    }
-}
-
-/// Configuration for a role and rolegroup of an unknown type.
-#[derive(Clone, Debug, PartialEq)]
-pub enum AnyConfig {
-    Broker(BrokerConfig),
-    Controller(ControllerConfig),
-}
-
-impl Deref for AnyConfig {
-    type Target = CommonConfig;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            AnyConfig::Broker(broker_config) => &broker_config.common_config,
-            AnyConfig::Controller(controller_config) => &controller_config.common_config,
-        }
-    }
-}
-
-impl AnyConfig {
-    /// The [`KafkaRole`] this config belongs to.
-    pub fn kafka_role(&self) -> KafkaRole {
-        match self {
-            AnyConfig::Broker(_) => KafkaRole::Broker,
-            AnyConfig::Controller(_) => KafkaRole::Controller,
-        }
-    }
-
-    pub fn resources(&self) -> &Resources<Storage, NoRuntimeLimits> {
-        match self {
-            AnyConfig::Broker(broker_config) => &broker_config.resources,
-            AnyConfig::Controller(controller_config) => &controller_config.resources,
-        }
-    }
-
-    // Logging config is distinct between each role, due to the different enum types,
-    // so provide helpers for containers that are common between all roles.
-    pub fn kafka_logging(&'_ self) -> Cow<'_, ContainerLogConfig> {
-        match self {
-            AnyConfig::Broker(node) => node.logging.for_container(&broker::BrokerContainer::Kafka),
-            AnyConfig::Controller(node) => node
-                .logging
-                .for_container(&controller::ControllerContainer::Kafka),
-        }
-    }
-
-    pub fn listener_class(&self) -> Option<&ListenerClassName> {
-        match self {
-            AnyConfig::Broker(broker_config) => Some(&broker_config.broker_listener_class),
-            AnyConfig::Controller(_) => None,
-        }
-    }
-}
-
-/// Merged role/role-group `configOverrides` for a role group of an unknown type.
-///
-/// Mirrors [`AnyConfig`] for the override side: broker and controller use distinct
-/// override structs, so this enum lets the build layer carry the typed, merged
-/// overrides through a single role-agnostic `RoleGroupConfig`.
-#[derive(Clone, Debug, PartialEq)]
-pub enum AnyConfigOverrides {
-    Broker(v1alpha1::KafkaBrokerConfigOverrides),
-    Controller(v1alpha1::KafkaControllerConfigOverrides),
-}
-
-impl AnyConfigOverrides {
-    /// The merged config file overrides (`broker.properties` for brokers, `controller.properties`
-    /// for controllers).
-    pub fn config_file_overrides(&self) -> &KeyValueConfigOverrides {
-        match self {
-            AnyConfigOverrides::Broker(o) => &o.broker_properties,
-            AnyConfigOverrides::Controller(o) => &o.controller_properties,
-        }
-    }
-
-    /// The merged `security.properties` overrides (shared by both roles).
-    pub fn security_properties(&self) -> &KeyValueConfigOverrides {
-        match self {
-            AnyConfigOverrides::Broker(o) => &o.security_properties,
-            AnyConfigOverrides::Controller(o) => &o.security_properties,
-        }
     }
 }
 

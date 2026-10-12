@@ -1,4 +1,4 @@
-use std::{ops::Deref, str::FromStr};
+use std::str::FromStr;
 
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
@@ -9,7 +9,10 @@ use stackable_operator::{
             security::PodSecurityContextBuilder, volume::VolumeBuilder,
         },
     },
-    commons::product_image_selection::ResolvedProductImage,
+    commons::{
+        product_image_selection::ResolvedProductImage,
+        resources::{NoRuntimeLimits, Resources},
+    },
     constants::RESTART_CONTROLLER_ENABLED_LABEL,
     k8s_openapi::{
         DeepMerge,
@@ -43,7 +46,7 @@ use stackable_operator::{
 use super::probes;
 use crate::{
     controller::{
-        RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
+        BrokerRoleGroupConfig, ControllerRoleGroupConfig, RoleGroupName, ValidatedCluster,
         build::{
             command::{
                 KAFKA_LOG4J_OPTS, broker_kafka_container_commands,
@@ -75,7 +78,7 @@ use crate::{
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
         STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_DIR_NAME,
         role::{
-            AnyConfig, KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer,
+            KAFKA_NODE_ID_OFFSET, KafkaRole, broker::BrokerContainer, commons::Storage,
             controller::ControllerContainer,
         },
     },
@@ -222,7 +225,7 @@ pub fn build_broker_rolegroup_statefulset(
     kafka_role: &KafkaRole,
     role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
-    validated_rg: &ValidatedRoleGroupConfig,
+    validated_rg: &BrokerRoleGroupConfig,
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
@@ -244,7 +247,7 @@ pub fn build_broker_rolegroup_statefulset(
 
     // Add TLS related volumes and volume mounts
     let requested_secret_lifetime = merged_config
-        .deref()
+        .common_config
         .requested_secret_lifetime
         .context(MissingSecretLifetimeSnafu)?;
     add_broker_volume_and_volume_mounts(
@@ -255,7 +258,7 @@ pub fn build_broker_rolegroup_statefulset(
     )
     .context(AddVolumesAndVolumeMountsSnafu)?;
 
-    let mut pvcs = merged_config.resources().storage.build_pvcs();
+    let mut pvcs = merged_config.resources.storage.build_pvcs();
 
     // bootstrap listener should be persistent,
     // main broker listener is an ephemeral PVC instead
@@ -275,7 +278,7 @@ pub fn build_broker_rolegroup_statefulset(
     // Operator-set env vars first; the user's `envOverrides` are merged on top last and win.
     let env: Vec<EnvVar> = common_operator_env_vars(validated_cluster, kafka_security)
         .merge(common_kafka_env(
-            merged_config,
+            &merged_config.resources,
             &validated_rg
                 .product_specific_common_config
                 .jvm_argument_overrides,
@@ -331,7 +334,7 @@ pub fn build_broker_rolegroup_statefulset(
         .expect("The mount paths are statically defined and there should be no duplicates.")
         .add_volume_mount(&*STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
         .expect("The mount paths are statically defined and there should be no duplicates.")
-        .resources(merged_config.resources().clone().into())
+        .resources(merged_config.resources.clone().into())
         .startup_probe(broker_startup_probe)
         .liveness_probe(broker_liveness_probe)
         .readiness_probe(broker_readiness_probe);
@@ -346,15 +349,13 @@ pub fn build_broker_rolegroup_statefulset(
         .with_labels(recommended_labels.clone())
         .build();
 
-    if let Some(listener_class) = merged_config.listener_class() {
-        pod_builder
-            .add_listener_volume_by_listener_class(
-                LISTENER_BROKER_VOLUME_NAME.as_ref(),
-                listener_class.as_ref(),
-                &recommended_labels,
-            )
-            .context(AddListenerVolumeSnafu)?;
-    }
+    pod_builder
+        .add_listener_volume_by_listener_class(
+            LISTENER_BROKER_VOLUME_NAME.as_ref(),
+            merged_config.broker_listener_class.as_ref(),
+            &recommended_labels,
+        )
+        .context(AddListenerVolumeSnafu)?;
 
     if let Some(broker_id_config_map_name) = &validated_cluster
         .cluster_config
@@ -376,7 +377,7 @@ pub fn build_broker_rolegroup_statefulset(
         .metadata(metadata)
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(cb_kafka.build())
-        .affinity(&merged_config.affinity);
+        .affinity(&merged_config.common_config.affinity);
 
     add_common_pod_config(
         &mut pod_builder,
@@ -395,7 +396,11 @@ pub fn build_broker_rolegroup_statefulset(
         &resource_names,
     );
 
-    add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
+    add_graceful_shutdown_config(
+        merged_config.common_config.graceful_shutdown_timeout,
+        &mut pod_builder,
+    )
+    .context(GracefulShutdownSnafu)?;
 
     let mut pod_template = pod_builder.build_template();
 
@@ -437,7 +442,7 @@ pub fn build_controller_rolegroup_statefulset(
     kafka_role: &KafkaRole,
     role_group_name: &RoleGroupName,
     validated_cluster: &ValidatedCluster,
-    validated_rg: &ValidatedRoleGroupConfig,
+    validated_rg: &ControllerRoleGroupConfig,
 ) -> Result<StatefulSet, Error> {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
     let resolved_product_image = &validated_cluster.image;
@@ -465,7 +470,7 @@ pub fn build_controller_rolegroup_statefulset(
     let env: Vec<EnvVar> = controller_shared_env
         .clone()
         .merge(common_kafka_env(
-            merged_config,
+            &merged_config.resources,
             &validated_rg
                 .product_specific_common_config
                 .jvm_argument_overrides,
@@ -528,7 +533,7 @@ pub fn build_controller_rolegroup_statefulset(
         .expect("The mount paths are statically defined and there should be no duplicates.")
         .add_volume_mount(&*STACKABLE_LOG_DIR_NAME, STACKABLE_LOG_DIR)
         .expect("The mount paths are statically defined and there should be no duplicates.")
-        .resources(merged_config.resources().clone().into())
+        .resources(merged_config.resources.clone().into())
         .startup_probe(controller_startup_probe)
         .liveness_probe(controller_liveness_probe)
         .readiness_probe(controller_readiness_probe);
@@ -537,7 +542,9 @@ pub fn build_controller_rolegroup_statefulset(
             command: Some(vec![
                 "/bin/bash".to_string(),
                 "-c".to_string(),
-                controller_remove_self_pre_stop_command(merged_config.graceful_shutdown_timeout),
+                controller_remove_self_pre_stop_command(
+                    merged_config.common_config.graceful_shutdown_timeout,
+                ),
             ]),
         }),
         ..LifecycleHandler::default()
@@ -555,7 +562,7 @@ pub fn build_controller_rolegroup_statefulset(
 
     // Add TLS related volumes and volume mounts
     let requested_secret_lifetime = merged_config
-        .deref()
+        .common_config
         .requested_secret_lifetime
         .context(MissingSecretLifetimeSnafu)?;
     add_controller_volume_and_volume_mounts(
@@ -572,7 +579,7 @@ pub fn build_controller_rolegroup_statefulset(
         .metadata(metadata)
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(kafka_container)
-        .affinity(&merged_config.affinity);
+        .affinity(&merged_config.common_config.affinity);
 
     pod_builder.add_container(build_quorum_manager_container(
         resolved_product_image,
@@ -597,7 +604,11 @@ pub fn build_controller_rolegroup_statefulset(
         &resource_names,
     );
 
-    add_graceful_shutdown_config(merged_config, &mut pod_builder).context(GracefulShutdownSnafu)?;
+    add_graceful_shutdown_config(
+        merged_config.common_config.graceful_shutdown_timeout,
+        &mut pod_builder,
+    )
+    .context(GracefulShutdownSnafu)?;
 
     let mut pod_template = pod_builder.build_template();
 
@@ -631,7 +642,7 @@ pub fn build_controller_rolegroup_statefulset(
             },
             service_name: Some(resource_names.headless_service_name().to_string()),
             template: pod_template,
-            volume_claim_templates: Some(merged_config.resources().storage.build_pvcs()),
+            volume_claim_templates: Some(merged_config.resources.storage.build_pvcs()),
             ..StatefulSetSpec::default()
         }),
         status: None,
@@ -671,7 +682,7 @@ fn container_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<ContainerPort
 /// Returned as an [`EnvVarSet`] so the callers can merge the user's `envOverrides` on top,
 /// letting an override win on a name collision.
 fn common_kafka_env(
-    merged_config: &AnyConfig,
+    resources: &Resources<Storage, NoRuntimeLimits>,
     jvm_argument_overrides: &JvmArgumentOverrides,
     resolved_product_image: &ResolvedProductImage,
     kafka_role: &KafkaRole,
@@ -681,7 +692,7 @@ fn common_kafka_env(
         .with_value(
             &EXTRA_ARGS,
             crate::controller::build::jvm::construct_non_heap_jvm_args(
-                merged_config,
+                resources,
                 jvm_argument_overrides,
             )
             .context(ConstructJvmArgumentsSnafu)?,
@@ -689,7 +700,7 @@ fn common_kafka_env(
         .with_value(
             &KAFKA_HEAP_OPTS,
             crate::controller::build::jvm::construct_heap_jvm_args(
-                merged_config,
+                resources,
                 jvm_argument_overrides,
             )
             .context(ConstructJvmArgumentsSnafu)?,
@@ -766,7 +777,7 @@ fn add_common_pod_config(
 }
 
 // Name of the controller's `quorum-manager` sidecar container.
-stackable_operator::constant!(QUORUM_MANAGER_CONTAINER_NAME: ContainerName = "quorum-manager");
+stackable_operator::constant!(pub(crate) QUORUM_MANAGER_CONTAINER_NAME: ContainerName = "quorum-manager");
 
 /// Builds the `quorum-manager` sidecar for a controller pod.
 fn build_quorum_manager_container(
@@ -875,7 +886,9 @@ mod tests {
     use stackable_operator::k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 
     use super::*;
-    use crate::controller::test_support::{minimal_kafka, validated_cluster};
+    use crate::controller::test_support::{
+        broker_role_group_config, minimal_kafka, validated_cluster,
+    };
 
     #[test]
     fn test_constants() {
@@ -921,8 +934,7 @@ mod tests {
         );
         let cluster = validated_cluster(&kafka);
         let role_group_name = RoleGroupName::from_str("default").expect("valid role group name");
-        let mut validated_rg =
-            cluster.role_group_configs[&KafkaRole::Broker][&role_group_name].clone();
+        let mut validated_rg = broker_role_group_config(&cluster, "default").clone();
         validated_rg.env_overrides = validated_rg
             .env_overrides
             .with_value(&CONTAINERDEBUG_LOG_DIRECTORY, "/custom/log/dir");

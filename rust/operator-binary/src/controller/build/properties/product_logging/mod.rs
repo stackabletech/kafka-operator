@@ -13,7 +13,6 @@ use stackable_operator::{
 };
 
 use super::ConfigFileName;
-use crate::crd::role::{AnyConfig, broker::BrokerContainer, controller::ControllerContainer};
 
 /// The maximum size of a single Kafka log file before it is rotated.
 pub const MAX_KAFKA_LOG_FILES_SIZE: MemoryQuantity = MemoryQuantity {
@@ -37,17 +36,14 @@ const CONSOLE_CONVERSION_PATTERN_LOG4J2: &str = "%d{ISO8601} %p [%t] %c - %m%n";
 
 /// Get the role group ConfigMap data with the log4j/log4j2 logging configuration.
 ///
+/// `container_name` and `kafka_logging` are the role's `kafka` container and its log config.
 /// The Vector agent config (`vector.yaml`) is provided separately via
 /// [`vector_config_file_content`] and added by the caller.
 pub fn role_group_config_map_data(
     product_version: &str,
-    merged_config: &AnyConfig,
+    container_name: &str,
+    kafka_logging: Cow<ContainerLogConfig>,
 ) -> BTreeMap<String, Option<String>> {
-    let container_name = match merged_config {
-        AnyConfig::Broker(_) => BrokerContainer::Kafka.to_string(),
-        AnyConfig::Controller(_) => ControllerContainer::Kafka.to_string(),
-    };
-
     let mut configs: BTreeMap<String, Option<String>> = BTreeMap::new();
 
     // Starting with Kafka 4.0, log4j2 is used instead of log4j.
@@ -56,7 +52,7 @@ pub fn role_group_config_map_data(
             configs.insert(
                 ConfigFileName::Log4j.to_string(),
                 log4j_config_if_automatic(
-                    Some(merged_config.kafka_logging()),
+                    Some(kafka_logging),
                     container_name,
                     KAFKA_LOG4J_FILE,
                     MAX_KAFKA_LOG_FILES_SIZE,
@@ -67,7 +63,7 @@ pub fn role_group_config_map_data(
             configs.insert(
                 ConfigFileName::Log4j2.to_string(),
                 log4j2_config_if_automatic(
-                    Some(merged_config.kafka_logging()),
+                    Some(kafka_logging),
                     container_name,
                     KAFKA_LOG4J2_FILE,
                     MAX_KAFKA_LOG_FILES_SIZE,

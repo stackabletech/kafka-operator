@@ -1,11 +1,12 @@
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
+    commons::resources::{NoRuntimeLimits, Resources},
     memory::{BinaryMultiple, MemoryQuantity},
     v2::jvm_argument_overrides::JvmArgumentOverrides,
 };
 
 use super::properties::ConfigFileName;
-use crate::crd::{METRICS_PORT, STACKABLE_CONFIG_DIR, role::AnyConfig};
+use crate::crd::{METRICS_PORT, STACKABLE_CONFIG_DIR, role::commons::Storage};
 
 const JAVA_HEAP_FACTOR: f32 = 0.8;
 
@@ -23,12 +24,11 @@ pub enum Error {
 /// All JVM arguments: operator-generated base args with the already-merged
 /// (role <- role group) `jvmArgumentOverrides` applied on top.
 fn construct_jvm_args(
-    merged_config: &AnyConfig,
+    resources: &Resources<Storage, NoRuntimeLimits>,
     jvm_argument_overrides: &JvmArgumentOverrides,
 ) -> Result<Vec<String>, Error> {
     let heap_size = MemoryQuantity::try_from(
-        merged_config
-            .resources()
+        resources
             .memory
             .limit
             .as_ref()
@@ -58,10 +58,10 @@ fn construct_jvm_args(
 
 /// Arguments that go into `EXTRA_ARGS` (everything except heap settings).
 pub fn construct_non_heap_jvm_args(
-    merged_config: &AnyConfig,
+    resources: &Resources<Storage, NoRuntimeLimits>,
     jvm_argument_overrides: &JvmArgumentOverrides,
 ) -> Result<String, Error> {
-    let mut jvm_args = construct_jvm_args(merged_config, jvm_argument_overrides)?;
+    let mut jvm_args = construct_jvm_args(resources, jvm_argument_overrides)?;
     jvm_args.retain(|arg| !is_heap_jvm_argument(arg));
 
     Ok(jvm_args.join(" "))
@@ -69,10 +69,10 @@ pub fn construct_non_heap_jvm_args(
 
 /// Arguments that go into `KAFKA_HEAP_OPTS` (only the heap settings).
 pub fn construct_heap_jvm_args(
-    merged_config: &AnyConfig,
+    resources: &Resources<Storage, NoRuntimeLimits>,
     jvm_argument_overrides: &JvmArgumentOverrides,
 ) -> Result<String, Error> {
-    let mut jvm_args = construct_jvm_args(merged_config, jvm_argument_overrides)?;
+    let mut jvm_args = construct_jvm_args(resources, jvm_argument_overrides)?;
     jvm_args.retain(|arg| is_heap_jvm_argument(arg));
 
     Ok(jvm_args.join(" "))
@@ -87,23 +87,18 @@ fn is_heap_jvm_argument(jvm_argument: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        controller::test_support::{minimal_kafka, validated_cluster},
-        crd::role::KafkaRole,
+    use crate::controller::test_support::{
+        broker_role_group_config, minimal_kafka, validated_cluster,
     };
 
-    /// Pulls the broker `default` role group's merged config + merged JVM overrides out of
+    /// Pulls the broker `default` role group's merged resources + merged JVM overrides out of
     /// a validated cluster built from the given YAML.
-    fn broker_default(yaml: &str) -> (AnyConfig, JvmArgumentOverrides) {
+    fn broker_default(yaml: &str) -> (Resources<Storage, NoRuntimeLimits>, JvmArgumentOverrides) {
         let kafka = minimal_kafka(yaml);
         let validated = validated_cluster(&kafka);
-        let rg = validated
-            .role_group_configs
-            .get(&KafkaRole::Broker)
-            .and_then(|groups| groups.get(&"default".parse().unwrap()))
-            .expect("broker default role group should exist");
+        let rg = broker_role_group_config(&validated, "default");
         (
-            rg.config.config.clone(),
+            rg.config.config.resources.clone(),
             rg.product_specific_common_config
                 .jvm_argument_overrides
                 .clone(),
@@ -129,9 +124,9 @@ mod tests {
               default:
                 replicas: 1
         "#;
-        let (merged_config, jvm) = broker_default(input);
-        let non_heap_jvm_args = construct_non_heap_jvm_args(&merged_config, &jvm).unwrap();
-        let heap_jvm_args = construct_heap_jvm_args(&merged_config, &jvm).unwrap();
+        let (resources, jvm) = broker_default(input);
+        let non_heap_jvm_args = construct_non_heap_jvm_args(&resources, &jvm).unwrap();
+        let heap_jvm_args = construct_heap_jvm_args(&resources, &jvm).unwrap();
 
         assert_eq!(
             non_heap_jvm_args,
@@ -177,9 +172,9 @@ mod tests {
                     - -Xmx40000m
                     - -Dhttps.proxyPort=1234
         "#;
-        let (merged_config, jvm) = broker_default(input);
-        let non_heap_jvm_args = construct_non_heap_jvm_args(&merged_config, &jvm).unwrap();
-        let heap_jvm_args = construct_heap_jvm_args(&merged_config, &jvm).unwrap();
+        let (resources, jvm) = broker_default(input);
+        let non_heap_jvm_args = construct_non_heap_jvm_args(&resources, &jvm).unwrap();
+        let heap_jvm_args = construct_heap_jvm_args(&resources, &jvm).unwrap();
 
         assert_eq!(
             non_heap_jvm_args,

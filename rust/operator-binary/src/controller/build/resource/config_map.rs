@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use indoc::formatdoc;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
@@ -12,11 +14,9 @@ use stackable_operator::{
 
 use crate::{
     controller::{
-        RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
+        BrokerRoleGroupConfig, ControllerRoleGroupConfig, RoleGroupName, ValidatedCluster,
         build::{
-            properties::{
-                ConfigFileName, config_file_name, product_logging::role_group_config_map_data,
-            },
+            properties::{ConfigFileName, product_logging::role_group_config_map_data},
             recommended_labels_for_role_group_resources,
             security::{client_properties, controller_admin_client_properties},
         },
@@ -25,7 +25,7 @@ use crate::{
         CONTROLLER_POD_FQDN_TEMPLATE, STACKABLE_KERBEROS_KEYTAB_PATH,
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
         listener::{KafkaListenerConfig, node_address_cmd},
-        role::{AnyConfig, KafkaRole},
+        role::{KafkaRole, broker::BrokerContainer, controller::ControllerContainer},
     },
 };
 
@@ -68,59 +68,158 @@ pub enum Error {
     },
 }
 
-/// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator.
+/// The broker rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given
+/// by the administrator.
 ///
 /// `vector_config` is the static Vector agent config (`vector.yaml`) added by the caller; it is
-/// `None` when the Vector agent is disabled. Resource naming and labels use the role (derived
-/// from `validated_rg.config`) and the typed `role_group_name`.
-pub fn build_rolegroup_config_map(
+/// `None` when the Vector agent is disabled.
+pub fn build_broker_rolegroup_config_map(
     validated_cluster: &ValidatedCluster,
     role_group_name: &RoleGroupName,
-    validated_rg: &ValidatedRoleGroupConfig,
+    validated_rg: &BrokerRoleGroupConfig,
     listener_config: &KafkaListenerConfig,
     vector_config: Option<String>,
 ) -> Result<ConfigMap, Error> {
-    let role = validated_rg.config.config.kafka_role();
-    let cluster_config = &validated_cluster.cluster_config;
-    let kafka_security = &cluster_config.kafka_security;
-    let resolved_product_image = &validated_cluster.image;
-    let kafka_config_file_name = config_file_name(&validated_rg.config.config).to_string();
-    let config_overrides = validated_rg
-        .config_overrides
-        .config_file_overrides()
-        .overrides
-        .clone();
+    let pod_descriptors = validated_cluster
+        .pod_descriptors(None)
+        .context(BuildPodDescriptorsSnafu)?;
+
+    let kafka_config = crate::controller::build::properties::broker_properties::build(
+        &validated_cluster.cluster_config,
+        listener_config,
+        &pod_descriptors,
+        validated_rg
+            .config_overrides
+            .broker_properties
+            .overrides
+            .clone(),
+    );
+
+    let log_config_data = role_group_config_map_data(
+        &validated_cluster.image.product_version,
+        &BrokerContainer::Kafka.to_string(),
+        validated_rg
+            .config
+            .config
+            .logging
+            .for_container(&BrokerContainer::Kafka),
+    );
+
+    let cm_builder = rolegroup_config_map_builder(
+        validated_cluster,
+        &KafkaRole::Broker,
+        role_group_name,
+        (ConfigFileName::BrokerProperties, kafka_config),
+        validated_rg
+            .config_overrides
+            .security_properties
+            .overrides
+            .clone(),
+        log_config_data,
+        vector_config,
+    )?;
+
+    cm_builder
+        .build()
+        .with_context(|_| BuildRoleGroupConfigSnafu {
+            role_group: role_group_name.clone(),
+        })
+}
+
+/// The controller rolegroup [`ConfigMap`] configures the rolegroup based on the configuration
+/// given by the administrator.
+///
+/// `vector_config` is the static Vector agent config (`vector.yaml`) added by the caller; it is
+/// `None` when the Vector agent is disabled.
+pub fn build_controller_rolegroup_config_map(
+    validated_cluster: &ValidatedCluster,
+    role_group_name: &RoleGroupName,
+    validated_rg: &ControllerRoleGroupConfig,
+    listener_config: &KafkaListenerConfig,
+    vector_config: Option<String>,
+) -> Result<ConfigMap, Error> {
+    let kafka_security = &validated_cluster.cluster_config.kafka_security;
 
     let pod_descriptors = validated_cluster
         .pod_descriptors(None)
         .context(BuildPodDescriptorsSnafu)?;
 
-    let kafka_config = match &validated_rg.config.config {
-        AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
-            cluster_config,
-            listener_config,
-            &pod_descriptors,
-            config_overrides,
-        ),
-        AnyConfig::Controller(_) => {
-            crate::controller::build::properties::controller_properties::build(
-                cluster_config,
-                listener_config,
-                &pod_descriptors,
-                config_overrides,
-            )
-        }
-    };
-
-    // The `networkaddress.cache.*` defaults are always emitted (with user `security.properties`
-    // overrides winning); see `security_properties::build`.
-    let jvm_sec_props = crate::controller::build::properties::security_properties::build(
+    let kafka_config = crate::controller::build::properties::controller_properties::build(
+        &validated_cluster.cluster_config,
+        listener_config,
+        &pod_descriptors,
         validated_rg
             .config_overrides
-            .security_properties()
+            .controller_properties
             .overrides
             .clone(),
     );
+
+    let log_config_data = role_group_config_map_data(
+        &validated_cluster.image.product_version,
+        &ControllerContainer::Kafka.to_string(),
+        validated_rg
+            .config
+            .config
+            .logging
+            .for_container(&ControllerContainer::Kafka),
+    );
+
+    let mut cm_builder = rolegroup_config_map_builder(
+        validated_cluster,
+        &KafkaRole::Controller,
+        role_group_name,
+        (ConfigFileName::ControllerProperties, kafka_config),
+        validated_rg
+            .config_overrides
+            .security_properties
+            .overrides
+            .clone(),
+        log_config_data,
+        vector_config,
+    )?;
+
+    // `admin-client.properties` is only needed by the controller-side sidecar running
+    // `kafka-metadata-quorum.sh` against the CONTROLLER listener; brokers don't need it.
+    cm_builder.add_data(
+        ConfigFileName::AdminClient.to_string(),
+        to_java_properties_string(
+            controller_admin_client_properties(kafka_security)
+                .iter()
+                .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
+        )
+        .with_context(|_| ClientPropertiesSnafu {
+            role_group: role_group_name.clone(),
+        })?,
+    );
+
+    cm_builder
+        .build()
+        .with_context(|_| BuildRoleGroupConfigSnafu {
+            role_group: role_group_name.clone(),
+        })
+}
+
+/// The rolegroup [`ConfigMap`] content every role has: the role's properties file
+/// (`kafka_config_file`), `security.properties` with the role's `security_overrides`,
+/// `client.properties`, `jaas.properties`, the log config files (`log_config_data`) and, if
+/// the Vector agent is enabled, `vector.yaml`.
+fn rolegroup_config_map_builder(
+    validated_cluster: &ValidatedCluster,
+    role: &KafkaRole,
+    role_group_name: &RoleGroupName,
+    kafka_config_file: (ConfigFileName, BTreeMap<String, String>),
+    security_overrides: BTreeMap<String, String>,
+    log_config_data: BTreeMap<String, Option<String>>,
+    vector_config: Option<String>,
+) -> Result<ConfigMapBuilder, Error> {
+    let kafka_security = &validated_cluster.cluster_config.kafka_security;
+    let (kafka_config_file_name, kafka_config) = kafka_config_file;
+
+    // The `networkaddress.cache.*` defaults are always emitted (with user `security.properties`
+    // overrides winning); see `security_properties::build`.
+    let jvm_sec_props =
+        crate::controller::build::properties::security_properties::build(security_overrides);
 
     let mut cm_builder = ConfigMapBuilder::new();
     cm_builder
@@ -129,7 +228,7 @@ pub fn build_rolegroup_config_map(
                 .name_and_namespace(validated_cluster)
                 .name(
                     validated_cluster
-                        .role_group_resource_names(&role, role_group_name)
+                        .role_group_resource_names(role, role_group_name)
                         .role_group_config_map()
                         .to_string(),
                 )
@@ -140,13 +239,13 @@ pub fn build_rolegroup_config_map(
                 ))
                 .with_labels(recommended_labels_for_role_group_resources(
                     validated_cluster,
-                    &role,
+                    role,
                     role_group_name,
                 ))
                 .build(),
         )
         .add_data(
-            kafka_config_file_name,
+            kafka_config_file_name.to_string(),
             to_java_properties_string(kafka_config.iter()).with_context(|_| {
                 SerializeConfigSnafu {
                     role_group: role_group_name.clone(),
@@ -178,33 +277,13 @@ pub fn build_rolegroup_config_map(
         // and this tool currently doesn't support the JAAS login configuration format.
         .add_data(
             ConfigFileName::Jaas.to_string(),
-            jaas_config_file(kafka_security.has_kerberos_enabled(), &role),
+            jaas_config_file(kafka_security.has_kerberos_enabled(), role),
         );
-
-    // `admin-client.properties` is only needed by the controller-side sidecar running
-    // `kafka-metadata-quorum.sh` against the CONTROLLER listener; brokers don't need it.
-    if let AnyConfig::Controller(_) = &validated_rg.config.config {
-        cm_builder.add_data(
-            ConfigFileName::AdminClient.to_string(),
-            to_java_properties_string(
-                controller_admin_client_properties(kafka_security)
-                    .iter()
-                    .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
-            )
-            .with_context(|_| ClientPropertiesSnafu {
-                role_group: role_group_name.clone(),
-            })?,
-        );
-    }
 
     tracing::debug!(?kafka_config, "Applied kafka config");
     tracing::debug!(?jvm_sec_props, "Applied JVM config");
 
-    let config_data = role_group_config_map_data(
-        &resolved_product_image.product_version,
-        &validated_rg.config.config,
-    );
-    for (file_name, data) in config_data {
+    for (file_name, data) in log_config_data {
         if let Some(data) = data {
             cm_builder.add_data(file_name, data);
         }
@@ -214,11 +293,7 @@ pub fn build_rolegroup_config_map(
         cm_builder.add_data(VECTOR_CONFIG_FILE, vector_config);
     }
 
-    cm_builder
-        .build()
-        .with_context(|_| BuildRoleGroupConfigSnafu {
-            role_group: role_group_name.clone(),
-        })
+    Ok(cm_builder)
 }
 
 // Generate JAAS configuration file for Kerberos authentication
