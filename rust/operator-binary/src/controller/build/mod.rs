@@ -422,29 +422,6 @@ mod tests {
         )
     }
 
-    /// Not a test: dumps every built resource as JSON to `$RENDER_DUMP`, so the refactoring can be
-    /// diffed against the baseline. Run with `cargo test dump_rendered_resources -- --ignored`.
-    #[test]
-    #[ignore]
-    fn dump_rendered_resources() {
-        let path = std::env::var("RENDER_DUMP").expect("RENDER_DUMP is set");
-        let resources = build(&rich_kraft_mode_cluster()).expect("build succeeds");
-        let dump = serde_json::json!({
-            "stateful_sets": resources.stateful_sets,
-            "services": resources.services,
-            "listeners": resources.listeners,
-            "config_maps": resources.config_maps,
-            "pod_disruption_budgets": resources.pod_disruption_budgets,
-            "service_accounts": resources.service_accounts,
-            "role_bindings": resources.role_bindings,
-        });
-        std::fs::write(
-            path,
-            serde_json::to_string_pretty(&dump).expect("the resources serialise"),
-        )
-        .expect("the dump is written");
-    }
-
     #[test]
     fn build_succeeds_when_every_kraft_role_group_is_scaled_to_zero() {
         let kafka = minimal_kafka(

@@ -8,7 +8,7 @@ use stackable_operator::{
     constant,
     v2::{builder::pod::container::EnvVarName, types::operator::RoleName},
 };
-use strum::{EnumIter, IntoEnumIterator};
+use strum::EnumIter;
 
 constant!(pub KAFKA_NODE_ID_OFFSET: EnvVarName = "NODE_ID_OFFSET");
 
@@ -71,15 +71,6 @@ impl Deref for KafkaRole {
 }
 
 impl KafkaRole {
-    /// Return all available roles
-    pub fn roles() -> Vec<KafkaRole> {
-        let mut roles = vec![];
-        for role in Self::iter() {
-            roles.push(role)
-        }
-        roles
-    }
-
     /// A Kerberos principal has three parts, with the form username/fully.qualified.domain.name@YOUR-REALM.COM.
     /// but is similar to HBase).
     pub fn kerberos_service_name(&self) -> &'static str {
