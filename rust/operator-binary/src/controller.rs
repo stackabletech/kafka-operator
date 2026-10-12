@@ -161,9 +161,9 @@ pub struct ValidatedCluster {
 
 /// The number of pods a role group runs when its `replicas` is unset.
 ///
-/// `None` stays `None` on the StatefulSet (so a horizontal autoscaler can own
-/// `.spec.replicas`, and Kubernetes then runs one pod); this default applies only where a
-/// concrete count is needed, e.g. to predict pods or to sum a role's replicas.
+/// An unset count stays unset on the StatefulSet, and Kubernetes then runs one pod. This default
+/// applies only where the operator needs a concrete count: to predict the pods (their names and
+/// node IDs) and to sum a role's replicas.
 pub(crate) const DEFAULT_REPLICAS: u16 = 1;
 
 /// The role group's replica count, or [`DEFAULT_REPLICAS`] if it is unset.
@@ -788,6 +788,64 @@ mod tests {
                 assert_eq!(colliding_role, KafkaRole::Broker);
             }
             other => panic!("expected a node-id hash collision error, got {other:?}"),
+        }
+    }
+
+    /// The predicted pods follow the StatefulSet's replica count: a role group scaled to zero
+    /// predicts no pods, and one without a replica count predicts `DEFAULT_REPLICAS` pods, as
+    /// Kubernetes runs for `replicas: null`. Each predicted pod is named after the role group's
+    /// StatefulSet with its index, the name Kubernetes gives the pod.
+    #[test]
+    fn pod_descriptors_follow_the_replica_count() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  unset: {}
+                  stopped:
+                    replicas: 0
+                  three:
+                    replicas: 3
+            "#,
+        );
+        let validated = validated_cluster(&kafka);
+        let descriptors = validated
+            .pod_descriptors(None)
+            .expect("non-colliding role groups must not error");
+
+        for (role_group, expected_replicas) in [
+            ("unset", super::DEFAULT_REPLICAS),
+            ("stopped", 0),
+            ("three", 3),
+        ] {
+            let stateful_set_name = validated
+                .role_group_resource_names(
+                    &KafkaRole::Broker,
+                    &role_group.parse().expect("valid role group name"),
+                )
+                .stateful_set_name()
+                .to_string();
+            let replicas: Vec<u16> = descriptors
+                .iter()
+                .filter(|d| d.role_group_statefulset_name.to_string() == stateful_set_name)
+                .map(|d| d.replica)
+                .collect();
+            assert_eq!(
+                replicas,
+                (0..expected_replicas).collect::<Vec<_>>(),
+                "{role_group}: one descriptor per pod, indexed from 0"
+            );
         }
     }
 

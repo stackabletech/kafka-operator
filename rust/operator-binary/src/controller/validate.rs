@@ -457,8 +457,8 @@ where
     let env_overrides = inject_cluster_id(merged.config.env_overrides.into(), cluster_id);
 
     Ok(RoleGroupConfig {
-        // Passed through as-is (including `None`) so an unset replica count lets a
-        // horizontal autoscaler own the StatefulSet's `.spec.replicas`.
+        // Passed through as is, including `None`: the StatefulSet then leaves `.spec.replicas`
+        // unset, and the pod predictions count it as `DEFAULT_REPLICAS`.
         replicas: merged.replicas,
         config: merged.config.config,
         config_overrides: merged.config.config_overrides,
