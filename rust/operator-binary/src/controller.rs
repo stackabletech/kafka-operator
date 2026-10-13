@@ -65,8 +65,7 @@ use crate::{
         update_status::update_status,
     },
     crd::{
-        APP_NAME, KAFKA_OPERATOR_NAME, KafkaPlatformAccessAuthentication, KafkaPodDescriptor,
-        MetadataManager,
+        APP_NAME, KAFKA_OPERATOR_NAME, KafkaPodDescriptor, MetadataManager,
         authorization::KafkaAuthorizationConfig,
         role::{AnyConfig, AnyConfigOverrides, KafkaRole},
         v1alpha1,
@@ -347,7 +346,7 @@ impl ValidatedClusterConfig {
 /// The configuration of the agent deployed with the cluster.
 pub struct ValidatedAgentConfig {
     pub image: String,
-    pub authentication: KafkaPlatformAccessAuthentication,
+    pub authentication: v1alpha1::KafkaPlatformAccessAuthentication,
 }
 
 /// Per-role configuration extracted during validation.

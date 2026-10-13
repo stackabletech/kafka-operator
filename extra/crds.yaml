@@ -2161,8 +2161,8 @@ spec:
                         properties:
                           secret:
                             description: |-
-                              A static Secret holding the certificate in the keys `tls.crt` and `tls.key` (PEM), e.g. as a
-                              Secret of type `kubernetes.io/tls`.
+                              A static Secret holding the certificate in the keys `tls.crt` and `tls.key` (PEM), e.g. as
+                              a Secret of type `kubernetes.io/tls`.
                             maxLength: 253
                             minLength: 1
                             pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$

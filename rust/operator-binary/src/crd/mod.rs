@@ -12,13 +12,12 @@ use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 use stackable_operator::{
     commons::{
-        cluster_operation::ClusterOperation,
-        networking::DomainName,
-        platform_access::{anonymous::Anonymous, tls::TlsClientCredential},
+        cluster_operation::ClusterOperation, networking::DomainName,
         product_image_selection::ProductImage,
     },
     config::merge::Merge,
     constant,
+    crd::platform_access::v1alpha1::{Anonymous, TlsClientCredential},
     deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
     role_utils::GenericRoleConfig,
@@ -109,27 +108,6 @@ pub type ControllerRole = Role<
     JavaCommonConfig,
 >;
 
-/// Access of the Stackable Data Platform to this Kafka cluster, used by an agent to manage resources
-/// like `KafkaTopic`s. The credential must be authorized in Kafka by the user.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct KafkaPlatformAccess {
-    /// Whether the operator deploys the agent. False by default.
-    #[serde(default)]
-    pub enabled: bool,
-
-    /// How the agent authenticates to Kafka.
-    pub authentication: KafkaPlatformAccessAuthentication,
-}
-
-/// How the agent authenticates to Kafka.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum KafkaPlatformAccessAuthentication {
-    Tls(TlsClientCredential),
-    Anonymous(Anonymous),
-}
-
 #[versioned(
     version(name = "v1alpha1"),
     crates(
@@ -172,7 +150,7 @@ pub mod versioned {
 
         /// Access of the Stackable Data Platform to this cluster.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub platform_access: Option<KafkaPlatformAccess>,
+        pub platform_access: Option<v1alpha1::KafkaPlatformAccess>,
 
         // no doc - docs in ClusterOperation struct.
         #[serde(default)]
@@ -181,6 +159,27 @@ pub mod versioned {
         // no doc - docs in ObjectOverrides struct.
         #[serde(default)]
         pub object_overrides: ObjectOverrides,
+    }
+
+    /// Access of the Stackable Data Platform to this Kafka cluster, used by an agent to manage
+    /// resources like `KafkaTopic`s. The credential must be authorized in Kafka by the user.
+    #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaPlatformAccess {
+        /// Whether the operator deploys the agent. False by default.
+        #[serde(default)]
+        pub enabled: bool,
+
+        /// How the agent authenticates to Kafka.
+        pub authentication: v1alpha1::KafkaPlatformAccessAuthentication,
+    }
+
+    /// How the agent authenticates to Kafka.
+    #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub enum KafkaPlatformAccessAuthentication {
+        Tls(TlsClientCredential),
+        Anonymous(Anonymous),
     }
 
     #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]

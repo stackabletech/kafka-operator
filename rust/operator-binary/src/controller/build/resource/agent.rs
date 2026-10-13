@@ -30,7 +30,7 @@ use crate::{
         ValidatedAgentConfig, ValidatedCluster,
         build::{agent_selector, recommended_labels_for_agent_resources},
     },
-    crd::KafkaPlatformAccessAuthentication,
+    crd::v1alpha1::KafkaPlatformAccessAuthentication,
 };
 
 constant!(AGENT_CONTAINER_NAME: ContainerName = "agent");
