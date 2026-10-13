@@ -9,7 +9,17 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+stackable-operator.workspace = true
+
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+snafu.workspace = true
 strum.workspace = true
 
 [dev-dependencies]
+indoc.workspace = true
 rstest.workspace = true
+
+[features]
+test-support = []

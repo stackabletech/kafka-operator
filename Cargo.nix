@@ -10776,6 +10776,10 @@ rec {
             packageId = "snafu 0.9.2";
           }
           {
+            name = "stackable-kafka-shared";
+            packageId = "stackable-kafka-shared";
+          }
+          {
             name = "stackable-operator";
             packageId = "stackable-operator";
             features = [ "crds" "webhook" ];
@@ -10825,6 +10829,28 @@ rec {
         ];
         dependencies = [
           {
+            name = "regex";
+            packageId = "regex";
+          }
+          {
+            name = "serde";
+            packageId = "serde";
+            features = [ "derive" ];
+          }
+          {
+            name = "serde_json";
+            packageId = "serde_json";
+          }
+          {
+            name = "snafu";
+            packageId = "snafu 0.9.2";
+          }
+          {
+            name = "stackable-operator";
+            packageId = "stackable-operator";
+            features = [ "crds" "webhook" ];
+          }
+          {
             name = "strum";
             packageId = "strum";
             features = [ "derive" ];
@@ -10832,11 +10858,17 @@ rec {
         ];
         devDependencies = [
           {
+            name = "indoc";
+            packageId = "indoc";
+          }
+          {
             name = "rstest";
             packageId = "rstest";
           }
         ];
-
+        features = {
+        };
+        resolvedDefaultFeatures = [ "test-support" ];
       };
       "stackable-operator" = rec {
         crateName = "stackable-operator";

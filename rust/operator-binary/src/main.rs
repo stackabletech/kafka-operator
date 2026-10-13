@@ -7,6 +7,7 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use clap::Parser;
 use futures::{FutureExt, StreamExt, TryFutureExt};
+use stackable_kafka_shared::crd::topic::{KafkaTopic, KafkaTopicVersion};
 use stackable_operator::{
     YamlSchema,
     cli::{Command, RunArguments},
@@ -77,8 +78,12 @@ struct KafkaRun {
 async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => KafkaCluster::merged_crd(KafkaClusterVersion::V1Alpha1)?
-            .print_yaml_schema(built_info::PKG_VERSION, &SerializeOptions::default())?,
+        Command::Crd => {
+            KafkaCluster::merged_crd(KafkaClusterVersion::V1Alpha1)?
+                .print_yaml_schema(built_info::PKG_VERSION, &SerializeOptions::default())?;
+            KafkaTopic::merged_crd(KafkaTopicVersion::V1Alpha1)?
+                .print_yaml_schema(built_info::PKG_VERSION, &SerializeOptions::default())?;
+        }
         Command::Run(KafkaRun {
             common:
                 RunArguments {

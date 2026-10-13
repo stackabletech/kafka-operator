@@ -31,3 +31,8 @@ annotations:
       name: kafkaclusters.kafka.stackable.tech
       displayName: KafkaCluster
       description: A Kafka cluster stacklet. This resource is managed by the Stackable operator for Apache Kafka.
+    - kind: KafkaTopic
+      version: v1alpha1
+      name: kafkatopics.kafka.stackable.tech
+      displayName: KafkaTopic
+      description: A Kafka topic, created and updated by the agent of the referenced Kafka cluster.

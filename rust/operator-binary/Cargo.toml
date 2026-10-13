@@ -9,6 +9,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+stackable-kafka-shared.workspace = true
 stackable-operator.workspace = true
 
 indoc.workspace = true
