@@ -3286,6 +3286,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "stackable-kafka-shared"
+version = "0.0.0-dev"
+dependencies = [
+ "rstest",
+ "strum",
+]
+
+[[package]]
 name = "stackable-operator"
 version = "0.119.0"
 source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#754e444b8cc3daf6a59fb69d7eaf632249ccc3be"

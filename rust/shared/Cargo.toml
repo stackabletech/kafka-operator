@@ -1,0 +1,15 @@
+[package]
+name = "stackable-kafka-shared"
+description = "Types and contracts shared by the Stackable operator and agent for Apache Kafka"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+strum.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true

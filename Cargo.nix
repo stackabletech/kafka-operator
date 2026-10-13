@@ -73,6 +73,16 @@ rec {
       # File a bug if you depend on any for non-debug work!
       debug = internal.debugCrate { inherit packageId; };
     };
+    "stackable-kafka-shared" = rec {
+      packageId = "stackable-kafka-shared";
+      build = internal.buildRustCrateWithFeatures {
+        packageId = "stackable-kafka-shared";
+      };
+
+      # Debug support which might change between releases.
+      # File a bug if you depend on any for non-debug work!
+      debug = internal.debugCrate { inherit packageId; };
+    };
   };
 
 
@@ -10800,6 +10810,30 @@ rec {
           {
             name = "serde_yaml";
             packageId = "serde_yaml";
+          }
+        ];
+
+      };
+      "stackable-kafka-shared" = rec {
+        crateName = "stackable-kafka-shared";
+        version = "0.0.0-dev";
+        edition = "2024";
+        src = lib.cleanSourceWith { filter = sourceFilter;  src = ./rust/shared; };
+        libName = "stackable_kafka_shared";
+        authors = [
+          "Stackable GmbH <info@stackable.tech>"
+        ];
+        dependencies = [
+          {
+            name = "strum";
+            packageId = "strum";
+            features = [ "derive" ];
+          }
+        ];
+        devDependencies = [
+          {
+            name = "rstest";
+            packageId = "rstest";
           }
         ];
 
