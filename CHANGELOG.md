@@ -52,6 +52,7 @@ All notable changes to this project will be documented in this file.
 - Bump stackable-operator to 0.121.0 and remove `serde_yaml` ([#1041]).
 - All pods now set `securityContext.seccompProfile.type` to `RuntimeDefault` ([#1041]).
 - test: Bump vector-aggregator to 0.58.0 ([#1039]).
+- test: Update OPA to 1.20.2 in integration tests and docs example ([#1042]).
 
 ### Fixed
 
@@ -89,6 +90,7 @@ All notable changes to this project will be documented in this file.
 [#1035]: https://github.com/stackabletech/kafka-operator/pull/1035
 [#1039]: https://github.com/stackabletech/kafka-operator/pull/1039
 [#1041]: https://github.com/stackabletech/kafka-operator/pull/1041
+[#1042]: https://github.com/stackabletech/kafka-operator/pull/1042
 
 ## [26.7.0] - 2026-07-21
 
