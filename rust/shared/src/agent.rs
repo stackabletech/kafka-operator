@@ -1,17 +1,18 @@
 //! Paths and environment variables through which the operator configures the agent.
 
+use std::str::FromStr;
+
+use stackable_operator::{constant, v2::builder::pod::container::EnvVarName};
 use strum::{Display, EnumString};
 
 pub const DISCOVERY_DIR: &str = "/stackable/discovery";
 
 /// Directory of the CA certificate the Kafka brokers are verified with.
-pub const SERVER_CA_DIR: &str = "/stackable/secrets/tls-server-ca";
+pub const KAFKA_TLS_DIR: &str = "/stackable/secrets/tls-kafka";
 
-pub const ENV_CLUSTER_NAME: &str = "KAFKA_CLUSTER_NAME";
-
-pub const ENV_CLUSTER_NAMESPACE: &str = "KAFKA_CLUSTER_NAMESPACE";
-
-pub const ENV_CLIENT_SECURITY: &str = "KAFKA_CLIENT_SECURITY";
+constant!(pub ENV_CLUSTER_NAME: EnvVarName = "KAFKA_CLUSTER_NAME");
+constant!(pub ENV_CLUSTER_NAMESPACE: EnvVarName = "KAFKA_CLUSTER_NAMESPACE");
+constant!(pub ENV_CLIENT_SECURITY: EnvVarName = "KAFKA_CLIENT_SECURITY");
 
 /// How the agent connects to the brokers.
 #[derive(Clone, Copy, Debug, Display, EnumString, Eq, PartialEq)]

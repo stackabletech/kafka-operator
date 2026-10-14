@@ -1736,7 +1736,7 @@ dependencies = [
 [[package]]
 name = "k8s-version"
 version = "0.1.3"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#754e444b8cc3daf6a59fb69d7eaf632249ccc3be"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#92e1a3655432e3899da735a9d86ded2e38030c0e"
 dependencies = [
  "darling 0.24.1",
  "regex",
@@ -3213,7 +3213,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 [[package]]
 name = "stackable-certs"
 version = "0.4.1"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#754e444b8cc3daf6a59fb69d7eaf632249ccc3be"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#92e1a3655432e3899da735a9d86ded2e38030c0e"
 dependencies = [
  "const-oid",
  "ecdsa",
@@ -3303,7 +3303,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.119.0"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#754e444b8cc3daf6a59fb69d7eaf632249ccc3be"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#92e1a3655432e3899da735a9d86ded2e38030c0e"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -3347,7 +3347,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator-derive"
 version = "0.3.1"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#754e444b8cc3daf6a59fb69d7eaf632249ccc3be"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#92e1a3655432e3899da735a9d86ded2e38030c0e"
 dependencies = [
  "darling 0.24.1",
  "proc-macro2",
@@ -3358,7 +3358,7 @@ dependencies = [
 [[package]]
 name = "stackable-shared"
 version = "0.1.2"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#754e444b8cc3daf6a59fb69d7eaf632249ccc3be"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#92e1a3655432e3899da735a9d86ded2e38030c0e"
 dependencies = [
  "jiff",
  "k8s-openapi",
@@ -3375,7 +3375,7 @@ dependencies = [
 [[package]]
 name = "stackable-telemetry"
 version = "0.6.5"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#754e444b8cc3daf6a59fb69d7eaf632249ccc3be"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#92e1a3655432e3899da735a9d86ded2e38030c0e"
 dependencies = [
  "axum",
  "clap",
@@ -3399,7 +3399,7 @@ dependencies = [
 [[package]]
 name = "stackable-versioned"
 version = "0.11.1"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#754e444b8cc3daf6a59fb69d7eaf632249ccc3be"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#92e1a3655432e3899da735a9d86ded2e38030c0e"
 dependencies = [
  "kube",
  "schemars",
@@ -3413,7 +3413,7 @@ dependencies = [
 [[package]]
 name = "stackable-versioned-macros"
 version = "0.11.1"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#754e444b8cc3daf6a59fb69d7eaf632249ccc3be"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#92e1a3655432e3899da735a9d86ded2e38030c0e"
 dependencies = [
  "convert_case",
  "darling 0.24.1",
@@ -3430,7 +3430,7 @@ dependencies = [
 [[package]]
 name = "stackable-webhook"
 version = "0.10.0"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#754e444b8cc3daf6a59fb69d7eaf632249ccc3be"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=feat%2Fplatform-access#92e1a3655432e3899da735a9d86ded2e38030c0e"
 dependencies = [
  "arc-swap",
  "async-trait",

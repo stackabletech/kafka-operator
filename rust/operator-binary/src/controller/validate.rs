@@ -6,7 +6,7 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use serde::Serialize;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu, ensure};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     commons::product_image_selection,
@@ -24,14 +24,15 @@ use stackable_operator::{
             validate_logging_configuration_for_container,
         },
         role_utils::{JavaCommonConfig, Role, with_validated_config},
-        types::kubernetes::ConfigMapName,
+        types::kubernetes::{ConfigMapName, SecretClassName},
     },
 };
 
 use crate::{
     controller::{
-        RoleGroupName, ValidatedAgentConfig, ValidatedCluster, ValidatedClusterConfig,
-        ValidatedKafkaConfig, ValidatedRoleConfig, ValidatedRoleGroupConfig,
+        AgentConnection, RoleGroupName, ValidatedAgentConfig, ValidatedCluster,
+        ValidatedClusterConfig, ValidatedKafkaConfig, ValidatedRoleConfig,
+        ValidatedRoleGroupConfig,
         dereference::DereferencedObjects,
         security::{self, ValidatedKafkaSecurity},
     },
@@ -115,6 +116,28 @@ pub enum Error {
          to join without it"
     ))]
     MissingKraftControllerRole,
+
+    #[snafu(display(
+        "platform access does not support the cluster authentication method {authentication:?}"
+    ))]
+    UnsupportedClusterAuthentication { authentication: String },
+
+    #[snafu(display(
+        "the cluster requires client authentication, but platform access is anonymous"
+    ))]
+    AnonymousPlatformAccessWithClientAuthentication,
+
+    #[snafu(display(
+        "the platform access authentication method {authentication:?} requires the cluster to use \
+         TLS"
+    ))]
+    PlatformAccessRequiresTls { authentication: String },
+
+    #[snafu(display("the SecretClass {secret_class:?} of the client listener is invalid"))]
+    ParseClientListenerSecretClass {
+        source: stackable_operator::v2::macros::attributed_string_type::Error,
+        secret_class: String,
+    },
 }
 
 /// Validated logging configuration for a Kafka role group's Kafka and (optional) Vector
@@ -334,15 +357,16 @@ pub fn validate(
         .cluster_domain
         .clone();
 
-    let agent_config = kafka
-        .spec
-        .platform_access
-        .as_ref()
-        .filter(|platform_access| platform_access.enabled)
-        .map(|platform_access| ValidatedAgentConfig {
+    let agent_config = match &kafka.spec.platform_access {
+        Some(platform_access) if platform_access.enabled => Some(ValidatedAgentConfig {
             image: agent_image.to_owned(),
-            authentication: platform_access.authentication.clone(),
-        });
+            connection: validate_agent_connection(
+                &platform_access.authentication,
+                &kafka_security,
+            )?,
+        }),
+        _ => None,
+    };
 
     Ok(ValidatedCluster::new(
         name,
@@ -452,15 +476,164 @@ fn inject_cluster_id(env_overrides: EnvVarSet, cluster_id: Option<&str>) -> EnvV
     }
 }
 
+fn validate_agent_connection(
+    authentication: &v1alpha1::KafkaPlatformAccessAuthentication,
+    security: &ValidatedKafkaSecurity,
+) -> Result<AgentConnection> {
+    ensure!(
+        !security.has_kerberos_enabled(),
+        UnsupportedClusterAuthenticationSnafu {
+            authentication: "kerberos"
+        }
+    );
+
+    let server_ca_secret_class = security
+        .tls_secret_class()
+        .map(|secret_class| {
+            SecretClassName::from_str(secret_class)
+                .context(ParseClientListenerSecretClassSnafu { secret_class })
+        })
+        .transpose()?;
+
+    match (authentication, server_ca_secret_class) {
+        (v1alpha1::KafkaPlatformAccessAuthentication::Anonymous(_), None) => {
+            Ok(AgentConnection::Plaintext)
+        }
+        (
+            v1alpha1::KafkaPlatformAccessAuthentication::Anonymous(_),
+            Some(server_ca_secret_class),
+        ) => {
+            ensure!(
+                security.tls_client_authentication_class().is_none(),
+                AnonymousPlatformAccessWithClientAuthenticationSnafu
+            );
+            Ok(AgentConnection::Tls {
+                server_ca_secret_class,
+            })
+        }
+        (v1alpha1::KafkaPlatformAccessAuthentication::Tls(_), None) => {
+            PlatformAccessRequiresTlsSnafu {
+                authentication: "tls",
+            }
+            .fail()
+        }
+        (
+            v1alpha1::KafkaPlatformAccessAuthentication::Tls(client_credential),
+            Some(server_ca_secret_class),
+        ) => Ok(AgentConnection::MutualTls {
+            server_ca_secret_class,
+            client_credential: client_credential.clone(),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
-    use stackable_operator::v2::{
-        builder::pod::container::EnvVarSet, types::operator::RoleGroupName,
+    use rstest::rstest;
+    use stackable_operator::{
+        crd::platform_access::v1alpha1::{Anonymous, TlsClientCredential},
+        v2::{
+            builder::pod::container::EnvVarSet,
+            types::{
+                kubernetes::{SecretClassName, SecretName},
+                operator::RoleGroupName,
+            },
+        },
     };
 
-    use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id};
+    use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id, validate_agent_connection};
+    use crate::{
+        controller::{
+            AgentConnection,
+            security::ValidatedKafkaSecurity,
+            test_support::{client_auth_tls, kerberos, plaintext, server_tls},
+        },
+        crd::v1alpha1::KafkaPlatformAccessAuthentication,
+    };
+
+    fn anonymous() -> KafkaPlatformAccessAuthentication {
+        KafkaPlatformAccessAuthentication::Anonymous(Anonymous::default())
+    }
+
+    fn agent_cert() -> TlsClientCredential {
+        TlsClientCredential::Secret(
+            SecretName::from_str("agent-cert").expect("the Secret name should be valid"),
+        )
+    }
+
+    fn tls() -> KafkaPlatformAccessAuthentication {
+        KafkaPlatformAccessAuthentication::Tls(agent_cert())
+    }
+
+    fn tls_secret_class(name: &str) -> SecretClassName {
+        SecretClassName::from_str(name).expect("the SecretClass name should be valid")
+    }
+
+    #[rstest]
+    #[case::plaintext_anonymous(plaintext(), anonymous(), AgentConnection::Plaintext)]
+    #[case::server_tls_anonymous(
+        server_tls(),
+        anonymous(),
+        AgentConnection::Tls { server_ca_secret_class: tls_secret_class("tls") }
+    )]
+    #[case::server_tls_with_credential(
+        server_tls(),
+        tls(),
+        AgentConnection::MutualTls {
+            server_ca_secret_class: tls_secret_class("tls"),
+            client_credential: agent_cert(),
+        }
+    )]
+    #[case::client_auth_with_credential(
+        client_auth_tls(),
+        tls(),
+        AgentConnection::MutualTls {
+            server_ca_secret_class: tls_secret_class("client-auth-secret-class"),
+            client_credential: agent_cert(),
+        }
+    )]
+    fn agent_connection(
+        #[case] security: ValidatedKafkaSecurity,
+        #[case] authentication: KafkaPlatformAccessAuthentication,
+        #[case] expected: AgentConnection,
+    ) {
+        let connection = validate_agent_connection(&authentication, &security)
+            .expect("the agent connection should be valid");
+
+        assert_eq!(expected, connection);
+    }
+
+    #[test]
+    fn reject_unsupported_cluster_authentication() {
+        let error = validate_agent_connection(&tls(), &kerberos())
+            .expect_err("the agent connection should be invalid");
+
+        assert!(matches!(
+            error,
+            Error::UnsupportedClusterAuthentication { .. }
+        ));
+    }
+
+    #[test]
+    fn reject_anonymous_agent_connection_with_client_authentication() {
+        let error = validate_agent_connection(&anonymous(), &client_auth_tls())
+            .expect_err("the agent connection should be invalid");
+
+        assert!(matches!(
+            error,
+            Error::AnonymousPlatformAccessWithClientAuthentication
+        ));
+    }
+
+    #[test]
+    fn reject_agent_connection_requiring_tls_without_tls() {
+        let error = validate_agent_connection(&tls(), &plaintext())
+            .expect_err("the agent connection should be invalid");
+
+        assert!(matches!(error, Error::PlatformAccessRequiresTls { .. }));
+    }
     use crate::{
         controller::test_support::{app_version_label, minimal_kafka, validated_cluster},
         crd::role::KafkaRole,
