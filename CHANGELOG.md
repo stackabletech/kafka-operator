@@ -50,6 +50,7 @@ All notable changes to this project will be documented in this file.
 - Make operations infallible where dependent on static inputs ([#1017]).
 - Bump stackable-operator to 0.119.0 ([#1029]).
 - test: Bump vector-aggregator to 0.58.0 ([#1039]).
+- test: Update OPA to 1.20.2 in integration tests and docs example ([#1042]).
 
 ### Fixed
 
@@ -86,6 +87,7 @@ All notable changes to this project will be documented in this file.
 [#1029]: https://github.com/stackabletech/kafka-operator/pull/1029
 [#1035]: https://github.com/stackabletech/kafka-operator/pull/1035
 [#1039]: https://github.com/stackabletech/kafka-operator/pull/1039
+[#1042]: https://github.com/stackabletech/kafka-operator/pull/1042
 
 ## [26.7.0] - 2026-07-21
 
