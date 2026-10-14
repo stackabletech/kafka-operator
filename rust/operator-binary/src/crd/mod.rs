@@ -375,7 +375,8 @@ pub enum MetadataManager {
 mod tests {
     use rstest::rstest;
     use stackable_operator::{
-        v2::types::kubernetes::SecretClassName, versioned::test_utils::RoundtripTestData,
+        utils::yaml_from_str_singleton_map, v2::types::kubernetes::SecretClassName,
+        versioned::test_utils::RoundtripTestData,
     };
 
     use super::*;
@@ -431,7 +432,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -457,7 +458,7 @@ mod tests {
 
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(
             get_server_secret_class(&kafka).unwrap().to_string(),
             "simple-kafka-server-tls"
@@ -485,7 +486,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), None);
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -510,7 +511,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka).to_string(),
@@ -536,7 +537,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -561,7 +562,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka).to_string(),
@@ -586,7 +587,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(
             get_server_secret_class(&kafka).map(|s| s.to_string()),
             Some("simple-kafka-server-tls".to_string())
@@ -637,7 +638,7 @@ mod tests {
         "#
         );
         let mut kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(&input).expect("illegal test input");
+            yaml_from_str_singleton_map(&input).expect("illegal test input");
 
         if metadata_manager.is_some() {
             kafka.spec.cluster_config.metadata_manager = metadata_manager;
@@ -661,7 +662,7 @@ mod tests {
 
     impl RoundtripTestData for v1alpha1::KafkaClusterSpec {
         fn roundtrip_test_data() -> Vec<Self> {
-            stackable_operator::utils::yaml_from_str_singleton_map(indoc::indoc! {r#"
+            yaml_from_str_singleton_map(indoc::indoc! {r#"
               - image:
                   productVersion: 1.2.3
                   pullPolicy: IfNotPresent
