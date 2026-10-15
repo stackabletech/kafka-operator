@@ -641,7 +641,7 @@ mod tests {
         client::Client,
         commons::networking::DomainName,
         kube::{Client as KubeClient, Config, runtime::controller::Action},
-        utils::cluster_info::KubernetesClusterInfo,
+        utils::{cluster_info::KubernetesClusterInfo, yaml_from_str_singleton_map},
     };
 
     use super::{
@@ -744,7 +744,7 @@ mod tests {
     /// API, and because the spec is invalid, before the `DeserializeGuard` is unwrapped.
     #[test]
     fn reconcile_exits_early_for_deleted_cluster() {
-        let kafka = serde_yaml::from_str(
+        let kafka = yaml_from_str_singleton_map(
             r#"
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
