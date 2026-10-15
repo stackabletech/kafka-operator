@@ -9,12 +9,19 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+stackable-kafka-admin.workspace = true
+stackable-kafka-shared.workspace = true
 stackable-operator.workspace = true
 
 anyhow.workspace = true
 clap.workspace = true
+const_format.workspace = true
+snafu.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true
 
 [build-dependencies]
 built.workspace = true

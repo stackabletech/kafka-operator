@@ -10699,6 +10699,22 @@ rec {
             packageId = "clap";
           }
           {
+            name = "const_format";
+            packageId = "const_format";
+          }
+          {
+            name = "snafu";
+            packageId = "snafu 0.9.2";
+          }
+          {
+            name = "stackable-kafka-admin";
+            packageId = "stackable-kafka-admin";
+          }
+          {
+            name = "stackable-kafka-shared";
+            packageId = "stackable-kafka-shared";
+          }
+          {
             name = "stackable-operator";
             packageId = "stackable-operator";
             features = [ "crds" "webhook" ];
@@ -10718,6 +10734,12 @@ rec {
             name = "built";
             packageId = "built";
             features = [ "chrono" "git2" ];
+          }
+        ];
+        devDependencies = [
+          {
+            name = "rstest";
+            packageId = "rstest";
           }
         ];
 
