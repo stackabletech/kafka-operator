@@ -241,8 +241,12 @@ mod tests {
             spec:
               image: {image}
               clusterConfig:
-                zookeeperConfigMapName: xyz
+                metadataManager: kraft
               platformAccess: {platform_access}
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 1
               brokers:
                 roleGroups:
                   default:

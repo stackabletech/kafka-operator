@@ -122,6 +122,9 @@ pub enum Error {
     ))]
     UnsupportedClusterAuthentication { authentication: String },
 
+    #[snafu(display("platform access is only supported in KRaft mode"))]
+    PlatformAccessRequiresKraft,
+
     #[snafu(display(
         "the cluster requires client authentication, but platform access is anonymous"
     ))]
@@ -358,13 +361,19 @@ pub fn validate(
         .clone();
 
     let agent_config = match &kafka.spec.platform_access {
-        Some(platform_access) if platform_access.enabled => Some(ValidatedAgentConfig {
-            image: agent_image.to_owned(),
-            connection: validate_agent_connection(
-                &platform_access.authentication,
-                &kafka_security,
-            )?,
-        }),
+        Some(platform_access) if platform_access.enabled => {
+            ensure!(
+                metadata_manager == crate::crd::MetadataManager::KRaft,
+                PlatformAccessRequiresKraftSnafu
+            );
+            Some(ValidatedAgentConfig {
+                image: agent_image.to_owned(),
+                connection: validate_agent_connection(
+                    &platform_access.authentication,
+                    &kafka_security,
+                )?,
+            })
+        }
         _ => None,
     };
 
@@ -928,5 +937,42 @@ mod tests {
         );
 
         let _cluster = validated_cluster(&kafka);
+    }
+
+    #[test]
+    fn zookeeper_mode_rejects_platform_access() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: zk-discovery
+              platformAccess:
+                enabled: true
+                authentication:
+                  anonymous: {}
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+
+        let result = crate::controller::test_support::validate_err(&kafka);
+        let Err(error) = result else {
+            panic!("validate should reject platform access in ZooKeeper mode");
+        };
+
+        assert!(
+            matches!(error, Error::PlatformAccessRequiresKraft),
+            "expected PlatformAccessRequiresKraft, got: {error:?}"
+        );
     }
 }
