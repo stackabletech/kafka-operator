@@ -30,7 +30,7 @@ All notable changes to this project will be documented in this file.
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
-- Bump stackable-operator to 0.118.0 ([#994], [#1011], [#1021]).
+- Bump stackable-operator to 0.121.0 ([#994], [#1011], [#1021], [#1029], [#1043]).
 - The RBAC ServiceAccount and RoleBinding are now built with the operator-rs `v2::rbac`
   functions and carry the full set of recommended labels ([#990]).
 - BREAKING: The `brokers` role is now required by the CRD; a KafkaCluster without it was
@@ -48,10 +48,9 @@ All notable changes to this project will be documented in this file.
   operator upgrade, delete each broker StatefulSet so that the operator immediately recreates it
   with the new labels ([#1011]).
 - Make operations infallible where dependent on static inputs ([#1017]).
-- Bump stackable-operator to 0.119.0 ([#1029]).
-- Bump stackable-operator to 0.121.0 and remove `serde_yaml` ([#1043]).
+- Remove `serde_yaml` ([#1043]).
 - All pods now set `securityContext.seccompProfile.type` to `RuntimeDefault` ([#1043]).
-- Support Vector 0.58.0 ([#1039], [#1044]).
+- Support Vector 0.58.0 ([#1039], [#1044], [#1046]).
 - test: Update OPA to 1.20.2 in integration tests and docs example ([#1042]).
 
 ### Fixed
@@ -92,6 +91,7 @@ All notable changes to this project will be documented in this file.
 [#1042]: https://github.com/stackabletech/kafka-operator/pull/1042
 [#1043]: https://github.com/stackabletech/kafka-operator/pull/1043
 [#1044]: https://github.com/stackabletech/kafka-operator/pull/1044
+[#1046]: https://github.com/stackabletech/kafka-operator/pull/1046
 
 ## [26.7.0] - 2026-07-21
 
