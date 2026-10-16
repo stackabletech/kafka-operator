@@ -10,14 +10,16 @@ use kafka_protocol::{
     ResponseError,
     error::ParseResponseErrorCode,
     messages::{
-        CreatePartitionsRequest, CreateTopicsRequest, DeleteTopicsRequest, DeleteTopicsResponse,
-        DescribeConfigsRequest, DescribeConfigsResponse, IncrementalAlterConfigsRequest,
-        MetadataRequest, MetadataResponse, TopicName,
+        BrokerId, CreatePartitionsRequest, CreateTopicsRequest, DeleteTopicsRequest,
+        DeleteTopicsResponse, DescribeConfigsRequest, DescribeConfigsResponse,
+        IncrementalAlterConfigsRequest, ListPartitionReassignmentsRequest,
+        ListPartitionReassignmentsResponse, MetadataRequest, MetadataResponse, TopicName,
         create_partitions_request::CreatePartitionsTopic,
         create_topics_request::{CreatableTopic, CreatableTopicConfig},
         delete_topics_request::DeleteTopicState,
         describe_configs_request::DescribeConfigsResource,
         incremental_alter_configs_request::{AlterConfigsResource, AlterableConfig},
+        list_partition_reassignments_request::ListPartitionReassignmentsTopics,
         metadata_request::MetadataRequestTopic,
     },
     protocol::{Request, StrBytes},
@@ -36,6 +38,7 @@ const DELETE_TOPICS_VERSION: i16 = 6;
 const CREATE_PARTITIONS_VERSION: i16 = 3;
 const DESCRIBE_CONFIGS_VERSION: i16 = 4;
 const INCREMENTAL_ALTER_CONFIGS_VERSION: i16 = 1;
+const LIST_PARTITION_REASSIGNMENTS_VERSION: i16 = 0;
 
 /// Must stay below the connection's request timeout.
 const BROKER_TIMEOUT_MS: i32 = 25_000;
@@ -113,6 +116,14 @@ pub struct Partition {
     pub index: i32,
     /// Broker ids, including replicas that are added or removed by a reassignment
     pub replicas: Vec<i32>,
+}
+
+/// An ongoing reassignment of one partition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PartitionReassignment {
+    pub index: i32,
+    pub adding_replicas: Vec<i32>,
+    pub removing_replicas: Vec<i32>,
 }
 
 pub struct KafkaAdminClient {
@@ -233,6 +244,22 @@ impl KafkaAdminClient {
         delete_topic_result(response, topic)
     }
 
+    /// Returns the ongoing reassignments of the given partitions, sorted by the partition index.
+    /// Needs `DESCRIBE` on the cluster.
+    pub async fn list_partition_reassignments(
+        &mut self,
+        topic: &str,
+        partitions: &[i32],
+    ) -> Result<Vec<PartitionReassignment>> {
+        let response = self
+            .send(
+                list_partition_reassignments_request(topic, partitions),
+                LIST_PARTITION_REASSIGNMENTS_VERSION,
+            )
+            .await?;
+        list_partition_reassignments_result(response, topic)
+    }
+
     /// Sends the request on the current connection or a new one. A failed or cancelled request
     /// drops the connection, and a connection idle for longer than [`CONNECTION_MAX_IDLE`] is
     /// replaced.
@@ -289,7 +316,7 @@ fn describe_topic_result(response: MetadataResponse, topic: &str) -> Result<Opti
         .into_iter()
         .map(|partition| Partition {
             index: partition.partition_index,
-            replicas: partition.replica_nodes.into_iter().map(|id| *id).collect(),
+            replicas: broker_ids(partition.replica_nodes),
         })
         .collect::<Vec<_>>();
     partitions.sort_by_key(|partition| partition.index);
@@ -414,8 +441,53 @@ fn delete_topic_result(response: DeleteTopicsResponse, topic: &str) -> Result<()
     )
 }
 
+/// Only the given partitions are checked; an empty list checks none.
+fn list_partition_reassignments_request(
+    topic: &str,
+    partitions: &[i32],
+) -> ListPartitionReassignmentsRequest {
+    ListPartitionReassignmentsRequest::default()
+        .with_topics(Some(vec![
+            ListPartitionReassignmentsTopics::default()
+                .with_name(topic_name(topic))
+                .with_partition_indexes(partitions.to_vec()),
+        ]))
+        .with_timeout_ms(BROKER_TIMEOUT_MS)
+}
+
+/// The response only contains partitions with an ongoing reassignment.
+fn list_partition_reassignments_result(
+    response: ListPartitionReassignmentsResponse,
+    topic: &str,
+) -> Result<Vec<PartitionReassignment>> {
+    check(
+        ListPartitionReassignmentsRequest::KEY,
+        topic,
+        response.error_code,
+        response.error_message,
+    )?;
+
+    let mut reassignments = response
+        .topics
+        .into_iter()
+        .filter(|result| result.name == topic_name(topic))
+        .flat_map(|result| result.partitions)
+        .map(|partition| PartitionReassignment {
+            index: partition.partition_index,
+            adding_replicas: broker_ids(partition.adding_replicas),
+            removing_replicas: broker_ids(partition.removing_replicas),
+        })
+        .collect::<Vec<_>>();
+    reassignments.sort_by_key(|reassignment| reassignment.index);
+    Ok(reassignments)
+}
+
 fn topic_name(topic: &str) -> TopicName {
     TopicName::from(StrBytes::from_string(topic.to_owned()))
+}
+
+fn broker_ids(ids: Vec<BrokerId>) -> Vec<i32> {
+    ids.into_iter().map(|id| *id).collect()
 }
 
 // Used instead of [0] to correctly handle empty results & take ownership
@@ -444,6 +516,9 @@ mod tests {
     use kafka_protocol::messages::{
         delete_topics_response::DeletableTopicResult,
         describe_configs_response::{DescribeConfigsResourceResult, DescribeConfigsResult},
+        list_partition_reassignments_response::{
+            OngoingPartitionReassignment, OngoingTopicReassignment,
+        },
         metadata_response::{MetadataResponsePartition, MetadataResponseTopic},
     };
     use rstest::rstest;
@@ -642,6 +717,80 @@ mod tests {
                 ("cleanup.policy", CONFIG_OPERATION_DELETE, None),
             ],
             configs
+        );
+    }
+
+    #[test]
+    fn list_reassignments_of_the_given_partitions() {
+        let request = list_partition_reassignments_request(TOPIC, &[0, 1, 2]);
+
+        let topics = request.topics.expect("the topics should be requested");
+        assert_eq!(topic_name(TOPIC), topics[0].name);
+        assert_eq!(vec![0, 1, 2], topics[0].partition_indexes);
+        assert_eq!(BROKER_TIMEOUT_MS, request.timeout_ms);
+    }
+
+    #[test]
+    fn read_ongoing_reassignments() {
+        let reassignment = |index: i32, adding: Vec<i32>, removing: Vec<i32>| {
+            OngoingPartitionReassignment::default()
+                .with_partition_index(index)
+                .with_adding_replicas(adding.into_iter().map(Into::into).collect())
+                .with_removing_replicas(removing.into_iter().map(Into::into).collect())
+        };
+        let response = ListPartitionReassignmentsResponse::default().with_topics(vec![
+            OngoingTopicReassignment::default()
+                .with_name(topic_name("other"))
+                .with_partitions(vec![reassignment(0, vec![9], vec![8])]),
+            OngoingTopicReassignment::default()
+                .with_name(topic_name(TOPIC))
+                .with_partitions(vec![
+                    reassignment(2, vec![4], vec![]),
+                    reassignment(0, vec![4, 5], vec![1, 2]),
+                ]),
+        ]);
+
+        assert_eq!(
+            vec![
+                PartitionReassignment {
+                    index: 0,
+                    adding_replicas: vec![4, 5],
+                    removing_replicas: vec![1, 2],
+                },
+                PartitionReassignment {
+                    index: 2,
+                    adding_replicas: vec![4],
+                    removing_replicas: vec![],
+                },
+            ],
+            list_partition_reassignments_result(response, TOPIC)
+                .expect("the reassignments should be readable")
+        );
+    }
+
+    #[test]
+    fn read_no_ongoing_reassignments() {
+        assert_eq!(
+            Vec::<PartitionReassignment>::new(),
+            list_partition_reassignments_result(
+                ListPartitionReassignmentsResponse::default(),
+                TOPIC
+            )
+            .expect("no reassignments should not be an error")
+        );
+    }
+
+    #[test]
+    fn reject_reassignments_without_cluster_permission() {
+        let response = ListPartitionReassignmentsResponse::default()
+            .with_error_code(ResponseError::ClusterAuthorizationFailed.code());
+
+        let error = list_partition_reassignments_result(response, TOPIC)
+            .expect_err("the request should be rejected");
+
+        assert_eq!(
+            Some(ResponseError::ClusterAuthorizationFailed),
+            error.kafka_error()
         );
     }
 
