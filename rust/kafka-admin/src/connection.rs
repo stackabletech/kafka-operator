@@ -84,23 +84,6 @@ pub enum Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-impl Error {
-    pub fn is_retriable(&self) -> bool {
-        match self {
-            Error::Connect { .. }
-            | Error::ConnectTimeout { .. }
-            | Error::TlsHandshake { .. }
-            | Error::Write { .. }
-            | Error::Read { .. }
-            | Error::ConnectionClosed
-            | Error::ConnectionBroken
-            | Error::RequestTimeout { .. } => true,
-            Error::Kafka { error, .. } => error.is_retriable(),
-            _ => false,
-        }
-    }
-}
-
 /// How to connect to the broker. Paths point to PEM files.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Security {
