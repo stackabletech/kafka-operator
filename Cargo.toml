@@ -1,5 +1,5 @@
 [workspace]
-members = ["rust/operator-binary", "rust/agent-binary"]
+members = ["rust/operator-binary", "rust/agent-binary", "rust/kafka-admin"]
 resolver = "2"
 
 [workspace.package]
@@ -13,12 +13,16 @@ repository = "https://github.com/stackabletech/kafka-operator"
 stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "feat/platform-access", features = ["crds", "webhook"] }
 
 anyhow = "1.0"
+base64 = "0.22"
 built = { version = "0.8", features = ["chrono", "git2"] }
+bytes = "1.12"
 clap = "4.6"
 const_format = "0.2"
 futures = "0.3"
 indoc = "2.0"
+kafka-protocol = { version = "0.18", default-features = false, features = ["broker", "client"] }
 rstest = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
 semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -26,6 +30,8 @@ serde_yaml = "0.9"
 snafu = "0.9"
 strum = { version = "0.28", features = ["derive"] }
 tokio = { version = "1.53", features = ["full"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "ring", "tls12"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"
 
 [patch."https://github.com/stackabletech/operator-rs.git"]
