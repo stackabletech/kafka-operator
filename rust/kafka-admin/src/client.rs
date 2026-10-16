@@ -93,7 +93,21 @@ impl Error {
         }
     }
 
-    pub fn kafka_error(&self) -> Option<ResponseError> {
+    /// Whether the broker answered with an error code, as opposed to a connection problem.
+    pub fn is_rejected_by_kafka(&self) -> bool {
+        self.kafka_error().is_some()
+    }
+
+    pub fn is_topic_already_exists(&self) -> bool {
+        self.kafka_error() == Some(ResponseError::TopicAlreadyExists)
+    }
+
+    /// Kafka rejects a partition count that is not larger than the current one.
+    pub fn is_partition_count_reached(&self) -> bool {
+        self.kafka_error() == Some(ResponseError::InvalidPartitions)
+    }
+
+    fn kafka_error(&self) -> Option<ResponseError> {
         match self {
             Error::Kafka { error, .. } => Some(*error),
             _ => None,
@@ -824,9 +838,34 @@ mod tests {
         )
         .expect_err("the request should be rejected");
 
-        assert_eq!(Some(ResponseError::TopicAlreadyExists), error.kafka_error());
+        assert!(error.is_rejected_by_kafka());
+        assert!(error.is_topic_already_exists());
+        assert!(!error.is_partition_count_reached());
         assert!(!error.is_retriable());
         assert!(error.to_string().contains("Topic 'orders' already exists."));
+    }
+
+    #[test]
+    fn recognize_a_reached_partition_count() {
+        let error = check(
+            CreatePartitionsRequest::KEY,
+            TOPIC,
+            ResponseError::InvalidPartitions.code(),
+            Some(StrBytes::from_static_str(
+                "Topic already has 6 partition(s).",
+            )),
+        )
+        .expect_err("the request should be rejected");
+
+        assert!(error.is_partition_count_reached());
+        assert!(!error.is_topic_already_exists());
+    }
+
+    #[test]
+    fn do_not_treat_connection_errors_as_rejected_by_kafka() {
+        let error = Error::NoBootstrapServers;
+
+        assert!(!error.is_rejected_by_kafka());
     }
 
     #[test]
