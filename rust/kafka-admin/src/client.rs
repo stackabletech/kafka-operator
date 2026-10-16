@@ -85,14 +85,6 @@ pub enum Error {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl Error {
-    pub fn is_retriable(&self) -> bool {
-        match self {
-            Error::Connect { source, .. } | Error::Send { source } => source.is_retriable(),
-            Error::Kafka { error, .. } => error.is_retriable(),
-            _ => false,
-        }
-    }
-
     /// Whether the broker answered with an error code, as opposed to a connection problem.
     pub fn is_rejected_by_kafka(&self) -> bool {
         self.kafka_error().is_some()
@@ -841,7 +833,6 @@ mod tests {
         assert!(error.is_rejected_by_kafka());
         assert!(error.is_topic_already_exists());
         assert!(!error.is_partition_count_reached());
-        assert!(!error.is_retriable());
         assert!(error.to_string().contains("Topic 'orders' already exists."));
     }
 
