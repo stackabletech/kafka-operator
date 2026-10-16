@@ -43,6 +43,16 @@ rec {
   # You can override the features with
   # workspaceMembers."${crateName}".build.override { features = [ "default" "feature1" ... ]; }.
   workspaceMembers = {
+    "stackable-kafka-admin" = rec {
+      packageId = "stackable-kafka-admin";
+      build = internal.buildRustCrateWithFeatures {
+        packageId = "stackable-kafka-admin";
+      };
+
+      # Debug support which might change between releases.
+      # File a bug if you depend on any for non-debug work!
+      debug = internal.debugCrate { inherit packageId; };
+    };
     "stackable-kafka-agent" = rec {
       packageId = "stackable-kafka-agent";
       build = internal.buildRustCrateWithFeatures {
@@ -1513,6 +1523,50 @@ rec {
             packageId = "libc";
             usesDefaultFeatures = false;
             target = { target, features }: (("loongarch64" == target."arch" or null) && ("linux" == target."os" or null));
+          }
+        ];
+
+      };
+      "crc" = rec {
+        crateName = "crc";
+        version = "3.4.0";
+        edition = "2021";
+        sha256 = "03dsq5qsv86m35ikg84l80d00wnkjm8q4pjxgac0vaqjrnhs5f2y";
+        authors = [
+          "Rui Hu <code@mrhooray.com>"
+          "Akhil Velagapudi <4@4khil.com>"
+        ];
+        dependencies = [
+          {
+            name = "crc-catalog";
+            packageId = "crc-catalog";
+          }
+        ];
+
+      };
+      "crc-catalog" = rec {
+        crateName = "crc-catalog";
+        version = "2.5.0";
+        edition = "2018";
+        sha256 = "0lq8dl60g457za8la86pak6i7ydxanm2lrpkqh5kyjkbz7m9hxi1";
+        libName = "crc_catalog";
+        authors = [
+          "Akhil Velagapudi <akhilvelagapudi@gmail.com>"
+        ];
+
+      };
+      "crc32c" = rec {
+        crateName = "crc32c";
+        version = "0.6.8";
+        edition = "2018";
+        sha256 = "0iwyr3jivcnhylczqgk1rkpp9b46r25vi5dj1y7il29dc8hsyirs";
+        authors = [
+          "Zack Owens"
+        ];
+        buildDependencies = [
+          {
+            name = "rustc_version";
+            packageId = "rustc_version";
           }
         ];
 
@@ -5471,6 +5525,52 @@ rec {
           "serde" = [ "dep:serde" ];
         };
         resolvedDefaultFeatures = [ "darling" ];
+      };
+      "kafka-protocol" = rec {
+        crateName = "kafka-protocol";
+        version = "0.18.0";
+        edition = "2021";
+        sha256 = "1nidzrl3whxjf81qz88wh5dqgwh510m4vjhqpw687ka03cpmr789";
+        libName = "kafka_protocol";
+        authors = [
+          "Diggory Blake <diggsey@googlemail.com>"
+          "Charlotte McElwain <charlotte.c.mcelwain@gmail.com>"
+          "belltoy <belltoy@gmail.com>"
+        ];
+        dependencies = [
+          {
+            name = "anyhow";
+            packageId = "anyhow";
+          }
+          {
+            name = "bytes";
+            packageId = "bytes";
+          }
+          {
+            name = "crc";
+            packageId = "crc";
+          }
+          {
+            name = "crc32c";
+            packageId = "crc32c";
+          }
+          {
+            name = "indexmap";
+            packageId = "indexmap";
+          }
+          {
+            name = "uuid";
+            packageId = "uuid";
+          }
+        ];
+        features = {
+          "default" = [ "client" "broker" "gzip" "zstd" "snappy" "lz4" ];
+          "gzip" = [ "dep:flate2" ];
+          "lz4" = [ "dep:lz4" ];
+          "snappy" = [ "dep:snap" ];
+          "zstd" = [ "dep:zstd" ];
+        };
+        resolvedDefaultFeatures = [ "broker" "client" ];
       };
       "konst" = rec {
         crateName = "konst";
@@ -10492,6 +10592,78 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" "rustls" ];
       };
+      "stackable-kafka-admin" = rec {
+        crateName = "stackable-kafka-admin";
+        version = "0.0.0-dev";
+        edition = "2024";
+        src = lib.cleanSourceWith { filter = sourceFilter;  src = ./rust/kafka-admin; };
+        libName = "stackable_kafka_admin";
+        authors = [
+          "Stackable GmbH <info@stackable.tech>"
+        ];
+        dependencies = [
+          {
+            name = "anyhow";
+            packageId = "anyhow";
+          }
+          {
+            name = "base64";
+            packageId = "base64 0.22.1";
+          }
+          {
+            name = "bytes";
+            packageId = "bytes";
+          }
+          {
+            name = "futures";
+            packageId = "futures";
+          }
+          {
+            name = "kafka-protocol";
+            packageId = "kafka-protocol";
+            usesDefaultFeatures = false;
+            features = [ "broker" "client" ];
+          }
+          {
+            name = "rustls";
+            packageId = "rustls";
+            usesDefaultFeatures = false;
+            features = [ "logging" "ring" "std" "tls12" ];
+          }
+          {
+            name = "snafu";
+            packageId = "snafu 0.9.2";
+          }
+          {
+            name = "tokio";
+            packageId = "tokio";
+            features = [ "full" ];
+          }
+          {
+            name = "tokio-rustls";
+            packageId = "tokio-rustls";
+            usesDefaultFeatures = false;
+            features = [ "logging" "ring" "tls12" ];
+          }
+          {
+            name = "tokio-util";
+            packageId = "tokio-util";
+            features = [ "codec" ];
+          }
+        ];
+        devDependencies = [
+          {
+            name = "rstest";
+            packageId = "rstest";
+          }
+          {
+            name = "tokio";
+            packageId = "tokio";
+            features = [ "full" "test-util" ];
+          }
+        ];
+
+      };
       "stackable-kafka-agent" = rec {
         crateName = "stackable-kafka-agent";
         version = "0.0.0-dev";
@@ -12011,7 +12183,7 @@ rec {
           "tracing" = [ "dep:tracing" ];
           "windows-sys" = [ "dep:windows-sys" ];
         };
-        resolvedDefaultFeatures = [ "bytes" "default" "fs" "full" "io-std" "io-util" "libc" "macros" "mio" "net" "parking_lot" "process" "rt" "rt-multi-thread" "signal" "signal-hook-registry" "socket2" "sync" "time" "tokio-macros" "windows-sys" ];
+        resolvedDefaultFeatures = [ "bytes" "default" "fs" "full" "io-std" "io-util" "libc" "macros" "mio" "net" "parking_lot" "process" "rt" "rt-multi-thread" "signal" "signal-hook-registry" "socket2" "sync" "test-util" "time" "tokio-macros" "windows-sys" ];
       };
       "tokio-macros" = rec {
         crateName = "tokio-macros";
