@@ -489,7 +489,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:
@@ -591,7 +591,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:
@@ -661,7 +661,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   a:
@@ -703,7 +703,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:
