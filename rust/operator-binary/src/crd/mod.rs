@@ -194,16 +194,17 @@ pub mod versioned {
         ///
         /// IMPORTANT: This property will be removed as soon as Kafka 3.x support is dropped.
         ///
-        /// Possible values are `zookeeper` and `kraft`.
+        /// Possible values are `ZooKeeper` and `KRaft`. The lowercase values `zookeeper` and `kraft`
+        /// are deprecated, but still accepted.
         ///
         /// If not set, defaults to:
         ///
-        /// - `zookeeper` for Kafka versions below `4.0.0`.
-        /// - `kraft` for Kafka versions `4.0.0` and higher.
+        /// - `ZooKeeper` for Kafka versions below `4.0.0`.
+        /// - `KRaft` for Kafka versions `4.0.0` and higher.
         ///
-        /// Using `zookeeper` for Kafka versions `4.0.0` and higher is not supported.
+        /// Using `ZooKeeper` for Kafka versions `4.0.0` and higher is not supported.
         ///
-        /// When set to `kraft`, the operator will perform the following actions:
+        /// When set to `KRaft`, the operator will perform the following actions:
         ///
         /// * Generate the Kafka cluster id.
         /// * Assign broker roles and configure controller quorum voters in the `broker.properties` files.
@@ -365,9 +366,15 @@ pub struct KafkaClusterStatus {
     Serialize,
     EnumString,
 )]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "PascalCase")]
+// schemars ignores `#[serde(alias)]` (https://github.com/GREsau/schemars/issues/338), so we need to
+// list the aliases in the schema manually. Otherwise the API server rejects them.
+#[schemars(extend("enum" = ["ZooKeeper", "KRaft", "zookeeper", "kraft"]))]
 pub enum MetadataManager {
+    // The lowercase aliases are deprecated and only kept for backwards compatibility.
+    #[serde(alias = "zookeeper")]
     ZooKeeper,
+    #[serde(alias = "kraft")]
     KRaft,
 }
 
@@ -375,7 +382,8 @@ pub enum MetadataManager {
 mod tests {
     use rstest::rstest;
     use stackable_operator::{
-        v2::types::kubernetes::SecretClassName, versioned::test_utils::RoundtripTestData,
+        utils::yaml_from_str_singleton_map, v2::types::kubernetes::SecretClassName,
+        versioned::test_utils::RoundtripTestData,
     };
 
     use super::*;
@@ -431,7 +439,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -457,7 +465,7 @@ mod tests {
 
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(
             get_server_secret_class(&kafka).unwrap().to_string(),
             "simple-kafka-server-tls"
@@ -485,7 +493,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), None);
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -510,7 +518,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka).to_string(),
@@ -536,7 +544,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -561,7 +569,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka).to_string(),
@@ -586,7 +594,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(
             get_server_secret_class(&kafka).map(|s| s.to_string()),
             Some("simple-kafka-server-tls".to_string())
@@ -637,7 +645,7 @@ mod tests {
         "#
         );
         let mut kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(&input).expect("illegal test input");
+            yaml_from_str_singleton_map(&input).expect("illegal test input");
 
         if metadata_manager.is_some() {
             kafka.spec.cluster_config.metadata_manager = metadata_manager;
@@ -661,7 +669,7 @@ mod tests {
 
     impl RoundtripTestData for v1alpha1::KafkaClusterSpec {
         fn roundtrip_test_data() -> Vec<Self> {
-            stackable_operator::utils::yaml_from_str_singleton_map(indoc::indoc! {r#"
+            yaml_from_str_singleton_map(indoc::indoc! {r#"
               - image:
                   productVersion: 1.2.3
                   pullPolicy: IfNotPresent
@@ -669,7 +677,7 @@ mod tests {
                   reconciliationPaused: false
                   stopped: true
                 clusterConfig:
-                  metadataManager: kraft
+                  metadataManager: KRaft
                   authentication:
                     - authenticationClass: my-kerberos
                   authorization:

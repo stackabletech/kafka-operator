@@ -3,7 +3,7 @@
 // Stackable Platform documentation.
 
 * 4.3.1
-* 4.2.1
+* 4.2.1 (deprecated)
 * 3.9.2 (LTS)
 
 Starting with Apache Kafka 4, the quorum manager has been changed from Apache Zookeeper to the built-in KRaft.

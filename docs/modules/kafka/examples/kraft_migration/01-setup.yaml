@@ -84,7 +84,7 @@ spec:
     productVersion: 3.9.2
     pullPolicy: IfNotPresent
   clusterConfig:
-    metadataManager: zookeeper
+    metadataManager: ZooKeeper
     brokerIdPodConfigMapName: broker-ids
     authentication:
       - authenticationClass: kafka-client-auth-tls

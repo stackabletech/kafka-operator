@@ -330,7 +330,8 @@ commands:
 
           extended_logs_files:
             inputs:
-              - processed_files_*
+              - processed_files_log4j
+              - processed_files_log4j2
             type: remap
             source: |
               del(.source_type)
@@ -366,7 +367,8 @@ commands:
 
           extended_logs:
             inputs:
-              - extended_logs_*
+              - extended_logs_files
+              - extended_logs_vector
             type: remap
             source: |
               .namespace = "${NAMESPACE}"
@@ -375,11 +377,16 @@ commands:
               .roleGroup = "${ROLE_GROUP_NAME}"
 
         sinks:
+          # Forward the logs to the Vector aggregator
           aggregator:
             inputs:
               - extended_logs
             type: vector
-            address: ${VECTOR_AGGREGATOR_ADDRESS}
+            routing:
+              endpoints:
+                - ${VECTOR_AGGREGATOR_ADDRESS}
+            compression: zstd
+            keepalive: {}
 {% endif %}
       YAMLEOF
       )
