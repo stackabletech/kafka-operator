@@ -46,35 +46,6 @@ pub enum Error {
     StatefulSet {
         source: resource::statefulset::Error,
     },
-
-    #[snafu(display("failed to serialize [{file}]"))]
-    SerializeConfigFile {
-        source: PropertiesWriterError,
-        file: ConfigFileName,
-    },
-
-    #[snafu(display("failed to build pod descriptors"))]
-    BuildPodDescriptors { source: PodDescriptorsError },
-
-    #[snafu(display("missing secret lifetime"))]
-    MissingSecretLifetime,
-
-    #[snafu(display("failed to build the TLS volumes"))]
-    BuildTlsVolumes { source: security::Error },
-
-    #[snafu(display("failed to build the Kerberos volume"))]
-    BuildKerberosVolume { source: kerberos::Error },
-
-    #[snafu(display("failed to build the broker listener volume"))]
-    BuildListenerVolume {
-        source: ListenerOperatorVolumeSourceBuilderError,
-    },
-
-    #[snafu(display("failed to build container probe"))]
-    BuildProbe { source: resource::probes::Error },
-
-    #[snafu(display("failed to construct JVM arguments"))]
-    ConstructJvmArguments { source: jvm::Error },
 }
 
 /// Everything one role group's Kubernetes objects are built from.
