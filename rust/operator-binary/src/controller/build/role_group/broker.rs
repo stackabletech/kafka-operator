@@ -104,7 +104,6 @@ pub(crate) fn build<'a>(
         role_pod_volumes,
         volume_claim_templates: volume_claim_templates(cluster, role_group_name, config),
         pod_management_policy: POD_MANAGEMENT_POLICY_PARALLEL,
-        update_strategy: None,
         replicas: rg_config.replicas,
         pod_overrides: rg_config.pod_overrides.clone(),
         config_map_data,

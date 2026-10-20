@@ -6,12 +6,8 @@ use snafu::{OptionExt, ResultExt};
 use stackable_operator::{
     builder::pod::{container::FieldPathEnvVar, resources::ResourceRequirementsBuilder},
     commons::product_image_selection::ResolvedProductImage,
-    k8s_openapi::api::{
-        apps::v1::StatefulSetUpdateStrategy,
-        core::v1::{
-            Container, EnvVar, EnvVarSource, ExecAction, LifecycleHandler, ObjectFieldSelector,
-            Volume,
-        },
+    k8s_openapi::api::core::v1::{
+        Container, EnvVar, EnvVarSource, ExecAction, LifecycleHandler, ObjectFieldSelector, Volume,
     },
     v2::{
         builder::pod::container::{EnvVarName, EnvVarSet, new_container_builder},
@@ -118,10 +114,6 @@ pub(crate) fn build<'a>(
         role_pod_volumes,
         volume_claim_templates: config.resources.storage.build_pvcs(),
         pod_management_policy: POD_MANAGEMENT_POLICY_ORDERED_READY,
-        update_strategy: Some(StatefulSetUpdateStrategy {
-            type_: Some("RollingUpdate".to_string()),
-            ..StatefulSetUpdateStrategy::default()
-        }),
         replicas: rg_config.replicas,
         pod_overrides: rg_config.pod_overrides.clone(),
         config_map_data,

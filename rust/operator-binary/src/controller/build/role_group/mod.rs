@@ -19,7 +19,7 @@ use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::pod::volume::ListenerOperatorVolumeSourceBuilderError,
     k8s_openapi::api::{
-        apps::v1::{StatefulSet, StatefulSetUpdateStrategy},
+        apps::v1::StatefulSet,
         core::v1::{ConfigMap, Container, PersistentVolumeClaim, PodTemplateSpec, Service, Volume},
     },
     v2::{config_file_writer::PropertiesWriterError, types::kubernetes::ContainerName},
@@ -105,8 +105,6 @@ pub(crate) struct RoleGroupBuilder<'a> {
     /// bootstrap listener claim template.
     pub(crate) volume_claim_templates: Vec<PersistentVolumeClaim>,
     pub(crate) pod_management_policy: &'static str,
-    /// `None` leaves the Kubernetes default in place.
-    pub(crate) update_strategy: Option<StatefulSetUpdateStrategy>,
     /// The role group's replica count, passed to the StatefulSet as is; `None` makes Kubernetes
     /// run one pod.
     pub(crate) replicas: Option<u16>,

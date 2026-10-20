@@ -131,7 +131,6 @@ pub fn build_statefulset(builder: &RoleGroupBuilder) -> Result<StatefulSet, Erro
             .build(),
         spec: Some(StatefulSetSpec {
             pod_management_policy: Some(builder.pod_management_policy.to_string()),
-            update_strategy: builder.update_strategy.clone(),
             replicas: builder.replicas.map(i32::from),
             selector: LabelSelector {
                 match_labels: Some(
