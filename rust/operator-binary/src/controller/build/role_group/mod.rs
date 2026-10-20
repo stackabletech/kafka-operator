@@ -36,7 +36,6 @@ use crate::{
     },
 };
 
-/// Why building one role group failed. The caller adds which role and role group it was.
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("failed to build ConfigMap"))]
