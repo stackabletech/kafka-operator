@@ -89,6 +89,18 @@ impl Error {
     pub fn is_rejected_by_kafka(&self) -> bool {
         matches!(self, Error::Kafka { .. })
     }
+
+    /// Whether a CreateTopics request was rejected because the topic already exists.
+    pub fn is_topic_already_exists(&self) -> bool {
+        matches!(
+            self,
+            Error::Kafka {
+                api_key: CreateTopicsRequest::KEY,
+                error: ResponseError::TopicAlreadyExists,
+                ..
+            }
+        )
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -819,6 +831,21 @@ mod tests {
 
         assert!(error.is_rejected_by_kafka());
         assert!(error.to_string().contains("Topic 'orders' already exists."));
+    }
+
+    #[rstest]
+    #[case::create_topics(CreateTopicsRequest::KEY, ResponseError::TopicAlreadyExists, true)]
+    #[case::other_error(CreateTopicsRequest::KEY, ResponseError::InvalidPartitions, false)]
+    #[case::other_request(CreatePartitionsRequest::KEY, ResponseError::TopicAlreadyExists, false)]
+    fn recognize_an_existing_topic_on_create(
+        #[case] api_key: i16,
+        #[case] error: ResponseError,
+        #[case] expected: bool,
+    ) {
+        let error =
+            check(api_key, TOPIC, error.code(), None).expect_err("the request should be rejected");
+
+        assert_eq!(expected, error.is_topic_already_exists());
     }
 
     #[test]
