@@ -186,7 +186,9 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .owns(
                     watch_namespace.get_api::<DeserializeGuard<Deployment>>(&client),
-                    watcher::Config::default(),
+                    // The agent is a the only Deployment
+                    watcher::Config::default()
+                        .labels("app.kubernetes.io/name=kafka,app.kubernetes.io/component=agent"),
                 )
                 .watches(
                     watch_namespace.get_api::<DeserializeGuard<ConfigMap>>(&client),

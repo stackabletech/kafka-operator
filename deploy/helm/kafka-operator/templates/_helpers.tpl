@@ -6,14 +6,6 @@ Expand the name of the chart.
 {{- end }}
 
 {{/*
-Fixed product name. Unlike kafka-operator.name it ignores nameOverride, because it must match
-names hardcoded in the operator.
-*/}}
-{{- define "kafka-operator.productName" -}}
-kafka
-{{- end }}
-
-{{/*
 Expand the name of the chart.
 */}}
 {{- define "kafka-operator.appname" -}}

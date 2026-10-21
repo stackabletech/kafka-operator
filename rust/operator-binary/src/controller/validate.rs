@@ -582,9 +582,9 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case::enabled(true, false)]
-    #[case::disabled(false, true)]
-    fn platform_access_requires_the_operator_image(#[case] enabled: bool, #[case] valid: bool) {
+    #[case::enabled(true)]
+    #[case::disabled(false)]
+    fn platform_access_requires_the_operator_image(#[case] enabled: bool) {
         let kafka = minimal_kafka(&format!(
             r#"
             apiVersion: kafka.stackable.tech/v1alpha1
@@ -612,14 +612,14 @@ mod tests {
 
         let result = validate_with_operator_image(&kafka, None);
 
-        if valid {
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
-        } else {
+        if enabled {
             assert!(
                 matches!(result, Err(Error::PlatformAccessRequiresOperatorImage)),
                 "expected PlatformAccessRequiresOperatorImage, got: {:?}",
                 result.err()
             );
+        } else {
+            assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
         }
     }
 
