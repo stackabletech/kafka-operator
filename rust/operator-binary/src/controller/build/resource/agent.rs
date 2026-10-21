@@ -12,7 +12,7 @@ use stackable_operator::{
     constant,
     k8s_openapi::{
         api::{
-            apps::v1::{Deployment, DeploymentSpec},
+            apps::v1::{Deployment, DeploymentSpec, DeploymentStrategy},
             core::v1::{EnvVarSource, ObjectFieldSelector, ServiceAccount},
             rbac::v1::{RoleBinding, RoleRef, Subject},
         },
@@ -92,6 +92,11 @@ pub fn build_agent_deployment(
         metadata: agent_metadata(cluster),
         spec: Some(DeploymentSpec {
             replicas: Some(1),
+            // Never run two agents at the same time, as for the operator itself.
+            strategy: Some(DeploymentStrategy {
+                type_: Some("Recreate".to_owned()),
+                ..DeploymentStrategy::default()
+            }),
             selector: LabelSelector {
                 match_labels: Some(agent_selector(cluster).into()),
                 ..LabelSelector::default()
@@ -210,6 +215,7 @@ mod tests {
 
         assert_eq!(deployment["metadata"]["name"], "simple-kafka-agent");
         assert_eq!(deployment["spec"]["replicas"], 1);
+        assert_eq!(deployment["spec"]["strategy"]["type"], "Recreate");
         // The selector must not match the broker or controller Pods.
         assert_eq!(
             deployment["spec"]["selector"]["matchLabels"],
