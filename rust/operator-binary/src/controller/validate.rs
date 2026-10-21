@@ -115,6 +115,12 @@ pub enum Error {
          to join without it"
     ))]
     MissingKraftControllerRole,
+
+    #[snafu(display(
+        "platform access requires the operator image, which also contains the agent; set the \
+         OPERATOR_IMAGE environment variable of the operator"
+    ))]
+    PlatformAccessRequiresOperatorImage,
 }
 
 /// Validated logging configuration for a Kafka role group's Kafka and (optional) Vector
@@ -199,7 +205,7 @@ pub fn validate(
     kafka: &v1alpha1::KafkaCluster,
     dereferenced_objects: DereferencedObjects,
     operator_environment: &OperatorEnvironmentOptions,
-    agent_image: &str,
+    operator_image: Option<&str>,
 ) -> Result<ValidatedCluster> {
     let image = kafka
         .spec
@@ -339,10 +345,15 @@ pub fn validate(
         .platform_access
         .as_ref()
         .filter(|platform_access| platform_access.enabled)
-        .map(|platform_access| ValidatedAgentConfig {
-            image: agent_image.to_owned(),
-            authentication: platform_access.authentication.clone(),
-        });
+        .map(|platform_access| {
+            Ok(ValidatedAgentConfig {
+                image: operator_image
+                    .context(PlatformAccessRequiresOperatorImageSnafu)?
+                    .to_owned(),
+                authentication: platform_access.authentication.clone(),
+            })
+        })
+        .transpose()?;
 
     Ok(ValidatedCluster::new(
         name,
@@ -462,7 +473,9 @@ mod tests {
 
     use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id};
     use crate::{
-        controller::test_support::{app_version_label, minimal_kafka, validated_cluster},
+        controller::test_support::{
+            app_version_label, minimal_kafka, validate_with_operator_image, validated_cluster,
+        },
         crd::role::KafkaRole,
     };
 
@@ -561,6 +574,48 @@ mod tests {
                 Some("simple-kafka".to_string())
             );
             assert_eq!(role_group.config.logging.vector_container, None);
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::enabled(true, false)]
+    #[case::disabled(false, true)]
+    fn platform_access_requires_the_operator_image(#[case] enabled: bool, #[case] valid: bool) {
+        let kafka = minimal_kafka(&format!(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              platformAccess:
+                enabled: {enabled}
+                authentication:
+                  tls:
+                    secretClass: tls
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#
+        ));
+
+        let result = validate_with_operator_image(&kafka, None);
+
+        if valid {
+            assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+        } else {
+            assert!(
+                matches!(result, Err(Error::PlatformAccessRequiresOperatorImage)),
+                "expected PlatformAccessRequiresOperatorImage, got: {:?}",
+                result.err()
+            );
         }
     }
 

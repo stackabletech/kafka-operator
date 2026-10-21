@@ -46,15 +46,6 @@ use crate::crd::{
 };
 
 pub const CONTAINER_IMAGE_BASE_NAME: &str = "kafka";
-pub const AGENT_IMAGE_BASE_NAME: &str = "kafka-agent";
-
-/// The agent image of the same release as the operator.
-pub fn default_agent_image(image_repository: &str) -> String {
-    format!(
-        "{image_repository}/{AGENT_IMAGE_BASE_NAME}:{}",
-        crate::built_info::PKG_VERSION
-    )
-}
 pub const APP_NAME: &str = "kafka";
 pub const KAFKA_OPERATOR_NAME: &str = "kafka.stackable.tech";
 pub const FIELD_MANAGER: &str = "kafka-operator";

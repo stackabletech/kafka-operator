@@ -37,7 +37,7 @@ use stackable_operator::{
 
 use crate::{
     controller::KAFKA_FULL_CONTROLLER_NAME,
-    crd::{KAFKA_OPERATOR_NAME, KafkaCluster, KafkaClusterVersion, default_agent_image, v1alpha1},
+    crd::{KAFKA_OPERATOR_NAME, KafkaCluster, KafkaClusterVersion, v1alpha1},
     webhooks::conversion::create_webhook_server,
 };
 
@@ -68,9 +68,10 @@ struct KafkaRun {
     #[clap(flatten)]
     common: RunArguments,
 
-    /// The agent image. Defaults to the agent image belonging to this operator release.
+    /// The image of this operator, which also contains the agent. Required to enable platform
+    /// access on a KafkaCluster.
     #[arg(long, env)]
-    agent_image: Option<String>,
+    operator_image: Option<String>,
 }
 
 #[tokio::main]
@@ -87,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
                     maintenance,
                     common,
                 },
-            agent_image,
+            operator_image,
         }) => {
             // NOTE (@NickLarsenNZ): Before stackable-telemetry was used:
             // - The console log level was set by `KAFKA_OPERATOR_LOG`, and is now `CONSOLE_LOG` (when using Tracing::pre_configured).
@@ -196,10 +197,8 @@ async fn main() -> anyhow::Result<()> {
                     controller::error_policy,
                     Arc::new(controller::Ctx {
                         client: client.clone(),
-                        agent_image: agent_image.unwrap_or_else(|| {
-                            default_agent_image(&operator_environment.image_repository)
-                        }),
                         operator_environment,
+                        operator_image,
                     }),
                 )
                 // We can let the reporting happen in the background

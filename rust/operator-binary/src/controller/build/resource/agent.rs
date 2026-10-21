@@ -52,6 +52,7 @@ pub fn build_agent_deployment(
 
     cb_agent
         .image(&agent_config.image)
+        .command(vec!["stackable-kafka-agent".to_owned()])
         .args(vec!["run".to_owned()])
         .add_env_var_from_source(
             "KUBERNETES_NODE_NAME",
@@ -153,9 +154,8 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::{
-        controller::test_support::{app_version_label, minimal_kafka, validated_cluster},
-        crd::default_agent_image,
+    use crate::controller::test_support::{
+        OPERATOR_IMAGE, app_version_label, minimal_kafka, validated_cluster,
     };
 
     fn cluster(platform_access: &str) -> ValidatedCluster {
@@ -205,7 +205,7 @@ mod tests {
 
         let cluster = cluster("{enabled: true, authentication: {tls: {secretClass: tls}}}");
         let agent_config = cluster.agent_config.expect("platform access is enabled");
-        assert_eq!(agent_config.image, default_agent_image("oci.example.org"));
+        assert_eq!(agent_config.image, OPERATOR_IMAGE);
     }
 
     #[test]
@@ -239,9 +239,10 @@ mod tests {
 
         let pod_spec = &deployment["spec"]["template"]["spec"];
         assert_eq!(pod_spec["serviceAccountName"], "simple-kafka-agent");
+        assert_eq!(pod_spec["containers"][0]["image"], OPERATOR_IMAGE);
         assert_eq!(
-            pod_spec["containers"][0]["image"],
-            default_agent_image("oci.example.org")
+            pod_spec["containers"][0]["command"],
+            json!(["stackable-kafka-agent"])
         );
         assert_eq!(pod_spec["containers"][0]["args"], json!(["run"]));
         assert_eq!(
