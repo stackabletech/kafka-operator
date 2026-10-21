@@ -29,7 +29,6 @@ rustls = { version = "0.23", default-features = false, features = ["logging", "r
 semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9"
 snafu = "0.9"
 strum = { version = "0.28", features = ["derive"] }
 tokio = { version = "1.53", features = ["full"] }

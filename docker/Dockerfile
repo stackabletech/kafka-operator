@@ -190,7 +190,7 @@ EOF
 
 COPY LICENSE /licenses/LICENSE
 
-COPY --from=builder --chown=${STACKABLE_USER_UID}:0 /app/stackable-kafka-operator* /app/stackable-src.tar.gz /usr/local/bin/
+COPY --from=builder --chown=${STACKABLE_USER_UID}:0 /app/* /usr/local/bin/
 
 USER ${STACKABLE_USER_UID}
 

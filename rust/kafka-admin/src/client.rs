@@ -42,6 +42,7 @@ const LIST_PARTITION_REASSIGNMENTS_VERSION: i16 = 0;
 
 /// Must stay below the connection's request timeout.
 const BROKER_TIMEOUT_MS: i32 = 25_000;
+const _: () = assert!((BROKER_TIMEOUT_MS as u128) < connection::REQUEST_TIMEOUT.as_millis());
 
 /// Must stay below the broker's `connections.max.idle.ms` (10 minutes by default).
 const CONNECTION_MAX_IDLE: Duration = Duration::from_secs(5 * 60);
@@ -282,9 +283,7 @@ impl KafkaAdminClient {
     async fn connect(&self) -> Result<Connection> {
         let mut last_error = Error::NoBootstrapServers;
         for server in &self.bootstrap_servers {
-            match Connection::connect(&server.host, server.port, &self.security, &self.client_id)
-                .await
-            {
+            match Connection::connect(server, &self.security, &self.client_id).await {
                 Ok(connection) => return Ok(connection),
                 Err(source) => {
                     last_error = Error::Connect {
@@ -472,7 +471,7 @@ fn list_partition_reassignments_result(
     let mut reassignments = response
         .topics
         .into_iter()
-        .filter(|result| result.name == topic_name(topic))
+        .filter(|result| result.name.as_str() == topic)
         .flat_map(|result| result.partitions)
         .map(|partition| PartitionReassignment {
             index: partition.partition_index,
@@ -524,7 +523,7 @@ mod tests {
         metadata_response::{MetadataResponsePartition, MetadataResponseTopic},
     };
     use rstest::rstest;
-    use tokio::net::TcpStream;
+    use tokio::net::{TcpSocket, TcpStream};
 
     use super::*;
     use crate::connection::test_support::{accept, listen, read_request_body, write_response};
@@ -534,8 +533,15 @@ mod tests {
 
     #[tokio::test]
     async fn try_the_next_bootstrap_server() {
-        let (unreachable, unreachable_port) = listen().await;
-        drop(unreachable);
+        // Use a port that is always rejected
+        let unreachable = TcpSocket::new_v4().expect("the socket should be creatable");
+        unreachable
+            .bind("127.0.0.1:0".parse().expect("the address should be valid"))
+            .expect("the socket should be bindable");
+        let unreachable_port = unreachable
+            .local_addr()
+            .expect("the socket should have an address")
+            .port();
         let (listener, port) = listen().await;
         let mut client = kafka_admin_client(&[unreachable_port, port]);
 

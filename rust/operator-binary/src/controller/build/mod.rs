@@ -239,11 +239,11 @@ pub(crate) fn recommended_labels_for_unversioned_role_group_resources(
     )
 }
 
-/// Selector labels matching the pods of a role group.
 pub(crate) fn agent_selector(cluster: &ValidatedCluster) -> Labels {
     label::agent_selector(&cluster.name, &PRODUCT_NAME)
 }
 
+/// Selector labels matching the pods of a role group.
 pub(crate) fn role_group_selector(
     cluster: &ValidatedCluster,
     role_name: &RoleName,
@@ -294,7 +294,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:
@@ -322,7 +322,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:

@@ -430,7 +430,7 @@ pub type ValidatedRoleGroupConfig = stackable_operator::v2::role_utils::RoleGrou
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
     pub operator_environment: OperatorEnvironmentOptions,
-    pub agent_image: String,
+    pub operator_image: Option<String>,
 }
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
@@ -504,7 +504,7 @@ pub async fn reconcile_kafka(
         kafka,
         dereferenced_objects,
         &ctx.operator_environment,
-        &ctx.agent_image,
+        ctx.operator_image.as_deref(),
     )
     .context(ValidateClusterSnafu)?;
 
@@ -571,6 +571,8 @@ pub(crate) mod test_support {
         validate::validate,
     };
     use crate::crd::{authentication::ResolvedAuthenticationClasses, v1alpha1};
+
+    pub const OPERATOR_IMAGE: &str = "oci.stackable.tech/sdp/kafka-operator:0.0.0-dev";
 
     /// The expected `app.kubernetes.io/version` label value for the given product version.
     ///
@@ -755,6 +757,13 @@ pub(crate) mod test_support {
     pub fn validate_err(
         kafka: &v1alpha1::KafkaCluster,
     ) -> Result<ValidatedCluster, super::validate::Error> {
+        validate_with_operator_image(kafka, Some(OPERATOR_IMAGE))
+    }
+
+    pub fn validate_with_operator_image(
+        kafka: &v1alpha1::KafkaCluster,
+        operator_image: Option<&str>,
+    ) -> Result<ValidatedCluster, super::validate::Error> {
         validate(
             kafka,
             DereferencedObjects {
@@ -764,7 +773,7 @@ pub(crate) mod test_support {
                 bootstrap_listeners: Vec::new(),
             },
             &operator_environment(),
-            &crate::crd::default_agent_image(&operator_environment().image_repository),
+            operator_image,
         )
     }
 }
@@ -778,7 +787,7 @@ mod tests {
         client::Client,
         commons::networking::DomainName,
         kube::{Client as KubeClient, Config, runtime::controller::Action},
-        utils::cluster_info::KubernetesClusterInfo,
+        utils::{cluster_info::KubernetesClusterInfo, yaml_from_str_singleton_map},
     };
 
     use super::{
@@ -881,7 +890,7 @@ mod tests {
     /// API, and because the spec is invalid, before the `DeserializeGuard` is unwrapped.
     #[test]
     fn reconcile_exits_early_for_deleted_cluster() {
-        let kafka = serde_yaml::from_str(
+        let kafka = yaml_from_str_singleton_map(
             r#"
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
@@ -917,7 +926,7 @@ spec: {}
                         operator_service_name: "kafka-operator".to_owned(),
                         image_repository: "oci.stackable.tech/sdp".to_owned(),
                     },
-                    agent_image: crate::crd::default_agent_image("oci.stackable.tech/sdp"),
+                    operator_image: None,
                 });
 
                 reconcile_kafka(Arc::new(kafka), ctx).await

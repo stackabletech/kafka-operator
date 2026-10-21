@@ -141,6 +141,12 @@ pub enum Error {
         source: stackable_operator::v2::macros::attributed_string_type::Error,
         secret_class: String,
     },
+
+    #[snafu(display(
+        "platform access requires the operator image, which also contains the agent; set the \
+         OPERATOR_IMAGE environment variable of the operator"
+    ))]
+    PlatformAccessRequiresOperatorImage,
 }
 
 /// Validated logging configuration for a Kafka role group's Kafka and (optional) Vector
@@ -225,7 +231,7 @@ pub fn validate(
     kafka: &v1alpha1::KafkaCluster,
     dereferenced_objects: DereferencedObjects,
     operator_environment: &OperatorEnvironmentOptions,
-    agent_image: &str,
+    operator_image: Option<&str>,
 ) -> Result<ValidatedCluster> {
     let image = kafka
         .spec
@@ -287,7 +293,11 @@ pub fn validate(
     let broker_role = &kafka.spec.brokers;
     let broker_groups = validate_role_group_configs(
         broker_role,
-        BrokerConfig::default_config(&kafka.name_any(), &KafkaRole::Broker.to_string()),
+        BrokerConfig::default_config(
+            &kafka.name_any(),
+            &KafkaRole::Broker.to_string(),
+            kafka.spec.cluster_config.authorization.opa.as_ref(),
+        ),
         cluster_id,
         AnyConfig::Broker,
         AnyConfigOverrides::Broker,
@@ -367,7 +377,9 @@ pub fn validate(
                 PlatformAccessRequiresKraftSnafu
             );
             Some(ValidatedAgentConfig {
-                image: agent_image.to_owned(),
+                image: operator_image
+                    .context(PlatformAccessRequiresOperatorImageSnafu)?
+                    .to_owned(),
                 connection: validate_agent_connection(
                     &platform_access.authentication,
                     &kafka_security,
@@ -644,7 +656,9 @@ mod tests {
         assert!(matches!(error, Error::PlatformAccessRequiresTls { .. }));
     }
     use crate::{
-        controller::test_support::{app_version_label, minimal_kafka, validated_cluster},
+        controller::test_support::{
+            app_version_label, minimal_kafka, validate_with_operator_image, validated_cluster,
+        },
         crd::role::KafkaRole,
     };
 
@@ -679,7 +693,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:
@@ -746,6 +760,52 @@ mod tests {
         }
     }
 
+    #[rstest::rstest]
+    #[case::enabled(true)]
+    #[case::disabled(false)]
+    fn platform_access_requires_the_operator_image(#[case] enabled: bool) {
+        let kafka = minimal_kafka(&format!(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: kraft
+              platformAccess:
+                enabled: {enabled}
+                authentication:
+                  tls:
+                    secretClass: tls
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 1
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#
+        ));
+
+        let result = validate_with_operator_image(&kafka, None);
+
+        if enabled {
+            assert!(
+                matches!(result, Err(Error::PlatformAccessRequiresOperatorImage)),
+                "expected PlatformAccessRequiresOperatorImage, got: {:?}",
+                result.err()
+            );
+        } else {
+            assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
+        }
+    }
+
     #[test]
     fn injects_cluster_id_when_absent() {
         let env = inject_cluster_id(EnvVarSet::new(), Some("my-id"));
@@ -781,7 +841,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:
@@ -851,7 +911,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   a:
@@ -893,7 +953,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:

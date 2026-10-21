@@ -80,7 +80,9 @@ pub struct ControllerConfig {
 impl ControllerConfig {
     pub fn default_config(cluster_name: &str, role: &str) -> ControllerConfigFragment {
         ControllerConfigFragment {
-            common_config: CommonConfig::default_config(cluster_name, role),
+            // Only brokers are configured with the OPA authorizer, so controllers get no affinity
+            // to the OPA Pods.
+            common_config: CommonConfig::default_config(cluster_name, role, None),
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {

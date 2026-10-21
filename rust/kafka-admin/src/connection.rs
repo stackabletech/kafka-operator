@@ -22,22 +22,29 @@ use tokio_util::{
 };
 
 use crate::{
+    bootstrap::BrokerAddress,
     codec::{self, decode_response, encode_request},
     tls,
 };
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
 const API_VERSIONS_VERSION: i16 = 3;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("failed to connect to {address:?}"))]
-    Connect { source: io::Error, address: String },
+    #[snafu(display("failed to connect to {address}"))]
+    Connect {
+        source: io::Error,
+        address: BrokerAddress,
+    },
 
-    #[snafu(display("timed out connecting to {address:?}"))]
-    ConnectTimeout { source: Elapsed, address: String },
+    #[snafu(display("timed out connecting to {address}"))]
+    ConnectTimeout {
+        source: Elapsed,
+        address: BrokerAddress,
+    },
 
     #[snafu(display("failed to configure TLS"))]
     Tls { source: tls::Error },
@@ -45,8 +52,11 @@ pub enum Error {
     #[snafu(display("{host:?} is not a valid TLS server name"))]
     InvalidServerName { host: String },
 
-    #[snafu(display("failed the TLS handshake with {address:?}"))]
-    TlsHandshake { source: io::Error, address: String },
+    #[snafu(display("failed the TLS handshake with {address}"))]
+    TlsHandshake {
+        source: io::Error,
+        address: BrokerAddress,
+    },
 
     #[snafu(display("failed to write to the broker"))]
     Write { source: io::Error },
@@ -56,9 +66,6 @@ pub enum Error {
 
     #[snafu(display("the broker closed the connection"))]
     ConnectionClosed,
-
-    #[snafu(display("the connection is broken by an earlier failed or cancelled request"))]
-    ConnectionBroken,
 
     #[snafu(display("timed out waiting for the response to the request with API key {api_key}"))]
     RequestTimeout { source: Elapsed, api_key: i16 },
@@ -98,27 +105,25 @@ pub enum Security {
     },
 }
 
-pub struct Connection {
+/// One request at a time. After a failed or cancelled request, the client drops the connection.
+pub(crate) struct Connection {
     stream: Framed<Either<TcpStream, TlsStream<TcpStream>>, LengthDelimitedCodec>,
     client_id: String,
     correlation_id: i32,
-    awaiting_response: bool,
     broker_api_versions: BTreeMap<i16, VersionRange>,
 }
 
 impl Connection {
     /// Connects to the broker and fetches the API versions it supports.
-    pub async fn connect(
-        host: &str,
-        port: u16,
+    pub(crate) async fn connect(
+        address: &BrokerAddress,
         security: &Security,
         client_id: &str,
     ) -> Result<Self> {
-        let address = format!("{host}:{port}");
-        let tcp_stream = connect_tcp(host, port, &address).await?;
+        let tcp_stream = connect_tcp(address).await?;
         let stream = match tls::client_config(security).context(TlsSnafu)? {
             None => Either::Left(tcp_stream),
-            Some(config) => Either::Right(tls_handshake(tcp_stream, host, &address, config).await?),
+            Some(config) => Either::Right(tls_handshake(tcp_stream, address, config).await?),
         };
 
         let mut connection = Self::new(stream, client_id);
@@ -138,13 +143,16 @@ impl Connection {
             stream: Framed::new(stream, codec),
             client_id: client_id.to_owned(),
             correlation_id: 0,
-            awaiting_response: false,
             broker_api_versions: BTreeMap::new(),
         }
     }
 
     /// Sends the request with the given version, if the broker supports it.
-    pub async fn send<R: Request>(&mut self, request: R, version: i16) -> Result<R::Response> {
+    pub(crate) async fn send<R: Request>(
+        &mut self,
+        request: R,
+        version: i16,
+    ) -> Result<R::Response> {
         // Each API that is relevant for us has a version that is supported by all of our Kafka versions.
         // We use these versions and pin them in client.rs.
         // We will have to add API version negotiation at some point in the future.
@@ -157,9 +165,6 @@ impl Connection {
         request: R,
         version: i16,
     ) -> Result<R::Response> {
-        ensure!(!self.awaiting_response, ConnectionBrokenSnafu);
-        self.awaiting_response = true;
-
         self.correlation_id = self.correlation_id.wrapping_add(1);
         let frame = encode_request(&request, version, self.correlation_id, &self.client_id)
             .context(CodecSnafu)?;
@@ -175,19 +180,22 @@ impl Connection {
         .await
         .context(RequestTimeoutSnafu { api_key: R::KEY })??;
 
-        let response = decode_response::<R>(response.freeze(), version, self.correlation_id)
-            .context(CodecSnafu)?;
-
-        self.awaiting_response = false;
-        Ok(response)
+        decode_response::<R>(response.freeze(), version, self.correlation_id).context(CodecSnafu)
     }
 }
 
-async fn connect_tcp(host: &str, port: u16, address: &str) -> Result<TcpStream> {
-    timeout(CONNECT_TIMEOUT, TcpStream::connect((host, port)))
-        .await
-        .context(ConnectTimeoutSnafu { address })?
-        .context(ConnectSnafu { address })
+async fn connect_tcp(address: &BrokerAddress) -> Result<TcpStream> {
+    timeout(
+        CONNECT_TIMEOUT,
+        TcpStream::connect((address.host.as_str(), address.port)),
+    )
+    .await
+    .context(ConnectTimeoutSnafu {
+        address: address.clone(),
+    })?
+    .context(ConnectSnafu {
+        address: address.clone(),
+    })
 }
 
 fn api_versions_request() -> ApiVersionsRequest {
@@ -241,11 +249,11 @@ fn check_version(
 
 async fn tls_handshake(
     tcp_stream: TcpStream,
-    host: &str,
-    address: &str,
+    address: &BrokerAddress,
     config: ClientConfig,
 ) -> Result<TlsStream<TcpStream>> {
-    let server_name = ServerName::try_from(host.to_owned())
+    let host = &address.host;
+    let server_name = ServerName::try_from(host.clone())
         .ok()
         .context(InvalidServerNameSnafu { host })?;
     timeout(
@@ -253,8 +261,12 @@ async fn tls_handshake(
         TlsConnector::from(Arc::new(config)).connect(server_name, tcp_stream),
     )
     .await
-    .context(ConnectTimeoutSnafu { address })?
-    .context(TlsHandshakeSnafu { address })
+    .context(ConnectTimeoutSnafu {
+        address: address.clone(),
+    })?
+    .context(TlsHandshakeSnafu {
+        address: address.clone(),
+    })
 }
 
 /// A mock Kafka broker for tests, speaking the wire protocol over a local TCP socket.
@@ -275,7 +287,7 @@ pub(crate) mod test_support {
 
     use super::API_VERSIONS_VERSION;
 
-    pub async fn listen() -> (TcpListener, u16) {
+    pub(crate) async fn listen() -> (TcpListener, u16) {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("the mock broker should be able to listen");
@@ -288,7 +300,7 @@ pub(crate) mod test_support {
 
     /// Accepts a connection and answers its ApiVersions request with the given
     /// `(api_key, min_version, max_version)` ranges.
-    pub async fn accept(listener: &TcpListener, apis: &[(i16, i16, i16)]) -> TcpStream {
+    pub(crate) async fn accept(listener: &TcpListener, apis: &[(i16, i16, i16)]) -> TcpStream {
         let (mut broker, _) = listener
             .accept()
             .await
@@ -306,7 +318,7 @@ pub(crate) mod test_support {
         broker
     }
 
-    pub async fn read_request(broker: &mut TcpStream) -> (RequestHeader, Bytes) {
+    pub(crate) async fn read_request(broker: &mut TcpStream) -> (RequestHeader, Bytes) {
         let size = broker
             .read_i32()
             .await
@@ -322,7 +334,9 @@ pub(crate) mod test_support {
         (header, frame)
     }
 
-    pub async fn read_request_body<R: Request>(broker: &mut TcpStream) -> (RequestHeader, R) {
+    pub(crate) async fn read_request_body<R: Request>(
+        broker: &mut TcpStream,
+    ) -> (RequestHeader, R) {
         let (header, mut body) = read_request(broker).await;
         assert_eq!(R::KEY, header.request_api_key);
         let request = R::decode(&mut body, header.request_api_version)
@@ -330,7 +344,7 @@ pub(crate) mod test_support {
         (header, request)
     }
 
-    pub async fn write_response<M: Encodable + HeaderVersion>(
+    pub(crate) async fn write_response<M: Encodable + HeaderVersion>(
         broker: &mut TcpStream,
         request: &RequestHeader,
         correlation_id: i32,
@@ -353,7 +367,7 @@ pub(crate) mod test_support {
             .expect("the response should be writable");
     }
 
-    fn api_versions(apis: &[(i16, i16, i16)]) -> ApiVersionsResponse {
+    pub(crate) fn api_versions(apis: &[(i16, i16, i16)]) -> ApiVersionsResponse {
         ApiVersionsResponse::default().with_api_keys(
             apis.iter()
                 .map(|(api_key, min_version, max_version)| {
@@ -369,21 +383,23 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use kafka_protocol::messages::{
-        MetadataRequest, MetadataResponse, api_versions_response::ApiVersion,
-    };
+    use kafka_protocol::messages::{MetadataRequest, MetadataResponse};
     use tokio::io::AsyncWriteExt;
 
     use super::{
-        test_support::{accept, listen, read_request, write_response},
+        test_support::{accept, api_versions, listen, read_request, write_response},
         *,
     };
 
     /// Connects to a mock broker supporting Metadata versions 0 to 13.
     async fn connect() -> (Connection, TcpStream) {
         let (listener, port) = listen().await;
+        let address = BrokerAddress {
+            host: "127.0.0.1".to_owned(),
+            port,
+        };
         let (connection, broker) = tokio::join!(
-            Connection::connect("127.0.0.1", port, &Security::Plaintext, "test"),
+            Connection::connect(&address, &Security::Plaintext, "test"),
             accept(&listener, &[(MetadataRequest::KEY, 0, 13)])
         );
         (connection.expect("the connection should succeed"), broker)
@@ -391,12 +407,7 @@ mod tests {
 
     #[test]
     fn read_api_versions() {
-        let response = ApiVersionsResponse::default().with_api_keys(vec![
-            ApiVersion::default()
-                .with_api_key(MetadataRequest::KEY)
-                .with_min_version(0)
-                .with_max_version(13),
-        ]);
+        let response = api_versions(&[(MetadataRequest::KEY, 0, 13)]);
 
         assert_eq!(
             BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 13 })]),
@@ -536,46 +547,5 @@ mod tests {
             response.expect_err("the request should time out"),
             Error::RequestTimeout { .. }
         ));
-    }
-
-    #[tokio::test]
-    async fn reject_requests_after_a_failed_request() {
-        let (mut connection, mut broker) = connect().await;
-
-        let broker_side = async {
-            read_request(&mut broker).await;
-            drop(broker);
-        };
-        let (failed, ()) =
-            tokio::join!(connection.send(MetadataRequest::default(), 12), broker_side);
-        assert!(matches!(
-            failed.expect_err("the broker should have closed the connection"),
-            Error::ConnectionClosed
-        ));
-
-        let error = connection
-            .send(MetadataRequest::default(), 12)
-            .await
-            .expect_err("the connection should be broken");
-
-        assert!(matches!(error, Error::ConnectionBroken));
-    }
-
-    #[tokio::test]
-    async fn reject_requests_after_a_cancelled_request() {
-        let (mut connection, _broker) = connect().await;
-
-        {
-            let request = connection.send(MetadataRequest::default(), 12);
-            tokio::pin!(request);
-            let _ = futures::poll!(request.as_mut());
-        }
-
-        let error = connection
-            .send(MetadataRequest::default(), 12)
-            .await
-            .expect_err("the connection should be broken");
-
-        assert!(matches!(error, Error::ConnectionBroken));
     }
 }

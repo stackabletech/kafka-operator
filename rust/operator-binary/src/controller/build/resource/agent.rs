@@ -20,10 +20,11 @@ use stackable_operator::{
     commons::secret_class::SecretClassVolumeProvisionParts,
     constant,
     k8s_openapi::{
+        Resource,
         api::{
-            apps::v1::{Deployment, DeploymentSpec},
+            apps::v1::{Deployment, DeploymentSpec, DeploymentStrategy},
             core::v1::{EnvVarSource, ObjectFieldSelector, ServiceAccount},
-            rbac::v1::{RoleBinding, RoleRef, Subject},
+            rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
     },
@@ -73,6 +74,7 @@ pub fn build_agent_deployment(
 
     cb_agent
         .image(&agent_config.image)
+        .command(vec!["stackable-kafka-agent".to_owned()])
         .args(vec!["run".to_owned()])
         .add_env_vars(
             EnvVarSet::new()
@@ -122,6 +124,11 @@ pub fn build_agent_deployment(
         metadata: agent_metadata(cluster),
         spec: Some(DeploymentSpec {
             replicas: Some(1),
+            // Never run two agents at the same time, as for the operator itself.
+            strategy: Some(DeploymentStrategy {
+                type_: Some("Recreate".to_owned()),
+                ..DeploymentStrategy::default()
+            }),
             selector: LabelSelector {
                 match_labels: Some(agent_selector(cluster).into()),
                 ..LabelSelector::default()
@@ -145,12 +152,12 @@ pub fn build_agent_role_binding(cluster: &ValidatedCluster) -> RoleBinding {
     RoleBinding {
         metadata: agent_metadata(cluster),
         role_ref: RoleRef {
-            api_group: Some("rbac.authorization.k8s.io".to_owned()),
-            kind: "ClusterRole".to_owned(),
+            api_group: Some(ClusterRole::GROUP.to_owned()),
+            kind: ClusterRole::KIND.to_owned(),
             name: AGENT_CLUSTER_ROLE_NAME.to_owned(),
         },
         subjects: Some(vec![Subject {
-            kind: "ServiceAccount".to_owned(),
+            kind: ServiceAccount::KIND.to_owned(),
             name: agent_name(cluster),
             namespace: Some(cluster.namespace.to_string()),
             ..Subject::default()
@@ -220,9 +227,8 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::{
-        controller::test_support::{app_version_label, minimal_kafka, validated_cluster},
-        crd::default_agent_image,
+    use crate::controller::test_support::{
+        OPERATOR_IMAGE, app_version_label, minimal_kafka, validated_cluster,
     };
 
     fn cluster(platform_access: &str) -> ValidatedCluster {
@@ -256,13 +262,12 @@ mod tests {
         validated_cluster(&kafka)
     }
 
-    fn agent_deployment(platform_access: &str) -> Value {
-        let cluster = cluster(platform_access);
+    fn agent_deployment(cluster: &ValidatedCluster) -> Value {
         let agent_config = cluster
             .agent_config
             .as_ref()
             .expect("platform access is enabled");
-        serde_json::to_value(build_agent_deployment(&cluster, agent_config))
+        serde_json::to_value(build_agent_deployment(cluster, agent_config))
             .expect("must be serializable")
     }
 
@@ -276,16 +281,18 @@ mod tests {
 
         let cluster = cluster("{enabled: true, authentication: {tls: {secretClass: tls}}}");
         let agent_config = cluster.agent_config.expect("platform access is enabled");
-        assert_eq!(agent_config.image, default_agent_image("oci.example.org"));
+        assert_eq!(agent_config.image, OPERATOR_IMAGE);
     }
 
     #[test]
     fn test_deployment() {
-        let deployment =
-            agent_deployment("{enabled: true, authentication: {tls: {secretClass: tls}}}");
+        let deployment = agent_deployment(&cluster(
+            "{enabled: true, authentication: {tls: {secretClass: tls}}}",
+        ));
 
         assert_eq!(deployment["metadata"]["name"], "simple-kafka-agent");
         assert_eq!(deployment["spec"]["replicas"], 1);
+        assert_eq!(deployment["spec"]["strategy"]["type"], "Recreate");
         // The selector must not match the broker or controller Pods.
         assert_eq!(
             deployment["spec"]["selector"]["matchLabels"],
@@ -309,9 +316,10 @@ mod tests {
 
         let pod_spec = &deployment["spec"]["template"]["spec"];
         assert_eq!(pod_spec["serviceAccountName"], "simple-kafka-agent");
+        assert_eq!(pod_spec["containers"][0]["image"], OPERATOR_IMAGE);
         assert_eq!(
-            pod_spec["containers"][0]["image"],
-            default_agent_image("oci.example.org")
+            pod_spec["containers"][0]["command"],
+            json!(["stackable-kafka-agent"])
         );
         assert_eq!(pod_spec["containers"][0]["args"], json!(["run"]));
         assert_eq!(
@@ -352,8 +360,9 @@ mod tests {
 
     #[test]
     fn test_deployment_with_static_secret() {
-        let deployment =
-            agent_deployment("{enabled: true, authentication: {tls: {secret: my-cert}}}");
+        let deployment = agent_deployment(&cluster(
+            "{enabled: true, authentication: {tls: {secret: my-cert}}}",
+        ));
 
         assert_eq!(
             deployment["spec"]["template"]["spec"]["volumes"][2],
@@ -363,7 +372,8 @@ mod tests {
 
     #[test]
     fn deployment_with_anonymous_authentication_verifies_brokers_without_credential() {
-        let deployment = agent_deployment("{enabled: true, authentication: {anonymous: {}}}");
+        let deployment =
+            agent_deployment(&cluster("{enabled: true, authentication: {anonymous: {}}}"));
 
         let pod_spec = &deployment["spec"]["template"]["spec"];
         assert_eq!(pod_spec["volumes"][0]["name"], "discovery");
@@ -377,16 +387,10 @@ mod tests {
 
     #[test]
     fn test_deployment_uses_product_image_pull_secrets() {
-        let cluster = cluster_with_image(
+        let deployment = agent_deployment(&cluster_with_image(
             "{productVersion: 3.9.2, pullSecrets: [{name: regcred}]}",
             "{enabled: true, authentication: {tls: {secretClass: tls}}}",
-        );
-        let agent_config = cluster
-            .agent_config
-            .as_ref()
-            .expect("platform access is enabled");
-        let deployment = serde_json::to_value(build_agent_deployment(&cluster, agent_config))
-            .expect("must be serializable");
+        ));
 
         assert_eq!(
             deployment["spec"]["template"]["spec"]["imagePullSecrets"],
