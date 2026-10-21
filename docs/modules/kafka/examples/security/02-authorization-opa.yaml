@@ -5,7 +5,7 @@ metadata:
   name: simple-opa
 spec:
   image:
-    productVersion: 1.16.2
+    productVersion: 1.20.2
   servers:
     config:
       logging:

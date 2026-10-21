@@ -26,6 +26,7 @@ pub enum Error {
 pub async fn create_webhook_server(
     operator_environment: &OperatorEnvironmentOptions,
     disable_crd_maintenance: bool,
+    readiness_checks: HealthCheckRegistry,
     client: Client,
 ) -> Result<WebhookServer, Error> {
     let crds_and_handlers = vec![(
@@ -50,7 +51,7 @@ pub async fn create_webhook_server(
     WebhookServer::new(
         vec![Box::new(conversion_webhook)],
         webhook_server_options,
-        HealthCheckRegistry::new(),
+        readiness_checks,
     )
     .await
     .context(CreateWebhookSnafu)

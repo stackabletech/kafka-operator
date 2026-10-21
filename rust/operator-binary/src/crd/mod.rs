@@ -8,6 +8,7 @@ pub mod tls;
 use std::str::FromStr;
 
 use authentication::KafkaAuthentication;
+use const_format::concatcp;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 use stackable_operator::{
@@ -46,15 +47,6 @@ use crate::crd::{
 };
 
 pub const CONTAINER_IMAGE_BASE_NAME: &str = "kafka";
-pub const AGENT_IMAGE_BASE_NAME: &str = "kafka-agent";
-
-/// The agent image of the same release as the operator.
-pub fn default_agent_image(image_repository: &str) -> String {
-    format!(
-        "{image_repository}/{AGENT_IMAGE_BASE_NAME}:{}",
-        crate::built_info::PKG_VERSION
-    )
-}
 pub const APP_NAME: &str = "kafka";
 pub const KAFKA_OPERATOR_NAME: &str = "kafka.stackable.tech";
 pub const FIELD_MANAGER: &str = "kafka-operator";
@@ -78,13 +70,23 @@ pub const STACKABLE_CONFIG_DIR: &str = "/stackable/config";
 constant!(pub STACKABLE_CONFIG_DIR_NAME: VolumeName = "config");
 // kerberos
 pub const STACKABLE_KERBEROS_DIR: &str = "/stackable/kerberos";
-pub const STACKABLE_KERBEROS_KRB5_PATH: &str = "/stackable/kerberos/krb5.conf";
+pub const STACKABLE_KERBEROS_KRB5_PATH: &str = concatcp!(STACKABLE_KERBEROS_DIR, "/krb5.conf");
+pub const STACKABLE_KERBEROS_KEYTAB_PATH: &str = concatcp!(STACKABLE_KERBEROS_DIR, "/keytab");
 // logging
 pub const STACKABLE_LOG_CONFIG_DIR: &str = "/stackable/log_config";
 constant!(pub STACKABLE_LOG_CONFIG_DIR_NAME: VolumeName = "log-config");
 constant!(pub STACKABLE_LOG_DIR_NAME: VolumeName = "log");
 pub const BROKER_ID_POD_MAP_DIR: &str = "/stackable/broker-id-pod-map";
 constant!(pub BROKER_ID_POD_MAP_DIR_NAME: VolumeName = "broker-id-pod-map-dir");
+
+/// A KRaft controller pod's own fully-qualified domain name, as `config-utils` placeholders
+/// resolved at container start.
+///
+/// Used for:
+/// - the address where the CONTROLLER listener is *bound*.
+/// - the endpoint registered with the quorum's voter.
+/// - when Kerberos is enabled, it is also the host in the controller's Kerberos service principal.
+pub const CONTROLLER_POD_FQDN_TEMPLATE: &str = "${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}";
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -218,16 +220,17 @@ pub mod versioned {
         ///
         /// IMPORTANT: This property will be removed as soon as Kafka 3.x support is dropped.
         ///
-        /// Possible values are `zookeeper` and `kraft`.
+        /// Possible values are `ZooKeeper` and `KRaft`. The lowercase values `zookeeper` and `kraft`
+        /// are deprecated, but still accepted.
         ///
         /// If not set, defaults to:
         ///
-        /// - `zookeeper` for Kafka versions below `4.0.0`.
-        /// - `kraft` for Kafka versions `4.0.0` and higher.
+        /// - `ZooKeeper` for Kafka versions below `4.0.0`.
+        /// - `KRaft` for Kafka versions `4.0.0` and higher.
         ///
-        /// Using `zookeeper` for Kafka versions `4.0.0` and higher is not supported.
+        /// Using `ZooKeeper` for Kafka versions `4.0.0` and higher is not supported.
         ///
-        /// When set to `kraft`, the operator will perform the following actions:
+        /// When set to `KRaft`, the operator will perform the following actions:
         ///
         /// * Generate the Kafka cluster id.
         /// * Assign broker roles and configure controller quorum voters in the `broker.properties` files.
@@ -389,9 +392,15 @@ pub struct KafkaClusterStatus {
     Serialize,
     EnumString,
 )]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "PascalCase")]
+// schemars ignores `#[serde(alias)]` (https://github.com/GREsau/schemars/issues/338), so we need to
+// list the aliases in the schema manually. Otherwise the API server rejects them.
+#[schemars(extend("enum" = ["ZooKeeper", "KRaft", "zookeeper", "kraft"]))]
 pub enum MetadataManager {
+    // The lowercase aliases are deprecated and only kept for backwards compatibility.
+    #[serde(alias = "zookeeper")]
     ZooKeeper,
+    #[serde(alias = "kraft")]
     KRaft,
 }
 
@@ -399,7 +408,8 @@ pub enum MetadataManager {
 mod tests {
     use rstest::rstest;
     use stackable_operator::{
-        v2::types::kubernetes::SecretClassName, versioned::test_utils::RoundtripTestData,
+        utils::yaml_from_str_singleton_map, v2::types::kubernetes::SecretClassName,
+        versioned::test_utils::RoundtripTestData,
     };
 
     use super::*;
@@ -455,7 +465,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -481,7 +491,7 @@ mod tests {
 
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(
             get_server_secret_class(&kafka).unwrap().to_string(),
             "simple-kafka-server-tls"
@@ -509,7 +519,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), None);
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -534,7 +544,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka).to_string(),
@@ -560,7 +570,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka),
@@ -585,7 +595,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(get_server_secret_class(&kafka), tls::server_tls_default());
         assert_eq!(
             get_internal_secret_class(&kafka).to_string(),
@@ -610,7 +620,7 @@ mod tests {
             zookeeperConfigMapName: xyz
         "#;
         let kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(input).expect("illegal test input");
+            yaml_from_str_singleton_map(input).expect("illegal test input");
         assert_eq!(
             get_server_secret_class(&kafka).map(|s| s.to_string()),
             Some("simple-kafka-server-tls".to_string())
@@ -661,7 +671,7 @@ mod tests {
         "#
         );
         let mut kafka: v1alpha1::KafkaCluster =
-            serde_yaml::from_str(&input).expect("illegal test input");
+            yaml_from_str_singleton_map(&input).expect("illegal test input");
 
         if metadata_manager.is_some() {
             kafka.spec.cluster_config.metadata_manager = metadata_manager;
@@ -685,7 +695,7 @@ mod tests {
 
     impl RoundtripTestData for v1alpha1::KafkaClusterSpec {
         fn roundtrip_test_data() -> Vec<Self> {
-            stackable_operator::utils::yaml_from_str_singleton_map(indoc::indoc! {r#"
+            yaml_from_str_singleton_map(indoc::indoc! {r#"
               - image:
                   productVersion: 1.2.3
                   pullPolicy: IfNotPresent
@@ -693,7 +703,7 @@ mod tests {
                   reconciliationPaused: false
                   stopped: true
                 clusterConfig:
-                  metadataManager: kraft
+                  metadataManager: KRaft
                   authentication:
                     - authenticationClass: my-kerberos
                   authorization:

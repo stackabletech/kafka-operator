@@ -33,11 +33,12 @@ use stackable_operator::{
     shared::yaml::SerializeOptions,
     telemetry::Tracing,
     utils::signal::{self, SignalWatcher},
+    webhook::health::HealthCheckRegistry,
 };
 
 use crate::{
     controller::KAFKA_FULL_CONTROLLER_NAME,
-    crd::{KAFKA_OPERATOR_NAME, KafkaCluster, KafkaClusterVersion, default_agent_image, v1alpha1},
+    crd::{KAFKA_OPERATOR_NAME, KafkaCluster, KafkaClusterVersion, v1alpha1},
     webhooks::conversion::create_webhook_server,
 };
 
@@ -68,9 +69,10 @@ struct KafkaRun {
     #[clap(flatten)]
     common: RunArguments,
 
-    /// The agent image. Defaults to the agent image belonging to this operator release.
+    /// The image of this operator, which also contains the agent. Required to enable platform
+    /// access on a KafkaCluster.
     #[arg(long, env)]
-    agent_image: Option<String>,
+    operator_image: Option<String>,
 }
 
 #[tokio::main]
@@ -87,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
                     maintenance,
                     common,
                 },
-            agent_image,
+            operator_image,
         }) => {
             // NOTE (@NickLarsenNZ): Before stackable-telemetry was used:
             // - The console log level was set by `KAFKA_OPERATOR_LOG`, and is now `CONSOLE_LOG` (when using Tracing::pre_configured).
@@ -121,9 +123,16 @@ async fn main() -> anyhow::Result<()> {
             )
             .await?;
 
+            let mut readiness_checks = HealthCheckRegistry::new();
+            let kafka_cluster_crd_check = readiness_checks.register(format!(
+                "CRD {crd} established",
+                crd = v1alpha1::KafkaCluster::crd_name()
+            ));
+
             let webhook_server = create_webhook_server(
                 &operator_environment,
                 maintenance.disable_crd_maintenance,
+                readiness_checks,
                 client.as_kube_client(),
             )
             .await?;
@@ -177,7 +186,9 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .owns(
                     watch_namespace.get_api::<DeserializeGuard<Deployment>>(&client),
-                    watcher::Config::default(),
+                    // The agent is a the only Deployment
+                    watcher::Config::default()
+                        .labels("app.kubernetes.io/name=kafka,app.kubernetes.io/component=agent"),
                 )
                 .watches(
                     watch_namespace.get_api::<DeserializeGuard<ConfigMap>>(&client),
@@ -196,10 +207,8 @@ async fn main() -> anyhow::Result<()> {
                     controller::error_policy,
                     Arc::new(controller::Ctx {
                         client: client.clone(),
-                        agent_image: agent_image.unwrap_or_else(|| {
-                            default_agent_image(&operator_environment.image_repository)
-                        }),
                         operator_environment,
+                        operator_image,
                     }),
                 )
                 // We can let the reporting happen in the background
@@ -223,6 +232,7 @@ async fn main() -> anyhow::Result<()> {
 
             let delayed_kafka_controller = async {
                 signal::crd_established(&client, v1alpha1::KafkaCluster::crd_name()).await?;
+                kafka_cluster_crd_check.mark_passed();
                 kafka_controller.await
             };
 

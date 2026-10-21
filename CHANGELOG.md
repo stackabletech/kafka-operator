@@ -8,7 +8,11 @@ All notable changes to this project will be documented in this file.
 
 - Support floating tags for product images via the new `spec.image.stackableVersionPolicy` field
   ([#1021]).
+- Support Kerberos (GSSAPI) authentication on KRaft controllers, covering both
+  broker-to-controller and controller-to-controller (Raft) traffic ([#1024]).
 - Support for Kafka 4.3.1 ([#1022]).
+- Add `/ready` endpoint to the operator Deployment, which reports the CRD installation status ([#1029]).
+- Brokers now have a default affinity to the OPA Pods when OPA authorization is configured ([#1035]).
 
 ### Changed
 
@@ -22,14 +26,11 @@ All notable changes to this project will be documented in this file.
   that adds the new controller to the voter list.
   On termination, a new `preStop` hook on the controller container (`kafka`) removes the pod from
   the voter list before shutdown.
-  The property `controller.quorum.bootstrap.servers` now contains the headless service names
-  of all controller role groups instead of individual peer host names. This prevents the
-  restart controller from restarting all pods in the quorum when a new one is added/deleted.
   The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
-- Bump stackable-operator to 0.118.0 ([#994], [#1011], [#1021]).
+- Bump stackable-operator to 0.121.0 ([#994], [#1011], [#1021], [#1029], [#1043]).
 - The RBAC ServiceAccount and RoleBinding are now built with the operator-rs `v2::rbac`
   functions and carry the full set of recommended labels ([#990]).
 - BREAKING: The `brokers` role is now required by the CRD; a KafkaCluster without it was
@@ -47,6 +48,10 @@ All notable changes to this project will be documented in this file.
   operator upgrade, delete each broker StatefulSet so that the operator immediately recreates it
   with the new labels ([#1011]).
 - Make operations infallible where dependent on static inputs ([#1017]).
+- Remove `serde_yaml` ([#1043]).
+- All pods now set `securityContext.seccompProfile.type` to `RuntimeDefault` ([#1043]).
+- Support Vector 0.58.0 ([#1039], [#1044], [#1046]).
+- test: Update OPA to 1.20.2 in integration tests and docs example ([#1042]).
 
 ### Fixed
 
@@ -58,6 +63,9 @@ All notable changes to this project will be documented in this file.
 - A KRaft cluster without a `controllers` role is now rejected during validation.
   Previously, the operator would create a cluster consisting only of `brokers` which would never
   become healthy ([#1010]).
+- `spec.clusterConfig.metadataManager` now uses PascalCase values (`ZooKeeper` and `KRaft`) as per
+  Kubernetes conventions. The lowercase values `zookeeper` and `kraft` are deprecated, but are still
+  accepted for backwards compatibility and may be removed in a future release ([#1034]).
 
 ### Removed
 
@@ -66,7 +74,7 @@ All notable changes to this project will be documented in this file.
   shipped in the same product image as `kafka` since #527, so the dedicated container/image was
   no longer needed). The `kcat-prober` value is no longer accepted in a broker's
   `logging.containers` CRD field ([#1010]).
-- Support for Kafka 4.1.1 and 4.2.1 ([#1022])
+- Support for Kafka 4.1.1 and 4.2.1 (deprecated) ([#1022], [#1047])
 
 [#985]: https://github.com/stackabletech/kafka-operator/pull/985
 [#990]: https://github.com/stackabletech/kafka-operator/pull/990
@@ -79,6 +87,16 @@ All notable changes to this project will be documented in this file.
 [#1017]: https://github.com/stackabletech/kafka-operator/pull/1017
 [#1021]: https://github.com/stackabletech/kafka-operator/pull/1021
 [#1022]: https://github.com/stackabletech/kafka-operator/pull/1022
+[#1024]: https://github.com/stackabletech/kafka-operator/pull/1024
+[#1029]: https://github.com/stackabletech/kafka-operator/pull/1029
+[#1034]: https://github.com/stackabletech/kafka-operator/pull/1034
+[#1035]: https://github.com/stackabletech/kafka-operator/pull/1035
+[#1039]: https://github.com/stackabletech/kafka-operator/pull/1039
+[#1042]: https://github.com/stackabletech/kafka-operator/pull/1042
+[#1043]: https://github.com/stackabletech/kafka-operator/pull/1043
+[#1044]: https://github.com/stackabletech/kafka-operator/pull/1044
+[#1046]: https://github.com/stackabletech/kafka-operator/pull/1046
+[#1047]: https://github.com/stackabletech/kafka-operator/pull/1047
 
 ## [26.7.0] - 2026-07-21
 

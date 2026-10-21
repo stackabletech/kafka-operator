@@ -51,7 +51,7 @@ But you can also connect using xref:spark-k8s:index.adoc[Apache Spark] or with a
 == [[demos]]Demos
 
 xref:management:stackablectl:index.adoc[] supports installing xref:demos:index.adoc[] with a single command.
-The demos are complete data piplines which showcase multiple components of the Stackable platform working together and which you can try out interactively.
+The demos are complete data pipelines which showcase multiple components of the Stackable platform working together and which you can try out interactively.
 Both demos below inject data into Kafka using NiFi and read from the Kafka topics using Druid.
 
 === Waterlevel demo
