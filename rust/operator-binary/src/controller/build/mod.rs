@@ -42,7 +42,21 @@ pub mod security;
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("failed to build the resources of role {role} role group {role_group}"))]
+    #[snafu(display("failed to build broker role group {role_group}"))]
+    Broker {
+        source: role_group::broker::Error,
+        role_group: RoleGroupName,
+    },
+
+    #[snafu(display("failed to build controller role group {role_group}"))]
+    Controller {
+        source: role_group::controller::Error,
+        role_group: RoleGroupName,
+    },
+
+    #[snafu(display(
+        "failed to build the Kubernetes objects of role {role} role group {role_group}"
+    ))]
     RoleGroup {
         source: role_group::Error,
         role: KafkaRole,
@@ -90,28 +104,31 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>
     let mut listeners = vec![];
 
     for (role_group_name, rg_config) in &cluster.broker_role_group_configs {
-        let context = || RoleGroupSnafu {
+        let (builder, bootstrap_listener) =
+            role_group::broker::build(cluster, role_group_name, rg_config).with_context(|_| {
+                BrokerSnafu {
+                    role_group: role_group_name.clone(),
+                }
+            })?;
+
+        built.add(&builder).with_context(|_| RoleGroupSnafu {
             role: KafkaRole::Broker,
             role_group: role_group_name.clone(),
-        };
-        let (builder, bootstrap_listener) =
-            role_group::broker::build(cluster, role_group_name, rg_config)
-                .with_context(|_| context())?;
-
-        built.add(&builder).with_context(|_| context())?;
+        })?;
         // Only broker role groups get a bootstrap Listener.
         listeners.push(bootstrap_listener);
     }
 
     for (role_group_name, rg_config) in &cluster.controller_role_group_configs {
-        let context = || RoleGroupSnafu {
+        let builder = role_group::controller::build(cluster, role_group_name, rg_config)
+            .with_context(|_| ControllerSnafu {
+                role_group: role_group_name.clone(),
+            })?;
+
+        built.add(&builder).with_context(|_| RoleGroupSnafu {
             role: KafkaRole::Controller,
             role_group: role_group_name.clone(),
-        };
-        let builder = role_group::controller::build(cluster, role_group_name, rg_config)
-            .with_context(|_| context())?;
-
-        built.add(&builder).with_context(|_| context())?;
+        })?;
     }
 
     let pod_disruption_budgets: Vec<PodDisruptionBudget> = KafkaRole::iter()

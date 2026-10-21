@@ -1,11 +1,11 @@
 //! Building one broker role group.
 
 use indoc::formatdoc;
-use snafu::{OptionExt, ResultExt};
+use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::pod::volume::{
-        ListenerOperatorVolumeSourceBuilder, ListenerReference as ListenerOperatorReference,
-        VolumeBuilder,
+        ListenerOperatorVolumeSourceBuilder, ListenerOperatorVolumeSourceBuilderError,
+        ListenerReference as ListenerOperatorReference, VolumeBuilder,
     },
     k8s_openapi::api::core::v1::{Container, EnvVar, PersistentVolumeClaim, Volume},
     v2::{
@@ -13,34 +13,31 @@ use stackable_operator::{
             container::new_container_builder,
             volume::{ListenerReference, listener_operator_volume_source_builder_build_pvc},
         },
-        config_file_writer::to_java_properties_string,
+        config_file_writer::{PropertiesWriterError, to_java_properties_string},
         product_logging::framework::STACKABLE_LOG_DIR,
     },
 };
 
-use super::{
-    BuildKerberosVolumeSnafu, BuildListenerVolumeSnafu, BuildPodDescriptorsSnafu, BuildProbeSnafu,
-    BuildTlsVolumesSnafu, ConfigMapSnafu, ConstructJvmArgumentsSnafu, Error,
-    MissingSecretLifetimeSnafu, RoleGroupBuilder, SerializeConfigFileSnafu,
-    controller_jaas_section,
-};
+use super::{RoleGroupBuilder, controller_jaas_section};
 use crate::{
     controller::{
-        BrokerRoleGroupConfig, RoleGroupName, ValidatedCluster,
+        BrokerRoleGroupConfig, PodDescriptorsError, RoleGroupName, ValidatedCluster,
         build::{
             command::broker_kafka_container_commands,
             container::{
                 common_kafka_env, common_operator_env_vars, container_ports, log_config_volume,
             },
-            kerberos::{kerberos_env_vars, mount_broker_kerberos_volume},
+            jvm,
+            kerberos::{self, kerberos_env_vars, mount_broker_kerberos_volume},
             properties::{ConfigFileName, broker_properties, listener::get_kafka_listener_config},
             recommended_labels_for_role_group_resources,
             recommended_labels_for_unversioned_role_group_resources,
             resource::{
-                config_map::common_config_map_data,
-                listener::build_broker_rolegroup_bootstrap_listener, probes,
+                config_map::{self, common_config_map_data},
+                listener::build_broker_rolegroup_bootstrap_listener,
+                probes,
             },
-            security::mount_broker_tls_volumes,
+            security::{self, mount_broker_tls_volumes},
         },
     },
     crd::{
@@ -61,6 +58,42 @@ use crate::{
 const ROLE: KafkaRole = KafkaRole::Broker;
 
 const POD_MANAGEMENT_POLICY_PARALLEL: &str = "Parallel";
+
+/// Why gathering one broker role group's inputs failed. The caller adds which role group it was.
+#[derive(Snafu, Debug)]
+pub enum Error {
+    #[snafu(display("failed to render the ConfigMap entries every role has"))]
+    CommonConfigMapData { source: config_map::Error },
+
+    #[snafu(display("failed to serialize [{file}]"))]
+    SerializeConfigFile {
+        source: PropertiesWriterError,
+        file: ConfigFileName,
+    },
+
+    #[snafu(display("failed to build pod descriptors"))]
+    BuildPodDescriptors { source: PodDescriptorsError },
+
+    #[snafu(display("missing secret lifetime"))]
+    MissingSecretLifetime,
+
+    #[snafu(display("failed to build the TLS volumes"))]
+    BuildTlsVolumes { source: security::Error },
+
+    #[snafu(display("failed to build the Kerberos volume"))]
+    BuildKerberosVolume { source: kerberos::Error },
+
+    #[snafu(display("failed to build the broker listener volume"))]
+    BuildListenerVolume {
+        source: ListenerOperatorVolumeSourceBuilderError,
+    },
+
+    #[snafu(display("failed to build container probe"))]
+    BuildProbe { source: probes::Error },
+
+    #[snafu(display("failed to construct JVM arguments"))]
+    ConstructJvmArguments { source: jvm::Error },
+}
 
 /// Builds one broker role group: the [`RoleGroupBuilder`] for its Services, ConfigMap and
 /// StatefulSet, and its bootstrap `Listener`.
@@ -88,7 +121,7 @@ pub(crate) fn build<'a>(
                 .overrides
                 .clone(),
         )
-        .context(ConfigMapSnafu)?,
+        .context(CommonConfigMapDataSnafu)?,
     );
 
     let (role_containers, role_pod_volumes) = role_pod(cluster, role_group_name, rg_config)?;

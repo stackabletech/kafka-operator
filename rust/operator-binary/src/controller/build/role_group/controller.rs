@@ -2,7 +2,7 @@
 
 use std::str::FromStr;
 
-use snafu::{OptionExt, ResultExt};
+use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::pod::{container::FieldPathEnvVar, resources::ResourceRequirementsBuilder},
     commons::product_image_selection::ResolvedProductImage,
@@ -11,21 +11,17 @@ use stackable_operator::{
     },
     v2::{
         builder::pod::container::{EnvVarName, EnvVarSet, new_container_builder},
-        config_file_writer::to_java_properties_string,
+        config_file_writer::{PropertiesWriterError, to_java_properties_string},
         product_logging::framework::STACKABLE_LOG_DIR,
         role_group_utils::ResourceNames,
         types::kubernetes::ContainerName,
     },
 };
 
-use super::{
-    BuildKerberosVolumeSnafu, BuildPodDescriptorsSnafu, BuildProbeSnafu, BuildTlsVolumesSnafu,
-    ConfigMapSnafu, ConstructJvmArgumentsSnafu, Error, MissingSecretLifetimeSnafu,
-    RoleGroupBuilder, SerializeConfigFileSnafu, controller_jaas_section,
-};
+use super::{RoleGroupBuilder, controller_jaas_section};
 use crate::{
     controller::{
-        ControllerRoleGroupConfig, RoleGroupName, ValidatedCluster,
+        ControllerRoleGroupConfig, PodDescriptorsError, RoleGroupName, ValidatedCluster,
         build::{
             command::{
                 controller_kafka_container_command, controller_remove_self_pre_stop_command,
@@ -34,16 +30,20 @@ use crate::{
             container::{
                 common_kafka_env, common_operator_env_vars, container_ports, log_config_volume,
             },
+            jvm,
             kerberos::{
-                KAFKA_OPTS, KERBEROS_VOLUME_NAME, KRB5_CONFIG, kerberos_env_vars,
+                self, KAFKA_OPTS, KERBEROS_VOLUME_NAME, KRB5_CONFIG, kerberos_env_vars,
                 mount_controller_kerberos_volume,
             },
             properties::{
                 ConfigFileName, controller_properties, listener::get_kafka_listener_config,
             },
-            resource::{config_map::common_config_map_data, probes},
+            resource::{
+                config_map::{self, common_config_map_data},
+                probes,
+            },
             security::{
-                STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
+                self, STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                 controller_admin_client_properties, mount_controller_tls_volume,
             },
         },
@@ -62,6 +62,38 @@ use crate::{
 const ROLE: KafkaRole = KafkaRole::Controller;
 
 const POD_MANAGEMENT_POLICY_ORDERED_READY: &str = "OrderedReady";
+
+/// Why gathering one controller role group's inputs failed. The caller adds which role group it
+/// was.
+#[derive(Snafu, Debug)]
+pub enum Error {
+    #[snafu(display("failed to render the ConfigMap entries every role has"))]
+    CommonConfigMapData { source: config_map::Error },
+
+    #[snafu(display("failed to serialize [{file}]"))]
+    SerializeConfigFile {
+        source: PropertiesWriterError,
+        file: ConfigFileName,
+    },
+
+    #[snafu(display("failed to build pod descriptors"))]
+    BuildPodDescriptors { source: PodDescriptorsError },
+
+    #[snafu(display("missing secret lifetime"))]
+    MissingSecretLifetime,
+
+    #[snafu(display("failed to build the TLS volume"))]
+    BuildTlsVolumes { source: security::Error },
+
+    #[snafu(display("failed to build the Kerberos volume"))]
+    BuildKerberosVolume { source: kerberos::Error },
+
+    #[snafu(display("failed to build container probe"))]
+    BuildProbe { source: probes::Error },
+
+    #[snafu(display("failed to construct JVM arguments"))]
+    ConstructJvmArguments { source: jvm::Error },
+}
 
 // Env vars the operator sets on the controller's `kafka` and `quorum-manager` containers.
 stackable_operator::constant!(POD_IP: EnvVarName = "POD_IP");
@@ -98,7 +130,7 @@ pub(crate) fn build<'a>(
                 .overrides
                 .clone(),
         )
-        .context(ConfigMapSnafu)?,
+        .context(CommonConfigMapDataSnafu)?,
     );
 
     let (role_containers, role_pod_volumes) = role_pod(cluster, role_group_name, rg_config)?;

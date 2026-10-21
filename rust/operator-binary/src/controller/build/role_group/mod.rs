@@ -17,26 +17,25 @@ pub(crate) mod controller;
 use indoc::formatdoc;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    builder::pod::volume::ListenerOperatorVolumeSourceBuilderError,
     k8s_openapi::api::{
         apps::v1::StatefulSet,
         core::v1::{ConfigMap, Container, PersistentVolumeClaim, PodTemplateSpec, Service, Volume},
     },
-    v2::{config_file_writer::PropertiesWriterError, types::kubernetes::ContainerName},
+    v2::types::kubernetes::ContainerName,
 };
 
-use super::{jvm, kerberos, properties::ConfigFileName, resource, security};
+use super::resource;
 use crate::{
-    controller::{
-        PodDescriptorsError, RoleGroupName, ValidatedCluster, validate::ValidatedLogging,
-    },
+    controller::{RoleGroupName, ValidatedCluster, validate::ValidatedLogging},
     crd::{
         STACKABLE_KERBEROS_KEYTAB_PATH,
         role::{KafkaRole, commons::CommonConfig},
     },
 };
 
-/// Why building one role group failed. The caller adds which role and role group it was.
+/// Why emitting one role group's Kubernetes objects failed. The caller adds which role and role
+/// group it was. Errors from gathering a role's inputs are the role module's own ([`broker::Error`],
+/// [`controller::Error`]).
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(display("failed to build ConfigMap"))]
@@ -46,35 +45,6 @@ pub enum Error {
     StatefulSet {
         source: resource::statefulset::Error,
     },
-
-    #[snafu(display("failed to serialize [{file}]"))]
-    SerializeConfigFile {
-        source: PropertiesWriterError,
-        file: ConfigFileName,
-    },
-
-    #[snafu(display("failed to build pod descriptors"))]
-    BuildPodDescriptors { source: PodDescriptorsError },
-
-    #[snafu(display("missing secret lifetime"))]
-    MissingSecretLifetime,
-
-    #[snafu(display("failed to build the TLS volumes"))]
-    BuildTlsVolumes { source: security::Error },
-
-    #[snafu(display("failed to build the Kerberos volume"))]
-    BuildKerberosVolume { source: kerberos::Error },
-
-    #[snafu(display("failed to build the broker listener volume"))]
-    BuildListenerVolume {
-        source: ListenerOperatorVolumeSourceBuilderError,
-    },
-
-    #[snafu(display("failed to build container probe"))]
-    BuildProbe { source: resource::probes::Error },
-
-    #[snafu(display("failed to construct JVM arguments"))]
-    ConstructJvmArguments { source: jvm::Error },
 }
 
 /// Everything one role group's Kubernetes objects are built from.
