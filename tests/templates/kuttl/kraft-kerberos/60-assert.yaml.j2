@@ -1,0 +1,34 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 600
+commands:
+  - script: kubectl -n $NAMESPACE wait --for=condition=available kafkaclusters.kafka.stackable.tech/test-kafka --timeout 301s
+  - script: |
+      # The voter set itself must have changed, not just the StatefulSet: a controller that
+      # starts but never joins the quorum is exactly what this test guards against.
+      #
+      # Kerberos-specific: the admin client must use the *rendered* /tmp copy. The raw
+      # ConfigMap file still has unresolved ${env:...} placeholders in sasl.jaas.config.
+      #
+      kubectl exec -n $NAMESPACE test-kafka-controller-default-0 -c kafka -- \
+        /stackable/kafka/bin/kafka-metadata-quorum.sh \
+        --bootstrap-controller test-kafka-controller-default-0.test-kafka-controller-default-headless.$NAMESPACE.svc.cluster.local:9093 \
+        --command-config /tmp/admin-client.properties \
+        describe --replication | tail -n +2 | awk '$NF == "Leader" || $NF == "Follower"' | wc -l | grep -q '^5$'
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-broker-default
+status:
+  readyReplicas: 3
+  replicas: 3
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-controller-default
+status:
+  readyReplicas: 5
+  replicas: 5

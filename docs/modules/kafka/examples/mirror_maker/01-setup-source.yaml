@@ -74,7 +74,7 @@ spec:
     productVersion: 3.9.2
     pullPolicy: IfNotPresent
   clusterConfig:
-    metadataManager: zookeeper
+    metadataManager: ZooKeeper
     authentication:
       - authenticationClass: source-client-auth
     tls:

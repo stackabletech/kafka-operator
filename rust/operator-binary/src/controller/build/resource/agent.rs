@@ -247,9 +247,9 @@ mod tests {
         assert_eq!(pod_spec["containers"][0]["args"], json!(["run"]));
         assert_eq!(
             pod_spec["containers"][0]["volumeMounts"],
-            json!([{"mountPath": "/stackable/secrets/tls-client-cert", "name": "tls-client-cert"}])
+            json!([{"mountPath": "/stackable/secrets/tls-platform-access", "name": "tls-platform-access"}])
         );
-        assert_eq!(pod_spec["volumes"][0]["name"], "tls-client-cert");
+        assert_eq!(pod_spec["volumes"][0]["name"], "tls-platform-access");
         assert_eq!(
             pod_spec["volumes"][0]["ephemeral"]["volumeClaimTemplate"]["metadata"]["annotations"]["secrets.stackable.tech/class"],
             "tls"
@@ -263,7 +263,7 @@ mod tests {
 
         assert_eq!(
             deployment["spec"]["template"]["spec"]["volumes"],
-            json!([{"name": "tls-client-cert", "secret": {"secretName": "my-cert"}}])
+            json!([{"name": "tls-platform-access", "secret": {"secretName": "my-cert"}}])
         );
     }
 

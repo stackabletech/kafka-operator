@@ -2,9 +2,12 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
-    commons::resources::{
-        CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
-        PvcConfigFragment, Resources, ResourcesFragment,
+    commons::{
+        opa::OpaConfig,
+        resources::{
+            CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
+            PvcConfigFragment, Resources, ResourcesFragment,
+        },
     },
     config::{fragment::Fragment, merge::Merge},
     constant,
@@ -87,9 +90,13 @@ pub struct BrokerConfig {
 }
 
 impl BrokerConfig {
-    pub fn default_config(cluster_name: &str, role: &str) -> BrokerConfigFragment {
+    pub fn default_config(
+        cluster_name: &str,
+        role: &str,
+        opa_config: Option<&OpaConfig>,
+    ) -> BrokerConfigFragment {
         BrokerConfigFragment {
-            common_config: CommonConfig::default_config(cluster_name, role),
+            common_config: CommonConfig::default_config(cluster_name, role, opa_config),
             bootstrap_listener_class: Some(DEFAULT_LISTENER_CLASS.clone()),
             broker_listener_class: Some(DEFAULT_LISTENER_CLASS.clone()),
             logging: product_logging::spec::default_logging(),

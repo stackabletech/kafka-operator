@@ -29,7 +29,7 @@ use crate::{
     },
 };
 
-constant!(KERBEROS_VOLUME_NAME: VolumeName = "kerberos");
+constant!(pub KERBEROS_VOLUME_NAME: VolumeName = "kerberos");
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -57,16 +57,31 @@ pub fn add_kerberos_pod_config(
 ) -> Result<(), Error> {
     if let Some(kerberos_secret_class) = kafka_security.kerberos_secret_class() {
         // Mount keytab
-        let kerberos_secret_operator_volume = SecretOperatorVolumeSourceBuilder::new(
+        let mut volume_builder = SecretOperatorVolumeSourceBuilder::new(
             kerberos_secret_class,
             // We need both public (krb5.conf) and private (keytab) parts.
             SecretClassVolumeProvisionParts::PublicPrivate,
-        )
-        .with_listener_volume_scope(&*LISTENER_BROKER_VOLUME_NAME)
-        .with_listener_volume_scope(&*LISTENER_BOOTSTRAP_VOLUME_NAME)
-        .with_kerberos_service_name(role.kerberos_service_name())
-        .build()
-        .context(KerberosSecretVolumeSnafu)?;
+        );
+        match role {
+            // Brokers are exposed through listener-operator `Listener` volumes (the broker
+            // and bootstrap listeners), so the keytab principal must cover both.
+            KafkaRole::Broker => {
+                volume_builder
+                    .with_listener_volume_scope(&*LISTENER_BROKER_VOLUME_NAME)
+                    .with_listener_volume_scope(&*LISTENER_BOOTSTRAP_VOLUME_NAME);
+            }
+            // KRaft controllers have no listener-operator `Listener` volume: they are only
+            // reachable through their own StatefulSet pod DNS name, so the keytab must be
+            // pod-scoped, matching how the controller's internal TLS cert is provisioned in
+            // `add_controller_volume_and_volume_mounts`.
+            KafkaRole::Controller => {
+                volume_builder.with_pod_scope();
+            }
+        }
+        let kerberos_secret_operator_volume = volume_builder
+            .with_kerberos_service_name(role.kerberos_service_name())
+            .build()
+            .context(KerberosSecretVolumeSnafu)?;
         pb.add_volume(
             VolumeBuilder::new(&*KERBEROS_VOLUME_NAME)
                 .ephemeral(kerberos_secret_operator_volume)
@@ -82,8 +97,8 @@ pub fn add_kerberos_pod_config(
     Ok(())
 }
 
-constant!(KRB5_CONFIG: EnvVarName = "KRB5_CONFIG");
-constant!(KAFKA_OPTS: EnvVarName = "KAFKA_OPTS");
+constant!(pub KRB5_CONFIG: EnvVarName = "KRB5_CONFIG");
+constant!(pub KAFKA_OPTS: EnvVarName = "KAFKA_OPTS");
 
 /// The environment variables the Kerberos configuration requires on the Kafka container, or an
 /// empty set when Kerberos is disabled.

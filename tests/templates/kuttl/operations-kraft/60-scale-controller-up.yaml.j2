@@ -16,7 +16,7 @@ spec:
     productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
 {% endif %}
   clusterConfig:
-    metadataManager: kraft
+    metadataManager: KRaft
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}

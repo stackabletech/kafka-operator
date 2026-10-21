@@ -267,7 +267,11 @@ pub fn validate(
     let broker_role = &kafka.spec.brokers;
     let broker_groups = validate_role_group_configs(
         broker_role,
-        BrokerConfig::default_config(&kafka.name_any(), &KafkaRole::Broker.to_string()),
+        BrokerConfig::default_config(
+            &kafka.name_any(),
+            &KafkaRole::Broker.to_string(),
+            kafka.spec.cluster_config.authorization.opa.as_ref(),
+        ),
         cluster_id,
         AnyConfig::Broker,
         AnyConfigOverrides::Broker,
@@ -510,7 +514,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:
@@ -654,7 +658,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:
@@ -724,7 +728,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   a:
@@ -766,7 +770,7 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                metadataManager: kraft
+                metadataManager: KRaft
               controllers:
                 roleGroups:
                   default:
