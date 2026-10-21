@@ -16,7 +16,10 @@ stackable-operator.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 const_format.workspace = true
+futures.workspace = true
+serde_json.workspace = true
 snafu.workspace = true
+strum.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 

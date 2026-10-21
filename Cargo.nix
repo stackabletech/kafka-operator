@@ -10703,6 +10703,14 @@ rec {
             packageId = "const_format";
           }
           {
+            name = "futures";
+            packageId = "futures";
+          }
+          {
+            name = "serde_json";
+            packageId = "serde_json";
+          }
+          {
             name = "snafu";
             packageId = "snafu 0.9.2";
           }
@@ -10718,6 +10726,11 @@ rec {
             name = "stackable-operator";
             packageId = "stackable-operator";
             features = [ "crds" "webhook" ];
+          }
+          {
+            name = "strum";
+            packageId = "strum";
+            features = [ "derive" ];
           }
           {
             name = "tokio";

@@ -82,6 +82,24 @@ pub mod versioned {
         /// `Ready` and `Synced`.
         #[serde(default)]
         pub conditions: Vec<Condition>,
+
+        /// The topic id in Kafka, as shown by `kafka-topics.sh`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub topic_id: Option<String>,
+
+        /// The partitions of the topic in Kafka.
+        #[serde(default)]
+        pub partitions: Vec<KafkaTopicPartitionStatus>,
+    }
+
+    #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaTopicPartitionStatus {
+        pub index: i32,
+
+        /// Broker ids holding a replica, the preferred leader first. During a reassignment, this
+        /// includes the replicas being added and removed.
+        pub replicas: Vec<i32>,
     }
 }
 

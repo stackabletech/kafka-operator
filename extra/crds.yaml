@@ -2365,6 +2365,31 @@ spec:
                   - type
                   type: object
                 type: array
+              partitions:
+                default: []
+                description: The partitions of the topic in Kafka.
+                items:
+                  properties:
+                    index:
+                      format: int32
+                      type: integer
+                    replicas:
+                      description: |-
+                        Broker ids holding a replica, the preferred leader first. During a reassignment, this
+                        includes the replicas being added and removed.
+                      items:
+                        format: int32
+                        type: integer
+                      type: array
+                  required:
+                  - index
+                  - replicas
+                  type: object
+                type: array
+              topicId:
+                description: The topic id in Kafka, as shown by `kafka-topics.sh`.
+                nullable: true
+                type: string
             type: object
         required:
         - spec

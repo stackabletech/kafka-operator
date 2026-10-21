@@ -45,7 +45,7 @@ pub fn security(client_security: ClientSecurity) -> Security {
     }
 }
 
-/// Returns `None` while the operator has written no bootstrap servers to the discovery configmap yet.
+/// Returns `None` while the operator has written no bootstrap servers to the discovery ConfigMap yet.
 pub fn read_bootstrap_servers(path: &Path) -> Result<Option<Vec<BrokerAddress>>, Error> {
     let value = fs::read_to_string(path).context(ReadBootstrapServersSnafu { path })?;
     if value.trim().is_empty() {
