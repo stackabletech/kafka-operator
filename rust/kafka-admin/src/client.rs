@@ -523,7 +523,7 @@ mod tests {
         metadata_response::{MetadataResponsePartition, MetadataResponseTopic},
     };
     use rstest::rstest;
-    use tokio::net::TcpStream;
+    use tokio::net::{TcpSocket, TcpStream};
 
     use super::*;
     use crate::connection::test_support::{accept, listen, read_request_body, write_response};
@@ -533,8 +533,15 @@ mod tests {
 
     #[tokio::test]
     async fn try_the_next_bootstrap_server() {
-        let (unreachable, unreachable_port) = listen().await;
-        drop(unreachable);
+        // Use a port that is always rejected
+        let unreachable = TcpSocket::new_v4().expect("the socket should be creatable");
+        unreachable
+            .bind("127.0.0.1:0".parse().expect("the address should be valid"))
+            .expect("the socket should be bindable");
+        let unreachable_port = unreachable
+            .local_addr()
+            .expect("the socket should have an address")
+            .port();
         let (listener, port) = listen().await;
         let mut client = kafka_admin_client(&[unreachable_port, port]);
 
