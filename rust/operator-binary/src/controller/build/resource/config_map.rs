@@ -1,4 +1,5 @@
-use indoc::formatdoc;
+use std::collections::BTreeMap;
+
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
@@ -7,303 +8,124 @@ use stackable_operator::{
     v2::{
         builder::meta::ownerreference_from_resource,
         config_file_writer::{PropertiesWriterError, to_java_properties_string},
+        types::kubernetes::ContainerName,
     },
 };
 
-use crate::{
-    controller::{
-        RoleGroupName, ValidatedCluster, ValidatedRoleGroupConfig,
-        build::{
-            properties::{
-                ConfigFileName, config_file_name, product_logging::role_group_config_map_data,
-            },
-            recommended_labels_for_role_group_resources,
-            security::{client_properties, controller_admin_client_properties},
+use crate::controller::{
+    ValidatedCluster,
+    build::{
+        properties::{
+            ConfigFileName,
+            product_logging::{role_group_config_map_data, vector_config_file_content},
         },
+        recommended_labels_for_role_group_resources,
+        role_group::RoleGroupBuilder,
+        security::client_properties,
     },
-    crd::{
-        CONTROLLER_POD_FQDN_TEMPLATE, STACKABLE_KERBEROS_KEYTAB_PATH,
-        STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR,
-        listener::{KafkaListenerConfig, node_address_cmd},
-        role::{AnyConfig, KafkaRole},
-    },
+    validate::ValidatedLogging,
 };
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("failed to build ConfigMap for role group {role_group}"))]
+    #[snafu(display("failed to build ConfigMap"))]
     BuildRoleGroupConfig {
         source: stackable_operator::builder::configmap::Error,
-        role_group: RoleGroupName,
     },
 
-    #[snafu(display(
-        "failed to serialize [{}] for role group {role_group}",
-        ConfigFileName::Security
-    ))]
-    JvmSecurityProperties {
-        source: PropertiesWriterError,
-        role_group: RoleGroupName,
-    },
+    #[snafu(display("failed to serialize [{}]", ConfigFileName::Security))]
+    JvmSecurityProperties { source: PropertiesWriterError },
 
-    #[snafu(display("failed to serialize config for role group {role_group}"))]
-    SerializeConfig {
-        source: PropertiesWriterError,
-        role_group: RoleGroupName,
-    },
-
-    #[snafu(display(
-        "failed to serialize client-side connection properties ([{}] or [{}]) for role group {role_group}",
-        ConfigFileName::Client,
-        ConfigFileName::AdminClient
-    ))]
-    ClientProperties {
-        source: PropertiesWriterError,
-        role_group: RoleGroupName,
-    },
-
-    #[snafu(display("failed to build pod descriptors"))]
-    BuildPodDescriptors {
-        source: crate::controller::PodDescriptorsError,
-    },
+    #[snafu(display("failed to serialize [{}]", ConfigFileName::Client))]
+    ClientProperties { source: PropertiesWriterError },
 }
 
-/// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the administrator.
-///
-/// `vector_config` is the static Vector agent config (`vector.yaml`) added by the caller; it is
-/// `None` when the Vector agent is disabled. Resource naming and labels use the role (derived
-/// from `validated_rg.config`) and the typed `role_group_name`.
-pub fn build_rolegroup_config_map(
+/// The rolegroup [`ConfigMap`] entries every role has: `security.properties` with the role
+/// group's `security_overrides`, `client.properties`, the log config file of the role's `kafka`
+/// container (named `kafka_container_name`) unless it uses a custom log config, and `vector.yaml`
+/// if the Vector agent is enabled.
+pub(crate) fn common_config_map_data(
     validated_cluster: &ValidatedCluster,
-    role_group_name: &RoleGroupName,
-    validated_rg: &ValidatedRoleGroupConfig,
-    listener_config: &KafkaListenerConfig,
-    vector_config: Option<String>,
-) -> Result<ConfigMap, Error> {
-    let role = validated_rg.config.config.kafka_role();
-    let cluster_config = &validated_cluster.cluster_config;
-    let kafka_security = &cluster_config.kafka_security;
-    let resolved_product_image = &validated_cluster.image;
-    let kafka_config_file_name = config_file_name(&validated_rg.config.config).to_string();
-    let config_overrides = validated_rg
-        .config_overrides
-        .config_file_overrides()
-        .overrides
-        .clone();
-
-    let pod_descriptors = validated_cluster
-        .pod_descriptors(None)
-        .context(BuildPodDescriptorsSnafu)?;
-
-    let kafka_config = match &validated_rg.config.config {
-        AnyConfig::Broker(_) => crate::controller::build::properties::broker_properties::build(
-            cluster_config,
-            listener_config,
-            &pod_descriptors,
-            config_overrides,
-        ),
-        AnyConfig::Controller(_) => {
-            crate::controller::build::properties::controller_properties::build(
-                cluster_config,
-                listener_config,
-                &pod_descriptors,
-                config_overrides,
-            )
-        }
-    };
+    kafka_container_name: &ContainerName,
+    logging: &ValidatedLogging,
+    security_overrides: BTreeMap<String, String>,
+) -> Result<Vec<(String, String)>, Error> {
+    let kafka_security = &validated_cluster.cluster_config.kafka_security;
 
     // The `networkaddress.cache.*` defaults are always emitted (with user `security.properties`
     // overrides winning); see `security_properties::build`.
-    let jvm_sec_props = crate::controller::build::properties::security_properties::build(
-        validated_rg
-            .config_overrides
-            .security_properties()
-            .overrides
-            .clone(),
-    );
+    let jvm_sec_props =
+        crate::controller::build::properties::security_properties::build(security_overrides);
 
-    let mut cm_builder = ConfigMapBuilder::new();
-    cm_builder
-        .metadata(
-            ObjectMetaBuilder::new()
-                .name_and_namespace(validated_cluster)
-                .name(
-                    validated_cluster
-                        .role_group_resource_names(&role, role_group_name)
-                        .role_group_config_map()
-                        .to_string(),
-                )
-                .ownerreference(ownerreference_from_resource(
-                    validated_cluster,
-                    None,
-                    Some(true),
-                ))
-                .with_labels(recommended_labels_for_role_group_resources(
-                    validated_cluster,
-                    &role,
-                    role_group_name,
-                ))
-                .build(),
-        )
-        .add_data(
-            kafka_config_file_name,
-            to_java_properties_string(kafka_config.iter()).with_context(|_| {
-                SerializeConfigSnafu {
-                    role_group: role_group_name.clone(),
-                }
-            })?,
-        )
-        .add_data(
+    let mut data = vec![
+        (
             ConfigFileName::Security.to_string(),
-            to_java_properties_string(jvm_sec_props.iter()).with_context(|_| {
-                JvmSecurityPropertiesSnafu {
-                    role_group: role_group_name.clone(),
-                }
-            })?,
-        )
-        .add_data(
+            to_java_properties_string(jvm_sec_props.iter()).context(JvmSecurityPropertiesSnafu)?,
+        ),
+        (
             ConfigFileName::Client.to_string(),
             to_java_properties_string(
                 client_properties(kafka_security)
                     .iter()
                     .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
             )
-            .with_context(|_| ClientPropertiesSnafu {
-                role_group: role_group_name.clone(),
-            })?,
-        )
-        // This file contains the JAAS configuration for Kerberos authentication
-        // It has the ".properties" extension but is not a Java properties file.
-        // It is processed by `config-utils` to substitute "env:" and "file:" variables
-        // and this tool currently doesn't support the JAAS login configuration format.
-        .add_data(
-            ConfigFileName::Jaas.to_string(),
-            jaas_config_file(kafka_security.has_kerberos_enabled(), &role),
-        );
+            .context(ClientPropertiesSnafu)?,
+        ),
+    ];
 
-    // `admin-client.properties` is only needed by the controller-side sidecar running
-    // `kafka-metadata-quorum.sh` against the CONTROLLER listener; brokers don't need it.
-    if let AnyConfig::Controller(_) = &validated_rg.config.config {
-        cm_builder.add_data(
-            ConfigFileName::AdminClient.to_string(),
-            to_java_properties_string(
-                controller_admin_client_properties(kafka_security)
-                    .iter()
-                    .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
-            )
-            .with_context(|_| ClientPropertiesSnafu {
-                role_group: role_group_name.clone(),
-            })?,
-        );
-    }
-
-    tracing::debug!(?kafka_config, "Applied kafka config");
     tracing::debug!(?jvm_sec_props, "Applied JVM config");
 
-    let config_data = role_group_config_map_data(
-        &resolved_product_image.product_version,
-        &validated_rg.config.config,
+    let log_config_data = role_group_config_map_data(
+        &validated_cluster.image.product_version,
+        kafka_container_name.as_ref(),
+        &logging.kafka_container,
     );
-    for (file_name, data) in config_data {
-        if let Some(data) = data {
-            cm_builder.add_data(file_name, data);
+    for (file_name, data_entry) in log_config_data {
+        if let Some(data_entry) = data_entry {
+            data.push((file_name, data_entry));
         }
     }
 
-    if let Some(vector_config) = vector_config {
-        cm_builder.add_data(VECTOR_CONFIG_FILE, vector_config);
+    // The Vector agent config is the static `vector.yaml`, added only when the Vector agent is
+    // enabled (resolved during validation).
+    if logging.vector_container.is_some() {
+        data.push((VECTOR_CONFIG_FILE.to_string(), vector_config_file_content()));
     }
 
-    cm_builder
-        .build()
-        .with_context(|_| BuildRoleGroupConfigSnafu {
-            role_group: role_group_name.clone(),
-        })
+    Ok(data)
 }
 
-// Generate JAAS configuration file for Kerberos authentication
-// or an empty string if Kerberos is not enabled.
-// See https://docs.oracle.com/javase/8/docs/technotes/guides/security/jgss/tutorials/LoginConfigFile.html
-fn jaas_config_file(is_kerberos_enabled: bool, role: &KafkaRole) -> String {
-    if !is_kerberos_enabled {
-        return String::new();
+/// The rolegroup [`ConfigMap`] configures the rolegroup based on the configuration given by the
+/// administrator; its entries are already rendered ([`RoleGroupBuilder::config_map_data`]).
+pub fn build_config_map(builder: &RoleGroupBuilder) -> Result<ConfigMap, Error> {
+    let validated_cluster = builder.cluster;
+
+    let mut cm_builder = ConfigMapBuilder::new();
+    cm_builder.metadata(
+        ObjectMetaBuilder::new()
+            .name_and_namespace(validated_cluster)
+            .name(
+                validated_cluster
+                    .role_group_resource_names(&builder.role, &builder.role_group_name)
+                    .role_group_config_map()
+                    .to_string(),
+            )
+            .ownerreference(ownerreference_from_resource(
+                validated_cluster,
+                None,
+                Some(true),
+            ))
+            .with_labels(recommended_labels_for_role_group_resources(
+                validated_cluster,
+                &builder.role,
+                &builder.role_group_name,
+            ))
+            .build(),
+    );
+
+    for (file_name, data) in &builder.config_map_data {
+        cm_builder.add_data(file_name, data);
     }
 
-    // Broker pods reach the CONTROLLER listener as SASL clients; the only principals in
-    // their keytab (see `add_kerberos_pod_config`) are for the broker and bootstrap listener
-    // addresses, so their CONTROLLER section must reuse the broker address.
-    // Controller pods have no listener-operator `Listener` volume; their keytab is
-    // pod-scoped, so their CONTROLLER section uses their own pod FQDN — the same expression
-    // already used for `KAFKA_LISTENERS` in `controller_properties.rs`.
-    let controller_principal_address = match role {
-        KafkaRole::Broker => node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-        KafkaRole::Controller => CONTROLLER_POD_FQDN_TEMPLATE.to_string(),
-    };
-
-    // Unlike the bootstrap and client sections below, this context is used for BOTH sides of
-    // every CONTROLLER-listener connection: brokers connect out to controllers, and
-    // controllers connect to each other for Raft. This is the only listener in this operator
-    // where the process must act as a GSSAPI initiator as well as an acceptor, so
-    // `isInitiator` is intentionally left at its default (`true`).
-    let controller_section = formatdoc! {"
-        controller.KafkaServer {{
-            com.sun.security.auth.module.Krb5LoginModule required
-            useKeyTab=true
-            storeKey=true
-            keyTab=\"{STACKABLE_KERBEROS_KEYTAB_PATH}\"
-            principal=\"kafka/{controller_principal_address}@${{env:KERBEROS_REALM}}\";
-        }};
-    "};
-
-    match role {
-        KafkaRole::Controller => controller_section,
-        KafkaRole::Broker => formatdoc! {"
-        bootstrap.KafkaServer {{
-            com.sun.security.auth.module.Krb5LoginModule required
-            useKeyTab=true
-            storeKey=true
-            isInitiator=false
-            keyTab=\"{STACKABLE_KERBEROS_KEYTAB_PATH}\"
-            principal=\"kafka/{bootstrap_address}@${{env:KERBEROS_REALM}}\";
-        }};
-
-        client.KafkaServer {{
-            com.sun.security.auth.module.Krb5LoginModule required
-            useKeyTab=true
-            storeKey=true
-            isInitiator=false
-            keyTab=\"{STACKABLE_KERBEROS_KEYTAB_PATH}\"
-            principal=\"kafka/{broker_address}@${{env:KERBEROS_REALM}}\";
-        }};
-
-        {controller_section}
-    ",
-        bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
-        broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
-        },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::jaas_config_file;
-    use crate::crd::role::KafkaRole;
-
-    #[test]
-    fn jaas_config_file_empty_without_kerberos() {
-        assert_eq!(jaas_config_file(false, &KafkaRole::Broker), "");
-        assert_eq!(jaas_config_file(false, &KafkaRole::Controller), "");
-    }
-
-    #[test]
-    fn jaas_config_file_renders_bootstrap_and_client_sections_with_kerberos() {
-        let jaas = jaas_config_file(true, &KafkaRole::Broker);
-        assert!(jaas.contains("bootstrap.KafkaServer"));
-        assert!(jaas.contains("client.KafkaServer"));
-        assert!(jaas.contains("Krb5LoginModule"));
-        assert!(jaas.contains("${env:KERBEROS_REALM}"));
-        // The bootstrap and client principals embed distinct listener addresses.
-        assert!(jaas.contains("/stackable/listener-bootstrap"));
-        assert!(jaas.contains("/stackable/listener-broker"));
-    }
+    cm_builder.build().context(BuildRoleGroupConfigSnafu)
 }

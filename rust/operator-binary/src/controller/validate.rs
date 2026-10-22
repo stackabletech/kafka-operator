@@ -23,25 +23,26 @@ use stackable_operator::{
             ValidatedContainerLogConfigChoice, VectorContainerLogConfig,
             validate_logging_configuration_for_container,
         },
-        role_utils::{JavaCommonConfig, Role, with_validated_config},
+        role_utils::{JavaCommonConfig, Role, RoleGroup, RoleGroupConfig, with_validated_config},
         types::kubernetes::ConfigMapName,
     },
 };
 
 use crate::{
     controller::{
-        RoleGroupName, ValidatedCluster, ValidatedClusterConfig, ValidatedKafkaConfig,
-        ValidatedRoleConfig, ValidatedRoleGroupConfig,
+        BrokerRoleGroupConfig, ControllerRoleGroupConfig, RoleGroupName, ValidatedBrokerConfig,
+        ValidatedCluster, ValidatedClusterConfig, ValidatedControllerConfig, ValidatedRoleConfig,
         dereference::DereferencedObjects,
+        replicas_or_default,
         security::{self, ValidatedKafkaSecurity},
     },
     crd::{
-        CONTAINER_IMAGE_BASE_NAME,
+        BrokerRole, CONTAINER_IMAGE_BASE_NAME, ControllerRole,
         authentication::{self},
         role::{
-            AnyConfig, AnyConfigOverrides, KafkaRole,
-            broker::{BrokerConfig, BrokerContainer},
-            controller::{ControllerConfig, ControllerContainer},
+            KafkaRole,
+            broker::{BrokerConfig, BrokerConfigFragment, BrokerContainer},
+            controller::{ControllerConfig, ControllerConfigFragment, ControllerContainer},
         },
         tls, v1alpha1,
     },
@@ -250,15 +251,12 @@ pub fn validate(
         .vector_aggregator_config_map_name
         .clone();
 
-    let mut role_configs: BTreeMap<KafkaRole, ValidatedRoleConfig> = BTreeMap::new();
-    let mut role_group_configs: BTreeMap<
-        KafkaRole,
-        BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>,
-    > = BTreeMap::new();
+    // The first failure propagates, so this order decides which misconfiguration the user is told
+    // about when more than one role is wrong. It is `KafkaRole`'s variant order.
 
     // The broker role is required by the CRD.
     let broker_role = &kafka.spec.brokers;
-    let broker_groups = validate_role_group_configs(
+    let broker_role_group_configs = validate_broker_role_group_configs(
         broker_role,
         BrokerConfig::default_config(
             &kafka.name_any(),
@@ -266,18 +264,9 @@ pub fn validate(
             kafka.spec.cluster_config.authorization.opa.as_ref(),
         ),
         cluster_id,
-        AnyConfig::Broker,
-        AnyConfigOverrides::Broker,
-        validate_broker_logging,
         &vector_aggregator_config_map_name,
     )?;
-    role_configs.insert(
-        KafkaRole::Broker,
-        ValidatedRoleConfig {
-            pdb: broker_role.role_config.pod_disruption_budget.clone(),
-        },
-    );
-    role_group_configs.insert(KafkaRole::Broker, broker_groups);
+    let broker_config = validated_role_config(&broker_role.role_config);
 
     let metadata_manager = kafka
         .effective_metadata_manager()
@@ -289,45 +278,45 @@ pub fn validate(
         return MissingKraftControllerRoleSnafu.fail();
     }
 
-    if let Some(controller_role) = kafka.spec.controllers.as_ref() {
-        let controller_groups = validate_role_group_configs(
-            controller_role,
-            ControllerConfig::default_config(&kafka.name_any(), &KafkaRole::Controller.to_string()),
-            cluster_id,
-            AnyConfig::Controller,
-            AnyConfigOverrides::Controller,
-            validate_controller_logging,
-            &vector_aggregator_config_map_name,
-        )?;
+    let (controller_config, controller_role_group_configs) = match kafka.spec.controllers.as_ref() {
+        Some(controller_role) => {
+            let controller_role_group_configs = validate_controller_role_group_configs(
+                controller_role,
+                ControllerConfig::default_config(
+                    &kafka.name_any(),
+                    &KafkaRole::Controller.to_string(),
+                ),
+                cluster_id,
+                &vector_aggregator_config_map_name,
+            )?;
 
-        // A KRaft cluster with zero controller replicas *and running brokers* is a broken
-        // half-state. Reject that combination here.
-        //
-        // Controllers *and* brokers at zero together is not rejected: that is exactly what
-        // `clusterOperation.stopped` already does today.
-        let controller_replicas: u16 = controller_groups
-            .values()
-            .map(|rg| rg.replicas.unwrap_or(1))
-            .sum();
-        let broker_replicas: u16 = role_group_configs[&KafkaRole::Broker]
-            .values()
-            .map(|rg| rg.replicas.unwrap_or(1))
-            .sum();
-        if metadata_manager == crate::crd::MetadataManager::KRaft
-            && controller_replicas == 0
-            && broker_replicas > 0
-        {
-            return NoKraftControllerReplicasSnafu.fail();
+            // A KRaft cluster with zero controller replicas *and running brokers* is a broken
+            // half-state. Reject that combination here.
+            //
+            // Controllers *and* brokers at zero together is not rejected: that is exactly what
+            // `clusterOperation.stopped` already does today.
+            let controller_replicas: u16 = controller_role_group_configs
+                .values()
+                .map(|rg| replicas_or_default(rg.replicas))
+                .sum();
+            let broker_replicas: u16 = broker_role_group_configs
+                .values()
+                .map(|rg| replicas_or_default(rg.replicas))
+                .sum();
+            if metadata_manager == crate::crd::MetadataManager::KRaft
+                && controller_replicas == 0
+                && broker_replicas > 0
+            {
+                return NoKraftControllerReplicasSnafu.fail();
+            }
+
+            (
+                Some(validated_role_config(&controller_role.role_config)),
+                controller_role_group_configs,
+            )
         }
-
-        role_configs.insert(
-            KafkaRole::Controller,
-            ValidatedRoleConfig {
-                pdb: controller_role.role_config.pod_disruption_budget.clone(),
-            },
-        );
-        role_group_configs.insert(KafkaRole::Controller, controller_groups);
-    }
+        None => (None, BTreeMap::new()),
+    };
 
     let name = get_cluster_name(kafka).context(ResolveClusterNameSnafu)?;
     let namespace = get_namespace(kafka).context(ResolveNamespaceSnafu)?;
@@ -337,13 +326,15 @@ pub fn validate(
         .cluster_domain
         .clone();
 
-    Ok(ValidatedCluster::new(
+    Ok(ValidatedCluster {
+        metadata: ValidatedCluster::object_meta(&name, &namespace, &uid),
         name,
         namespace,
         uid,
         cluster_domain,
+        product_version: ValidatedCluster::product_version(&image),
         image,
-        ValidatedClusterConfig {
+        cluster_config: ValidatedClusterConfig {
             kafka_security,
             authorization_config: dereferenced_objects.authorization_config,
             metadata_manager,
@@ -354,79 +345,137 @@ pub fn validate(
                 .broker_id_pod_config_map_name
                 .clone(),
         },
-        role_configs,
-        role_group_configs,
-        dereferenced_objects.bootstrap_listeners,
-    ))
+        broker_config,
+        broker_role_group_configs,
+        controller_config,
+        controller_role_group_configs,
+        bootstrap_listeners: dereferenced_objects.bootstrap_listeners,
+    })
 }
 
-/// Validates every role group of a role into a map keyed by role group name.
-///
-/// Each role group is merged and validated via
-/// [`with_validated_config`], which folds the config fragment (default <- role <-
-/// role group) plus the `configOverrides`, `envOverrides`, `podOverrides` and
-/// `jvmArgumentOverrides` (role group wins) into a single
-/// [`ValidatedRoleGroupConfig`]. The concrete per-role validated config and overrides
-/// are wrapped into the role-agnostic [`AnyConfig`]/[`AnyConfigOverrides`] via
-/// `wrap_config`/`wrap_overrides`, and the operator-managed `KAFKA_CLUSTER_ID` is
-/// injected into the env overrides.
-fn validate_role_group_configs<Config, ValidatedConfig, ConfigOverrides>(
-    role: &Role<Config, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
-    default_config: Config,
+/// The role-level config, resolved from the role's `roleConfig`.
+fn validated_role_config(role_config: &GenericRoleConfig) -> ValidatedRoleConfig {
+    // Destructured without `..`, so a field added upstream fails to compile here instead of
+    // being silently dropped.
+    let GenericRoleConfig {
+        pod_disruption_budget,
+    } = role_config;
+    ValidatedRoleConfig {
+        pdb: pod_disruption_budget.clone(),
+    }
+}
+
+/// Validates every broker role group into a map keyed by role group name: merges it (see
+/// [`validate_role_group_config`]), then validates its logging, then its name.
+fn validate_broker_role_group_configs(
+    role: &BrokerRole,
+    default_config: BrokerConfigFragment,
     cluster_id: Option<&str>,
-    wrap_config: fn(ValidatedConfig) -> AnyConfig,
-    wrap_overrides: fn(ConfigOverrides) -> AnyConfigOverrides,
-    validate_logging: fn(&ValidatedConfig, &Option<ConfigMapName>) -> Result<ValidatedLogging>,
     vector_aggregator_config_map_name: &Option<ConfigMapName>,
-) -> Result<BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>
+) -> Result<BTreeMap<RoleGroupName, BrokerRoleGroupConfig>> {
+    role.role_groups
+        .iter()
+        .map(|(role_group_name, role_group)| {
+            let merged = validate_role_group_config(role, role_group, &default_config, cluster_id)?;
+            let logging =
+                validate_broker_logging(&merged.config, vector_aggregator_config_map_name)?;
+            let validated = BrokerRoleGroupConfig {
+                replicas: merged.replicas,
+                config: ValidatedBrokerConfig {
+                    config: merged.config,
+                    logging,
+                },
+                config_overrides: merged.config_overrides,
+                env_overrides: merged.env_overrides,
+                cli_overrides: merged.cli_overrides,
+                pod_overrides: merged.pod_overrides,
+                product_specific_common_config: merged.product_specific_common_config,
+            };
+            Ok((parse_role_group_name(role_group_name)?, validated))
+        })
+        .collect()
+}
+
+/// Validates every controller role group into a map keyed by role group name: merges it (see
+/// [`validate_role_group_config`]), then validates its logging, then its name.
+fn validate_controller_role_group_configs(
+    role: &ControllerRole,
+    default_config: ControllerConfigFragment,
+    cluster_id: Option<&str>,
+    vector_aggregator_config_map_name: &Option<ConfigMapName>,
+) -> Result<BTreeMap<RoleGroupName, ControllerRoleGroupConfig>> {
+    role.role_groups
+        .iter()
+        .map(|(role_group_name, role_group)| {
+            let merged = validate_role_group_config(role, role_group, &default_config, cluster_id)?;
+            let logging =
+                validate_controller_logging(&merged.config, vector_aggregator_config_map_name)?;
+            let validated = ControllerRoleGroupConfig {
+                replicas: merged.replicas,
+                config: ValidatedControllerConfig {
+                    config: merged.config,
+                    logging,
+                },
+                config_overrides: merged.config_overrides,
+                env_overrides: merged.env_overrides,
+                cli_overrides: merged.cli_overrides,
+                pod_overrides: merged.pod_overrides,
+                product_specific_common_config: merged.product_specific_common_config,
+            };
+            Ok((parse_role_group_name(role_group_name)?, validated))
+        })
+        .collect()
+}
+
+/// Merges and validates one role group via [`with_validated_config`], which folds the config
+/// fragment (default <- role <- role group) plus the `configOverrides`, `envOverrides`,
+/// `podOverrides` and `jvmArgumentOverrides` (role group wins) into a single
+/// [`RoleGroupConfig`], and injects the operator-managed `KAFKA_CLUSTER_ID` into the env
+/// overrides.
+fn validate_role_group_config<Config, ValidatedConfig, ConfigOverrides>(
+    role: &Role<Config, ConfigOverrides, GenericRoleConfig, JavaCommonConfig>,
+    role_group: &RoleGroup<Config, JavaCommonConfig, ConfigOverrides>,
+    default_config: &Config,
+    cluster_id: Option<&str>,
+) -> Result<RoleGroupConfig<ValidatedConfig, JavaCommonConfig, ConfigOverrides>>
 where
     Config: Clone + Merge,
     ValidatedConfig: FromFragment<Fragment = Config>,
     ConfigOverrides: Clone + Default + JsonSchema + Merge + Serialize,
 {
-    role.role_groups
-        .iter()
-        .map(|(role_group_name, role_group)| {
-            let merged = with_validated_config::<
-                ValidatedConfig,
-                JavaCommonConfig,
-                Config,
-                GenericRoleConfig,
-                ConfigOverrides,
-            >(role_group, role, &default_config)
-            .context(ValidateRoleGroupConfigSnafu)?;
+    let merged = with_validated_config::<
+        ValidatedConfig,
+        JavaCommonConfig,
+        Config,
+        GenericRoleConfig,
+        ConfigOverrides,
+    >(role_group, role, default_config)
+    .context(ValidateRoleGroupConfigSnafu)?;
 
-            // The env override names are validated on deserialization; inject the
-            // operator-managed KAFKA_CLUSTER_ID (unless the user overrides it).
-            let env_overrides = inject_cluster_id(merged.config.env_overrides.into(), cluster_id);
+    // The env override names are validated on deserialization; inject the
+    // operator-managed KAFKA_CLUSTER_ID (unless the user overrides it).
+    let env_overrides = inject_cluster_id(merged.config.env_overrides.into(), cluster_id);
 
-            let logging =
-                validate_logging(&merged.config.config, vector_aggregator_config_map_name)?;
+    Ok(RoleGroupConfig {
+        // Passed through as is, including `None`: the StatefulSet then leaves `.spec.replicas`
+        // unset, and the pod predictions count it as `DEFAULT_REPLICAS`.
+        replicas: merged.replicas,
+        config: merged.config.config,
+        config_overrides: merged.config.config_overrides,
+        env_overrides,
+        // Kafka does not use CLI overrides; the field is carried (and merged upstream)
+        // but unused.
+        cli_overrides: merged.config.cli_overrides,
+        pod_overrides: merged.config.pod_overrides,
+        product_specific_common_config: merged.config.product_specific_common_config,
+    })
+}
 
-            let validated = ValidatedRoleGroupConfig {
-                // Passed through as-is (including `None`) so an unset replica count lets a
-                // horizontal autoscaler own the StatefulSet's `.spec.replicas`.
-                replicas: merged.replicas,
-                config: ValidatedKafkaConfig {
-                    config: wrap_config(merged.config.config),
-                    logging,
-                },
-                config_overrides: wrap_overrides(merged.config.config_overrides),
-                env_overrides,
-                // Kafka does not use CLI overrides; the field is carried (and merged upstream)
-                // but unused.
-                cli_overrides: merged.config.cli_overrides,
-                pod_overrides: merged.config.pod_overrides,
-                product_specific_common_config: merged.config.product_specific_common_config,
-            };
-            let role_group_name = RoleGroupName::from_str(role_group_name).with_context(|_| {
-                ParseRoleGroupNameSnafu {
-                    role_group_name: role_group_name.clone(),
-                }
-            })?;
-            Ok((role_group_name, validated))
-        })
-        .collect()
+/// Parses a role group name from the CRD into its type-safe form.
+fn parse_role_group_name(role_group_name: &str) -> Result<RoleGroupName> {
+    RoleGroupName::from_str(role_group_name).with_context(|_| ParseRoleGroupNameSnafu {
+        role_group_name: role_group_name.to_owned(),
+    })
 }
 
 /// Injects the operator-managed `KAFKA_CLUSTER_ID` into the merged env overrides,
@@ -446,16 +495,12 @@ fn inject_cluster_id(env_overrides: EnvVarSet, cluster_id: Option<&str>) -> EnvV
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use stackable_operator::v2::{
-        builder::pod::container::EnvVarSet, types::operator::RoleGroupName,
-    };
+    use stackable_operator::v2::builder::pod::container::EnvVarSet;
 
     use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id};
-    use crate::{
-        controller::test_support::{app_version_label, minimal_kafka, validated_cluster},
-        crd::role::KafkaRole,
+    use crate::controller::test_support::{
+        app_version_label, broker_role_group_config, controller_role_group_config, minimal_kafka,
+        validated_cluster,
     };
 
     #[test]
@@ -535,24 +580,37 @@ mod tests {
         assert_eq!(security.opa_secret_class(), None);
 
         // Both roles are present, with default (enabled) PDB configs.
-        let roles: Vec<_> = cluster.role_configs.keys().collect();
-        assert_eq!(roles, [&KafkaRole::Broker, &KafkaRole::Controller]);
-        for role_config in cluster.role_configs.values() {
+        let controller_config = cluster
+            .controller_config
+            .as_ref()
+            .expect("the controller role is present");
+        for role_config in [&cluster.broker_config, controller_config] {
             assert!(role_config.pdb.enabled);
             assert_eq!(role_config.pdb.max_unavailable, None);
         }
 
         // One `default` role group per role. The KRaft cluster id (derived from the cluster
         // name) is injected into every role group's env overrides.
-        let default_rg = RoleGroupName::from_str("default").expect("valid role group name");
-        for role in [KafkaRole::Broker, KafkaRole::Controller] {
-            let role_group = &cluster.role_group_configs[&role][&default_rg];
-            assert_eq!(role_group.replicas, Some(3));
+        let broker_role_group = broker_role_group_config(&cluster, "default");
+        let controller_role_group = controller_role_group_config(&cluster, "default");
+        for (replicas, env_overrides, logging) in [
+            (
+                broker_role_group.replicas,
+                &broker_role_group.env_overrides,
+                &broker_role_group.config.logging,
+            ),
+            (
+                controller_role_group.replicas,
+                &controller_role_group.env_overrides,
+                &controller_role_group.config.logging,
+            ),
+        ] {
+            assert_eq!(replicas, Some(3));
             assert_eq!(
-                cluster_id_value(&role_group.env_overrides),
+                cluster_id_value(env_overrides),
                 Some("simple-kafka".to_string())
             );
-            assert_eq!(role_group.config.logging.vector_container, None);
+            assert_eq!(logging.vector_container, None);
         }
     }
 
