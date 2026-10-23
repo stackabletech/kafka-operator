@@ -73,7 +73,7 @@ dimensions:
       - "external-stable"
       - "external-unstable"
   # How the agent authenticates to Kafka
-  - name: platform-access-authentication
+  - name: management-access-authentication
     values:
       - anonymous
       - secret-class
@@ -94,7 +94,7 @@ tests:
   - name: topic-authentication
     dimensions:
       - kafka-kraft
-      - platform-access-authentication
+      - management-access-authentication
       - openshift
   - name: smoke
     dimensions:

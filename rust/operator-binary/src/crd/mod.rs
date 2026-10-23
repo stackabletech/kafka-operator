@@ -18,7 +18,7 @@ use stackable_operator::{
     },
     config::merge::Merge,
     constant,
-    crd::platform_access::v1alpha1::{Anonymous, TlsClientCredential},
+    crd::management_access::v1alpha1::{Anonymous, TlsClientCredential},
     deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
     role_utils::GenericRoleConfig,
@@ -150,10 +150,6 @@ pub mod versioned {
         #[serde(default)]
         pub cluster_config: v1alpha1::KafkaClusterConfig,
 
-        /// Access of the Stackable Data Platform to this cluster.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub platform_access: Option<v1alpha1::KafkaPlatformAccess>,
-
         // no doc - docs in ClusterOperation struct.
         #[serde(default)]
         pub cluster_operation: ClusterOperation,
@@ -161,27 +157,6 @@ pub mod versioned {
         // no doc - docs in ObjectOverrides struct.
         #[serde(default)]
         pub object_overrides: ObjectOverrides,
-    }
-
-    /// Access of the Stackable Data Platform to this Kafka cluster, used by an agent to manage
-    /// resources like `KafkaTopic`s. The credential must be authorized in Kafka by the user.
-    #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct KafkaPlatformAccess {
-        /// Whether the operator deploys the agent. False by default.
-        #[serde(default)]
-        pub enabled: bool,
-
-        /// How the agent authenticates to Kafka.
-        pub authentication: v1alpha1::KafkaPlatformAccessAuthentication,
-    }
-
-    /// How the agent authenticates to Kafka.
-    #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-    #[serde(rename_all = "camelCase")]
-    pub enum KafkaPlatformAccessAuthentication {
-        Tls(TlsClientCredential),
-        Anonymous(Anonymous),
     }
 
     #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
@@ -267,6 +242,37 @@ pub mod versioned {
         ///
         #[serde(skip_serializing_if = "Option::is_none")]
         pub broker_id_pod_config_map_name: Option<ConfigMapName>,
+
+        // no doc - docs in KafkaManagementAccess struct.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub management_access: Option<v1alpha1::KafkaManagementAccess>,
+    }
+
+    /// Management access of the Stackable Data Platform to this Kafka cluster, used to manage
+    /// resources like `KafkaTopic`s. The credential must be authorized in Kafka by the user.
+    #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaManagementAccess {
+        /// Whether management access is enabled.
+        pub enabled: bool,
+
+        /// How the Stackable Data Platform authenticates to Kafka.
+        pub authentication: v1alpha1::KafkaManagementAccessAuthentication,
+    }
+
+    #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaManagementAccessAuthentication {
+        // no doc - docs in UserProvidedAuthentication enum.
+        pub user_provided: v1alpha1::UserProvidedAuthentication,
+    }
+
+    /// A credential provided by the user.
+    #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub enum UserProvidedAuthentication {
+        Anonymous(Anonymous),
+        Tls(TlsClientCredential),
     }
 
     #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Merge, PartialEq, Serialize)]
@@ -300,6 +306,7 @@ impl Default for v1alpha1::KafkaClusterConfig {
             zookeeper_config_map_name: None,
             metadata_manager: None,
             broker_id_pod_config_map_name: None,
+            management_access: None,
         }
     }
 }

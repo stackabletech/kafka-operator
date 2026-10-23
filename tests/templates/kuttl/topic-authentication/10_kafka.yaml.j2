@@ -1,4 +1,4 @@
-{% set authentication = test_scenario['values']['platform-access-authentication'] %}
+{% set authentication = test_scenario['values']['management-access-authentication'] %}
 {% if authentication != 'anonymous' %}
 ---
 # SecretClasses and AuthenticationClasses are cluster-scoped, so the namespace keeps their names
@@ -51,17 +51,18 @@ spec:
     authentication:
       - authenticationClass: client-auth-$NAMESPACE
 {% endif %}
-  platformAccess:
-    enabled: true
-    authentication:
+    managementAccess:
+      enabled: true
+      authentication:
+        userProvided:
 {% if authentication == 'anonymous' %}
-      anonymous: {}
+          anonymous: {}
 {% elif authentication == 'secret-class' %}
-      tls:
-        secretClass: client-auth-$NAMESPACE
+          tls:
+            secretClassName: client-auth-$NAMESPACE
 {% else %}
-      tls:
-        secret: kafka-agent-credential
+          tls:
+            secretName: kafka-agent-credential
 {% endif %}
   controllers:
     config:

@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt,
     time::Duration,
 };
 
@@ -10,7 +11,7 @@ use kafka_protocol::{
     ResponseError,
     error::ParseResponseErrorCode,
     messages::{
-        BrokerId, CreatePartitionsRequest, CreateTopicsRequest, DeleteTopicsRequest,
+        CreatePartitionsRequest, CreateTopicsRequest, CreateTopicsResponse, DeleteTopicsRequest,
         DeleteTopicsResponse, DescribeConfigsRequest, DescribeConfigsResponse,
         IncrementalAlterConfigsRequest, ListPartitionReassignmentsRequest,
         ListPartitionReassignmentsResponse, MetadataRequest, MetadataResponse, TopicName,
@@ -47,8 +48,10 @@ const _: () = assert!((BROKER_TIMEOUT_MS as u128) < connection::REQUEST_TIMEOUT.
 /// Must stay below the broker's `connections.max.idle.ms` (10 minutes by default).
 const CONNECTION_MAX_IDLE: Duration = Duration::from_secs(5 * 60);
 
+/// Lets the broker apply `num.partitions` or `default.replication.factor` when creating a topic.
+const BROKER_DEFAULT: i32 = -1;
+
 const RESOURCE_TYPE_TOPIC: i8 = 2;
-const CONFIG_SOURCE_DYNAMIC_TOPIC: i8 = 1;
 const CONFIG_OPERATION_SET: i8 = 0;
 const CONFIG_OPERATION_DELETE: i8 = 1;
 
@@ -90,17 +93,61 @@ impl Error {
     pub fn is_rejected_by_kafka(&self) -> bool {
         matches!(self, Error::Kafka { .. })
     }
+}
 
-    /// Whether a CreateTopics request was rejected because the topic already exists.
-    pub fn is_topic_already_exists(&self) -> bool {
-        matches!(
-            self,
-            Error::Kafka {
-                api_key: CreateTopicsRequest::KEY,
-                error: ResponseError::TopicAlreadyExists,
-                ..
-            }
-        )
+/// A topic as created by Kafka, with the broker defaults applied to unset values.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedTopic {
+    /// The topic id in Kafka's string format
+    pub id: String,
+    pub partitions: i32,
+    pub replication_factor: i16,
+    /// All configs of the topic, as [`KafkaAdminClient::describe_topic_configs`] returns them
+    pub configs: BTreeMap<String, TopicConfig>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TopicConfig {
+    /// `None` for sensitive configs
+    pub value: Option<String>,
+    pub source: ConfigSource,
+}
+
+/// Where the value of a topic config comes from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConfigSource {
+    DynamicTopic,
+    DynamicBroker,
+    DynamicDefaultBroker,
+    StaticBroker,
+    Default,
+    Unknown,
+}
+
+impl ConfigSource {
+    fn from_code(code: i8) -> Self {
+        match code {
+            1 => Self::DynamicTopic,
+            2 => Self::DynamicBroker,
+            3 => Self::DynamicDefaultBroker,
+            4 => Self::StaticBroker,
+            5 => Self::Default,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// The names used by Kafka's admin client and `kafka-configs.sh`.
+impl fmt::Display for ConfigSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::DynamicTopic => "DYNAMIC_TOPIC_CONFIG",
+            Self::DynamicBroker => "DYNAMIC_BROKER_CONFIG",
+            Self::DynamicDefaultBroker => "DYNAMIC_DEFAULT_BROKER_CONFIG",
+            Self::StaticBroker => "STATIC_BROKER_CONFIG",
+            Self::Default => "DEFAULT_CONFIG",
+            Self::Unknown => "UNKNOWN",
+        })
     }
 }
 
@@ -110,23 +157,22 @@ pub struct Topic {
     /// `kafka-topics.sh`
     pub id: String,
 
-    /// Sorted by the partition index
     pub partitions: Vec<Partition>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Partition {
     pub index: i32,
-    /// Broker ids, including replicas that are added or removed by a reassignment
-    pub replicas: Vec<i32>,
+    /// The number of replicas, including those added or removed by a reassignment
+    pub replicas: usize,
 }
 
 /// An ongoing reassignment of one partition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PartitionReassignment {
     pub index: i32,
-    pub adding_replicas: Vec<i32>,
-    pub removing_replicas: Vec<i32>,
+    /// The number of replicas the reassignment removes
+    pub removing_replicas: usize,
 }
 
 pub struct KafkaAdminClient {
@@ -156,11 +202,11 @@ impl KafkaAdminClient {
         describe_topic_result(response, topic)
     }
 
-    /// Returns the configs set on the topic itself, without broker or default values.
+    /// Returns all configs of the topic, including broker and default values.
     pub async fn describe_topic_configs(
         &mut self,
         topic: &str,
-    ) -> Result<BTreeMap<String, String>> {
+    ) -> Result<BTreeMap<String, TopicConfig>> {
         let response = self
             .send(
                 describe_topic_configs_request(topic),
@@ -170,27 +216,21 @@ impl KafkaAdminClient {
         describe_topic_configs_result(response, topic)
     }
 
+    /// `None` uses the broker default for the number of partitions or the replication factor.
     pub async fn create_topic(
         &mut self,
         topic: &str,
-        partitions: i32,
-        replication_factor: i16,
+        partitions: Option<i32>,
+        replication_factor: Option<i16>,
         configs: &BTreeMap<String, String>,
-    ) -> Result<()> {
+    ) -> Result<CreatedTopic> {
         let response = self
             .send(
                 create_topic_request(topic, partitions, replication_factor, configs),
                 CREATE_TOPICS_VERSION,
             )
             .await?;
-
-        let result = first(response.topics, CreateTopicsRequest::KEY, topic)?;
-        check(
-            CreateTopicsRequest::KEY,
-            topic,
-            result.error_code,
-            result.error_message,
-        )
+        create_topic_result(response, topic)
     }
 
     /// Increases the number of partitions to `partitions`.
@@ -247,8 +287,7 @@ impl KafkaAdminClient {
         delete_topic_result(response, topic)
     }
 
-    /// Returns the ongoing reassignments of the given partitions, sorted by the partition index.
-    /// Needs `DESCRIBE` on the cluster.
+    /// Returns the ongoing reassignments of the given partitions. Needs `DESCRIBE` on the cluster.
     pub async fn list_partition_reassignments(
         &mut self,
         topic: &str,
@@ -312,19 +351,23 @@ fn describe_topic_result(response: MetadataResponse, topic: &str) -> Result<Opti
     }
     check(MetadataRequest::KEY, topic, result.error_code, None)?;
 
-    let mut partitions = result
+    let partitions = result
         .partitions
         .into_iter()
         .map(|partition| Partition {
             index: partition.partition_index,
-            replicas: broker_ids(partition.replica_nodes),
+            replicas: partition.replica_nodes.len(),
         })
-        .collect::<Vec<_>>();
-    partitions.sort_by_key(|partition| partition.index);
+        .collect();
     Ok(Some(Topic {
-        id: URL_SAFE_NO_PAD.encode(result.topic_id.as_bytes()),
+        id: topic_id(result.topic_id.as_bytes()),
         partitions,
     }))
+}
+
+/// Kafka's string format of a topic id: URL-safe base64 without padding, as `Uuid.toString()`.
+fn topic_id(id: &[u8; 16]) -> String {
+    URL_SAFE_NO_PAD.encode(id)
 }
 
 fn describe_topic_configs_request(topic: &str) -> DescribeConfigsRequest {
@@ -338,7 +381,7 @@ fn describe_topic_configs_request(topic: &str) -> DescribeConfigsRequest {
 fn describe_topic_configs_result(
     response: DescribeConfigsResponse,
     topic: &str,
-) -> Result<BTreeMap<String, String>> {
+) -> Result<BTreeMap<String, TopicConfig>> {
     let result = first(response.results, DescribeConfigsRequest::KEY, topic)?;
     check(
         DescribeConfigsRequest::KEY,
@@ -350,15 +393,26 @@ fn describe_topic_configs_result(
     Ok(result
         .configs
         .into_iter()
-        .filter(|config| config.config_source == CONFIG_SOURCE_DYNAMIC_TOPIC)
-        .filter_map(|config| Some((config.name.to_string(), config.value?.to_string())))
+        .map(|config| {
+            (
+                config.name.to_string(),
+                topic_config(config.value, config.config_source),
+            )
+        })
         .collect())
+}
+
+fn topic_config(value: Option<StrBytes>, source: i8) -> TopicConfig {
+    TopicConfig {
+        value: value.map(|value| value.to_string()),
+        source: ConfigSource::from_code(source),
+    }
 }
 
 fn create_topic_request(
     topic: &str,
-    partitions: i32,
-    replication_factor: i16,
+    partitions: Option<i32>,
+    replication_factor: Option<i16>,
     configs: &BTreeMap<String, String>,
 ) -> CreateTopicsRequest {
     let configs = configs
@@ -373,11 +427,44 @@ fn create_topic_request(
         .with_topics(vec![
             CreatableTopic::default()
                 .with_name(topic_name(topic))
-                .with_num_partitions(partitions)
-                .with_replication_factor(replication_factor)
+                .with_num_partitions(partitions.unwrap_or(BROKER_DEFAULT))
+                .with_replication_factor(replication_factor.unwrap_or(BROKER_DEFAULT as i16))
                 .with_configs(configs),
         ])
         .with_timeout_ms(BROKER_TIMEOUT_MS)
+}
+
+fn create_topic_result(response: CreateTopicsResponse, topic: &str) -> Result<CreatedTopic> {
+    let result = first(response.topics, CreateTopicsRequest::KEY, topic)?;
+    check(
+        CreateTopicsRequest::KEY,
+        topic,
+        result.error_code,
+        result.error_message,
+    )?;
+    // Without the details, e.g. if `DESCRIBE_CONFIGS` is not allowed, the topic was still created.
+    check(
+        CreateTopicsRequest::KEY,
+        topic,
+        result.topic_config_error_code,
+        None,
+    )?;
+    Ok(CreatedTopic {
+        id: topic_id(result.topic_id.as_bytes()),
+        partitions: result.num_partitions,
+        replication_factor: result.replication_factor,
+        configs: result
+            .configs
+            .unwrap_or_default()
+            .into_iter()
+            .map(|config| {
+                (
+                    config.name.to_string(),
+                    topic_config(config.value, config.config_source),
+                )
+            })
+            .collect(),
+    })
 }
 
 fn create_partitions_request(topic: &str, partitions: i32) -> CreatePartitionsRequest {
@@ -468,27 +555,20 @@ fn list_partition_reassignments_result(
         response.error_message,
     )?;
 
-    let mut reassignments = response
+    Ok(response
         .topics
         .into_iter()
         .filter(|result| result.name.as_str() == topic)
         .flat_map(|result| result.partitions)
         .map(|partition| PartitionReassignment {
             index: partition.partition_index,
-            adding_replicas: broker_ids(partition.adding_replicas),
-            removing_replicas: broker_ids(partition.removing_replicas),
+            removing_replicas: partition.removing_replicas.len(),
         })
-        .collect::<Vec<_>>();
-    reassignments.sort_by_key(|reassignment| reassignment.index);
-    Ok(reassignments)
+        .collect())
 }
 
 fn topic_name(topic: &str) -> TopicName {
     TopicName::from(StrBytes::from_string(topic.to_owned()))
-}
-
-fn broker_ids(ids: Vec<BrokerId>) -> Vec<i32> {
-    ids.into_iter().map(|id| *id).collect()
 }
 
 // Used instead of [0] to correctly handle empty results & take ownership
@@ -515,6 +595,7 @@ fn check(api_key: i16, topic: &str, error_code: i16, message: Option<StrBytes>) 
 #[cfg(test)]
 mod tests {
     use kafka_protocol::messages::{
+        create_topics_response::{CreatableTopicConfigs, CreatableTopicResult},
         delete_topics_response::DeletableTopicResult,
         describe_configs_response::{DescribeConfigsResourceResult, DescribeConfigsResult},
         list_partition_reassignments_response::{
@@ -600,11 +681,11 @@ mod tests {
                 )
                 .with_partitions(vec![
                     MetadataResponsePartition::default()
-                        .with_partition_index(1)
-                        .with_replica_nodes(vec![2.into(), 3.into()]),
-                    MetadataResponsePartition::default()
                         .with_partition_index(0)
                         .with_replica_nodes(vec![1.into(), 2.into()]),
+                    MetadataResponsePartition::default()
+                        .with_partition_index(1)
+                        .with_replica_nodes(vec![2.into(), 3.into(), 4.into()]),
                 ]),
         ]);
 
@@ -614,11 +695,11 @@ mod tests {
                 partitions: vec![
                     Partition {
                         index: 0,
-                        replicas: vec![1, 2]
+                        replicas: 2
                     },
                     Partition {
                         index: 1,
-                        replicas: vec![2, 3]
+                        replicas: 3
                     },
                 ]
             }),
@@ -648,32 +729,68 @@ mod tests {
     }
 
     #[test]
-    fn describe_only_dynamic_topic_configs() {
-        let config = |name: &'static str, value: &'static str, source: i8| {
+    fn describe_all_topic_configs_with_their_source() {
+        let config = |name: &'static str, value: Option<&'static str>, source: i8| {
             DescribeConfigsResourceResult::default()
                 .with_name(StrBytes::from_static_str(name))
-                .with_value(Some(StrBytes::from_static_str(value)))
+                .with_value(value.map(StrBytes::from_static_str))
                 .with_config_source(source)
         };
         let response = DescribeConfigsResponse::default().with_results(vec![
             DescribeConfigsResult::default().with_configs(vec![
-                config("retention.ms", "1000", CONFIG_SOURCE_DYNAMIC_TOPIC),
-                config("cleanup.policy", "delete", 5),
+                config("retention.ms", Some("1000"), 1),
+                config("cleanup.policy", Some("delete"), 5),
+                config("sasl.secret", None, 4),
             ]),
         ]);
 
         assert_eq!(
-            BTreeMap::from([("retention.ms".to_owned(), "1000".to_owned())]),
+            BTreeMap::from([
+                (
+                    "retention.ms".to_owned(),
+                    TopicConfig {
+                        value: Some("1000".to_owned()),
+                        source: ConfigSource::DynamicTopic,
+                    }
+                ),
+                (
+                    "cleanup.policy".to_owned(),
+                    TopicConfig {
+                        value: Some("delete".to_owned()),
+                        source: ConfigSource::Default,
+                    }
+                ),
+                (
+                    "sasl.secret".to_owned(),
+                    TopicConfig {
+                        value: None,
+                        source: ConfigSource::StaticBroker,
+                    }
+                ),
+            ]),
             describe_topic_configs_result(response, TOPIC)
                 .expect("the configs should be described")
         );
+    }
+
+    #[rstest]
+    #[case::dynamic_topic(1, ConfigSource::DynamicTopic, "DYNAMIC_TOPIC_CONFIG")]
+    #[case::default(5, ConfigSource::Default, "DEFAULT_CONFIG")]
+    #[case::not_for_topics(8, ConfigSource::Unknown, "UNKNOWN")]
+    fn name_config_sources_like_kafka(
+        #[case] code: i8,
+        #[case] source: ConfigSource,
+        #[case] name: &str,
+    ) {
+        assert_eq!(source, ConfigSource::from_code(code));
+        assert_eq!(name, source.to_string());
     }
 
     #[test]
     fn create_topic_with_configs() {
         let configs = BTreeMap::from([("retention.ms".to_owned(), "1000".to_owned())]);
 
-        let request = create_topic_request(TOPIC, 3, 2, &configs);
+        let request = create_topic_request(TOPIC, Some(3), Some(2), &configs);
 
         let topic = &request.topics[0];
         assert_eq!(topic_name(TOPIC), topic.name);
@@ -686,6 +803,71 @@ mod tests {
             topic.configs[0].value.as_ref().map(|value| value.as_str())
         );
         assert_eq!(BROKER_TIMEOUT_MS, request.timeout_ms);
+    }
+
+    #[test]
+    fn create_topic_with_broker_defaults() {
+        let request = create_topic_request(TOPIC, None, None, &BTreeMap::new());
+
+        assert_eq!(-1, request.topics[0].num_partitions);
+        assert_eq!(-1, request.topics[0].replication_factor);
+    }
+
+    #[test]
+    fn read_the_created_topic() {
+        let response = CreateTopicsResponse::default().with_topics(vec![
+            CreatableTopicResult::default()
+                .with_name(topic_name(TOPIC))
+                .with_topic_id(
+                    "517c94f6-2e40-467e-96d3-438ddad69e58"
+                        .parse()
+                        .expect("the topic id should be valid"),
+                )
+                .with_num_partitions(6)
+                .with_replication_factor(3)
+                .with_configs(Some(vec![
+                    CreatableTopicConfigs::default()
+                        .with_name(StrBytes::from_static_str("retention.ms"))
+                        .with_value(Some(StrBytes::from_static_str("1000")))
+                        .with_config_source(1),
+                ])),
+        ]);
+
+        assert_eq!(
+            CreatedTopic {
+                id: "UXyU9i5ARn6W00ON2taeWA".to_owned(),
+                partitions: 6,
+                replication_factor: 3,
+                configs: BTreeMap::from([(
+                    "retention.ms".to_owned(),
+                    TopicConfig {
+                        value: Some("1000".to_owned()),
+                        source: ConfigSource::DynamicTopic,
+                    }
+                )]),
+            },
+            create_topic_result(response, TOPIC).expect("the topic should be created")
+        );
+    }
+
+    #[test]
+    fn reject_a_created_topic_without_details() {
+        let response = CreateTopicsResponse::default().with_topics(vec![
+            CreatableTopicResult::default()
+                .with_name(topic_name(TOPIC))
+                .with_topic_config_error_code(ResponseError::TopicAuthorizationFailed.code()),
+        ]);
+
+        let error =
+            create_topic_result(response, TOPIC).expect_err("the details should be missing");
+
+        assert!(matches!(
+            error,
+            Error::Kafka {
+                error: ResponseError::TopicAuthorizationFailed,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -740,35 +922,29 @@ mod tests {
 
     #[test]
     fn read_ongoing_reassignments() {
-        let reassignment = |index: i32, adding: Vec<i32>, removing: Vec<i32>| {
+        let reassignment = |index: i32, removing: Vec<i32>| {
             OngoingPartitionReassignment::default()
                 .with_partition_index(index)
-                .with_adding_replicas(adding.into_iter().map(Into::into).collect())
                 .with_removing_replicas(removing.into_iter().map(Into::into).collect())
         };
         let response = ListPartitionReassignmentsResponse::default().with_topics(vec![
             OngoingTopicReassignment::default()
                 .with_name(topic_name("other"))
-                .with_partitions(vec![reassignment(0, vec![9], vec![8])]),
+                .with_partitions(vec![reassignment(0, vec![8])]),
             OngoingTopicReassignment::default()
                 .with_name(topic_name(TOPIC))
-                .with_partitions(vec![
-                    reassignment(2, vec![4], vec![]),
-                    reassignment(0, vec![4, 5], vec![1, 2]),
-                ]),
+                .with_partitions(vec![reassignment(0, vec![1, 2]), reassignment(2, vec![])]),
         ]);
 
         assert_eq!(
             vec![
                 PartitionReassignment {
                     index: 0,
-                    adding_replicas: vec![4, 5],
-                    removing_replicas: vec![1, 2],
+                    removing_replicas: 2,
                 },
                 PartitionReassignment {
                     index: 2,
-                    adding_replicas: vec![4],
-                    removing_replicas: vec![],
+                    removing_replicas: 0,
                 },
             ],
             list_partition_reassignments_result(response, TOPIC)
@@ -837,21 +1013,6 @@ mod tests {
 
         assert!(error.is_rejected_by_kafka());
         assert!(error.to_string().contains("Topic 'orders' already exists."));
-    }
-
-    #[rstest]
-    #[case::create_topics(CreateTopicsRequest::KEY, ResponseError::TopicAlreadyExists, true)]
-    #[case::other_error(CreateTopicsRequest::KEY, ResponseError::InvalidPartitions, false)]
-    #[case::other_request(CreatePartitionsRequest::KEY, ResponseError::TopicAlreadyExists, false)]
-    fn recognize_an_existing_topic_on_create(
-        #[case] api_key: i16,
-        #[case] error: ResponseError,
-        #[case] expected: bool,
-    ) {
-        let error =
-            check(api_key, TOPIC, error.code(), None).expect_err("the request should be rejected");
-
-        assert_eq!(expected, error.is_topic_already_exists());
     }
 
     #[test]

@@ -33,7 +33,8 @@ attributed_string_type! {
 pub mod versioned {
     /// A Kafka topic managed by the agent of the referenced Kafka cluster.
     ///
-    /// The referenced `KafkaCluster` must have `platformAccess` enabled or this resource will
+    /// The referenced `KafkaCluster` must have `clusterConfig.managementAccess` enabled or this
+    /// resource will
     /// not be reconciled.
     #[versioned(crd(
         doc = "A Kafka topic, created and updated by the agent of the referenced Kafka cluster.",

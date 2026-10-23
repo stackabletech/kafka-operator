@@ -21,7 +21,7 @@ use stackable_operator::{
     cluster_resources::ClusterResourceApplyStrategy,
     commons::{networking::DomainName, product_image_selection::ResolvedProductImage},
     constant,
-    crd::{listener, platform_access::v1alpha1::TlsClientCredential},
+    crd::{listener, management_access::v1alpha1::TlsClientCredential},
     k8s_openapi::api::{
         apps::v1::{Deployment, StatefulSet},
         core::v1::{ConfigMap, Service, ServiceAccount},

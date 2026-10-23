@@ -16,10 +16,11 @@ spec:
     metadataManager: KRaft
     tls:
       serverSecretClass: tls
-  platformAccess:
-    enabled: true
-    authentication:
-      anonymous: {}
+    managementAccess:
+      enabled: true
+      authentication:
+        userProvided:
+          anonymous: {}
   controllers:
     config:
       gracefulShutdownTimeout: 30s # speed up tests

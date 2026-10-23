@@ -1,5 +1,5 @@
 ---
-# The agent resources are removed when platform access is disabled.
+# The agent resources are removed when management access is disabled.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

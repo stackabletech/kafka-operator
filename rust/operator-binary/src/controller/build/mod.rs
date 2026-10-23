@@ -390,7 +390,7 @@ mod tests {
             sorted_names(&resources.role_bindings),
             ["simple-kafka-rolebinding"]
         );
-        // No agent without platform access.
+        // No agent without management access.
         assert!(resources.deployments.is_empty());
     }
 

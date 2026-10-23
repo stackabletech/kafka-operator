@@ -1,4 +1,4 @@
-//! Builds the resources of the platform-access agent deployed alongside the cluster.
+//! Builds the resources of the agent deployed alongside the cluster.
 
 use std::str::FromStr;
 
@@ -23,7 +23,7 @@ use stackable_operator::{
         Resource,
         api::{
             apps::v1::{Deployment, DeploymentSpec, DeploymentStrategy},
-            core::v1::{EnvVarSource, ObjectFieldSelector, ServiceAccount},
+            core::v1::{EnvVar, EnvVarSource, ObjectFieldSelector, ServiceAccount},
             rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
@@ -32,7 +32,7 @@ use stackable_operator::{
     v2::{
         builder::{
             meta::ownerreference_from_resource,
-            pod::container::{EnvVarSet, new_container_builder},
+            pod::container::{EnvVarName, EnvVarSet, new_container_builder},
         },
         types::kubernetes::{ContainerName, SecretClassName, VolumeName},
     },
@@ -46,6 +46,8 @@ use crate::controller::{
 constant!(AGENT_CONTAINER_NAME: ContainerName = "agent");
 constant!(DISCOVERY_VOLUME_NAME: VolumeName = "discovery");
 constant!(KAFKA_TLS_VOLUME_NAME: VolumeName = "tls-kafka");
+constant!(KUBERNETES_NODE_NAME: EnvVarName = "KUBERNETES_NODE_NAME");
+constant!(KUBERNETES_CLUSTER_DOMAIN: EnvVarName = "KUBERNETES_CLUSTER_DOMAIN");
 pub const AGENT_CLUSTER_ROLE_NAME: &str = "kafka-agent-clusterrole";
 
 pub fn build_agent_deployment(
@@ -68,7 +70,11 @@ pub fn build_agent_deployment(
             client_credential,
         } => {
             add_kafka_tls_volume_and_mount(server_ca_secret_class, &mut pod_builder, &mut cb_agent);
-            client_credential.add_volumes_and_mounts(&mut pod_builder, vec![&mut cb_agent]);
+            client_credential
+                .add_volumes_and_mounts(&mut pod_builder, vec![&mut cb_agent])
+                .expect(
+                    "the agent Pod has no other volume or mount for the TLS client certificate",
+                );
         }
     }
 
@@ -76,30 +82,7 @@ pub fn build_agent_deployment(
         .image(&agent_config.image)
         .command(vec!["stackable-kafka-agent".to_owned()])
         .args(vec!["run".to_owned()])
-        .add_env_vars(
-            EnvVarSet::new()
-                .with_value(&ENV_CLUSTER_NAME, cluster.name.to_string())
-                .with_value(&ENV_CLUSTER_NAMESPACE, cluster.namespace.to_string())
-                .with_value(
-                    &ENV_CLIENT_SECURITY,
-                    ClientSecurity::from(&agent_config.connection).to_string(),
-                ),
-        )
-        .add_env_var_from_source(
-            "KUBERNETES_NODE_NAME",
-            EnvVarSource {
-                field_ref: Some(ObjectFieldSelector {
-                    field_path: "spec.nodeName".to_owned(),
-                    ..ObjectFieldSelector::default()
-                }),
-                ..EnvVarSource::default()
-            },
-        )
-        // Saves the agent from looking the domain up via the kubelet, which needs extra RBAC.
-        .add_env_var(
-            "KUBERNETES_CLUSTER_DOMAIN",
-            cluster.cluster_domain.to_string(),
-        )
+        .add_env_vars(agent_env_vars(cluster, agent_config))
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -118,7 +101,11 @@ pub fn build_agent_deployment(
         .image_pull_secrets_from_product_image(&cluster.image)
         .add_container(cb_agent.build())
         .service_account_name(agent_name(cluster))
-        .security_context(PodSecurityContextBuilder::with_stackable_defaults().build());
+        .security_context(
+            PodSecurityContextBuilder::with_stackable_defaults()
+                .fs_group(1000)
+                .build(),
+        );
 
     Deployment {
         metadata: agent_metadata(cluster),
@@ -165,6 +152,35 @@ pub fn build_agent_role_binding(cluster: &ValidatedCluster) -> RoleBinding {
     }
 }
 
+fn agent_env_vars(cluster: &ValidatedCluster, agent_config: &ValidatedAgentConfig) -> EnvVarSet {
+    let node_name_env_var = EnvVar {
+        name: KUBERNETES_NODE_NAME.to_string(),
+        value: None,
+        value_from: Some(EnvVarSource {
+            field_ref: Some(ObjectFieldSelector {
+                field_path: "spec.nodeName".to_owned(),
+                ..ObjectFieldSelector::default()
+            }),
+            ..EnvVarSource::default()
+        }),
+    };
+
+    EnvVarSet::new()
+        .with_value(&ENV_CLUSTER_NAME, cluster.name.to_string())
+        .with_value(&ENV_CLUSTER_NAMESPACE, cluster.namespace.to_string())
+        .with_value(
+            &ENV_CLIENT_SECURITY,
+            ClientSecurity::from(&agent_config.connection).to_string(),
+        )
+        // Saves the agent from looking the domain up via the kubelet, which needs extra RBAC.
+        .with_value(
+            &KUBERNETES_CLUSTER_DOMAIN,
+            cluster.cluster_domain.to_string(),
+        )
+        .with_env_var(node_name_env_var)
+        .expect("the env var name is a valid EnvVarName")
+}
+
 fn add_discovery_volume_and_mount(
     cluster: &ValidatedCluster,
     pod_builder: &mut PodBuilder,
@@ -197,7 +213,10 @@ fn add_kafka_tls_volume_and_mount(
                     )
                     .with_format(SecretFormat::TlsPem)
                     .build()
-                    .expect("the annotations are built from a valid SecretClass name"),
+                    .expect(
+                        "the annotations are built from a valid SecretClass name and constant \
+                         values",
+                    ),
                 )
                 .build(),
         )
@@ -231,11 +250,14 @@ mod tests {
         OPERATOR_IMAGE, app_version_label, minimal_kafka, validated_cluster,
     };
 
-    fn cluster(platform_access: &str) -> ValidatedCluster {
-        cluster_with_image("{productVersion: 3.9.2}", platform_access)
+    const TLS_SECRET_CLASS: &str =
+        "{enabled: true, authentication: {userProvided: {tls: {secretClassName: tls}}}}";
+
+    fn cluster(management_access: &str) -> ValidatedCluster {
+        cluster_with_image("{productVersion: 3.9.2}", management_access)
     }
 
-    fn cluster_with_image(image: &str, platform_access: &str) -> ValidatedCluster {
+    fn cluster_with_image(image: &str, management_access: &str) -> ValidatedCluster {
         let kafka = minimal_kafka(&format!(
             r#"
             apiVersion: kafka.stackable.tech/v1alpha1
@@ -248,7 +270,7 @@ mod tests {
               image: {image}
               clusterConfig:
                 metadataManager: kraft
-              platformAccess: {platform_access}
+                managementAccess: {management_access}
               controllers:
                 roleGroups:
                   default:
@@ -266,38 +288,43 @@ mod tests {
         let agent_config = cluster
             .agent_config
             .as_ref()
-            .expect("platform access is enabled");
+            .expect("management access is enabled");
         serde_json::to_value(build_agent_deployment(cluster, agent_config))
             .expect("must be serializable")
     }
 
     #[test]
-    fn agent_config_is_only_resolved_if_platform_access_is_enabled() {
+    fn agent_config_is_only_resolved_if_management_access_is_enabled() {
         assert!(
-            cluster("{enabled: false, authentication: {tls: {secretClass: tls}}}")
-                .agent_config
-                .is_none()
+            cluster(
+                "{enabled: false, authentication: {userProvided: {tls: {secretClassName: tls}}}}"
+            )
+            .agent_config
+            .is_none()
         );
 
-        let cluster = cluster("{enabled: true, authentication: {tls: {secretClass: tls}}}");
-        let agent_config = cluster.agent_config.expect("platform access is enabled");
+        let cluster = cluster(TLS_SECRET_CLASS);
+        let agent_config = cluster.agent_config.expect("management access is enabled");
         assert_eq!(agent_config.image, OPERATOR_IMAGE);
     }
 
     #[test]
     fn test_deployment() {
-        let deployment = agent_deployment(&cluster(
-            "{enabled: true, authentication: {tls: {secretClass: tls}}}",
-        ));
+        let deployment = agent_deployment(&cluster(TLS_SECRET_CLASS));
 
         assert_eq!(deployment["metadata"]["name"], "simple-kafka-agent");
         assert_eq!(deployment["spec"]["replicas"], 1);
         assert_eq!(deployment["spec"]["strategy"]["type"], "Recreate");
+        // secret-operator volumes are only readable by the fsGroup.
+        assert_eq!(
+            deployment["spec"]["template"]["spec"]["securityContext"]["fsGroup"],
+            1000
+        );
         // The selector must not match the broker or controller Pods.
         assert_eq!(
             deployment["spec"]["selector"]["matchLabels"],
             json!({
-                "app.kubernetes.io/component": "agent",
+                "app.kubernetes.io/component": "kafka-agent",
                 "app.kubernetes.io/instance": "simple-kafka",
                 "app.kubernetes.io/name": "kafka"
             })
@@ -305,7 +332,7 @@ mod tests {
         assert_eq!(
             deployment["spec"]["template"]["metadata"]["labels"],
             json!({
-                "app.kubernetes.io/component": "agent",
+                "app.kubernetes.io/component": "kafka-agent",
                 "app.kubernetes.io/instance": "simple-kafka",
                 "app.kubernetes.io/managed-by": "kafka.stackable.tech_kafkacluster",
                 "app.kubernetes.io/name": "kafka",
@@ -327,7 +354,7 @@ mod tests {
             json!([
                 {"mountPath": "/stackable/discovery", "name": "discovery"},
                 {"mountPath": "/stackable/secrets/tls-kafka", "name": "tls-kafka"},
-                {"mountPath": "/stackable/secrets/tls-platform-access", "name": "tls-platform-access"}
+                {"mountPath": "/stackable/secrets/tls-management-access", "name": "tls-management-access"}
             ])
         );
         assert_eq!(
@@ -342,6 +369,7 @@ mod tests {
                 "secrets.stackable.tech/provision-parts": "public"
             })
         );
+        assert_eq!(pod_spec["volumes"][2]["name"], "tls-management-access");
 
         assert_eq!(
             pod_spec["containers"][0]["env"],
@@ -349,11 +377,11 @@ mod tests {
                 {"name": "KAFKA_CLIENT_SECURITY", "value": "mutual-tls"},
                 {"name": "KAFKA_CLUSTER_NAME", "value": "simple-kafka"},
                 {"name": "KAFKA_CLUSTER_NAMESPACE", "value": "default"},
+                {"name": "KUBERNETES_CLUSTER_DOMAIN", "value": "cluster.local"},
                 {
                     "name": "KUBERNETES_NODE_NAME",
                     "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}}
-                },
-                {"name": "KUBERNETES_CLUSTER_DOMAIN", "value": "cluster.local"}
+                }
             ])
         );
     }
@@ -361,19 +389,20 @@ mod tests {
     #[test]
     fn test_deployment_with_static_secret() {
         let deployment = agent_deployment(&cluster(
-            "{enabled: true, authentication: {tls: {secret: my-cert}}}",
+            "{enabled: true, authentication: {userProvided: {tls: {secretName: my-cert}}}}",
         ));
 
         assert_eq!(
             deployment["spec"]["template"]["spec"]["volumes"][2],
-            json!({"name": "tls-platform-access", "secret": {"secretName": "my-cert"}})
+            json!({"name": "tls-management-access", "secret": {"optional": false, "secretName": "my-cert"}})
         );
     }
 
     #[test]
     fn deployment_with_anonymous_authentication_verifies_brokers_without_credential() {
-        let deployment =
-            agent_deployment(&cluster("{enabled: true, authentication: {anonymous: {}}}"));
+        let deployment = agent_deployment(&cluster(
+            "{enabled: true, authentication: {userProvided: {anonymous: {}}}}",
+        ));
 
         let pod_spec = &deployment["spec"]["template"]["spec"];
         assert_eq!(pod_spec["volumes"][0]["name"], "discovery");
@@ -389,7 +418,7 @@ mod tests {
     fn test_deployment_uses_product_image_pull_secrets() {
         let deployment = agent_deployment(&cluster_with_image(
             "{productVersion: 3.9.2, pullSecrets: [{name: regcred}]}",
-            "{enabled: true, authentication: {tls: {secretClass: tls}}}",
+            TLS_SECRET_CLASS,
         ));
 
         assert_eq!(
@@ -400,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_role_binding() {
-        let cluster = cluster("{enabled: true, authentication: {tls: {secretClass: tls}}}");
+        let cluster = cluster(TLS_SECRET_CLASS);
 
         assert_eq!(
             json!({
@@ -408,7 +437,7 @@ mod tests {
                 "kind": "RoleBinding",
                 "metadata": {
                     "labels": {
-                        "app.kubernetes.io/component": "agent",
+                        "app.kubernetes.io/component": "kafka-agent",
                         "app.kubernetes.io/instance": "simple-kafka",
                         "app.kubernetes.io/managed-by": "kafka.stackable.tech_kafkacluster",
                         "app.kubernetes.io/name": "kafka",

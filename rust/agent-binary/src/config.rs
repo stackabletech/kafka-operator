@@ -12,7 +12,7 @@ use stackable_kafka_admin::{
     connection::Security,
 };
 use stackable_kafka_shared::agent::{ClientSecurity, DISCOVERY_DIR, KAFKA_TLS_DIR};
-use stackable_operator::crd::platform_access::tls::MOUNT_PATH;
+use stackable_operator::crd::management_access::tls::MOUNT_PATH;
 
 /// The key `KAFKA` of the discovery ConfigMap, holding `host:port,host:port`
 pub const BOOTSTRAP_SERVERS_FILE: &str = concatcp!(DISCOVERY_DIR, "/KAFKA");
@@ -74,8 +74,8 @@ mod tests {
         ClientSecurity::MutualTls,
         Security::MutualTls {
             ca: "/stackable/secrets/tls-kafka/ca.crt".into(),
-            certificate: "/stackable/secrets/tls-platform-access/tls.crt".into(),
-            key: "/stackable/secrets/tls-platform-access/tls.key".into(),
+            certificate: "/stackable/secrets/tls-management-access/tls.crt".into(),
+            key: "/stackable/secrets/tls-management-access/tls.key".into(),
         }
     )]
     fn map_client_security(#[case] client_security: ClientSecurity, #[case] expected: Security) {
