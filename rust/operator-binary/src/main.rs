@@ -14,7 +14,7 @@ use stackable_operator::{
     crd::listener,
     eos::EndOfSupportChecker,
     k8s_openapi::api::{
-        apps::v1::StatefulSet,
+        apps::v1::{Deployment, StatefulSet},
         core::v1::{ConfigMap, Service, ServiceAccount},
         policy::v1::PodDisruptionBudget,
         rbac::v1::RoleBinding,
@@ -68,6 +68,11 @@ struct Opts {
 struct KafkaRun {
     #[clap(flatten)]
     common: RunArguments,
+
+    /// The image of this operator, which also contains the agent. Required to enable platform
+    /// access on a KafkaCluster.
+    #[arg(long, env)]
+    operator_image: Option<String>,
 }
 
 #[tokio::main]
@@ -84,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
                     maintenance,
                     common,
                 },
-            ..
+            operator_image,
         }) => {
             // NOTE (@NickLarsenNZ): Before stackable-telemetry was used:
             // - The console log level was set by `KAFKA_OPERATOR_LOG`, and is now `CONSOLE_LOG` (when using Tracing::pre_configured).
@@ -179,6 +184,13 @@ async fn main() -> anyhow::Result<()> {
                     watch_namespace.get_api::<DeserializeGuard<StatefulSet>>(&client),
                     watcher::Config::default(),
                 )
+                .owns(
+                    watch_namespace.get_api::<DeserializeGuard<Deployment>>(&client),
+                    // The agent is the only Deployment
+                    watcher::Config::default().labels(
+                        "app.kubernetes.io/name=kafka,app.kubernetes.io/component=kafka-agent",
+                    ),
+                )
                 .watches(
                     watch_namespace.get_api::<DeserializeGuard<ConfigMap>>(&client),
                     watcher::Config::default(),
@@ -197,6 +209,7 @@ async fn main() -> anyhow::Result<()> {
                     Arc::new(controller::Ctx {
                         client: client.clone(),
                         operator_environment,
+                        operator_image,
                     }),
                 )
                 // We can let the reporting happen in the background

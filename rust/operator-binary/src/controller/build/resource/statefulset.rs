@@ -982,7 +982,7 @@ mod tests {
     #[test]
     fn quorum_manager_container_env_can_be_overridden() {
         let resolved_product_image = test_resolved_product_image();
-        let kafka_security = crate::controller::build::security::tests::kerberos();
+        let kafka_security = crate::controller::test_support::kerberos();
         assert!(
             kafka_security.has_kerberos_enabled(),
             "sanity check failed: the fixture must have Kerberos enabled so that KRB5_CONFIG \

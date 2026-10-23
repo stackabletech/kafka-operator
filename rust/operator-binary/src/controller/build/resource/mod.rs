@@ -1,5 +1,6 @@
 //! Builders that assemble Kubernetes resources for kafka rolegroups.
 
+pub mod agent;
 pub mod config_map;
 pub mod discovery;
 pub mod listener;
