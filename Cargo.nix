@@ -63,6 +63,16 @@ rec {
       # File a bug if you depend on any for non-debug work!
       debug = internal.debugCrate { inherit packageId; };
     };
+    "stackable-kafka-shared" = rec {
+      packageId = "stackable-kafka-shared";
+      build = internal.buildRustCrateWithFeatures {
+        packageId = "stackable-kafka-shared";
+      };
+
+      # Debug support which might change between releases.
+      # File a bug if you depend on any for non-debug work!
+      debug = internal.debugCrate { inherit packageId; };
+    };
   };
 
 
@@ -10576,6 +10586,10 @@ rec {
             packageId = "snafu 0.9.2";
           }
           {
+            name = "stackable-kafka-shared";
+            packageId = "stackable-kafka-shared";
+          }
+          {
             name = "stackable-operator";
             packageId = "stackable-operator";
             features = [ "crds" "webhook" ];
@@ -10600,6 +10614,35 @@ rec {
             name = "built";
             packageId = "built";
             features = [ "chrono" "git2" ];
+          }
+        ];
+        devDependencies = [
+          {
+            name = "rstest";
+            packageId = "rstest";
+          }
+        ];
+
+      };
+      "stackable-kafka-shared" = rec {
+        crateName = "stackable-kafka-shared";
+        version = "0.0.0-dev";
+        edition = "2024";
+        src = lib.cleanSourceWith { filter = sourceFilter;  src = ./rust/shared; };
+        libName = "stackable_kafka_shared";
+        authors = [
+          "Stackable GmbH <info@stackable.tech>"
+        ];
+        dependencies = [
+          {
+            name = "stackable-operator";
+            packageId = "stackable-operator";
+            features = [ "crds" "webhook" ];
+          }
+          {
+            name = "strum";
+            packageId = "strum";
+            features = [ "derive" ];
           }
         ];
         devDependencies = [

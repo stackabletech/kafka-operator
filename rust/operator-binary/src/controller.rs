@@ -15,12 +15,13 @@ use std::{
 
 use const_format::concatcp;
 use snafu::{ResultExt, Snafu};
+use stackable_kafka_shared::agent::ClientSecurity;
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     cluster_resources::ClusterResourceApplyStrategy,
     commons::{networking::DomainName, product_image_selection::ResolvedProductImage},
     constant,
-    crd::listener,
+    crd::{listener, management_access::v1alpha1::TlsClientCredential},
     k8s_openapi::api::{
         apps::v1::{Deployment, StatefulSet},
         core::v1::{ConfigMap, Service, ServiceAccount},
@@ -40,7 +41,7 @@ use stackable_operator::{
         role_group_utils::ResourceNames,
         role_utils,
         types::{
-            kubernetes::{ConfigMapName, ListenerName, NamespaceName, Uid},
+            kubernetes::{ConfigMapName, ListenerName, NamespaceName, SecretClassName, Uid},
             operator::{ClusterName, ControllerName, OperatorName, ProductName, ProductVersion},
         },
     },
@@ -346,7 +347,29 @@ impl ValidatedClusterConfig {
 /// The configuration of the agent deployed with the cluster.
 pub struct ValidatedAgentConfig {
     pub image: String,
-    pub authentication: v1alpha1::UserProvidedAuthentication,
+    pub connection: AgentConnection,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum AgentConnection {
+    Plaintext,
+    Tls {
+        server_ca_secret_class: SecretClassName,
+    },
+    MutualTls {
+        server_ca_secret_class: SecretClassName,
+        client_credential: TlsClientCredential,
+    },
+}
+
+impl From<&AgentConnection> for ClientSecurity {
+    fn from(connection: &AgentConnection) -> Self {
+        match connection {
+            AgentConnection::Plaintext => Self::Plaintext,
+            AgentConnection::Tls { .. } => Self::Tls,
+            AgentConnection::MutualTls { .. } => Self::MutualTls,
+        }
+    }
 }
 
 /// Per-role configuration extracted during validation.
@@ -634,6 +657,26 @@ pub(crate) mod test_support {
             SecretClassName::from_str("tls").expect("tls secret class name is valid"),
             Some("tls".parse().unwrap()),
             None,
+        )
+    }
+
+    /// Internal TLS only (broker/controller encryption without client TLS).
+    pub fn internal_tls() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            None,
+            None,
+        )
+    }
+
+    /// OPA authorization with a TLS truststore (internal + server TLS also enabled).
+    pub fn opa() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            Some("tls".parse().unwrap()),
+            Some("opa-tls".parse().unwrap()),
         )
     }
 

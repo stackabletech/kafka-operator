@@ -400,7 +400,7 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-    use crate::controller::build::security::tests::{kerberos, plaintext};
+    use crate::controller::test_support::{kerberos, plaintext};
 
     #[test]
     fn controller_command_does_not_export_a_realm_without_kerberos() {

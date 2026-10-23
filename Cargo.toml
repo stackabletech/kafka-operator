@@ -1,5 +1,5 @@
 [workspace]
-members = ["rust/operator-binary", "rust/agent-binary"]
+members = ["rust/operator-binary", "rust/agent-binary", "rust/shared"]
 resolver = "2"
 
 [workspace.package]
@@ -11,6 +11,7 @@ repository = "https://github.com/stackabletech/kafka-operator"
 
 [workspace.dependencies]
 stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "feat/platform-access", features = ["crds", "webhook"] }
+stackable-kafka-shared = { path = "rust/shared" }
 
 anyhow = "1.0"
 built = { version = "0.8", features = ["chrono", "git2"] }

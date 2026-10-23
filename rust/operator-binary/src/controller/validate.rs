@@ -24,14 +24,15 @@ use stackable_operator::{
             validate_logging_configuration_for_container,
         },
         role_utils::{JavaCommonConfig, Role, with_validated_config},
-        types::kubernetes::ConfigMapName,
+        types::kubernetes::{ConfigMapName, SecretClassName},
     },
 };
 
 use crate::{
     controller::{
-        RoleGroupName, ValidatedAgentConfig, ValidatedCluster, ValidatedClusterConfig,
-        ValidatedKafkaConfig, ValidatedRoleConfig, ValidatedRoleGroupConfig,
+        AgentConnection, RoleGroupName, ValidatedAgentConfig, ValidatedCluster,
+        ValidatedClusterConfig, ValidatedKafkaConfig, ValidatedRoleConfig,
+        ValidatedRoleGroupConfig,
         dereference::DereferencedObjects,
         security::{self, ValidatedKafkaSecurity},
     },
@@ -135,6 +136,12 @@ pub enum Error {
 
     #[snafu(display("TLS management access requires the cluster to use TLS"))]
     TlsManagementAccessRequiresTls,
+
+    #[snafu(display("the SecretClass {secret_class:?} of the client listener is invalid"))]
+    ParseClientListenerSecretClass {
+        source: stackable_operator::v2::macros::attributed_string_type::Error,
+        secret_class: String,
+    },
 }
 
 /// Validated logging configuration for a Kafka role group's Kafka and (optional) Vector
@@ -369,15 +376,14 @@ pub fn validate(
                 metadata_manager == crate::crd::MetadataManager::KRaft,
                 ManagementAccessRequiresKraftSnafu
             );
-            validate_management_access(
-                &management_access.authentication.user_provided,
-                &kafka_security,
-            )?;
             Ok(ValidatedAgentConfig {
                 image: operator_image
                     .context(ManagementAccessRequiresOperatorImageSnafu)?
                     .to_owned(),
-                authentication: management_access.authentication.user_provided.clone(),
+                connection: validate_agent_connection(
+                    &management_access.authentication.user_provided,
+                    &kafka_security,
+                )?,
             })
         })
         .transpose()?;
@@ -490,27 +496,49 @@ fn inject_cluster_id(env_overrides: EnvVarSet, cluster_id: Option<&str>) -> EnvV
     }
 }
 
-/// Rejects management access authentication config that cannot connect to the cluster.
-fn validate_management_access(
+/// Determines how the agent connects to the cluster, and rejects management access authentication
+/// config that cannot connect to it.
+fn validate_agent_connection(
     authentication: &v1alpha1::UserProvidedAuthentication,
     security: &ValidatedKafkaSecurity,
-) -> Result<()> {
+) -> Result<AgentConnection> {
     ensure!(
         !security.has_kerberos_enabled(),
         ManagementAccessWithKerberosSnafu
     );
 
-    match authentication {
-        v1alpha1::UserProvidedAuthentication::Anonymous(_) => ensure!(
-            security.tls_client_authentication_class().is_none(),
-            AnonymousManagementAccessWithClientAuthenticationSnafu
-        ),
-        v1alpha1::UserProvidedAuthentication::Tls(_) => {
-            ensure!(security.tls_enabled(), TlsManagementAccessRequiresTlsSnafu)
-        }
-    }
+    let server_ca_secret_class = security
+        .tls_secret_class()
+        .map(|secret_class| {
+            SecretClassName::from_str(secret_class)
+                .context(ParseClientListenerSecretClassSnafu { secret_class })
+        })
+        .transpose()?;
 
-    Ok(())
+    match (authentication, server_ca_secret_class) {
+        (v1alpha1::UserProvidedAuthentication::Anonymous(_), server_ca_secret_class) => {
+            ensure!(
+                security.tls_client_authentication_class().is_none(),
+                AnonymousManagementAccessWithClientAuthenticationSnafu
+            );
+            Ok(match server_ca_secret_class {
+                None => AgentConnection::Plaintext,
+                Some(server_ca_secret_class) => AgentConnection::Tls {
+                    server_ca_secret_class,
+                },
+            })
+        }
+        (v1alpha1::UserProvidedAuthentication::Tls(_), None) => {
+            TlsManagementAccessRequiresTlsSnafu.fail()
+        }
+        (
+            v1alpha1::UserProvidedAuthentication::Tls(client_credential),
+            Some(server_ca_secret_class),
+        ) => Ok(AgentConnection::MutualTls {
+            server_ca_secret_class,
+            client_credential: client_credential.clone(),
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -522,13 +550,17 @@ mod tests {
         crd::management_access::v1alpha1::{Anonymous, TlsClientCredential},
         v2::{
             builder::pod::container::EnvVarSet,
-            types::{kubernetes::SecretName, operator::RoleGroupName},
+            types::{
+                kubernetes::{SecretClassName, SecretName},
+                operator::RoleGroupName,
+            },
         },
     };
 
-    use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id, validate_management_access};
+    use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id, validate_agent_connection};
     use crate::{
         controller::{
+            AgentConnection,
             security::ValidatedKafkaSecurity,
             test_support::{
                 app_version_label, client_auth_tls, kerberos, minimal_kafka, plaintext, server_tls,
@@ -542,30 +574,59 @@ mod tests {
         UserProvidedAuthentication::Anonymous(Anonymous::default())
     }
 
-    fn tls() -> UserProvidedAuthentication {
-        UserProvidedAuthentication::Tls(TlsClientCredential::SecretName(
+    fn agent_cert() -> TlsClientCredential {
+        TlsClientCredential::SecretName(
             SecretName::from_str("agent-cert").expect("the Secret name should be valid"),
-        ))
+        )
+    }
+
+    fn tls() -> UserProvidedAuthentication {
+        UserProvidedAuthentication::Tls(agent_cert())
+    }
+
+    fn tls_secret_class(name: &str) -> SecretClassName {
+        SecretClassName::from_str(name).expect("the SecretClass name should be valid")
     }
 
     #[rstest]
-    #[case::plaintext_anonymous(plaintext(), anonymous())]
-    #[case::server_tls_anonymous(server_tls(), anonymous())]
-    #[case::server_tls_with_credential(server_tls(), tls())]
-    #[case::client_auth_with_credential(client_auth_tls(), tls())]
-    fn accept_management_access(
+    #[case::plaintext_anonymous(plaintext(), anonymous(), AgentConnection::Plaintext)]
+    #[case::server_tls_anonymous(
+        server_tls(),
+        anonymous(),
+        AgentConnection::Tls { server_ca_secret_class: tls_secret_class("tls") }
+    )]
+    #[case::server_tls_with_credential(
+        server_tls(),
+        tls(),
+        AgentConnection::MutualTls {
+            server_ca_secret_class: tls_secret_class("tls"),
+            client_credential: agent_cert(),
+        }
+    )]
+    #[case::client_auth_with_credential(
+        client_auth_tls(),
+        tls(),
+        AgentConnection::MutualTls {
+            server_ca_secret_class: tls_secret_class("client-auth-secret-class"),
+            client_credential: agent_cert(),
+        }
+    )]
+    fn agent_connection(
         #[case] security: ValidatedKafkaSecurity,
         #[case] authentication: UserProvidedAuthentication,
+        #[case] expected: AgentConnection,
     ) {
-        validate_management_access(&authentication, &security)
+        let connection = validate_agent_connection(&authentication, &security)
             .expect("the management access should be valid");
+
+        assert_eq!(expected, connection);
     }
 
     #[rstest]
     #[case::anonymous(anonymous())]
     #[case::tls(tls())]
     fn reject_management_access_with_kerberos(#[case] authentication: UserProvidedAuthentication) {
-        let error = validate_management_access(&authentication, &kerberos())
+        let error = validate_agent_connection(&authentication, &kerberos())
             .expect_err("the management access should be invalid");
 
         assert!(matches!(error, Error::ManagementAccessWithKerberos));
@@ -573,7 +634,7 @@ mod tests {
 
     #[test]
     fn reject_anonymous_management_access_with_client_authentication() {
-        let error = validate_management_access(&anonymous(), &client_auth_tls())
+        let error = validate_agent_connection(&anonymous(), &client_auth_tls())
             .expect_err("the management access should be invalid");
 
         assert!(matches!(
@@ -584,7 +645,7 @@ mod tests {
 
     #[test]
     fn reject_tls_management_access_without_tls() {
-        let error = validate_management_access(&tls(), &plaintext())
+        let error = validate_agent_connection(&tls(), &plaintext())
             .expect_err("the management access should be invalid");
 
         assert!(matches!(error, Error::TlsManagementAccessRequiresTls));
