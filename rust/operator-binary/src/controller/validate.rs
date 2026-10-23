@@ -6,7 +6,7 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use serde::Serialize;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu, ensure};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     commons::product_image_selection,
@@ -24,14 +24,15 @@ use stackable_operator::{
             validate_logging_configuration_for_container,
         },
         role_utils::{JavaCommonConfig, Role, with_validated_config},
-        types::kubernetes::ConfigMapName,
+        types::kubernetes::{ConfigMapName, SecretClassName},
     },
 };
 
 use crate::{
     controller::{
-        RoleGroupName, ValidatedAgentConfig, ValidatedCluster, ValidatedClusterConfig,
-        ValidatedKafkaConfig, ValidatedRoleConfig, ValidatedRoleGroupConfig,
+        AgentConnection, RoleGroupName, ValidatedAgentConfig, ValidatedCluster,
+        ValidatedClusterConfig, ValidatedKafkaConfig, ValidatedRoleConfig,
+        ValidatedRoleGroupConfig,
         dereference::DereferencedObjects,
         security::{self, ValidatedKafkaSecurity},
     },
@@ -117,10 +118,30 @@ pub enum Error {
     MissingKraftControllerRole,
 
     #[snafu(display(
-        "platform access requires the operator image, which also contains the agent; set the \
+        "management access requires the operator image, which also contains the agent; set the \
          OPERATOR_IMAGE environment variable of the operator"
     ))]
-    PlatformAccessRequiresOperatorImage,
+    ManagementAccessRequiresOperatorImage,
+
+    #[snafu(display("management access is only supported in KRaft mode"))]
+    ManagementAccessRequiresKraft,
+
+    #[snafu(display("management access does not support clusters with Kerberos authentication"))]
+    ManagementAccessWithKerberos,
+
+    #[snafu(display(
+        "the cluster requires client authentication, but management access is anonymous"
+    ))]
+    AnonymousManagementAccessWithClientAuthentication,
+
+    #[snafu(display("TLS management access requires the cluster to use TLS"))]
+    TlsManagementAccessRequiresTls,
+
+    #[snafu(display("the SecretClass {secret_class:?} of the client listener is invalid"))]
+    ParseClientListenerSecretClass {
+        source: stackable_operator::v2::macros::attributed_string_type::Error,
+        secret_class: String,
+    },
 }
 
 /// Validated logging configuration for a Kafka role group's Kafka and (optional) Vector
@@ -346,15 +367,23 @@ pub fn validate(
 
     let agent_config = kafka
         .spec
-        .platform_access
+        .cluster_config
+        .management_access
         .as_ref()
-        .filter(|platform_access| platform_access.enabled)
-        .map(|platform_access| {
+        .filter(|management_access| management_access.enabled)
+        .map(|management_access| {
+            ensure!(
+                metadata_manager == crate::crd::MetadataManager::KRaft,
+                ManagementAccessRequiresKraftSnafu
+            );
             Ok(ValidatedAgentConfig {
                 image: operator_image
-                    .context(PlatformAccessRequiresOperatorImageSnafu)?
+                    .context(ManagementAccessRequiresOperatorImageSnafu)?
                     .to_owned(),
-                authentication: platform_access.authentication.clone(),
+                connection: validate_agent_connection(
+                    &management_access.authentication.user_provided,
+                    &kafka_security,
+                )?,
             })
         })
         .transpose()?;
@@ -467,21 +496,160 @@ fn inject_cluster_id(env_overrides: EnvVarSet, cluster_id: Option<&str>) -> EnvV
     }
 }
 
+/// Determines how the agent connects to the cluster, and rejects management access authentication
+/// config that cannot connect to it.
+fn validate_agent_connection(
+    authentication: &v1alpha1::UserProvidedAuthentication,
+    security: &ValidatedKafkaSecurity,
+) -> Result<AgentConnection> {
+    ensure!(
+        !security.has_kerberos_enabled(),
+        ManagementAccessWithKerberosSnafu
+    );
+
+    let server_ca_secret_class = security
+        .tls_secret_class()
+        .map(|secret_class| {
+            SecretClassName::from_str(secret_class)
+                .context(ParseClientListenerSecretClassSnafu { secret_class })
+        })
+        .transpose()?;
+
+    match (authentication, server_ca_secret_class) {
+        (v1alpha1::UserProvidedAuthentication::Anonymous(_), server_ca_secret_class) => {
+            ensure!(
+                security.tls_client_authentication_class().is_none(),
+                AnonymousManagementAccessWithClientAuthenticationSnafu
+            );
+            Ok(match server_ca_secret_class {
+                None => AgentConnection::Plaintext,
+                Some(server_ca_secret_class) => AgentConnection::Tls {
+                    server_ca_secret_class,
+                },
+            })
+        }
+        (v1alpha1::UserProvidedAuthentication::Tls(_), None) => {
+            TlsManagementAccessRequiresTlsSnafu.fail()
+        }
+        (
+            v1alpha1::UserProvidedAuthentication::Tls(client_credential),
+            Some(server_ca_secret_class),
+        ) => Ok(AgentConnection::MutualTls {
+            server_ca_secret_class,
+            client_credential: client_credential.clone(),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
-    use stackable_operator::v2::{
-        builder::pod::container::EnvVarSet, types::operator::RoleGroupName,
+    use rstest::rstest;
+    use stackable_operator::{
+        crd::management_access::v1alpha1::{Anonymous, TlsClientCredential},
+        v2::{
+            builder::pod::container::EnvVarSet,
+            types::{
+                kubernetes::{SecretClassName, SecretName},
+                operator::RoleGroupName,
+            },
+        },
     };
 
-    use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id};
+    use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id, validate_agent_connection};
     use crate::{
-        controller::test_support::{
-            app_version_label, minimal_kafka, validate_with_operator_image, validated_cluster,
+        controller::{
+            AgentConnection,
+            security::ValidatedKafkaSecurity,
+            test_support::{
+                app_version_label, client_auth_tls, kerberos, minimal_kafka, plaintext, server_tls,
+                validate_with_operator_image, validated_cluster,
+            },
         },
-        crd::role::KafkaRole,
+        crd::{role::KafkaRole, v1alpha1::UserProvidedAuthentication},
     };
+
+    fn anonymous() -> UserProvidedAuthentication {
+        UserProvidedAuthentication::Anonymous(Anonymous::default())
+    }
+
+    fn agent_cert() -> TlsClientCredential {
+        TlsClientCredential::SecretName(
+            SecretName::from_str("agent-cert").expect("the Secret name should be valid"),
+        )
+    }
+
+    fn tls() -> UserProvidedAuthentication {
+        UserProvidedAuthentication::Tls(agent_cert())
+    }
+
+    fn tls_secret_class(name: &str) -> SecretClassName {
+        SecretClassName::from_str(name).expect("the SecretClass name should be valid")
+    }
+
+    #[rstest]
+    #[case::plaintext_anonymous(plaintext(), anonymous(), AgentConnection::Plaintext)]
+    #[case::server_tls_anonymous(
+        server_tls(),
+        anonymous(),
+        AgentConnection::Tls { server_ca_secret_class: tls_secret_class("tls") }
+    )]
+    #[case::server_tls_with_credential(
+        server_tls(),
+        tls(),
+        AgentConnection::MutualTls {
+            server_ca_secret_class: tls_secret_class("tls"),
+            client_credential: agent_cert(),
+        }
+    )]
+    #[case::client_auth_with_credential(
+        client_auth_tls(),
+        tls(),
+        AgentConnection::MutualTls {
+            server_ca_secret_class: tls_secret_class("client-auth-secret-class"),
+            client_credential: agent_cert(),
+        }
+    )]
+    fn agent_connection(
+        #[case] security: ValidatedKafkaSecurity,
+        #[case] authentication: UserProvidedAuthentication,
+        #[case] expected: AgentConnection,
+    ) {
+        let connection = validate_agent_connection(&authentication, &security)
+            .expect("the management access should be valid");
+
+        assert_eq!(expected, connection);
+    }
+
+    #[rstest]
+    #[case::anonymous(anonymous())]
+    #[case::tls(tls())]
+    fn reject_management_access_with_kerberos(#[case] authentication: UserProvidedAuthentication) {
+        let error = validate_agent_connection(&authentication, &kerberos())
+            .expect_err("the management access should be invalid");
+
+        assert!(matches!(error, Error::ManagementAccessWithKerberos));
+    }
+
+    #[test]
+    fn reject_anonymous_management_access_with_client_authentication() {
+        let error = validate_agent_connection(&anonymous(), &client_auth_tls())
+            .expect_err("the management access should be invalid");
+
+        assert!(matches!(
+            error,
+            Error::AnonymousManagementAccessWithClientAuthentication
+        ));
+    }
+
+    #[test]
+    fn reject_tls_management_access_without_tls() {
+        let error = validate_agent_connection(&tls(), &plaintext())
+            .expect_err("the management access should be invalid");
+
+        assert!(matches!(error, Error::TlsManagementAccessRequiresTls));
+    }
 
     #[test]
     fn test_constants() {
@@ -584,7 +752,7 @@ mod tests {
     #[rstest::rstest]
     #[case::enabled(true)]
     #[case::disabled(false)]
-    fn platform_access_requires_the_operator_image(#[case] enabled: bool) {
+    fn management_access_requires_the_operator_image(#[case] enabled: bool) {
         let kafka = minimal_kafka(&format!(
             r#"
             apiVersion: kafka.stackable.tech/v1alpha1
@@ -597,12 +765,17 @@ mod tests {
               image:
                 productVersion: 3.9.2
               clusterConfig:
-                zookeeperConfigMapName: xyz
-              platformAccess:
-                enabled: {enabled}
-                authentication:
-                  tls:
-                    secretClass: tls
+                metadataManager: kraft
+                managementAccess:
+                  enabled: {enabled}
+                  authentication:
+                    userProvided:
+                      tls:
+                        secretClassName: tls
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 1
               brokers:
                 roleGroups:
                   default:
@@ -614,13 +787,49 @@ mod tests {
 
         if enabled {
             assert!(
-                matches!(result, Err(Error::PlatformAccessRequiresOperatorImage)),
-                "expected PlatformAccessRequiresOperatorImage, got: {:?}",
+                matches!(result, Err(Error::ManagementAccessRequiresOperatorImage)),
+                "expected ManagementAccessRequiresOperatorImage, got: {:?}",
                 result.err()
             );
         } else {
             assert!(result.is_ok(), "expected Ok, got: {:?}", result.err());
         }
+    }
+
+    #[test]
+    fn zookeeper_mode_rejects_management_access() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: zk-discovery
+                managementAccess:
+                  enabled: true
+                  authentication:
+                    userProvided:
+                      anonymous: {}
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+
+        let result = crate::controller::test_support::validate_err(&kafka);
+
+        assert!(
+            matches!(result, Err(Error::ManagementAccessRequiresKraft)),
+            "expected ManagementAccessRequiresKraft, got: {:?}",
+            result.err()
+        );
     }
 
     #[test]
