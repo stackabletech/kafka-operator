@@ -1,0 +1,9 @@
+---
+# The older KafkaTopic keeps managing the topic.
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+commands:
+  - script: bash topic-condition.sh orders-copy Ready False Conflict
+  - script: bash topic-condition.sh orders Ready True Available
+  - script: bash kafka-cli.sh kafka-configs.sh --describe --entity-type topics --entity-name orders | grep "retention.ms=7200000"

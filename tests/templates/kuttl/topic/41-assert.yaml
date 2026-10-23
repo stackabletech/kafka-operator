@@ -1,0 +1,12 @@
+---
+# The key removed from the spec is reset, the key set out of band stays.
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+commands:
+  - script: bash topic-condition.sh orders Synced True Synced
+  - script: |
+      configs=$(bash kafka-cli.sh kafka-configs.sh --describe --entity-type topics --entity-name orders)
+      ! echo "$configs" | grep max.message.bytes
+  - script: bash kafka-cli.sh kafka-configs.sh --describe --entity-type topics --entity-name orders | grep "segment.ms=86400000"
+  - script: bash kafka-cli.sh kafka-configs.sh --describe --entity-type topics --entity-name orders | grep "retention.ms=7200000"

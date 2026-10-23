@@ -1,0 +1,14 @@
+{% set authentication = test_scenario['values']['platform-access-authentication'] %}
+---
+# Runs after the agent is ready, so the commands are not polled during the startup.
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+commands:
+{% if authentication == 'anonymous' %}
+  - script: test "$(kubectl get deployment --namespace $NAMESPACE test-kafka-agent --output jsonpath='{.spec.template.spec.volumes[*].name}')" = "discovery tls-kafka"
+  - script: test "$(kubectl get deployment --namespace $NAMESPACE test-kafka-agent --output jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KAFKA_CLIENT_SECURITY")].value}')" = tls
+{% else %}
+  - script: test "$(kubectl get deployment --namespace $NAMESPACE test-kafka-agent --output jsonpath='{.spec.template.spec.volumes[*].name}')" = "discovery tls-kafka tls-platform-access"
+  - script: test "$(kubectl get deployment --namespace $NAMESPACE test-kafka-agent --output jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KAFKA_CLIENT_SECURITY")].value}')" = mutual-tls
+{% endif %}

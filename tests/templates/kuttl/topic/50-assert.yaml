@@ -1,0 +1,9 @@
+---
+# The topic stays usable and unchanged.
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+commands:
+  - script: bash topic-condition.sh orders Synced False UnsupportedChange
+  - script: bash topic-condition.sh orders Ready True Available
+  - script: 'bash kafka-cli.sh kafka-topics.sh --describe --topic orders | grep "PartitionCount: 5"'

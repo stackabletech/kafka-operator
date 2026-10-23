@@ -1,0 +1,8 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+commands:
+  - script: bash topic-condition.sh legacy Ready True Available
+  - script: bash topic-condition.sh legacy Synced True Synced
+  - script: test -n "$(kubectl get kafkatopic --namespace $NAMESPACE legacy --output jsonpath='{.metadata.annotations.stackable\.tech/owned-since}')"

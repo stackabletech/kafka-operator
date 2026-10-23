@@ -1,0 +1,16 @@
+---
+# The agent resources are removed when platform access is disabled.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-kafka-agent
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test-kafka-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: test-kafka-agent

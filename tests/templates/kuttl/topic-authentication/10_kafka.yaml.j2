@@ -1,0 +1,77 @@
+{% set authentication = test_scenario['values']['platform-access-authentication'] %}
+{% if authentication != 'anonymous' %}
+---
+# SecretClasses and AuthenticationClasses are cluster-scoped, so the namespace keeps their names
+# unique between parallel test runs.
+apiVersion: secrets.stackable.tech/v1alpha1
+kind: SecretClass
+metadata:
+  name: client-auth-$NAMESPACE
+spec:
+  backend:
+    autoTls:
+      ca:
+        secret:
+          name: client-auth-ca
+          namespace: $NAMESPACE
+{% if authentication == 'secret' %}
+        autoGenerate: false
+{% else %}
+        autoGenerate: true
+{% endif %}
+---
+apiVersion: authentication.stackable.tech/v1alpha1
+kind: AuthenticationClass
+metadata:
+  name: client-auth-$NAMESPACE
+spec:
+  provider:
+    tls:
+      clientCertSecretClass: client-auth-$NAMESPACE
+{% endif %}
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+spec:
+  image:
+{% if test_scenario['values']['kafka-kraft'].find(",") > 0 %}
+    custom: "{{ test_scenario['values']['kafka-kraft'].split(',')[1] }}"
+    productVersion: "{{ test_scenario['values']['kafka-kraft'].split(',')[0] }}"
+{% else %}
+    productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
+{% endif %}
+    pullPolicy: IfNotPresent
+  clusterConfig:
+    metadataManager: KRaft
+    tls:
+      serverSecretClass: tls
+{% if authentication != 'anonymous' %}
+    authentication:
+      - authenticationClass: client-auth-$NAMESPACE
+{% endif %}
+  platformAccess:
+    enabled: true
+    authentication:
+{% if authentication == 'anonymous' %}
+      anonymous: {}
+{% elif authentication == 'secret-class' %}
+      tls:
+        secretClass: client-auth-$NAMESPACE
+{% else %}
+      tls:
+        secret: kafka-agent-credential
+{% endif %}
+  controllers:
+    config:
+      gracefulShutdownTimeout: 30s # speed up tests
+    roleGroups:
+      default:
+        replicas: 1
+  brokers:
+    config:
+      gracefulShutdownTimeout: 30s # speed up tests
+    roleGroups:
+      default:
+        replicas: 1
