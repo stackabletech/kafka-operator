@@ -1,0 +1,8 @@
+---
+# The adoption policy defaults to Refuse.
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+commands:
+  - script: bash topic-condition.sh legacy Ready False AlreadyExists
+  - script: test -z "$(kubectl get kafkatopic --namespace $NAMESPACE legacy --output jsonpath='{.status.topicId}')"

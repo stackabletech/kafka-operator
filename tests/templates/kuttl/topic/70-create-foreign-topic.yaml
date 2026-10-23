@@ -1,0 +1,6 @@
+---
+# A topic created outside of KafkaTopics, e.g. by an application or an administrator
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: bash kafka-cli.sh kafka-topics.sh --create --topic legacy --partitions 1 --replication-factor 1

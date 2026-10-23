@@ -1,0 +1,8 @@
+---
+# kuttl merges applied objects into the existing ones, so a removed key has to be removed explicitly.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: >-
+      kubectl patch kafkatopic orders --namespace $NAMESPACE --type json
+      --patch '[{"op": "remove", "path": "/spec/config/max.message.bytes"}]'

@@ -11,6 +11,7 @@ repository = "https://github.com/stackabletech/kafka-operator"
 
 [workspace.dependencies]
 stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "feat/platform-access", features = ["crds", "webhook"] }
+stackable-kafka-admin = { path = "rust/kafka-admin" }
 stackable-kafka-shared = { path = "rust/shared" }
 
 anyhow = "1.0"
@@ -22,6 +23,7 @@ const_format = "0.2"
 futures = "0.3"
 indoc = "2.0"
 kafka-protocol = { version = "0.18", default-features = false, features = ["broker", "client"] }
+regex = "1.13"
 rstest = "0.26"
 rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
 semver = "1.0"

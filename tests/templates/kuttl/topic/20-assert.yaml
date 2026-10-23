@@ -1,0 +1,12 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+commands:
+  - script: bash topic-condition.sh orders Ready True Available
+  - script: bash topic-condition.sh orders Synced True Synced
+  - script: test -n "$(kubectl get kafkatopic --namespace $NAMESPACE orders --output jsonpath='{.status.topicId}')"
+  - script: test "$(kubectl get kafkatopic --namespace $NAMESPACE orders --output jsonpath='{.status.partitions[*].index}')" = "0 1 2"
+  - script: 'bash kafka-cli.sh kafka-topics.sh --describe --topic orders | grep "PartitionCount: 3"'
+  - script: bash kafka-cli.sh kafka-configs.sh --describe --entity-type topics --entity-name orders | grep "retention.ms=3600000"
+  - script: bash kafka-cli.sh kafka-configs.sh --describe --entity-type topics --entity-name orders | grep "max.message.bytes=2097152"

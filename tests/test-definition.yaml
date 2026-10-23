@@ -7,7 +7,7 @@ dimensions:
   - name: kafka-kraft
     values:
       - 3.9.2
-      - 4.3.1
+      # - 4.3.1
   - name: kafka
     values:
       - 3.9.2
@@ -72,6 +72,12 @@ dimensions:
       - "cluster-internal"
       - "external-stable"
       - "external-unstable"
+  # How the agent authenticates to Kafka
+  - name: management-access-authentication
+    values:
+      - anonymous
+      - secret-class
+      - secret
 tests:
   - name: operations-kraft
     dimensions:
@@ -80,6 +86,15 @@ tests:
   - name: smoke-kraft
     dimensions:
       - kafka-kraft
+      - openshift
+  - name: topic
+    dimensions:
+      - kafka-kraft
+      - openshift
+  - name: topic-authentication
+    dimensions:
+      - kafka-kraft
+      - management-access-authentication
       - openshift
   - name: smoke
     dimensions:

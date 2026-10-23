@@ -5510,7 +5510,7 @@ rec {
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
           rev = "a2a7d0caf7b00c332cd299768eea19b1a3a00a51";
-          sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
+          sha256 = "16g3xwwkhxbxfy152zmmgwdw38jbyx0xcdpp0fmrf4n3wxma4kyj";
         };
         libName = "k8s_version";
         authors = [
@@ -10489,7 +10489,7 @@ rec {
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
           rev = "a2a7d0caf7b00c332cd299768eea19b1a3a00a51";
-          sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
+          sha256 = "16g3xwwkhxbxfy152zmmgwdw38jbyx0xcdpp0fmrf4n3wxma4kyj";
         };
         libName = "stackable_certs";
         authors = [
@@ -10681,9 +10681,38 @@ rec {
             packageId = "clap";
           }
           {
+            name = "const_format";
+            packageId = "const_format";
+          }
+          {
+            name = "futures";
+            packageId = "futures";
+          }
+          {
+            name = "serde_json";
+            packageId = "serde_json";
+          }
+          {
+            name = "snafu";
+            packageId = "snafu 0.9.2";
+          }
+          {
+            name = "stackable-kafka-admin";
+            packageId = "stackable-kafka-admin";
+          }
+          {
+            name = "stackable-kafka-shared";
+            packageId = "stackable-kafka-shared";
+          }
+          {
             name = "stackable-operator";
             packageId = "stackable-operator";
             features = [ "crds" "webhook" ];
+          }
+          {
+            name = "strum";
+            packageId = "strum";
+            features = [ "derive" ];
           }
           {
             name = "tokio";
@@ -10700,6 +10729,12 @@ rec {
             name = "built";
             packageId = "built";
             features = [ "chrono" "git2" ];
+          }
+        ];
+        devDependencies = [
+          {
+            name = "rstest";
+            packageId = "rstest";
           }
         ];
 
@@ -10807,6 +10842,23 @@ rec {
         ];
         dependencies = [
           {
+            name = "regex";
+            packageId = "regex";
+          }
+          {
+            name = "serde";
+            packageId = "serde";
+            features = [ "derive" ];
+          }
+          {
+            name = "serde_json";
+            packageId = "serde_json";
+          }
+          {
+            name = "snafu";
+            packageId = "snafu 0.9.2";
+          }
+          {
             name = "stackable-operator";
             packageId = "stackable-operator";
             features = [ "crds" "webhook" ];
@@ -10819,11 +10871,17 @@ rec {
         ];
         devDependencies = [
           {
+            name = "indoc";
+            packageId = "indoc";
+          }
+          {
             name = "rstest";
             packageId = "rstest";
           }
         ];
-
+        features = {
+        };
+        resolvedDefaultFeatures = [ "test-support" ];
       };
       "stackable-operator" = rec {
         crateName = "stackable-operator";
@@ -10833,7 +10891,7 @@ rec {
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
           rev = "a2a7d0caf7b00c332cd299768eea19b1a3a00a51";
-          sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
+          sha256 = "16g3xwwkhxbxfy152zmmgwdw38jbyx0xcdpp0fmrf4n3wxma4kyj";
         };
         libName = "stackable_operator";
         authors = [
@@ -11032,7 +11090,7 @@ rec {
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
           rev = "a2a7d0caf7b00c332cd299768eea19b1a3a00a51";
-          sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
+          sha256 = "16g3xwwkhxbxfy152zmmgwdw38jbyx0xcdpp0fmrf4n3wxma4kyj";
         };
         procMacro = true;
         libName = "stackable_operator_derive";
@@ -11067,7 +11125,7 @@ rec {
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
           rev = "a2a7d0caf7b00c332cd299768eea19b1a3a00a51";
-          sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
+          sha256 = "16g3xwwkhxbxfy152zmmgwdw38jbyx0xcdpp0fmrf4n3wxma4kyj";
         };
         libName = "stackable_shared";
         authors = [
@@ -11148,7 +11206,7 @@ rec {
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
           rev = "a2a7d0caf7b00c332cd299768eea19b1a3a00a51";
-          sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
+          sha256 = "16g3xwwkhxbxfy152zmmgwdw38jbyx0xcdpp0fmrf4n3wxma4kyj";
         };
         libName = "stackable_telemetry";
         authors = [
@@ -11258,7 +11316,7 @@ rec {
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
           rev = "a2a7d0caf7b00c332cd299768eea19b1a3a00a51";
-          sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
+          sha256 = "16g3xwwkhxbxfy152zmmgwdw38jbyx0xcdpp0fmrf4n3wxma4kyj";
         };
         libName = "stackable_versioned";
         authors = [
@@ -11304,7 +11362,7 @@ rec {
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
           rev = "a2a7d0caf7b00c332cd299768eea19b1a3a00a51";
-          sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
+          sha256 = "16g3xwwkhxbxfy152zmmgwdw38jbyx0xcdpp0fmrf4n3wxma4kyj";
         };
         procMacro = true;
         libName = "stackable_versioned_macros";
@@ -11368,7 +11426,7 @@ rec {
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
           rev = "a2a7d0caf7b00c332cd299768eea19b1a3a00a51";
-          sha256 = "0cgziqra8097hp05ynib1qpw4c95n972f4w2rk9l3llyp8r1vmci";
+          sha256 = "16g3xwwkhxbxfy152zmmgwdw38jbyx0xcdpp0fmrf4n3wxma4kyj";
         };
         libName = "stackable_webhook";
         authors = [
