@@ -1,6 +1,6 @@
 ---
 # Agent ClusterRole: bound (via per KafkaCluster RoleBinding) to the ServiceAccount that the
-# platform-access agent pod runs as.
+# agent pod runs as.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

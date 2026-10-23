@@ -346,7 +346,7 @@ impl ValidatedClusterConfig {
 /// The configuration of the agent deployed with the cluster.
 pub struct ValidatedAgentConfig {
     pub image: String,
-    pub authentication: v1alpha1::KafkaPlatformAccessAuthentication,
+    pub authentication: v1alpha1::UserProvidedAuthentication,
 }
 
 /// Per-role configuration extracted during validation.
@@ -529,16 +529,24 @@ pub fn error_policy(
 
 #[cfg(test)]
 pub(crate) mod test_support {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, str::FromStr};
 
     use stackable_operator::{
+        builder::meta::ObjectMetaBuilder,
         cli::OperatorEnvironmentOptions,
         commons::networking::DomainName,
-        crd::listener,
+        crd::{
+            authentication::{core, kerberos, tls},
+            listener,
+        },
         utils::{cluster_info::KubernetesClusterInfo, yaml_from_str_singleton_map},
+        v2::types::kubernetes::SecretClassName,
     };
 
-    use super::{ValidatedCluster, dereference::DereferencedObjects, validate::validate};
+    use super::{
+        ValidatedCluster, dereference::DereferencedObjects, security::ValidatedKafkaSecurity,
+        validate::validate,
+    };
     use crate::crd::{authentication::ResolvedAuthenticationClasses, v1alpha1};
 
     pub const OPERATOR_IMAGE: &str = "oci.stackable.tech/sdp/kafka-operator:0.0.0-dev";
@@ -557,6 +565,76 @@ pub(crate) mod test_support {
 
     pub fn minimal_kafka(yaml: &str) -> v1alpha1::KafkaCluster {
         yaml_from_str_singleton_map(yaml).expect("invalid test KafkaCluster YAML")
+    }
+
+    fn tls_auth_class() -> core::v1alpha1::AuthenticationClass {
+        core::v1alpha1::AuthenticationClass {
+            metadata: ObjectMetaBuilder::new().name("tls-auth").build(),
+            spec: core::v1alpha1::AuthenticationClassSpec {
+                provider: core::v1alpha1::AuthenticationClassProvider::Tls(
+                    tls::v1alpha1::AuthenticationProvider {
+                        client_cert_secret_class: Some("client-auth-secret-class".to_string()),
+                    },
+                ),
+            },
+        }
+    }
+
+    fn kerberos_auth_class() -> core::v1alpha1::AuthenticationClass {
+        core::v1alpha1::AuthenticationClass {
+            metadata: ObjectMetaBuilder::new().name("kerberos-auth").build(),
+            spec: core::v1alpha1::AuthenticationClassSpec {
+                provider: core::v1alpha1::AuthenticationClassProvider::Kerberos(
+                    kerberos::v1alpha1::AuthenticationProvider {
+                        kerberos_secret_class: "kerberos-secret-class".to_string(),
+                    },
+                ),
+            },
+        }
+    }
+
+    fn no_auth() -> ResolvedAuthenticationClasses {
+        ResolvedAuthenticationClasses::new(vec![])
+    }
+
+    /// Plaintext: no TLS, no authentication, no OPA.
+    pub fn plaintext() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            None,
+            None,
+        )
+    }
+
+    /// Server TLS only (encryption without client authentication).
+    pub fn server_tls() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            Some("tls".parse().unwrap()),
+            None,
+        )
+    }
+
+    /// Mutual TLS (client-certificate authentication).
+    pub fn client_auth_tls() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![tls_auth_class()]),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            Some("tls".parse().unwrap()),
+            None,
+        )
+    }
+
+    /// Kerberos, which also requires server and internal TLS.
+    pub fn kerberos() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![kerberos_auth_class()]),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            Some("tls".parse().unwrap()),
+            None,
+        )
     }
 
     fn cluster_info() -> KubernetesClusterInfo {

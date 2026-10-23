@@ -64,7 +64,7 @@ rules:
       - list
       - patch
       - watch
-  # Deployment of the platform-access agent.
+  # Deployment of the agent.
   - apiGroups:
       - apps
     resources:
