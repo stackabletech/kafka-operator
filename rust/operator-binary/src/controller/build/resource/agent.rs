@@ -88,7 +88,11 @@ pub fn build_agent_deployment(
         .image_pull_secrets_from_product_image(&cluster.image)
         .add_container(cb_agent.build())
         .service_account_name(agent_name(cluster))
-        .security_context(PodSecurityContextBuilder::with_stackable_defaults().build());
+        .security_context(
+            PodSecurityContextBuilder::with_stackable_defaults()
+                .fs_group(1000)
+                .build(),
+        );
 
     Deployment {
         metadata: agent_metadata(cluster),
@@ -217,6 +221,11 @@ mod tests {
         assert_eq!(deployment["metadata"]["name"], "simple-kafka-agent");
         assert_eq!(deployment["spec"]["replicas"], 1);
         assert_eq!(deployment["spec"]["strategy"]["type"], "Recreate");
+        // secret-operator volumes are only readable by the fsGroup.
+        assert_eq!(
+            deployment["spec"]["template"]["spec"]["securityContext"]["fsGroup"],
+            1000
+        );
         // The selector must not match the broker or controller Pods.
         assert_eq!(
             deployment["spec"]["selector"]["matchLabels"],
