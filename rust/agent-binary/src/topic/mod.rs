@@ -2,7 +2,10 @@
 
 mod condition;
 pub mod controller;
-mod managed_config_keys;
+mod finalizer;
 mod plan;
+mod sync;
 #[cfg(test)]
 mod test_support;
+mod update_status;
+mod validate;

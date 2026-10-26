@@ -1,33 +1,34 @@
 //! The `Ready` and `Synced` conditions of a `KafkaTopic` for the outcome of a sync.
 
 use stackable_kafka_admin::client;
-use stackable_operator::commons::platform_access::condition::{
-    ManagedCondition, ManagedConditionType,
+use stackable_operator::status::condition::{
+    ClusterConditionStatus,
+    managed_resource::{ManagedCondition, ManagedConditionType},
 };
 
-const MAX_LISTED_PARTITIONS: usize = 10;
+use super::plan::{TopicState, UnsupportedChange};
+
+/// The operator writes the bootstrap servers to the discovery ConfigMap only once the
+/// listener-operator has assigned addresses to the bootstrap Listeners.
+const CLUSTER_NOT_READY_MESSAGE: &str = "the KafkaCluster has no bootstrap servers yet";
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum TopicSyncOutcome {
     /// The topic matches the spec
     Synced {
-        partitions: usize,
-        reassigning_partitions: Vec<i32>,
+        reassigning_partition_count: usize,
     },
+    /// The topic matches the spec, apart from the changes the agent does not apply
     UnsupportedChange {
-        messages: Vec<String>,
+        changes: Vec<UnsupportedChange>,
     },
+    ReconciliationPaused,
     ClusterNotReady,
     InvalidSpec {
         message: String,
     },
     /// Another `KafkaTopic` manages the same topic
     Conflict {
-        message: String,
-    },
-    /// The topic exists in Kafka, but this `KafkaTopic` does not own it and is not allowed to adopt
-    /// it
-    AlreadyExists {
         message: String,
     },
     KafkaRejected {
@@ -49,55 +50,116 @@ impl TopicSyncOutcome {
     }
 }
 
-/// The conditions to update. `Ready` says whether the topic is usable through this `KafkaTopic`
-/// and is only updated if that is known.
-pub fn conditions(outcome: &TopicSyncOutcome) -> Vec<ManagedCondition> {
-    let available = ready(true, "Available", "the topic exists in Kafka");
-    match outcome {
-        TopicSyncOutcome::Synced {
-            partitions,
-            reassigning_partitions,
-        } => {
-            let synced = if reassigning_partitions.is_empty() {
-                synced(true, "Synced", "the topic matches the spec")
-            } else {
-                synced(
-                    true,
-                    "ReassignmentInProgress",
-                    &reassignment_message(reassigning_partitions, *partitions),
-                )
-            };
-            vec![available, synced]
-        }
-        TopicSyncOutcome::UnsupportedChange { messages } => vec![
-            available,
-            synced(false, "UnsupportedChange", &messages.join("; ")),
-        ],
-        TopicSyncOutcome::ClusterNotReady => {
-            let message = "the KafkaCluster has no bootstrap servers yet";
-            vec![
-                ready(false, "ClusterNotReady", message),
-                synced(false, "ClusterNotReady", message),
-            ]
-        }
-        TopicSyncOutcome::Conflict { message } => vec![
-            ready(false, "Conflict", "another KafkaTopic manages the topic"),
-            synced(false, "Conflict", message),
-        ],
-        TopicSyncOutcome::AlreadyExists { message } => vec![
-            ready(
-                false,
-                "AlreadyExists",
-                "the topic exists in Kafka, but is not owned by this KafkaTopic",
+/// `topic_state` is the topic in Kafka, if it exists and is managed by this `KafkaTopic`.
+pub fn conditions_from(
+    sync_outcome: &TopicSyncOutcome,
+    topic_state: Option<&TopicState>,
+) -> Vec<ManagedCondition> {
+    vec![
+        ready_from(sync_outcome, topic_state),
+        synced_from(sync_outcome, topic_state),
+    ]
+}
+
+/// Whether the topic exists in Kafka, `Unknown` if the agent could not find out.
+fn ready_from(
+    sync_outcome: &TopicSyncOutcome,
+    topic_state: Option<&TopicState>,
+) -> ManagedCondition {
+    use ClusterConditionStatus::{False, True, Unknown};
+
+    // Also after a failed change, because the topic was observed before.
+    if let Some(topic_state) = topic_state {
+        return ready(
+            True,
+            "Available",
+            &format!(
+                "Topic {} exists with {} partitions",
+                topic_state.name, topic_state.partition_count
             ),
-            synced(false, "AlreadyExists", message),
-        ],
-        TopicSyncOutcome::InvalidSpec { message } => vec![synced(false, "InvalidSpec", message)],
-        TopicSyncOutcome::KafkaRejected { message } => {
-            vec![synced(false, "KafkaRejected", message)]
+        );
+    }
+    match sync_outcome {
+        TopicSyncOutcome::Synced { .. }
+        | TopicSyncOutcome::UnsupportedChange { .. }
+        | TopicSyncOutcome::ReconciliationPaused => {
+            ready(False, "Unavailable", "the topic does not exist in Kafka")
         }
+        TopicSyncOutcome::Conflict { .. } => {
+            ready(False, "Conflict", "another KafkaTopic manages the topic")
+        }
+        TopicSyncOutcome::ClusterNotReady => {
+            ready(Unknown, "ClusterNotReady", CLUSTER_NOT_READY_MESSAGE)
+        }
+        TopicSyncOutcome::InvalidSpec { message } => ready(Unknown, "InvalidSpec", message),
+        TopicSyncOutcome::KafkaRejected { message } => ready(Unknown, "KafkaRejected", message),
         TopicSyncOutcome::ConnectionFailed { message } => {
-            vec![synced(false, "ConnectionFailed", message)]
+            ready(Unknown, "ConnectionFailed", message)
+        }
+    }
+}
+
+/// Whether the last sync applied the spec to the topic.
+fn synced_from(
+    sync_outcome: &TopicSyncOutcome,
+    topic_state: Option<&TopicState>,
+) -> ManagedCondition {
+    use ClusterConditionStatus::{False, True};
+
+    match sync_outcome {
+        TopicSyncOutcome::Synced {
+            reassigning_partition_count,
+        } => match (reassigning_partition_count, topic_state) {
+            (0, _) | (_, None) => synced(True, "Synced", "the topic matches the spec"),
+            (reassigning, Some(topic_state)) => synced(
+                True,
+                "ReassignmentInProgress",
+                &format!(
+                    "{reassigning} of {} partitions are being reassigned",
+                    topic_state.partition_count
+                ),
+            ),
+        },
+        TopicSyncOutcome::UnsupportedChange { changes } => {
+            let messages = changes.iter().map(message_from).collect::<Vec<_>>();
+            synced(False, "UnsupportedChange", &messages.join("; "))
+        }
+        TopicSyncOutcome::ReconciliationPaused => synced(
+            False,
+            "ReconciliationPaused",
+            "the reconciliation is paused, only the status is updated",
+        ),
+        TopicSyncOutcome::Conflict { message } => synced(False, "Conflict", message),
+        TopicSyncOutcome::ClusterNotReady => {
+            synced(False, "ClusterNotReady", CLUSTER_NOT_READY_MESSAGE)
+        }
+        TopicSyncOutcome::InvalidSpec { message } => synced(False, "InvalidSpec", message),
+        TopicSyncOutcome::KafkaRejected { message } => synced(False, "KafkaRejected", message),
+        TopicSyncOutcome::ConnectionFailed { message } => {
+            synced(False, "ConnectionFailed", message)
+        }
+    }
+}
+
+fn message_from(unsupported_change: &UnsupportedChange) -> String {
+    match unsupported_change {
+        UnsupportedChange::DecreasePartitions { desired, actual } => {
+            format!("partitions cannot be decreased (spec: {desired}, actual: {actual})")
+        }
+        UnsupportedChange::ChangeReplicationFactor {
+            desired,
+            actual_min,
+            actual_max,
+        } => {
+            let actual = if actual_min == actual_max {
+                actual_min.to_string()
+            } else {
+                format!("between {actual_min} and {actual_max}")
+            };
+            format!(
+                "the replication factor cannot be changed (spec: {desired}, actual: {actual}); \
+                 change it with kafka-reassign-partitions"
+            )
         }
     }
 }
@@ -112,34 +174,17 @@ fn error_chain(error: &dyn std::error::Error) -> String {
         .join(": ")
 }
 
-fn reassignment_message(reassigning_partitions: &[i32], partitions: usize) -> String {
-    let listed = reassigning_partitions
-        .iter()
-        .take(MAX_LISTED_PARTITIONS)
-        .map(i32::to_string)
-        .collect::<Vec<_>>()
-        .join(", ");
-    let more = reassigning_partitions
-        .len()
-        .saturating_sub(MAX_LISTED_PARTITIONS);
-    if more > 0 {
-        format!("partitions {listed} and {more} more of {partitions} are being reassigned")
-    } else {
-        format!("partitions {listed} of {partitions} are being reassigned")
-    }
-}
-
-fn ready(status: bool, reason: &str, message: &str) -> ManagedCondition {
+fn ready(status: ClusterConditionStatus, reason: &str, message: &str) -> ManagedCondition {
     condition(ManagedConditionType::Ready, status, reason, message)
 }
 
-fn synced(status: bool, reason: &str, message: &str) -> ManagedCondition {
+fn synced(status: ClusterConditionStatus, reason: &str, message: &str) -> ManagedCondition {
     condition(ManagedConditionType::Synced, status, reason, message)
 }
 
 fn condition(
     type_: ManagedConditionType,
-    status: bool,
+    status: ClusterConditionStatus,
     reason: &str,
     message: &str,
 ) -> ManagedCondition {
@@ -153,129 +198,179 @@ fn condition(
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::BTreeMap, str::FromStr};
+
     use snafu::Snafu;
+    use stackable_kafka_shared::crd::topic::TopicName;
 
     use super::*;
+    use crate::topic::condition::ClusterConditionStatus::{False, True, Unknown};
 
-    fn summary(conditions: &[ManagedCondition]) -> Vec<(String, bool, &str)> {
+    fn summary(conditions: &[ManagedCondition]) -> Vec<(String, ClusterConditionStatus, &str)> {
         conditions
             .iter()
             .map(|condition| {
                 (
                     condition.type_.to_string(),
-                    condition.status,
+                    condition.status.clone(),
                     condition.reason.as_str(),
                 )
             })
             .collect()
     }
 
+    fn topic_state(partition_count: i32) -> TopicState {
+        TopicState {
+            name: TopicName::from_str("orders").expect("the topic name should be valid"),
+            id: "UXyU9i5ARn6W00ON2taeWA".to_owned(),
+            partition_count,
+            replication_factor: Some(1),
+            effective_configs: BTreeMap::new(),
+        }
+    }
+
     #[test]
     fn mark_a_synced_topic() {
-        let conditions = conditions(&TopicSyncOutcome::Synced {
-            partitions: 6,
-            reassigning_partitions: vec![],
-        });
+        let conditions = conditions_from(
+            &TopicSyncOutcome::Synced {
+                reassigning_partition_count: 0,
+            },
+            Some(&topic_state(6)),
+        );
 
         assert_eq!(
             vec![
-                ("Ready".to_owned(), true, "Available"),
-                ("Synced".to_owned(), true, "Synced")
+                ("Ready".to_owned(), True, "Available"),
+                ("Synced".to_owned(), True, "Synced")
             ],
             summary(&conditions)
+        );
+        assert_eq!(
+            "Topic orders exists with 6 partitions",
+            conditions[0].message
         );
     }
 
     #[test]
     fn keep_a_reassigned_topic_synced() {
-        let conditions = conditions(&TopicSyncOutcome::Synced {
-            partitions: 6,
-            reassigning_partitions: vec![0, 2],
-        });
+        let conditions = conditions_from(
+            &TopicSyncOutcome::Synced {
+                reassigning_partition_count: 3,
+            },
+            Some(&topic_state(6)),
+        );
 
         assert_eq!(
             vec![
-                ("Ready".to_owned(), true, "Available"),
-                ("Synced".to_owned(), true, "ReassignmentInProgress")
+                ("Ready".to_owned(), True, "Available"),
+                ("Synced".to_owned(), True, "ReassignmentInProgress")
             ],
             summary(&conditions)
         );
         assert_eq!(
-            "partitions 0, 2 of 6 are being reassigned",
+            "3 of 6 partitions are being reassigned",
             conditions[1].message
-        );
-    }
-
-    #[test]
-    fn limit_the_listed_reassigning_partitions() {
-        let message = reassignment_message(&(0..12).collect::<Vec<_>>(), 20);
-
-        assert_eq!(
-            "partitions 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 and 2 more of 20 are being reassigned",
-            message
-        );
-    }
-
-    #[test]
-    fn only_update_synced_after_an_error() {
-        let conditions = conditions(&TopicSyncOutcome::ConnectionFailed {
-            message: "timed out".to_owned(),
-        });
-
-        assert_eq!(
-            vec![("Synced".to_owned(), false, "ConnectionFailed")],
-            summary(&conditions)
         );
     }
 
     #[test]
     fn mark_an_unsupported_change() {
-        let conditions = conditions(&TopicSyncOutcome::UnsupportedChange {
-            messages: vec!["first".to_owned(), "second".to_owned()],
-        });
+        let conditions = conditions_from(
+            &TopicSyncOutcome::UnsupportedChange {
+                changes: vec![
+                    UnsupportedChange::DecreasePartitions {
+                        desired: 4,
+                        actual: 6,
+                    },
+                    UnsupportedChange::ChangeReplicationFactor {
+                        desired: 2,
+                        actual_min: 2,
+                        actual_max: 3,
+                    },
+                ],
+            },
+            Some(&topic_state(6)),
+        );
 
         assert_eq!(
             vec![
-                ("Ready".to_owned(), true, "Available"),
-                ("Synced".to_owned(), false, "UnsupportedChange")
-            ],
-            summary(&conditions)
-        );
-        assert_eq!("first; second", conditions[1].message);
-    }
-
-    #[test]
-    fn leave_ready_untouched_for_an_invalid_spec() {
-        let conditions = conditions(&TopicSyncOutcome::InvalidSpec {
-            message: "invalid".to_owned(),
-        });
-
-        assert_eq!(
-            vec![("Synced".to_owned(), false, "InvalidSpec")],
-            summary(&conditions)
-        );
-    }
-
-    #[test]
-    fn keep_the_ready_message_fixed_for_a_foreign_topic() {
-        let conditions = conditions(&TopicSyncOutcome::AlreadyExists {
-            message: "set managementPolicy.adoption to Adopt".to_owned(),
-        });
-
-        assert_eq!(
-            vec![
-                ("Ready".to_owned(), false, "AlreadyExists"),
-                ("Synced".to_owned(), false, "AlreadyExists")
+                ("Ready".to_owned(), True, "Available"),
+                ("Synced".to_owned(), False, "UnsupportedChange")
             ],
             summary(&conditions)
         );
         assert_eq!(
-            "the topic exists in Kafka, but is not owned by this KafkaTopic",
-            conditions[0].message
-        );
-        assert_eq!(
-            "set managementPolicy.adoption to Adopt",
+            "partitions cannot be decreased (spec: 4, actual: 6); the replication factor cannot \
+             be changed (spec: 2, actual: between 2 and 3); change it with \
+             kafka-reassign-partitions",
             conditions[1].message
+        );
+    }
+
+    #[test]
+    fn report_a_missing_topic_while_paused() {
+        let conditions = conditions_from(&TopicSyncOutcome::ReconciliationPaused, None);
+
+        assert_eq!(
+            vec![
+                ("Ready".to_owned(), False, "Unavailable"),
+                ("Synced".to_owned(), False, "ReconciliationPaused")
+            ],
+            summary(&conditions)
+        );
+    }
+
+    #[test]
+    fn mark_a_conflict_as_not_ready() {
+        let conditions = conditions_from(
+            &TopicSyncOutcome::Conflict {
+                message: "managed by older".to_owned(),
+            },
+            None,
+        );
+
+        assert_eq!(
+            vec![
+                ("Ready".to_owned(), False, "Conflict"),
+                ("Synced".to_owned(), False, "Conflict")
+            ],
+            summary(&conditions)
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::cluster_not_ready(TopicSyncOutcome::ClusterNotReady, "ClusterNotReady")]
+    #[case::invalid_spec(TopicSyncOutcome::InvalidSpec { message: "invalid".to_owned() }, "InvalidSpec")]
+    #[case::kafka_rejected(TopicSyncOutcome::KafkaRejected { message: "denied".to_owned() }, "KafkaRejected")]
+    #[case::connection_failed(TopicSyncOutcome::ConnectionFailed { message: "timed out".to_owned() }, "ConnectionFailed")]
+    fn mark_ready_as_unknown_if_the_topic_cannot_be_observed(
+        #[case] sync_outcome: TopicSyncOutcome,
+        #[case] reason: &str,
+    ) {
+        assert_eq!(
+            vec![
+                ("Ready".to_owned(), Unknown, reason),
+                ("Synced".to_owned(), False, reason)
+            ],
+            summary(&conditions_from(&sync_outcome, None))
+        );
+    }
+
+    #[test]
+    fn keep_an_observed_topic_ready_if_a_change_fails() {
+        let conditions = conditions_from(
+            &TopicSyncOutcome::KafkaRejected {
+                message: "denied".to_owned(),
+            },
+            Some(&topic_state(6)),
+        );
+
+        assert_eq!(
+            vec![
+                ("Ready".to_owned(), True, "Available"),
+                ("Synced".to_owned(), False, "KafkaRejected")
+            ],
+            summary(&conditions)
         );
     }
 

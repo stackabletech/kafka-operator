@@ -115,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
                 client.get_api::<DeserializeGuard<KafkaTopic>>(cluster_namespace.as_ref()),
                 watcher::Config::default(),
             );
-            let topic_store = topic_controller.store();
+            let kafka_topic_store = topic_controller.store();
             topic_controller
                 .graceful_shutdown_on(sigterm_watcher.handle())
                 .run(
@@ -125,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
                         client,
                         cluster_name,
                         security,
-                        topic_store,
+                        kafka_topic_store,
                     )),
                 )
                 .for_each_concurrent(
