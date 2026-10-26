@@ -2269,76 +2269,78 @@ spec:
             description: |-
               A Kafka topic managed by the agent of the referenced Kafka cluster.
 
-              The referenced `KafkaCluster` must have `platformAccess` enabled or this resource will
-              not be reconciled.
+              The referenced `KafkaCluster` must have `clusterConfig.managementAccess` enabled or this
+              resource will not be reconciled.
             properties:
-              clusterName:
-                description: Name of a KafkaCluster in the namespace of this KafkaTopic resource. Immutable.
-                maxLength: 40
-                minLength: 1
-                type: string
+              clusterRef:
+                description: The KafkaCluster managing this topic. Immutable.
+                properties:
+                  name:
+                    description: Name of a KafkaCluster in the namespace of this KafkaTopic.
+                    maxLength: 40
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
                 x-kubernetes-validations:
-                - message: clusterName is immutable
+                - message: clusterRef is immutable
                   rule: self == oldSelf
-              config:
+              configOverrides:
                 additionalProperties:
                   type: string
                 default: {}
                 description: |-
-                  Topic configs like `retention.ms`. Keys removed from this map are reset to the broker
-                  default. Keys not listed here are not managed by the agent.
+                  Topic configs like `retention.ms`. All other topic-level configs are reset to the broker
+                  defaults, except the replication throttles set by partition reassignments.
                 type: object
-              managementPolicy:
-                default:
-                  adoption: Refuse
-                  deletion: Retain
-                description: What an agent may do with a resource inside the product beyond applying its spec.
-                properties:
-                  adoption:
-                    default: Refuse
-                    description: |-
-                      Whether a resource that already exists in the product, but was not created by the
-                      agent, is taken over. `Refuse` by default.
-                    enum:
-                    - Refuse
-                    - Adopt
-                    type: string
-                  deletion:
-                    default: Retain
-                    description: |-
-                      What happens to the resource in the product when this object is deleted. `Retain` by
-                      default.
-                    enum:
-                    - Retain
-                    - Delete
-                    type: string
-                type: object
+              deletionPolicy:
+                default: Retain
+                description: What happens to a resource in the product when the object managing it is deleted.
+                enum:
+                - Retain
+                - Delete
+                type: string
               partitions:
-                description: Number of partitions. Can only be increased.
+                description: |-
+                  Number of partitions. Can only be increased. Defaults to the broker setting
+                  `num.partitions` when the topic is created.
                 format: int32
                 minimum: 1.0
+                nullable: true
                 type: integer
               replicationFactor:
-                description: Number of replicas of each partition. Changes are not applied to existing topics.
+                description: |-
+                  Number of replicas of each partition. Changes are not applied to existing topics.
+                  Defaults to the broker setting `default.replication.factor` when the topic is created.
                 format: int16
                 maximum: 32767.0
                 minimum: 1.0
+                nullable: true
                 type: integer
               topicName:
-                description: Name of the topic in Kafka. Immutable.
+                description: Name of the topic in Kafka. Defaults to `metadata.name`. Immutable.
                 maxLength: 249
                 minLength: 1
-                pattern: ^([a-zA-Z0-9-][a-zA-Z0-9._-]*|_([a-zA-Z0-9.-][a-zA-Z0-9._-]*)?|\.[a-zA-Z0-9_-][a-zA-Z0-9._-]*|\.\.[a-zA-Z0-9._-]+)$
+                nullable: true
+                pattern: ^([a-zA-Z0-9._-]{3,}|[a-zA-Z0-9_-][a-zA-Z0-9._-]?|\.[a-zA-Z0-9_-])$
                 type: string
-                x-kubernetes-validations:
-                - message: topicName is immutable
-                  rule: self == oldSelf
+              topicOperation:
+                default:
+                  reconciliationPaused: false
+                description: Operations on this topic, independent of the `clusterOperation` of the KafkaCluster.
+                properties:
+                  reconciliationPaused:
+                    default: false
+                    description: Stops the agent from changing the topic in Kafka. The status is still updated.
+                    type: boolean
+                type: object
             required:
-            - clusterName
-            - partitions
-            - replicationFactor
-            - topicName
+            - clusterRef
             type: object
+            x-kubernetes-validations:
+            - message: topicName is immutable
+              rule: self.?topicName == oldSelf.?topicName
           status:
             nullable: true
             properties:
@@ -2376,36 +2378,54 @@ spec:
                   - type
                   type: object
                 type: array
-              partitions:
-                default: []
-                description: The partitions of the topic in Kafka.
-                items:
+              config:
+                additionalProperties:
                   properties:
-                    index:
-                      format: int32
-                      type: integer
-                    replicas:
-                      description: |-
-                        Broker ids holding a replica, the preferred leader first. During a reassignment, this
-                        includes the replicas being added and removed.
-                      items:
-                        format: int32
-                        type: integer
-                      type: array
+                    source:
+                      description: Where the value comes from, like `DYNAMIC_TOPIC_CONFIG` or `DEFAULT_CONFIG`.
+                      type: string
+                    value:
+                      description: The value, not set for sensitive configs.
+                      nullable: true
+                      type: string
                   required:
-                  - index
-                  - replicas
+                  - source
                   type: object
-                type: array
+                default: {}
+                description: All effective topic configs in Kafka.
+                type: object
+              partitions:
+                description: The number of partitions in Kafka.
+                format: int32
+                nullable: true
+                type: integer
+              replicationFactor:
+                description: |-
+                  The replication factor, not counting replicas that a running reassignment removes.
+                  Not set if the partitions have different replication factors.
+                format: int16
+                maximum: 32767.0
+                minimum: -32768.0
+                nullable: true
+                type: integer
               topicId:
                 description: The topic id in Kafka, as shown by `kafka-topics.sh`.
                 nullable: true
+                type: string
+              topicName:
+                description: The name of the topic in Kafka.
+                maxLength: 249
+                minLength: 1
+                nullable: true
+                pattern: ^([a-zA-Z0-9._-]{3,}|[a-zA-Z0-9_-][a-zA-Z0-9._-]?|\.[a-zA-Z0-9_-])$
                 type: string
             type: object
         required:
         - spec
         title: KafkaTopic
         type: object
+    selectableFields:
+    - jsonPath: .spec.clusterRef.name
     served: true
     storage: true
     subresources:

@@ -1,23 +1,23 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
     attributed_string_type,
-    crd::platform_access::v1alpha1::ManagementPolicy,
+    crd::management_access::v1alpha1::DeletionPolicy,
     k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition,
-    kube::CustomResource,
+    kube::{CustomResource, ResourceExt},
     schemars::{self, JsonSchema},
-    v2::types::operator::ClusterName,
+    v2::{macros::attributed_string_type::Error as TopicNameError, types::operator::ClusterName},
     versioned::versioned,
 };
 
 attributed_string_type! {
     TopicName,
-    "The name of a Kafka topic, not `.` or `..` and not starting with `__`",
+    "The name of a Kafka topic, not `.` or `..`",
     "shop.orders",
     (min_length = 1),
     (max_length = 249),
-    (regex = r"^([a-zA-Z0-9-][a-zA-Z0-9._-]*|_([a-zA-Z0-9.-][a-zA-Z0-9._-]*)?|\.[a-zA-Z0-9_-][a-zA-Z0-9._-]*|\.\.[a-zA-Z0-9._-]+)$")
+    (regex = r"^([a-zA-Z0-9._-]{3,}|[a-zA-Z0-9_-][a-zA-Z0-9._-]?|\.[a-zA-Z0-9_-])$")
 }
 
 #[versioned(
@@ -34,47 +34,73 @@ pub mod versioned {
     /// A Kafka topic managed by the agent of the referenced Kafka cluster.
     ///
     /// The referenced `KafkaCluster` must have `clusterConfig.managementAccess` enabled or this
-    /// resource will
-    /// not be reconciled.
+    /// resource will not be reconciled.
     #[versioned(crd(
         doc = "A Kafka topic, created and updated by the agent of the referenced Kafka cluster.",
         group = "kafka.stackable.tech",
         plural = "kafkatopics",
         status = "KafkaTopicStatus",
+        selectable = ".spec.clusterRef.name",
         namespaced
     ))]
     #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
     #[serde(rename_all = "camelCase")]
+    #[schemars(extend("x-kubernetes-validations" = [{
+        "rule": "self.?topicName == oldSelf.?topicName",
+        "message": "topicName is immutable"
+    }]))]
     pub struct KafkaTopicSpec {
-        /// Name of a KafkaCluster in the namespace of this KafkaTopic resource. Immutable.
+        /// The KafkaCluster managing this topic. Immutable.
         #[schemars(extend("x-kubernetes-validations" = [{
             "rule": "self == oldSelf",
-            "message": "clusterName is immutable"
+            "message": "clusterRef is immutable"
         }]))]
-        pub cluster_name: ClusterName,
+        pub cluster_ref: v1alpha1::KafkaClusterRef,
 
-        #[serde(default)]
-        pub management_policy: ManagementPolicy,
+        /// Name of the topic in Kafka. Defaults to `metadata.name`. Immutable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub topic_name: Option<TopicName>,
 
-        /// Name of the topic in Kafka. Immutable.
-        #[schemars(extend("x-kubernetes-validations" = [{
-            "rule": "self == oldSelf",
-            "message": "topicName is immutable"
-        }]))]
-        pub topic_name: TopicName,
-
-        /// Number of partitions. Can only be increased.
+        /// Number of partitions. Can only be increased. Defaults to the broker setting
+        /// `num.partitions` when the topic is created.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         #[schemars(range(min = 1))]
-        pub partitions: i32,
+        pub partitions: Option<i32>,
 
         /// Number of replicas of each partition. Changes are not applied to existing topics.
+        /// Defaults to the broker setting `default.replication.factor` when the topic is created.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         #[schemars(range(min = 1))]
-        pub replication_factor: i16,
+        pub replication_factor: Option<i16>,
 
-        /// Topic configs like `retention.ms`. Keys removed from this map are reset to the broker
-        /// default. Keys not listed here are not managed by the agent.
+        /// Topic configs like `retention.ms`. All other topic-level configs are reset to the broker
+        /// defaults, except the replication throttles set by partition reassignments.
         #[serde(default)]
-        pub config: BTreeMap<String, String>,
+        pub config_overrides: BTreeMap<String, String>,
+
+        // no doc - docs in DeletionPolicy enum.
+        #[serde(default)]
+        pub deletion_policy: DeletionPolicy,
+
+        // no doc - docs in TopicOperation struct.
+        #[serde(default)]
+        pub topic_operation: v1alpha1::TopicOperation,
+    }
+
+    #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaClusterRef {
+        /// Name of a KafkaCluster in the namespace of this KafkaTopic.
+        pub name: ClusterName,
+    }
+
+    /// Operations on this topic, independent of the `clusterOperation` of the KafkaCluster.
+    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct TopicOperation {
+        /// Stops the agent from changing the topic in Kafka. The status is still updated.
+        #[serde(default)]
+        pub reconciliation_paused: bool,
     }
 
     #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -88,49 +114,94 @@ pub mod versioned {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub topic_id: Option<String>,
 
-        /// The partitions of the topic in Kafka.
+        /// The name of the topic in Kafka.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub topic_name: Option<TopicName>,
+
+        /// The number of partitions in Kafka.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub partitions: Option<i32>,
+
+        /// The replication factor, not counting replicas that a running reassignment removes.
+        /// Not set if the partitions have different replication factors.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub replication_factor: Option<i16>,
+
+        /// All effective topic configs in Kafka.
         #[serde(default)]
-        pub partitions: Vec<KafkaTopicPartitionStatus>,
+        pub config: BTreeMap<String, v1alpha1::KafkaTopicConfigStatus>,
     }
 
     #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct KafkaTopicPartitionStatus {
-        pub index: i32,
+    pub struct KafkaTopicConfigStatus {
+        /// The value, not set for sensitive configs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub value: Option<String>,
 
-        /// Broker ids holding a replica, the preferred leader first. During a reassignment, this
-        /// includes the replicas being added and removed.
-        pub replicas: Vec<i32>,
+        /// Where the value comes from, like `DYNAMIC_TOPIC_CONFIG` or `DEFAULT_CONFIG`.
+        pub source: String,
+    }
+}
+
+impl v1alpha1::KafkaTopic {
+    /// The name of the topic in Kafka: `spec.topicName`, otherwise `metadata.name`.
+    ///
+    /// Fails if `metadata.name` is longer than a topic name may be.
+    pub fn topic_name(&self) -> Result<TopicName, TopicNameError> {
+        match &self.spec.topic_name {
+            Some(topic_name) => Ok(topic_name.clone()),
+            None => TopicName::from_str(&self.name_any()),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use rstest::rstest;
-    use stackable_operator::versioned::test_utils::RoundtripTestData;
+    use stackable_operator::{kube::api::ObjectMeta, versioned::test_utils::RoundtripTestData};
 
     use super::*;
 
     impl RoundtripTestData for v1alpha1::KafkaTopicSpec {
         fn roundtrip_test_data() -> Vec<Self> {
             stackable_operator::utils::yaml_from_str_singleton_map(indoc::indoc! {r#"
-              - clusterName: simple-kafka
-                managementPolicy:
-                  adoption: Adopt
-                  deletion: Delete
+              - clusterRef:
+                  name: simple-kafka
                 topicName: shop.orders
                 partitions: 6
                 replicationFactor: 3
-                config:
+                configOverrides:
                   retention.ms: "604800000"
-              - clusterName: simple-kafka
-                topicName: minimal
-                partitions: 1
-                replicationFactor: 1
+                deletionPolicy: Delete
+                topicOperation:
+                  reconciliationPaused: true
+              - clusterRef:
+                  name: simple-kafka
             "#})
             .expect("the roundtrip test data should be valid YAML")
+        }
+    }
+
+    fn topic(metadata_name: &str, topic_name: Option<&str>) -> v1alpha1::KafkaTopic {
+        v1alpha1::KafkaTopic {
+            metadata: ObjectMeta {
+                name: Some(metadata_name.to_owned()),
+                ..ObjectMeta::default()
+            },
+            spec: v1alpha1::KafkaTopicSpec {
+                cluster_ref: v1alpha1::KafkaClusterRef {
+                    name: ClusterName::from_str("simple-kafka")
+                        .expect("the cluster name should be valid"),
+                },
+                topic_name: topic_name.map(TopicName::from_str_unsafe),
+                partitions: None,
+                replication_factor: None,
+                config_overrides: BTreeMap::new(),
+                deletion_policy: DeletionPolicy::default(),
+                topic_operation: v1alpha1::TopicOperation::default(),
+            },
+            status: None,
         }
     }
 
@@ -139,7 +210,9 @@ mod tests {
     #[case::uppercase_and_underscore("Shop_Orders-1")]
     #[case::single_underscore("_internal")]
     #[case::underscore_only("_")]
+    #[case::internal_topic("__consumer_offsets")]
     #[case::leading_dot(".hidden")]
+    #[case::trailing_dot("a.")]
     #[case::three_dots("...")]
     fn accept_topic_name(#[case] name: &str) {
         assert!(
@@ -152,7 +225,6 @@ mod tests {
     #[case::empty("")]
     #[case::dot(".")]
     #[case::two_dots("..")]
-    #[case::double_underscore_prefix("__consumer_offsets")]
     #[case::invalid_character("shop/orders")]
     #[case::too_long(&"a".repeat(250))]
     fn reject_topic_name(#[case] name: &str) {
@@ -162,6 +234,27 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::explicit("my-topic", Some("shop.orders"), "shop.orders")]
+    #[case::from_metadata_name("shop.orders", None, "shop.orders")]
+    fn effective_topic_name(
+        #[case] metadata_name: &str,
+        #[case] topic_name: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            TopicName::from_str_unsafe(expected),
+            topic(metadata_name, topic_name)
+                .topic_name()
+                .expect("the topic name should be valid")
+        );
+    }
+
+    #[test]
+    fn reject_too_long_metadata_name_as_topic_name() {
+        assert!(topic(&"a".repeat(250), None).topic_name().is_err());
+    }
+
     #[test]
     fn schema_contains_validations() {
         let crd = serde_json::to_value(
@@ -169,19 +262,28 @@ mod tests {
                 .expect("the CRD should be mergeable"),
         )
         .expect("the CRD should be serializable");
-        let spec = &crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"];
+        let version = &crd["spec"]["versions"][0];
+        let spec = &version["schema"]["openAPIV3Schema"]["properties"]["spec"];
+        let properties = &spec["properties"];
 
         assert_eq!(
-            "self == oldSelf",
-            spec["clusterName"]["x-kubernetes-validations"][0]["rule"]
+            ".spec.clusterRef.name",
+            version["selectableFields"][0]["jsonPath"]
         );
         assert_eq!(
             "self == oldSelf",
-            spec["topicName"]["x-kubernetes-validations"][0]["rule"]
+            properties["clusterRef"]["x-kubernetes-validations"][0]["rule"]
         );
-        assert_eq!(249, spec["topicName"]["maxLength"]);
-        assert!(spec["topicName"]["pattern"].is_string());
-        assert_eq!(Some(1.0), spec["partitions"]["minimum"].as_f64());
-        assert_eq!(Some(1.0), spec["replicationFactor"]["minimum"].as_f64());
+        assert_eq!(
+            "self.?topicName == oldSelf.?topicName",
+            spec["x-kubernetes-validations"][0]["rule"]
+        );
+        assert_eq!(249, properties["topicName"]["maxLength"]);
+        assert!(properties["topicName"]["pattern"].is_string());
+        assert_eq!(Some(1.0), properties["partitions"]["minimum"].as_f64());
+        assert_eq!(
+            Some(1.0),
+            properties["replicationFactor"]["minimum"].as_f64()
+        );
     }
 }
