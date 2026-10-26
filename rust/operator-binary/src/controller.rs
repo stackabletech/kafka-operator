@@ -38,6 +38,7 @@ use stackable_operator::{
     shared::time::Duration,
     v2::{
         HasName, HasUid, NameIsValidLabelValue,
+        agent_utils::AgentResourceNames,
         role_group_utils::ResourceNames,
         role_utils,
         types::{
@@ -258,6 +259,14 @@ impl ValidatedCluster {
     /// Pods, its (namespaced) RoleBinding, and the operator-deployed ClusterRole it binds.
     pub fn cluster_resource_names(&self) -> role_utils::ResourceNames {
         role_utils::ResourceNames {
+            cluster_name: self.name.clone(),
+            product_name: PRODUCT_NAME.clone(),
+        }
+    }
+
+    /// Type-safe names for the resources of the agent.
+    pub fn agent_resource_names(&self) -> AgentResourceNames {
+        AgentResourceNames {
             cluster_name: self.name.clone(),
             product_name: PRODUCT_NAME.clone(),
         }

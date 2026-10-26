@@ -20,20 +20,19 @@ use stackable_operator::{
     commons::secret_class::SecretClassVolumeProvisionParts,
     constant,
     k8s_openapi::{
-        Resource,
         api::{
             apps::v1::{Deployment, DeploymentSpec, DeploymentStrategy},
             core::v1::{EnvVar, EnvVarSource, ObjectFieldSelector, ServiceAccount},
-            rbac::v1::{ClusterRole, RoleBinding, RoleRef, Subject},
+            rbac::v1::RoleBinding,
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
     },
-    kube::api::ObjectMeta,
     v2::{
         builder::{
             meta::ownerreference_from_resource,
             pod::container::{EnvVarName, EnvVarSet, new_container_builder},
         },
+        rbac::{self, RbacResourceNames},
         types::kubernetes::{ContainerName, SecretClassName, VolumeName},
     },
 };
@@ -48,12 +47,12 @@ constant!(DISCOVERY_VOLUME_NAME: VolumeName = "discovery");
 constant!(KAFKA_TLS_VOLUME_NAME: VolumeName = "tls-kafka");
 constant!(KUBERNETES_NODE_NAME: EnvVarName = "KUBERNETES_NODE_NAME");
 constant!(KUBERNETES_CLUSTER_DOMAIN: EnvVarName = "KUBERNETES_CLUSTER_DOMAIN");
-pub const AGENT_CLUSTER_ROLE_NAME: &str = "kafka-agent-clusterrole";
 
 pub fn build_agent_deployment(
     cluster: &ValidatedCluster,
     agent_config: &ValidatedAgentConfig,
 ) -> Deployment {
+    let resource_names = cluster.agent_resource_names();
     let mut cb_agent = new_container_builder(&AGENT_CONTAINER_NAME);
     let mut pod_builder = PodBuilder::new();
 
@@ -100,7 +99,7 @@ pub fn build_agent_deployment(
         )
         .image_pull_secrets_from_product_image(&cluster.image)
         .add_container(cb_agent.build())
-        .service_account_name(agent_name(cluster))
+        .service_account_name(resource_names.service_account_name().to_string())
         .security_context(
             PodSecurityContextBuilder::with_stackable_defaults()
                 .fs_group(1000)
@@ -108,7 +107,12 @@ pub fn build_agent_deployment(
         );
 
     Deployment {
-        metadata: agent_metadata(cluster),
+        metadata: ObjectMetaBuilder::new()
+            .name_and_namespace(cluster)
+            .name(resource_names.deployment_name().to_string())
+            .ownerreference(ownerreference_from_resource(cluster, None, Some(true)))
+            .with_labels(recommended_labels_for_agent_resources(cluster))
+            .build(),
         spec: Some(DeploymentSpec {
             replicas: Some(1),
             // Never run two agents at the same time, as for the operator itself.
@@ -128,28 +132,20 @@ pub fn build_agent_deployment(
 }
 
 pub fn build_agent_service_account(cluster: &ValidatedCluster) -> ServiceAccount {
-    ServiceAccount {
-        metadata: agent_metadata(cluster),
-        ..ServiceAccount::default()
-    }
+    rbac::build_service_account(
+        cluster,
+        &cluster.agent_resource_names(),
+        recommended_labels_for_agent_resources(cluster),
+    )
 }
 
 /// Binds the agent ServiceAccount to the agent ClusterRole deployed by the Helm chart.
 pub fn build_agent_role_binding(cluster: &ValidatedCluster) -> RoleBinding {
-    RoleBinding {
-        metadata: agent_metadata(cluster),
-        role_ref: RoleRef {
-            api_group: Some(ClusterRole::GROUP.to_owned()),
-            kind: ClusterRole::KIND.to_owned(),
-            name: AGENT_CLUSTER_ROLE_NAME.to_owned(),
-        },
-        subjects: Some(vec![Subject {
-            kind: ServiceAccount::KIND.to_owned(),
-            name: agent_name(cluster),
-            namespace: Some(cluster.namespace.to_string()),
-            ..Subject::default()
-        }]),
-    }
+    rbac::build_role_binding(
+        cluster,
+        &cluster.agent_resource_names(),
+        recommended_labels_for_agent_resources(cluster),
+    )
 }
 
 fn agent_env_vars(cluster: &ValidatedCluster, agent_config: &ValidatedAgentConfig) -> EnvVarSet {
@@ -224,21 +220,6 @@ fn add_kafka_tls_volume_and_mount(
     container_builder
         .add_volume_mount(&*KAFKA_TLS_VOLUME_NAME, KAFKA_TLS_DIR)
         .expect("the mount path is statically defined and must not collide");
-}
-
-/// The name of all agent resources. Kinds don't share a namespace, so unlike a suffix per kind, this
-/// cannot collide with the resources of a cluster named `<cluster>-agent`.
-fn agent_name(cluster: &ValidatedCluster) -> String {
-    format!("{}-agent", cluster.name)
-}
-
-fn agent_metadata(cluster: &ValidatedCluster) -> ObjectMeta {
-    ObjectMetaBuilder::new()
-        .name_and_namespace(cluster)
-        .name(agent_name(cluster))
-        .ownerreference(ownerreference_from_resource(cluster, None, Some(true)))
-        .with_labels(recommended_labels_for_agent_resources(cluster))
-        .build()
 }
 
 #[cfg(test)]
