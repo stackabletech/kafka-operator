@@ -35,6 +35,7 @@ use stackable_operator::{
         product_logging::framework::{
             STACKABLE_LOG_DIR, ValidatedContainerLogConfigChoice, vector_container,
         },
+        rbac::RbacResourceNames,
         role_group_utils::ResourceNames,
         types::kubernetes::{ConfigMapKey, ContainerName, VolumeName},
     },
