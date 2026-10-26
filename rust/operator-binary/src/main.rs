@@ -69,7 +69,7 @@ struct KafkaRun {
     #[clap(flatten)]
     common: RunArguments,
 
-    /// The image of this operator, which also contains the agent. Required to enable platform
+    /// The image of this operator, which also contains the agent. Required to enable management
     /// access on a KafkaCluster.
     #[arg(long, env)]
     operator_image: Option<String>,
