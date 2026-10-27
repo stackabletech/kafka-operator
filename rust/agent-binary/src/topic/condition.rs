@@ -1,9 +1,8 @@
 //! The `Ready` and `Synced` conditions of a `KafkaTopic` for the outcome of a sync.
 
 use stackable_kafka_admin::client;
-use stackable_operator::status::condition::{
-    ClusterConditionStatus,
-    managed_resource::{ManagedCondition, ManagedConditionType},
+use stackable_operator::agent::condition::{
+    ConditionStatus, ManagedCondition, ManagedConditionType,
 };
 
 use super::plan::{TopicState, UnsupportedChange};
@@ -66,7 +65,7 @@ fn ready_from(
     sync_outcome: &TopicSyncOutcome,
     topic_state: Option<&TopicState>,
 ) -> ManagedCondition {
-    use ClusterConditionStatus::{False, True, Unknown};
+    use ConditionStatus::{False, True, Unknown};
 
     // Also after a failed change, because the topic was observed before.
     if let Some(topic_state) = topic_state {
@@ -104,7 +103,7 @@ fn synced_from(
     sync_outcome: &TopicSyncOutcome,
     topic_state: Option<&TopicState>,
 ) -> ManagedCondition {
-    use ClusterConditionStatus::{False, True};
+    use ConditionStatus::{False, True};
 
     match sync_outcome {
         TopicSyncOutcome::Synced {
@@ -174,17 +173,17 @@ fn error_chain(error: &dyn std::error::Error) -> String {
         .join(": ")
 }
 
-fn ready(status: ClusterConditionStatus, reason: &str, message: &str) -> ManagedCondition {
+fn ready(status: ConditionStatus, reason: &str, message: &str) -> ManagedCondition {
     condition(ManagedConditionType::Ready, status, reason, message)
 }
 
-fn synced(status: ClusterConditionStatus, reason: &str, message: &str) -> ManagedCondition {
+fn synced(status: ConditionStatus, reason: &str, message: &str) -> ManagedCondition {
     condition(ManagedConditionType::Synced, status, reason, message)
 }
 
 fn condition(
     type_: ManagedConditionType,
-    status: ClusterConditionStatus,
+    status: ConditionStatus,
     reason: &str,
     message: &str,
 ) -> ManagedCondition {
@@ -204,15 +203,15 @@ mod tests {
     use stackable_kafka_shared::crd::topic::TopicName;
 
     use super::*;
-    use crate::topic::condition::ClusterConditionStatus::{False, True, Unknown};
+    use crate::topic::condition::ConditionStatus::{False, True, Unknown};
 
-    fn summary(conditions: &[ManagedCondition]) -> Vec<(String, ClusterConditionStatus, &str)> {
+    fn summary(conditions: &[ManagedCondition]) -> Vec<(String, ConditionStatus, &str)> {
         conditions
             .iter()
             .map(|condition| {
                 (
                     condition.type_.to_string(),
-                    condition.status.clone(),
+                    condition.status,
                     condition.reason.as_str(),
                 )
             })

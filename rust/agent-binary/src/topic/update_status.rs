@@ -5,8 +5,8 @@ use stackable_kafka_shared::crd::topic::v1alpha1::{
     KafkaTopic, KafkaTopicConfigStatus, KafkaTopicStatus,
 };
 use stackable_operator::{
+    agent::condition::update_conditions,
     k8s_openapi::{apimachinery::pkg::apis::meta::v1::Time, jiff::Timestamp},
-    status::condition::managed_resource::update_conditions,
 };
 
 use super::{

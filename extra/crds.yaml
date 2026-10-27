@@ -2332,7 +2332,7 @@ spec:
                 properties:
                   reconciliationPaused:
                     default: false
-                    description: Stops the agent from changing the topic in Kafka. The status is still updated.
+                    description: Stops the agent from changing the resource in the product. The status is still updated.
                     type: boolean
                 type: object
             required:

@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
+    agent::{deletion::v1alpha1::DeletionPolicy, operation::v1alpha1::ResourceOperation},
     attributed_string_type,
-    crd::management_access::v1alpha1::DeletionPolicy,
     k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition,
     kube::{CustomResource, ResourceExt},
     schemars::{self, JsonSchema},
@@ -82,9 +82,9 @@ pub mod versioned {
         #[serde(default)]
         pub deletion_policy: DeletionPolicy,
 
-        // no doc - docs in TopicOperation struct.
+        /// Operations on this topic, independent of the `clusterOperation` of the KafkaCluster.
         #[serde(default)]
-        pub topic_operation: v1alpha1::TopicOperation,
+        pub topic_operation: ResourceOperation,
     }
 
     #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -92,15 +92,6 @@ pub mod versioned {
     pub struct KafkaClusterRef {
         /// Name of a KafkaCluster in the namespace of this KafkaTopic.
         pub name: ClusterName,
-    }
-
-    /// Operations on this topic, independent of the `clusterOperation` of the KafkaCluster.
-    #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct TopicOperation {
-        /// Stops the agent from changing the topic in Kafka. The status is still updated.
-        #[serde(default)]
-        pub reconciliation_paused: bool,
     }
 
     #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -199,7 +190,7 @@ mod tests {
                 replication_factor: None,
                 config_overrides: BTreeMap::new(),
                 deletion_policy: DeletionPolicy::default(),
-                topic_operation: v1alpha1::TopicOperation::default(),
+                topic_operation: ResourceOperation::default(),
             },
             status: None,
         }

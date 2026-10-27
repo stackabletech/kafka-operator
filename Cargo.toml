@@ -10,7 +10,7 @@ edition = "2024"
 repository = "https://github.com/stackabletech/kafka-operator"
 
 [workspace.dependencies]
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "feat/platform-access", features = ["crds", "webhook"] }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "feat/platform-access", features = ["agent", "crds", "webhook"] }
 stackable-kafka-admin = { path = "rust/kafka-admin" }
 stackable-kafka-shared = { path = "rust/shared" }
 

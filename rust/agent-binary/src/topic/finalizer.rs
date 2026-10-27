@@ -6,7 +6,7 @@ use serde_json::json;
 use snafu::{OptionExt, ResultExt};
 use stackable_kafka_shared::crd::topic::v1alpha1::KafkaTopic;
 use stackable_operator::{
-    crd::management_access::v1alpha1::DeletionPolicy,
+    agent::deletion::v1alpha1::DeletionPolicy,
     kube::{ResourceExt, runtime::controller::Action},
 };
 use tracing::info;
