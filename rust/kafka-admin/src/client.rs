@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt,
     time::Duration,
 };
 
@@ -11,8 +10,8 @@ use kafka_protocol::{
     ResponseError,
     error::ParseResponseErrorCode,
     messages::{
-        CreatePartitionsRequest, CreateTopicsRequest, CreateTopicsResponse, DeleteTopicsRequest,
-        DeleteTopicsResponse, DescribeConfigsRequest, DescribeConfigsResponse,
+        ApiKey, CreatePartitionsRequest, CreateTopicsRequest, CreateTopicsResponse,
+        DeleteTopicsRequest, DeleteTopicsResponse, DescribeConfigsRequest, DescribeConfigsResponse,
         IncrementalAlterConfigsRequest, ListPartitionReassignmentsRequest,
         ListPartitionReassignmentsResponse, MetadataRequest, MetadataResponse, TopicName,
         create_partitions_request::CreatePartitionsTopic,
@@ -33,6 +32,8 @@ use crate::{
     connection::{self, Connection, Security},
 };
 
+// The highest versions that Kafka 3.9.2 supports and 4.3.1 still supports, see `validVersions` in
+// `clients/src/main/resources/common/message/<Api>Request.json` of the Kafka repository.
 const METADATA_VERSION: i16 = 12;
 const CREATE_TOPICS_VERSION: i16 = 7;
 const DELETE_TOPICS_VERSION: i16 = 6;
@@ -45,13 +46,22 @@ const LIST_PARTITION_REASSIGNMENTS_VERSION: i16 = 0;
 const BROKER_TIMEOUT_MS: i32 = 25_000;
 const _: () = assert!((BROKER_TIMEOUT_MS as u128) < connection::REQUEST_TIMEOUT.as_millis());
 
-/// Must stay below the broker's `connections.max.idle.ms` (10 minutes by default).
+/// Must stay below the broker's `connections.max.idle.ms`, 10 minutes by default, see
+/// `CONNECTIONS_MAX_IDLE_MS_DEFAULT` in
+/// `server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java`.
 const CONNECTION_MAX_IDLE: Duration = Duration::from_secs(5 * 60);
 
-/// Lets the broker apply `num.partitions` or `default.replication.factor` when creating a topic.
+/// Lets the broker apply `num.partitions` or `default.replication.factor` when creating a topic,
+/// see `NumPartitions` and `ReplicationFactor` in
+/// `clients/src/main/resources/common/message/CreateTopicsRequest.json`.
 const BROKER_DEFAULT: i32 = -1;
 
+// The codes of the enums in Kafka's Java client, in `clients/src/main/java/org/apache/kafka/`:
+// - `ConfigResource.Type` in `common/config/ConfigResource.java`
+// - `ConfigSource` in `common/requests/DescribeConfigsResponse.java`
+// - `AlterConfigOp.OpType` in `clients/admin/AlterConfigOp.java`
 const RESOURCE_TYPE_TOPIC: i8 = 2;
+const CONFIG_SOURCE_DYNAMIC_TOPIC: i8 = 1;
 const CONFIG_OPERATION_SET: i8 = 0;
 const CONFIG_OPERATION_DELETE: i8 = 1;
 
@@ -70,16 +80,16 @@ pub enum Error {
     Send { source: connection::Error },
 
     #[snafu(display(
-        "the response to the request with API key {api_key} contains no result for the topic {topic:?}"
+        "the response to the {api_key:?} request contains no result for the topic {topic:?}"
     ))]
-    MissingResult { api_key: i16, topic: String },
+    MissingResult { api_key: ApiKey, topic: String },
 
     #[snafu(display(
-        "the broker rejected the request with API key {api_key} for the topic {topic:?} with {error}{}",
+        "the broker rejected the {api_key:?} request for the topic {topic:?} with {error}{}",
         message.as_deref().map(|message| format!(": {message}")).unwrap_or_default()
     ))]
     Kafka {
-        api_key: i16,
+        api_key: ApiKey,
         topic: String,
         error: ResponseError,
         message: Option<String>,
@@ -102,53 +112,8 @@ pub struct CreatedTopic {
     pub id: String,
     pub partitions: i32,
     pub replication_factor: i16,
-    /// All configs of the topic, as [`KafkaAdminClient::describe_topic_configs`] returns them
-    pub configs: BTreeMap<String, TopicConfig>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TopicConfig {
-    /// `None` for sensitive configs
-    pub value: Option<String>,
-    pub source: ConfigSource,
-}
-
-/// Where the value of a topic config comes from.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConfigSource {
-    DynamicTopic,
-    DynamicBroker,
-    DynamicDefaultBroker,
-    StaticBroker,
-    Default,
-    Unknown,
-}
-
-impl ConfigSource {
-    fn from_code(code: i8) -> Self {
-        match code {
-            1 => Self::DynamicTopic,
-            2 => Self::DynamicBroker,
-            3 => Self::DynamicDefaultBroker,
-            4 => Self::StaticBroker,
-            5 => Self::Default,
-            _ => Self::Unknown,
-        }
-    }
-}
-
-/// The names used by Kafka's admin client and `kafka-configs.sh`.
-impl fmt::Display for ConfigSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::DynamicTopic => "DYNAMIC_TOPIC_CONFIG",
-            Self::DynamicBroker => "DYNAMIC_BROKER_CONFIG",
-            Self::DynamicDefaultBroker => "DYNAMIC_DEFAULT_BROKER_CONFIG",
-            Self::StaticBroker => "STATIC_BROKER_CONFIG",
-            Self::Default => "DEFAULT_CONFIG",
-            Self::Unknown => "UNKNOWN",
-        })
-    }
+    /// The configs set on the topic, as [`KafkaAdminClient::describe_topic_configs`] returns them
+    pub configs: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -202,11 +167,11 @@ impl KafkaAdminClient {
         describe_topic_result(response, topic)
     }
 
-    /// Returns all configs of the topic, including broker and default values.
+    /// Returns the configs set on the topic itself, without broker and default values.
     pub async fn describe_topic_configs(
         &mut self,
         topic: &str,
-    ) -> Result<BTreeMap<String, TopicConfig>> {
+    ) -> Result<BTreeMap<String, String>> {
         let response = self
             .send(
                 describe_topic_configs_request(topic),
@@ -242,9 +207,9 @@ impl KafkaAdminClient {
             )
             .await?;
 
-        let result = first(response.results, CreatePartitionsRequest::KEY, topic)?;
+        let result = first(response.results, ApiKey::CreatePartitions, topic)?;
         check(
-            CreatePartitionsRequest::KEY,
+            ApiKey::CreatePartitions,
             topic,
             result.error_code,
             result.error_message,
@@ -266,13 +231,9 @@ impl KafkaAdminClient {
             )
             .await?;
 
-        let result = first(
-            response.responses,
-            IncrementalAlterConfigsRequest::KEY,
-            topic,
-        )?;
+        let result = first(response.responses, ApiKey::IncrementalAlterConfigs, topic)?;
         check(
-            IncrementalAlterConfigsRequest::KEY,
+            ApiKey::IncrementalAlterConfigs,
             topic,
             result.error_code,
             result.error_message,
@@ -345,11 +306,11 @@ fn describe_topic_request(topic: &str) -> MetadataRequest {
 }
 
 fn describe_topic_result(response: MetadataResponse, topic: &str) -> Result<Option<Topic>> {
-    let result = first(response.topics, MetadataRequest::KEY, topic)?;
+    let result = first(response.topics, ApiKey::Metadata, topic)?;
     if result.error_code.err() == Some(ResponseError::UnknownTopicOrPartition) {
         return Ok(None);
     }
-    check(MetadataRequest::KEY, topic, result.error_code, None)?;
+    check(ApiKey::Metadata, topic, result.error_code, None)?;
 
     let partitions = result
         .partitions
@@ -381,32 +342,29 @@ fn describe_topic_configs_request(topic: &str) -> DescribeConfigsRequest {
 fn describe_topic_configs_result(
     response: DescribeConfigsResponse,
     topic: &str,
-) -> Result<BTreeMap<String, TopicConfig>> {
-    let result = first(response.results, DescribeConfigsRequest::KEY, topic)?;
+) -> Result<BTreeMap<String, String>> {
+    let result = first(response.results, ApiKey::DescribeConfigs, topic)?;
     check(
-        DescribeConfigsRequest::KEY,
+        ApiKey::DescribeConfigs,
         topic,
         result.error_code,
         result.error_message,
     )?;
 
-    Ok(result
-        .configs
-        .into_iter()
-        .map(|config| {
-            (
-                config.name.to_string(),
-                topic_config(config.value, config.config_source),
-            )
-        })
-        .collect())
+    Ok(topic_level_configs(result.configs.into_iter().map(
+        |config| (config.name, config.value, config.config_source),
+    )))
 }
 
-fn topic_config(value: Option<StrBytes>, source: i8) -> TopicConfig {
-    TopicConfig {
-        value: value.map(|value| value.to_string()),
-        source: ConfigSource::from_code(source),
-    }
+/// Topic configs have no PASSWORD type, so Kafka does not redact their topic-level values.
+fn topic_level_configs(
+    configs: impl IntoIterator<Item = (StrBytes, Option<StrBytes>, i8)>,
+) -> BTreeMap<String, String> {
+    configs
+        .into_iter()
+        .filter(|(_, _, source)| *source == CONFIG_SOURCE_DYNAMIC_TOPIC)
+        .filter_map(|(name, value, _)| Some((name.to_string(), value?.to_string())))
+        .collect()
 }
 
 fn create_topic_request(
@@ -435,16 +393,16 @@ fn create_topic_request(
 }
 
 fn create_topic_result(response: CreateTopicsResponse, topic: &str) -> Result<CreatedTopic> {
-    let result = first(response.topics, CreateTopicsRequest::KEY, topic)?;
+    let result = first(response.topics, ApiKey::CreateTopics, topic)?;
     check(
-        CreateTopicsRequest::KEY,
+        ApiKey::CreateTopics,
         topic,
         result.error_code,
         result.error_message,
     )?;
     // Without the details, e.g. if `DESCRIBE_CONFIGS` is not allowed, the topic was still created.
     check(
-        CreateTopicsRequest::KEY,
+        ApiKey::CreateTopics,
         topic,
         result.topic_config_error_code,
         None,
@@ -453,17 +411,13 @@ fn create_topic_result(response: CreateTopicsResponse, topic: &str) -> Result<Cr
         id: topic_id(result.topic_id.as_bytes()),
         partitions: result.num_partitions,
         replication_factor: result.replication_factor,
-        configs: result
-            .configs
-            .unwrap_or_default()
-            .into_iter()
-            .map(|config| {
-                (
-                    config.name.to_string(),
-                    topic_config(config.value, config.config_source),
-                )
-            })
-            .collect(),
+        configs: topic_level_configs(
+            result
+                .configs
+                .unwrap_or_default()
+                .into_iter()
+                .map(|config| (config.name, config.value, config.config_source)),
+        ),
     })
 }
 
@@ -513,7 +467,7 @@ fn delete_topic_request(topic: &str) -> DeleteTopicsRequest {
 }
 
 fn delete_topic_result(response: DeleteTopicsResponse, topic: &str) -> Result<()> {
-    let result = first(response.responses, DeleteTopicsRequest::KEY, topic)?;
+    let result = first(response.responses, ApiKey::DeleteTopics, topic)?;
     //  It's ok if topic or partition are already being deleted
     if matches!(
         result.error_code.err(),
@@ -522,7 +476,7 @@ fn delete_topic_result(response: DeleteTopicsResponse, topic: &str) -> Result<()
         return Ok(());
     }
     check(
-        DeleteTopicsRequest::KEY,
+        ApiKey::DeleteTopics,
         topic,
         result.error_code,
         result.error_message,
@@ -549,7 +503,7 @@ fn list_partition_reassignments_result(
     topic: &str,
 ) -> Result<Vec<PartitionReassignment>> {
     check(
-        ListPartitionReassignmentsRequest::KEY,
+        ApiKey::ListPartitionReassignments,
         topic,
         response.error_code,
         response.error_message,
@@ -572,14 +526,14 @@ fn topic_name(topic: &str) -> TopicName {
 }
 
 // Used instead of [0] to correctly handle empty results & take ownership
-fn first<T>(results: Vec<T>, api_key: i16, topic: &str) -> Result<T> {
+fn first<T>(results: Vec<T>, api_key: ApiKey, topic: &str) -> Result<T> {
     results
         .into_iter()
         .next()
         .context(MissingResultSnafu { api_key, topic })
 }
 
-fn check(api_key: i16, topic: &str, error_code: i16, message: Option<StrBytes>) -> Result<()> {
+fn check(api_key: ApiKey, topic: &str, error_code: i16, message: Option<StrBytes>) -> Result<()> {
     match error_code.err() {
         None => Ok(()),
         Some(error) => KafkaSnafu {
@@ -611,6 +565,9 @@ mod tests {
 
     const TOPIC: &str = "orders";
     const APIS: &[(i16, i16, i16)] = &[(DeleteTopicsRequest::KEY, 0, DELETE_TOPICS_VERSION)];
+    // `ConfigSource`, like `CONFIG_SOURCE_DYNAMIC_TOPIC`
+    const CONFIG_SOURCE_STATIC_BROKER: i8 = 4;
+    const CONFIG_SOURCE_DEFAULT: i8 = 5;
 
     #[tokio::test]
     async fn try_the_next_bootstrap_server() {
@@ -729,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn describe_all_topic_configs_with_their_source() {
+    fn describe_only_the_configs_set_on_the_topic() {
         let config = |name: &'static str, value: Option<&'static str>, source: i8| {
             DescribeConfigsResourceResult::default()
                 .with_name(StrBytes::from_static_str(name))
@@ -738,52 +695,17 @@ mod tests {
         };
         let response = DescribeConfigsResponse::default().with_results(vec![
             DescribeConfigsResult::default().with_configs(vec![
-                config("retention.ms", Some("1000"), 1),
-                config("cleanup.policy", Some("delete"), 5),
-                config("sasl.secret", None, 4),
+                config("retention.ms", Some("1000"), CONFIG_SOURCE_DYNAMIC_TOPIC),
+                config("cleanup.policy", Some("delete"), CONFIG_SOURCE_DEFAULT),
+                config("sasl.secret", None, CONFIG_SOURCE_STATIC_BROKER),
             ]),
         ]);
 
         assert_eq!(
-            BTreeMap::from([
-                (
-                    "retention.ms".to_owned(),
-                    TopicConfig {
-                        value: Some("1000".to_owned()),
-                        source: ConfigSource::DynamicTopic,
-                    }
-                ),
-                (
-                    "cleanup.policy".to_owned(),
-                    TopicConfig {
-                        value: Some("delete".to_owned()),
-                        source: ConfigSource::Default,
-                    }
-                ),
-                (
-                    "sasl.secret".to_owned(),
-                    TopicConfig {
-                        value: None,
-                        source: ConfigSource::StaticBroker,
-                    }
-                ),
-            ]),
+            BTreeMap::from([("retention.ms".to_owned(), "1000".to_owned())]),
             describe_topic_configs_result(response, TOPIC)
                 .expect("the configs should be described")
         );
-    }
-
-    #[rstest]
-    #[case::dynamic_topic(1, ConfigSource::DynamicTopic, "DYNAMIC_TOPIC_CONFIG")]
-    #[case::default(5, ConfigSource::Default, "DEFAULT_CONFIG")]
-    #[case::not_for_topics(8, ConfigSource::Unknown, "UNKNOWN")]
-    fn name_config_sources_like_kafka(
-        #[case] code: i8,
-        #[case] source: ConfigSource,
-        #[case] name: &str,
-    ) {
-        assert_eq!(source, ConfigSource::from_code(code));
-        assert_eq!(name, source.to_string());
     }
 
     #[test]
@@ -829,7 +751,11 @@ mod tests {
                     CreatableTopicConfigs::default()
                         .with_name(StrBytes::from_static_str("retention.ms"))
                         .with_value(Some(StrBytes::from_static_str("1000")))
-                        .with_config_source(1),
+                        .with_config_source(CONFIG_SOURCE_DYNAMIC_TOPIC),
+                    CreatableTopicConfigs::default()
+                        .with_name(StrBytes::from_static_str("cleanup.policy"))
+                        .with_value(Some(StrBytes::from_static_str("delete")))
+                        .with_config_source(CONFIG_SOURCE_DEFAULT),
                 ])),
         ]);
 
@@ -838,13 +764,7 @@ mod tests {
                 id: "UXyU9i5ARn6W00ON2taeWA".to_owned(),
                 partitions: 6,
                 replication_factor: 3,
-                configs: BTreeMap::from([(
-                    "retention.ms".to_owned(),
-                    TopicConfig {
-                        value: Some("1000".to_owned()),
-                        source: ConfigSource::DynamicTopic,
-                    }
-                )]),
+                configs: BTreeMap::from([("retention.ms".to_owned(), "1000".to_owned())]),
             },
             create_topic_result(response, TOPIC).expect("the topic should be created")
         );
@@ -1004,7 +924,7 @@ mod tests {
     #[test]
     fn report_rejected_request() {
         let error = check(
-            CreateTopicsRequest::KEY,
+            ApiKey::CreateTopics,
             TOPIC,
             ResponseError::TopicAlreadyExists.code(),
             Some(StrBytes::from_static_str("Topic 'orders' already exists.")),
@@ -1026,12 +946,18 @@ mod tests {
     fn reject_response_without_result() {
         let error = first(
             Vec::<DeletableTopicResult>::new(),
-            DeleteTopicsRequest::KEY,
+            ApiKey::DeleteTopics,
             TOPIC,
         )
         .expect_err("the result should be missing");
 
-        assert!(matches!(error, Error::MissingResult { .. }));
+        assert!(matches!(
+            error,
+            Error::MissingResult {
+                api_key: ApiKey::DeleteTopics,
+                ..
+            }
+        ));
     }
 
     fn kafka_admin_client(ports: &[u16]) -> KafkaAdminClient {
