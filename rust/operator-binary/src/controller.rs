@@ -31,7 +31,7 @@ use stackable_operator::{
     kube::{
         Resource,
         api::{DynamicObject, ObjectMeta},
-        core::{DeserializeGuard, error_boundary},
+        core::{DeserializeGuard, Selector, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
     },
     logging::controller::ReconcilerError,
@@ -39,6 +39,7 @@ use stackable_operator::{
     v2::{
         HasName, HasUid, NameIsValidLabelValue,
         agent_utils::AgentResourceNames,
+        kvp::label,
         role_group_utils::ResourceNames,
         role_utils,
         types::{
@@ -81,6 +82,11 @@ pub const KAFKA_FULL_CONTROLLER_NAME: &str =
 constant!(PRODUCT_NAME: ProductName = APP_NAME);
 constant!(OPERATOR_NAME: OperatorName = KAFKA_OPERATOR_NAME);
 constant!(CONTROLLER_NAME: ControllerName = KAFKA_CONTROLLER_NAME);
+
+/// Selector matching the agents of all KafkaClusters, e.g. to watch them.
+pub fn all_agents_selector() -> Selector {
+    Selector::from_iter(BTreeMap::from(label::all_agents_selector(&PRODUCT_NAME)))
+}
 
 #[derive(Snafu, Debug)]
 pub enum PodDescriptorsError {

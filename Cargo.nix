@@ -5509,7 +5509,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "b815f203fda98c109be46aa67e7cf3921c808603";
+          rev = "ccfff5810f9b5affae4d144b3cf04ca88677e23e";
           sha256 = "0vdnhvfn85qnm5845mad24smhdp2y6nznlgagbp3g42pi042g9pm";
         };
         libName = "k8s_version";
@@ -10488,7 +10488,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "b815f203fda98c109be46aa67e7cf3921c808603";
+          rev = "ccfff5810f9b5affae4d144b3cf04ca88677e23e";
           sha256 = "0vdnhvfn85qnm5845mad24smhdp2y6nznlgagbp3g42pi042g9pm";
         };
         libName = "stackable_agent";
@@ -10531,7 +10531,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "b815f203fda98c109be46aa67e7cf3921c808603";
+          rev = "ccfff5810f9b5affae4d144b3cf04ca88677e23e";
           sha256 = "0vdnhvfn85qnm5845mad24smhdp2y6nznlgagbp3g42pi042g9pm";
         };
         libName = "stackable_certs";
@@ -10875,7 +10875,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "b815f203fda98c109be46aa67e7cf3921c808603";
+          rev = "ccfff5810f9b5affae4d144b3cf04ca88677e23e";
           sha256 = "0vdnhvfn85qnm5845mad24smhdp2y6nznlgagbp3g42pi042g9pm";
         };
         libName = "stackable_operator";
@@ -11080,7 +11080,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "b815f203fda98c109be46aa67e7cf3921c808603";
+          rev = "ccfff5810f9b5affae4d144b3cf04ca88677e23e";
           sha256 = "0vdnhvfn85qnm5845mad24smhdp2y6nznlgagbp3g42pi042g9pm";
         };
         procMacro = true;
@@ -11115,7 +11115,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "b815f203fda98c109be46aa67e7cf3921c808603";
+          rev = "ccfff5810f9b5affae4d144b3cf04ca88677e23e";
           sha256 = "0vdnhvfn85qnm5845mad24smhdp2y6nznlgagbp3g42pi042g9pm";
         };
         libName = "stackable_shared";
@@ -11196,7 +11196,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "b815f203fda98c109be46aa67e7cf3921c808603";
+          rev = "ccfff5810f9b5affae4d144b3cf04ca88677e23e";
           sha256 = "0vdnhvfn85qnm5845mad24smhdp2y6nznlgagbp3g42pi042g9pm";
         };
         libName = "stackable_telemetry";
@@ -11306,7 +11306,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "b815f203fda98c109be46aa67e7cf3921c808603";
+          rev = "ccfff5810f9b5affae4d144b3cf04ca88677e23e";
           sha256 = "0vdnhvfn85qnm5845mad24smhdp2y6nznlgagbp3g42pi042g9pm";
         };
         libName = "stackable_versioned";
@@ -11352,7 +11352,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "b815f203fda98c109be46aa67e7cf3921c808603";
+          rev = "ccfff5810f9b5affae4d144b3cf04ca88677e23e";
           sha256 = "0vdnhvfn85qnm5845mad24smhdp2y6nznlgagbp3g42pi042g9pm";
         };
         procMacro = true;
@@ -11416,7 +11416,7 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/stackabletech/operator-rs.git";
-          rev = "b815f203fda98c109be46aa67e7cf3921c808603";
+          rev = "ccfff5810f9b5affae4d144b3cf04ca88677e23e";
           sha256 = "0vdnhvfn85qnm5845mad24smhdp2y6nznlgagbp3g42pi042g9pm";
         };
         libName = "stackable_webhook";
