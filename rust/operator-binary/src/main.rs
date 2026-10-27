@@ -38,7 +38,7 @@ use stackable_operator::{
 };
 
 use crate::{
-    controller::KAFKA_FULL_CONTROLLER_NAME,
+    controller::{KAFKA_FULL_CONTROLLER_NAME, all_agents_selector},
     crd::{KAFKA_OPERATOR_NAME, KafkaCluster, KafkaClusterVersion, v1alpha1},
     webhooks::conversion::create_webhook_server,
 };
@@ -192,9 +192,7 @@ async fn main() -> anyhow::Result<()> {
                 .owns(
                     watch_namespace.get_api::<DeserializeGuard<Deployment>>(&client),
                     // The agent is the only Deployment
-                    watcher::Config::default().labels(
-                        "app.kubernetes.io/name=kafka,app.kubernetes.io/component=kafka-agent",
-                    ),
+                    watcher::Config::default().labels_from(&all_agents_selector()),
                 )
                 .watches(
                     watch_namespace.get_api::<DeserializeGuard<ConfigMap>>(&client),
