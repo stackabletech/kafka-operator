@@ -8,7 +8,7 @@ metadata:
   labels:
   {{- include "kafka-operator.labels" . | nindent 4 }}
 rules:
-  # KafkaTopics of the agent's cluster: watched, annotated (ownership, managed config keys) and finalizers.
+  # KafkaTopics of the agent's cluster: watched, and their finalizer added and removed.
   - apiGroups:
       - {{ include "kafka-operator.name" . }}.stackable.tech
     resources:

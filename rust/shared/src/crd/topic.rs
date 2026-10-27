@@ -11,6 +11,10 @@ use stackable_operator::{
     versioned::versioned,
 };
 
+/// Set by the agent on a `KafkaTopic` that deletes its topic. Removed by the agent after the
+/// deletion, or by the operator once the KafkaCluster is gone, so no agent can remove it anymore.
+pub const KAFKA_TOPIC_FINALIZER: &str = "kafka.stackable.tech/kafkatopic";
+
 attributed_string_type! {
     TopicName,
     "The name of a Kafka topic, not `.` or `..`",

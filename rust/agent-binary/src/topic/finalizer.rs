@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde_json::json;
 use snafu::{OptionExt, ResultExt};
-use stackable_kafka_shared::crd::topic::v1alpha1::KafkaTopic;
+use stackable_kafka_shared::crd::topic::{KAFKA_TOPIC_FINALIZER, v1alpha1::KafkaTopic};
 use stackable_operator::{
     agent::deletion::v1alpha1::DeletionPolicy,
     kube::{ResourceExt, runtime::controller::Action},
@@ -21,8 +21,6 @@ use super::{
     validate::has_other_kafka_topic,
 };
 use crate::config::{BOOTSTRAP_SERVERS_FILE, read_bootstrap_servers};
-
-const FINALIZER: &str = "kafka.stackable.tech/kafkatopic";
 
 /// Handles a deletion and removes a finalizer that is no longer needed. Returns `Some` if the
 /// reconcile ends here.
@@ -69,7 +67,7 @@ fn has_finalizer(kafka_topic: &KafkaTopic) -> bool {
     kafka_topic
         .finalizers()
         .iter()
-        .any(|finalizer| finalizer == FINALIZER)
+        .any(|finalizer| finalizer == KAFKA_TOPIC_FINALIZER)
 }
 
 /// Deletes the topic in Kafka if the `deletionPolicy` says so and no other `KafkaTopic` declares
@@ -117,11 +115,11 @@ async fn set_finalizer(
     let mut finalizers = kafka_topic
         .finalizers()
         .iter()
-        .filter(|finalizer| *finalizer != FINALIZER)
+        .filter(|finalizer| *finalizer != KAFKA_TOPIC_FINALIZER)
         .cloned()
         .collect::<Vec<_>>();
     if should_have_finalizer {
-        finalizers.push(FINALIZER.to_owned());
+        finalizers.push(KAFKA_TOPIC_FINALIZER.to_owned());
     }
     let patch = json!({
         "metadata": {

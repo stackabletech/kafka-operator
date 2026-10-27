@@ -88,6 +88,14 @@ pub fn all_agents_selector() -> Selector {
     Selector::from_iter(BTreeMap::from(label::all_agents_selector(&PRODUCT_NAME)))
 }
 
+/// Type-safe names for the resources of the agent of the given cluster.
+pub fn agent_resource_names_of(cluster_name: &ClusterName) -> AgentResourceNames {
+    AgentResourceNames {
+        cluster_name: cluster_name.clone(),
+        product_name: PRODUCT_NAME.clone(),
+    }
+}
+
 #[derive(Snafu, Debug)]
 pub enum PodDescriptorsError {
     #[snafu(display(
@@ -272,10 +280,7 @@ impl ValidatedCluster {
 
     /// Type-safe names for the resources of the agent.
     pub fn agent_resource_names(&self) -> AgentResourceNames {
-        AgentResourceNames {
-            cluster_name: self.name.clone(),
-            product_name: PRODUCT_NAME.clone(),
-        }
+        agent_resource_names_of(&self.name)
     }
 
     /// Type-safe names for the resources of a given role group.
