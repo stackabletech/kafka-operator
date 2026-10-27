@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 
 use const_format::concatcp;
 use snafu::{ResultExt, Snafu};
-use stackable_kafka_admin::{client, connection::Security};
+use stackable_kafka_admin::client::{self, KafkaAdminClient};
 use stackable_kafka_shared::crd::topic::v1alpha1::KafkaTopic;
 use stackable_operator::{
     kube::{
@@ -21,7 +21,7 @@ use tracing::info;
 use super::{
     condition::TopicSyncOutcome,
     finalizer::{add_finalizer, reconcile_finalizer},
-    sync::{CachedClient, sync},
+    sync::sync,
     update_status::update_status,
 };
 use crate::AGENT_NAME;
@@ -30,7 +30,6 @@ pub const TOPIC_CONTROLLER_NAME: &str = "kafkatopic";
 pub const TOPIC_FULL_CONTROLLER_NAME: &str = concatcp!(TOPIC_CONTROLLER_NAME, ".", AGENT_NAME);
 
 const RESYNC_INTERVAL: Duration = Duration::from_secs(5 * 60);
-const RETRY_INTERVAL: Duration = Duration::from_secs(10);
 const ERROR_RETRY_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Snafu, EnumDiscriminants)]
@@ -41,12 +40,6 @@ pub enum Error {
     InvalidKafkaTopic {
         source: error_boundary::InvalidObject,
     },
-
-    #[snafu(display("failed to read the bootstrap servers"))]
-    ReadBootstrapServers { source: crate::config::Error },
-
-    #[snafu(display("the KafkaCluster has no bootstrap servers yet"))]
-    NoBootstrapServers,
 
     #[snafu(display("failed to talk to Kafka"))]
     Kafka { source: client::Error },
@@ -73,10 +66,10 @@ impl ReconcilerError for Error {
 pub struct Ctx {
     pub(crate) client: stackable_operator::client::Client,
     pub(crate) cluster_name: ClusterName,
-    pub(crate) security: Security,
     pub(crate) kafka_topics: Store<DeserializeGuard<KafkaTopic>>,
-    /// One client per agent, rebuilt when the bootstrap servers change
-    pub(crate) client_cache: Mutex<Option<CachedClient>>,
+    /// Reads the TLS files on every new connection and reconnects after a failed request, so
+    /// rotated certificates are picked up without restarting the agent.
+    pub(crate) admin_client: Mutex<KafkaAdminClient>,
 }
 
 impl Ctx {
@@ -85,15 +78,14 @@ impl Ctx {
     pub fn new(
         client: stackable_operator::client::Client,
         cluster_name: ClusterName,
-        security: Security,
+        admin_client: KafkaAdminClient,
         kafka_topics: Store<DeserializeGuard<KafkaTopic>>,
     ) -> Self {
         Self {
             client,
             cluster_name,
-            security,
             kafka_topics,
-            client_cache: Mutex::new(None),
+            admin_client: Mutex::new(admin_client),
         }
     }
 }
@@ -150,7 +142,6 @@ pub async fn reconcile_topic(
 fn requeue(sync_outcome: &TopicSyncOutcome) -> Action {
     match sync_outcome {
         TopicSyncOutcome::InvalidSpec { .. } => Action::await_change(),
-        TopicSyncOutcome::ClusterNotReady => Action::requeue(RETRY_INTERVAL),
         _ => Action::requeue(RESYNC_INTERVAL),
     }
 }
@@ -172,7 +163,6 @@ mod tests {
 
     #[rstest::rstest]
     #[case::invalid_spec(TopicSyncOutcome::InvalidSpec { message: String::new() }, Action::await_change())]
-    #[case::cluster_not_ready(TopicSyncOutcome::ClusterNotReady, Action::requeue(RETRY_INTERVAL))]
     #[case::synced(TopicSyncOutcome::Synced { reassigning_partition_count: 0 }, Action::requeue(RESYNC_INTERVAL))]
     #[case::paused(
         TopicSyncOutcome::ReconciliationPaused,

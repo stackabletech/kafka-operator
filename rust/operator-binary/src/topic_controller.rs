@@ -80,7 +80,6 @@ pub struct Ctx {
     pub client: stackable_operator::client::Client,
 }
 
-/// The KafkaCluster of a `KafkaTopic`, as far as its agent is concerned.
 #[derive(Debug, Eq, PartialEq)]
 enum ClusterState {
     /// Does not exist or has a `deletionTimestamp`
@@ -147,8 +146,6 @@ pub fn error_policy(
     }
 }
 
-/// The `KafkaTopic`s of the KafkaCluster `cluster_name`, to reconcile them when the KafkaCluster
-/// or its agent changes.
 pub fn kafka_topics_of_cluster(
     kafka_topics: &Store<DeserializeGuard<KafkaTopic>>,
     namespace: Option<String>,

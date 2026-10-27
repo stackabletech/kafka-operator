@@ -1,9 +1,7 @@
 //! The finalizer of a `KafkaTopic` and the cleanup in Kafka when it is deleted.
 
-use std::path::Path;
-
 use serde_json::json;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 use stackable_kafka_shared::crd::topic::{KAFKA_TOPIC_FINALIZER, v1alpha1::KafkaTopic};
 use stackable_operator::{
     agent::deletion::v1alpha1::DeletionPolicy,
@@ -12,15 +10,10 @@ use stackable_operator::{
 use tracing::info;
 
 use super::{
-    controller::{
-        Ctx, KafkaSnafu, NoBootstrapServersSnafu, ReadBootstrapServersSnafu, Result,
-        UpdateFinalizersSnafu,
-    },
+    controller::{Ctx, KafkaSnafu, Result, UpdateFinalizersSnafu},
     plan::TopicState,
-    sync::client_for,
     validate::has_other_kafka_topic,
 };
-use crate::config::{BOOTSTRAP_SERVERS_FILE, read_bootstrap_servers};
 
 /// Handles a deletion and removes a finalizer that is no longer needed. Returns `Some` if the
 /// reconcile ends here.
@@ -87,11 +80,9 @@ async fn cleanup(kafka_topic: &KafkaTopic, ctx: &Ctx) -> Result<()> {
         return Ok(());
     }
 
-    let bootstrap_servers = read_bootstrap_servers(Path::new(BOOTSTRAP_SERVERS_FILE))
-        .context(ReadBootstrapServersSnafu)?
-        .context(NoBootstrapServersSnafu)?;
-    let mut client_cache = ctx.client_cache.lock().await;
-    client_for(&mut client_cache, bootstrap_servers, &ctx.security)
+    ctx.admin_client
+        .lock()
+        .await
         .delete_topic(topic_name.as_ref())
         .await
         .context(KafkaSnafu)?;

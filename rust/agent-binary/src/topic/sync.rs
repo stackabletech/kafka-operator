@@ -1,34 +1,19 @@
 //! Brings the topic in Kafka to the state of its `KafkaTopic` spec.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::Path,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use snafu::ResultExt;
-use stackable_kafka_admin::{
-    bootstrap::BrokerAddress,
-    client::{KafkaAdminClient, TopicConfig},
-    connection::Security,
-};
+use stackable_kafka_admin::client::{KafkaAdminClient, TopicConfig};
 use stackable_kafka_shared::crd::topic::{TopicName, v1alpha1::KafkaTopic};
 use stackable_operator::kube::ResourceExt;
 use tracing::info;
 
 use super::{
     condition::TopicSyncOutcome,
-    controller::{Ctx, KafkaSnafu, ReadBootstrapServersSnafu, Result},
+    controller::{Ctx, KafkaSnafu, Result},
     plan::{ObservedTopic, TopicPlan, TopicState, plan},
     validate::validate,
 };
-use crate::config::{BOOTSTRAP_SERVERS_FILE, read_bootstrap_servers};
-
-const KAFKA_CLIENT_ID: &str = "stackable-kafka-agent";
-
-pub(crate) struct CachedClient {
-    bootstrap_servers: Vec<BrokerAddress>,
-    admin_client: KafkaAdminClient,
-}
 
 /// Sets `topic_state` to the topic in Kafka, if it exists and is managed by this `KafkaTopic`.
 /// It is kept up to date with each applied change, also if a later step fails.
@@ -44,14 +29,8 @@ pub(crate) async fn sync(
     };
 
     // observe (Kafka)
-    let Some(bootstrap_servers) = read_bootstrap_servers(Path::new(BOOTSTRAP_SERVERS_FILE))
-        .context(ReadBootstrapServersSnafu)?
-    else {
-        return Ok(TopicSyncOutcome::ClusterNotReady);
-    };
-    let mut client_cache = ctx.client_cache.lock().await;
-    let admin_client = client_for(&mut client_cache, bootstrap_servers, &ctx.security);
-    let observed = observe(admin_client, &topic_name).await?;
+    let mut admin_client = ctx.admin_client.lock().await;
+    let observed = observe(&mut admin_client, &topic_name).await?;
 
     // plan (no client required)
     let topic_plan = plan(&kafka_topic.spec, observed.as_ref());
@@ -66,7 +45,7 @@ pub(crate) async fn sync(
     // execute (Kafka)
     execute(
         kafka_topic,
-        admin_client,
+        &mut admin_client,
         topic_name,
         &topic_plan,
         topic_state,
@@ -248,33 +227,4 @@ async fn replace_configs(
         .describe_topic_configs(topic_name.as_ref())
         .await
         .context(KafkaSnafu)
-}
-
-/// Returns the cached client, rebuilt if the bootstrap servers changed.
-///
-/// The client reads the TLS files on every new connection and reconnects after a failed request,
-/// so rotated certificates are picked up without restarting the agent.
-pub(crate) fn client_for<'a>(
-    client_cache: &'a mut Option<CachedClient>,
-    bootstrap_servers: Vec<BrokerAddress>,
-    security: &Security,
-) -> &'a mut KafkaAdminClient {
-    if client_cache
-        .as_ref()
-        .is_some_and(|cached| cached.bootstrap_servers != bootstrap_servers)
-    {
-        *client_cache = None;
-    }
-    let cached = client_cache.get_or_insert_with(|| {
-        info!(?bootstrap_servers, "Connecting to new bootstrap servers");
-        CachedClient {
-            bootstrap_servers: bootstrap_servers.clone(),
-            admin_client: KafkaAdminClient::new(
-                bootstrap_servers,
-                security.clone(),
-                KAFKA_CLIENT_ID,
-            ),
-        }
-    });
-    &mut cached.admin_client
 }

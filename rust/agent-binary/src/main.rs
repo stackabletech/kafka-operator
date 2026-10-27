@@ -6,8 +6,12 @@ use std::sync::Arc;
 
 use clap::Parser;
 use futures::StreamExt;
+use stackable_kafka_admin::{bootstrap::parse_bootstrap_servers, client::KafkaAdminClient};
 use stackable_kafka_shared::{
-    agent::{ClientSecurity, ENV_CLIENT_SECURITY, ENV_CLUSTER_NAME, ENV_CLUSTER_NAMESPACE},
+    agent::{
+        ClientSecurity, ENV_BOOTSTRAP_SERVERS, ENV_CLIENT_SECURITY, ENV_CLUSTER_NAME,
+        ENV_CLUSTER_NAMESPACE,
+    },
     crd::topic::v1alpha1::KafkaTopic,
 };
 use stackable_operator::{
@@ -34,6 +38,8 @@ mod topic;
 
 pub const AGENT_NAME: &str = "kafka-agent.stackable.tech";
 
+const KAFKA_CLIENT_ID: &str = "stackable-kafka-agent";
+
 mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
@@ -59,6 +65,10 @@ struct KafkaAgentRun {
     #[arg(long, env = AsRef::<str>::as_ref(&*ENV_CLIENT_SECURITY))]
     client_security: ClientSecurity,
 
+    /// The brokers to connect to, as `host:port,host:port`.
+    #[arg(long, env = AsRef::<str>::as_ref(&*ENV_BOOTSTRAP_SERVERS))]
+    bootstrap_servers: String,
+
     #[clap(flatten)]
     common: CommonOptions,
 }
@@ -71,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
             cluster_name,
             cluster_namespace,
             client_security,
+            bootstrap_servers,
             common:
                 CommonOptions {
                     telemetry,
@@ -90,12 +101,15 @@ async fn main() -> anyhow::Result<()> {
             );
 
             let security = config::security(client_security);
+            let bootstrap_servers = parse_bootstrap_servers(&bootstrap_servers)?;
             tracing::info!(
                 %cluster_name,
                 %cluster_namespace,
                 ?security,
+                ?bootstrap_servers,
                 "Configured the agent"
             );
+            let admin_client = KafkaAdminClient::new(bootstrap_servers, security, KAFKA_CLIENT_ID);
 
             // Watches for the SIGTERM signal and gracefully shuts down the controller.
             let sigterm_watcher = SignalWatcher::sigterm()?;
@@ -124,7 +138,7 @@ async fn main() -> anyhow::Result<()> {
                     Arc::new(controller::Ctx::new(
                         client,
                         cluster_name,
-                        security,
+                        admin_client,
                         kafka_topic_store,
                     )),
                 )

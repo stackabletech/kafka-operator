@@ -7,10 +7,6 @@ use stackable_operator::agent::condition::{
 
 use super::plan::{TopicState, UnsupportedChange};
 
-/// The operator writes the bootstrap servers to the discovery ConfigMap only once the
-/// listener-operator has assigned addresses to the bootstrap Listeners.
-const CLUSTER_NOT_READY_MESSAGE: &str = "the KafkaCluster has no bootstrap servers yet";
-
 #[derive(Debug, Eq, PartialEq)]
 pub enum TopicSyncOutcome {
     /// The topic matches the spec
@@ -22,7 +18,6 @@ pub enum TopicSyncOutcome {
         changes: Vec<UnsupportedChange>,
     },
     ReconciliationPaused,
-    ClusterNotReady,
     InvalidSpec {
         message: String,
     },
@@ -87,9 +82,6 @@ fn ready_from(
         TopicSyncOutcome::Conflict { .. } => {
             ready(False, "Conflict", "another KafkaTopic manages the topic")
         }
-        TopicSyncOutcome::ClusterNotReady => {
-            ready(Unknown, "ClusterNotReady", CLUSTER_NOT_READY_MESSAGE)
-        }
         TopicSyncOutcome::InvalidSpec { message } => ready(Unknown, "InvalidSpec", message),
         TopicSyncOutcome::KafkaRejected { message } => ready(Unknown, "KafkaRejected", message),
         TopicSyncOutcome::ConnectionFailed { message } => {
@@ -129,9 +121,6 @@ fn synced_from(
             "the reconciliation is paused, only the status is updated",
         ),
         TopicSyncOutcome::Conflict { message } => synced(False, "Conflict", message),
-        TopicSyncOutcome::ClusterNotReady => {
-            synced(False, "ClusterNotReady", CLUSTER_NOT_READY_MESSAGE)
-        }
         TopicSyncOutcome::InvalidSpec { message } => synced(False, "InvalidSpec", message),
         TopicSyncOutcome::KafkaRejected { message } => synced(False, "KafkaRejected", message),
         TopicSyncOutcome::ConnectionFailed { message } => {
@@ -338,7 +327,6 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case::cluster_not_ready(TopicSyncOutcome::ClusterNotReady, "ClusterNotReady")]
     #[case::invalid_spec(TopicSyncOutcome::InvalidSpec { message: "invalid".to_owned() }, "InvalidSpec")]
     #[case::kafka_rejected(TopicSyncOutcome::KafkaRejected { message: "denied".to_owned() }, "KafkaRejected")]
     #[case::connection_failed(TopicSyncOutcome::ConnectionFailed { message: "timed out".to_owned() }, "ConnectionFailed")]
