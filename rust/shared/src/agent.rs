@@ -5,14 +5,14 @@ use std::str::FromStr;
 use stackable_operator::{constant, v2::builder::pod::container::EnvVarName};
 use strum::{Display, EnumString};
 
-pub const DISCOVERY_DIR: &str = "/stackable/discovery";
-
 /// Directory of the CA certificate the Kafka brokers are verified with.
 pub const KAFKA_TLS_DIR: &str = "/stackable/secrets/tls-kafka";
 
 constant!(pub ENV_CLUSTER_NAME: EnvVarName = "KAFKA_CLUSTER_NAME");
 constant!(pub ENV_CLUSTER_NAMESPACE: EnvVarName = "KAFKA_CLUSTER_NAMESPACE");
 constant!(pub ENV_CLIENT_SECURITY: EnvVarName = "KAFKA_CLIENT_SECURITY");
+// Comma-separated `host:port` list
+constant!(pub ENV_BOOTSTRAP_SERVERS: EnvVarName = "KAFKA_BOOTSTRAP_SERVERS");
 
 /// How the agent connects to the brokers.
 #[derive(Clone, Copy, Debug, Display, EnumString, Eq, PartialEq)]

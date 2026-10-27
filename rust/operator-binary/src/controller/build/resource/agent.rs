@@ -3,8 +3,8 @@
 use std::str::FromStr;
 
 use stackable_kafka_shared::agent::{
-    ClientSecurity, DISCOVERY_DIR, ENV_CLIENT_SECURITY, ENV_CLUSTER_NAME, ENV_CLUSTER_NAMESPACE,
-    KAFKA_TLS_DIR,
+    ClientSecurity, ENV_BOOTSTRAP_SERVERS, ENV_CLIENT_SECURITY, ENV_CLUSTER_NAME,
+    ENV_CLUSTER_NAMESPACE, KAFKA_TLS_DIR,
 };
 use stackable_operator::{
     builder::{
@@ -37,13 +37,18 @@ use stackable_operator::{
     },
 };
 
-use crate::controller::{
-    AgentConnection, ValidatedAgentConfig, ValidatedCluster,
-    build::{agent_selector, recommended_labels_for_agent_resources},
+use crate::{
+    controller::{
+        AgentConnection, ValidatedAgentConfig, ValidatedCluster,
+        build::{
+            agent_selector, properties::listener::headless_service_address,
+            recommended_labels_for_agent_resources,
+        },
+    },
+    crd::role::KafkaRole,
 };
 
 constant!(AGENT_CONTAINER_NAME: ContainerName = "agent");
-constant!(DISCOVERY_VOLUME_NAME: VolumeName = "discovery");
 constant!(KAFKA_TLS_VOLUME_NAME: VolumeName = "tls-kafka");
 constant!(KUBERNETES_NODE_NAME: EnvVarName = "KUBERNETES_NODE_NAME");
 constant!(KUBERNETES_CLUSTER_DOMAIN: EnvVarName = "KUBERNETES_CLUSTER_DOMAIN");
@@ -56,7 +61,6 @@ pub fn build_agent_deployment(
     let mut cb_agent = new_container_builder(&AGENT_CONTAINER_NAME);
     let mut pod_builder = PodBuilder::new();
 
-    add_discovery_volume_and_mount(cluster, &mut pod_builder, &mut cb_agent);
     match &agent_config.connection {
         AgentConnection::Plaintext => {}
         AgentConnection::Tls {
@@ -162,6 +166,7 @@ fn agent_env_vars(cluster: &ValidatedCluster, agent_config: &ValidatedAgentConfi
     };
 
     EnvVarSet::new()
+        .with_value(&ENV_BOOTSTRAP_SERVERS, bootstrap_servers(cluster))
         .with_value(&ENV_CLUSTER_NAME, cluster.name.to_string())
         .with_value(&ENV_CLUSTER_NAMESPACE, cluster.namespace.to_string())
         .with_value(
@@ -177,21 +182,30 @@ fn agent_env_vars(cluster: &ValidatedCluster, agent_config: &ValidatedAgentConfi
         .expect("the env var name is a valid EnvVarName")
 }
 
-fn add_discovery_volume_and_mount(
-    cluster: &ValidatedCluster,
-    pod_builder: &mut PodBuilder,
-    container_builder: &mut ContainerBuilder,
-) {
-    pod_builder
-        .add_volume(
-            VolumeBuilder::new(&*DISCOVERY_VOLUME_NAME)
-                .with_config_map(cluster.name.to_string())
-                .build(),
-        )
-        .expect("the volume name is statically defined and must not collide");
-    container_builder
-        .add_volume_mount(&*DISCOVERY_VOLUME_NAME, DISCOVERY_DIR)
-        .expect("the mount path is statically defined and must not collide");
+/// The headless Services of the broker role groups, which resolve to the broker Pods.
+///
+/// They keep the traffic within the Kubernetes cluster regardless of the ListenerClass. The pod
+/// scope of the broker certificates puts them into the SANs, so hostname verification passes. The
+/// agent stays on the bootstrap connection, so it never follows the advertised addresses.
+fn bootstrap_servers(cluster: &ValidatedCluster) -> String {
+    let client_port = cluster.cluster_config.kafka_security.client_port();
+    cluster
+        .role_group_configs
+        .get(&KafkaRole::Broker)
+        .into_iter()
+        .flat_map(|role_group_configs| role_group_configs.keys())
+        .map(|role_group_name| {
+            headless_service_address(
+                &cluster
+                    .role_group_resource_names(&KafkaRole::Broker, role_group_name)
+                    .headless_service_name(),
+                &cluster.namespace,
+                &cluster.cluster_domain,
+                &client_port,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn add_kafka_tls_volume_and_mount(
@@ -333,28 +347,27 @@ mod tests {
         assert_eq!(
             pod_spec["containers"][0]["volumeMounts"],
             json!([
-                {"mountPath": "/stackable/discovery", "name": "discovery"},
                 {"mountPath": "/stackable/secrets/tls-kafka", "name": "tls-kafka"},
                 {"mountPath": "/stackable/secrets/tls-management-access", "name": "tls-management-access"}
             ])
         );
         assert_eq!(
-            pod_spec["volumes"][0]["configMap"],
-            json!({"name": "simple-kafka"})
-        );
-        assert_eq!(
-            pod_spec["volumes"][1]["ephemeral"]["volumeClaimTemplate"]["metadata"]["annotations"],
+            pod_spec["volumes"][0]["ephemeral"]["volumeClaimTemplate"]["metadata"]["annotations"],
             json!({
                 "secrets.stackable.tech/class": "tls",
                 "secrets.stackable.tech/format": "tls-pem",
                 "secrets.stackable.tech/provision-parts": "public"
             })
         );
-        assert_eq!(pod_spec["volumes"][2]["name"], "tls-management-access");
+        assert_eq!(pod_spec["volumes"][1]["name"], "tls-management-access");
 
         assert_eq!(
             pod_spec["containers"][0]["env"],
             json!([
+                {
+                    "name": "KAFKA_BOOTSTRAP_SERVERS",
+                    "value": "simple-kafka-broker-default-headless.default.svc.cluster.local:9093"
+                },
                 {"name": "KAFKA_CLIENT_SECURITY", "value": "mutual-tls"},
                 {"name": "KAFKA_CLUSTER_NAME", "value": "simple-kafka"},
                 {"name": "KAFKA_CLUSTER_NAMESPACE", "value": "default"},
@@ -374,7 +387,7 @@ mod tests {
         ));
 
         assert_eq!(
-            deployment["spec"]["template"]["spec"]["volumes"][2],
+            deployment["spec"]["template"]["spec"]["volumes"][1],
             json!({"name": "tls-management-access", "secret": {"optional": false, "secretName": "my-cert"}})
         );
     }
@@ -386,11 +399,10 @@ mod tests {
         ));
 
         let pod_spec = &deployment["spec"]["template"]["spec"];
-        assert_eq!(pod_spec["volumes"][0]["name"], "discovery");
-        assert_eq!(pod_spec["volumes"][1]["name"], "tls-kafka");
-        assert_eq!(pod_spec["volumes"][2], Value::Null);
+        assert_eq!(pod_spec["volumes"][0]["name"], "tls-kafka");
+        assert_eq!(pod_spec["volumes"][1], Value::Null);
         assert_eq!(
-            pod_spec["containers"][0]["env"][0],
+            pod_spec["containers"][0]["env"][1],
             json!({"name": "KAFKA_CLIENT_SECURITY", "value": "tls"})
         );
     }
