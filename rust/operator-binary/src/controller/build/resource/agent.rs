@@ -58,30 +58,36 @@ pub fn build_agent_deployment(
     agent_config: &ValidatedAgentConfig,
 ) -> Deployment {
     let resource_names = cluster.agent_resource_names();
-    let mut cb_agent = new_container_builder(&AGENT_CONTAINER_NAME);
+    let mut container_builder_agent = new_container_builder(&AGENT_CONTAINER_NAME);
     let mut pod_builder = PodBuilder::new();
 
     match &agent_config.connection {
         AgentConnection::Plaintext => {}
         AgentConnection::Tls {
             server_ca_secret_class,
-        } => {
-            add_kafka_tls_volume_and_mount(server_ca_secret_class, &mut pod_builder, &mut cb_agent)
-        }
+        } => add_kafka_tls_volume_and_mount(
+            server_ca_secret_class,
+            &mut pod_builder,
+            &mut container_builder_agent,
+        ),
         AgentConnection::MutualTls {
             server_ca_secret_class,
             client_credential,
         } => {
-            add_kafka_tls_volume_and_mount(server_ca_secret_class, &mut pod_builder, &mut cb_agent);
+            add_kafka_tls_volume_and_mount(
+                server_ca_secret_class,
+                &mut pod_builder,
+                &mut container_builder_agent,
+            );
             client_credential
-                .add_volumes_and_mounts(&mut pod_builder, vec![&mut cb_agent])
+                .add_volumes_and_mounts(&mut pod_builder, vec![&mut container_builder_agent])
                 .expect(
                     "the agent Pod has no other volume or mount for the TLS client certificate",
                 );
         }
     }
 
-    cb_agent
+    container_builder_agent
         .image(&agent_config.image)
         .command(vec!["stackable-kafka-agent".to_owned()])
         .args(vec!["run".to_owned()])
@@ -102,7 +108,7 @@ pub fn build_agent_deployment(
                 .build(),
         )
         .image_pull_secrets_from_product_image(&cluster.image)
-        .add_container(cb_agent.build())
+        .add_container(container_builder_agent.build())
         .service_account_name(resource_names.service_account_name().to_string())
         .security_context(
             PodSecurityContextBuilder::with_stackable_defaults()
