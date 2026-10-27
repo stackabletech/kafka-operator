@@ -295,6 +295,15 @@ mod tests {
     }
 
     #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *AGENT_CONTAINER_NAME;
+        let _ = *KAFKA_TLS_VOLUME_NAME;
+        let _ = *KUBERNETES_NODE_NAME;
+        let _ = *KUBERNETES_CLUSTER_DOMAIN;
+    }
+
+    #[test]
     fn agent_config_is_only_resolved_if_management_access_is_enabled() {
         assert!(
             cluster(

@@ -31,6 +31,15 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn test_constants() {
+        // Test that dereferencing the constants does not panic.
+        let _ = *ENV_CLUSTER_NAME;
+        let _ = *ENV_CLUSTER_NAMESPACE;
+        let _ = *ENV_CLIENT_SECURITY;
+        let _ = *ENV_BOOTSTRAP_SERVERS;
+    }
+
     #[rstest]
     #[case::plaintext(ClientSecurity::Plaintext, "plaintext")]
     #[case::tls(ClientSecurity::Tls, "tls")]
