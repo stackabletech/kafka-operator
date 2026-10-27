@@ -31,16 +31,18 @@ pub(crate) async fn sync(
     // observe (Kafka)
     let mut admin_client = ctx.admin_client.lock().await;
     let observed = observe(&mut admin_client, &topic_name).await?;
+    *topic_state = observed
+        .as_ref()
+        .map(|observed| TopicState::observed(topic_name.clone(), observed));
+    if kafka_topic.spec.topic_operation.reconciliation_paused {
+        return Ok(TopicSyncOutcome::ReconciliationPaused);
+    }
 
     // plan (no client required)
     let topic_plan = plan(&kafka_topic.spec, observed.as_ref());
     let reassigning_partition_count = observed
         .as_ref()
         .map_or(0, |observed| observed.reassignments.len());
-    *topic_state = observed.map(|observed| TopicState::observed(topic_name.clone(), observed));
-    if kafka_topic.spec.topic_operation.reconciliation_paused {
-        return Ok(TopicSyncOutcome::ReconciliationPaused);
-    }
 
     // execute (Kafka)
     execute(

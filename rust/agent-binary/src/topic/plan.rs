@@ -32,14 +32,13 @@ pub struct TopicState {
 }
 
 impl TopicState {
-    pub fn observed(name: TopicName, observed: ObservedTopic) -> Self {
-        let replication_factor = replication_factor(&observed);
+    pub fn observed(name: TopicName, observed: &ObservedTopic) -> Self {
         Self {
             name,
-            id: observed.topic.id,
+            id: observed.topic.id.clone(),
             partition_count: observed.topic.partitions.len() as i32,
-            replication_factor,
-            effective_configs: observed.effective_configs,
+            replication_factor: replication_factor(observed),
+            effective_configs: observed.effective_configs.clone(),
         }
     }
 
