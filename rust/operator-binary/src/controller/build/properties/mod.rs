@@ -103,12 +103,11 @@ pub(crate) fn kraft_controllers(
                     client_port = desc.client_port,
                 )
             } else {
-                format!(
-                    "{service}.{namespace}.svc.{cluster_domain}:{client_port}",
-                    service = desc.role_group_service_name,
-                    namespace = desc.namespace,
-                    cluster_domain = desc.cluster_domain,
-                    client_port = desc.client_port,
+                listener::headless_service_address(
+                    &desc.role_group_service_name,
+                    &desc.namespace,
+                    &desc.cluster_domain,
+                    &desc.client_port,
                 )
             }
         })
