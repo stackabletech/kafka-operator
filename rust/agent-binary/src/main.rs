@@ -127,7 +127,8 @@ async fn main() -> anyhow::Result<()> {
 
             let topic_controller = Controller::new(
                 client.get_api::<DeserializeGuard<KafkaTopic>>(cluster_namespace.as_ref()),
-                watcher::Config::default(),
+                // Works because the CRD declares the field as a selectableField.
+                watcher::Config::default().fields(&format!("spec.clusterRef.name={cluster_name}")),
             );
             let kafka_topic_store = topic_controller.store();
             topic_controller
@@ -137,7 +138,6 @@ async fn main() -> anyhow::Result<()> {
                     controller::error_policy,
                     Arc::new(controller::Ctx::new(
                         client,
-                        cluster_name,
                         admin_client,
                         kafka_topic_store,
                     )),

@@ -12,7 +12,6 @@ use stackable_operator::{
         runtime::{controller::Action, reflector::Store},
     },
     logging::controller::ReconcilerError,
-    v2::types::operator::ClusterName,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 use tokio::sync::Mutex;
@@ -65,7 +64,6 @@ impl ReconcilerError for Error {
 
 pub struct Ctx {
     pub(crate) client: stackable_operator::client::Client,
-    pub(crate) cluster_name: ClusterName,
     pub(crate) kafka_topics: Store<DeserializeGuard<KafkaTopic>>,
     /// Reads the TLS files on every new connection and reconnects after a failed request, so
     /// rotated certificates are picked up without restarting the agent.
@@ -77,13 +75,11 @@ impl Ctx {
     /// `KafkaTopic`s.
     pub fn new(
         client: stackable_operator::client::Client,
-        cluster_name: ClusterName,
         admin_client: KafkaAdminClient,
         kafka_topics: Store<DeserializeGuard<KafkaTopic>>,
     ) -> Self {
         Self {
             client,
-            cluster_name,
             kafka_topics,
             admin_client: Mutex::new(admin_client),
         }
@@ -102,9 +98,6 @@ pub async fn reconcile_topic(
         .as_ref()
         .map_err(error_boundary::InvalidObject::clone)
         .context(InvalidKafkaTopicSnafu)?;
-    if kafka_topic.spec.cluster_ref.name != ctx.cluster_name {
-        return Ok(Action::await_change());
-    }
 
     // finalizer (Kubernetes)
     // Left untouched while paused, like operators that only update the status then. A deletion
