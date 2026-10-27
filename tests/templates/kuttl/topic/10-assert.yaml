@@ -1,4 +1,5 @@
 ---
+# The KafkaCluster and its agent are running.
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 timeout: 600

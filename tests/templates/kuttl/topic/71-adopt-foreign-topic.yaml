@@ -4,10 +4,9 @@ kind: KafkaTopic
 metadata:
   name: legacy
 spec:
-  clusterName: test-kafka
+  clusterRef:
+    name: test-kafka
   topicName: legacy
   partitions: 1
   replicationFactor: 1
-  managementPolicy:
-    adoption: Adopt
-    deletion: Delete
+  deletionPolicy: Delete

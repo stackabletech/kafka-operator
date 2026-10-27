@@ -1,4 +1,5 @@
 ---
+# Deleting the conflicting KafkaTopic leaves the topic in Kafka.
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 timeout: 300

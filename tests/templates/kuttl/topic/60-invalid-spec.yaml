@@ -5,9 +5,10 @@ kind: KafkaTopic
 metadata:
   name: throttled
 spec:
-  clusterName: test-kafka
+  clusterRef:
+    name: test-kafka
   topicName: throttled
   partitions: 1
   replicationFactor: 1
-  config:
+  configOverrides:
     leader.replication.throttled.replicas: "*"

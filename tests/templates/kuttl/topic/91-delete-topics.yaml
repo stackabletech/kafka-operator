@@ -11,3 +11,6 @@ delete:
   - apiVersion: kafka.stackable.tech/v1alpha1
     kind: KafkaTopic
     name: throttled
+  - apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaTopic
+    name: defaults

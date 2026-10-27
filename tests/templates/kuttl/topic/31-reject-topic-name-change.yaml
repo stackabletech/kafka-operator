@@ -1,0 +1,22 @@
+---
+# The API server rejects changing, removing or adding topicName.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: >-
+      kubectl patch kafkatopic orders --namespace $NAMESPACE --type merge
+      --patch '{"spec": {"topicName": "renamed"}}' 2>&1
+      | grep "topicName is immutable"
+  - script: >-
+      kubectl patch kafkatopic orders --namespace $NAMESPACE --type json
+      --patch '[{"op": "remove", "path": "/spec/topicName"}]' 2>&1
+      | grep "topicName is immutable"
+  - script: >-
+      kubectl patch kafkatopic defaults --namespace $NAMESPACE --type merge
+      --patch '{"spec": {"topicName": "defaults"}}' 2>&1
+      | grep "topicName is immutable"
+  - script: test "$(kubectl get kafkatopic --namespace $NAMESPACE orders --output jsonpath='{.spec.topicName}')" = orders
+  # An explicit null means the same as no topicName.
+  - script: >-
+      kubectl patch kafkatopic defaults --namespace $NAMESPACE --type json
+      --patch '[{"op": "add", "path": "/spec/topicName", "value": null}]'

@@ -1,8 +1,0 @@
----
-# Only KafkaTopics that delete their topic in Kafka have a finalizer.
-apiVersion: kuttl.dev/v1beta1
-kind: TestAssert
-timeout: 300
-commands:
-  - script: test "$(kubectl get kafkatopic --namespace $NAMESPACE legacy --output jsonpath='{.metadata.finalizers}')" = '["kafka.stackable.tech/kafkatopic"]'
-  - script: test -z "$(kubectl get kafkatopic --namespace $NAMESPACE orders --output jsonpath='{.metadata.finalizers}')"

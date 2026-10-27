@@ -50,7 +50,7 @@ pub mod versioned {
     #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
     #[serde(rename_all = "camelCase")]
     #[schemars(extend("x-kubernetes-validations" = [{
-        "rule": "self.?topicName == oldSelf.?topicName",
+        "rule": "has(self.topicName) == has(oldSelf.topicName) && (!has(self.topicName) || self.topicName == oldSelf.topicName)",
         "message": "topicName is immutable"
     }]))]
     pub struct KafkaTopicSpec {
@@ -274,7 +274,8 @@ mod tests {
             properties["clusterRef"]["x-kubernetes-validations"][0]["rule"]
         );
         assert_eq!(
-            "self.?topicName == oldSelf.?topicName",
+            "has(self.topicName) == has(oldSelf.topicName) && (!has(self.topicName) || \
+             self.topicName == oldSelf.topicName)",
             spec["x-kubernetes-validations"][0]["rule"]
         );
         assert_eq!(249, properties["topicName"]["maxLength"]);

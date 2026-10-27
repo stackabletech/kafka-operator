@@ -4,7 +4,8 @@ kind: KafkaTopic
 metadata:
   name: orders
 spec:
-  clusterName: test-kafka
+  clusterRef:
+    name: test-kafka
   topicName: orders
   partitions: 3
   replicationFactor: 1

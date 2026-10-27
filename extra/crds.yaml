@@ -2343,7 +2343,7 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: topicName is immutable
-              rule: self.?topicName == oldSelf.?topicName
+              rule: has(self.topicName) == has(oldSelf.topicName) && (!has(self.topicName) || self.topicName == oldSelf.topicName)
           status:
             nullable: true
             properties:

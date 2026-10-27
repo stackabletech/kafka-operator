@@ -5,4 +5,4 @@ kind: TestStep
 commands:
   - script: >-
       kubectl patch kafkatopic orders --namespace $NAMESPACE --type json
-      --patch '[{"op": "remove", "path": "/spec/config/max.message.bytes"}]'
+      --patch '[{"op": "remove", "path": "/spec/configOverrides/max.message.bytes"}]'

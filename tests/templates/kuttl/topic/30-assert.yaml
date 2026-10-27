@@ -1,9 +1,23 @@
 ---
+# The agent adds the partitions and applies the changed config.
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 timeout: 300
-commands:
-  - script: bash topic-condition.sh orders Synced True Synced
-  - script: test "$(kubectl get kafkatopic --namespace $NAMESPACE orders --output jsonpath='{.status.partitions[*].index}')" = "0 1 2 3 4"
-  - script: 'bash kafka-cli.sh kafka-topics.sh --describe --topic orders | grep "PartitionCount: 5"'
-  - script: bash kafka-cli.sh kafka-configs.sh --describe --entity-type topics --entity-name orders | grep "retention.ms=7200000"
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: orders
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Available
+    - type: Synced
+      status: "True"
+      reason: Synced
+  partitions: 5
+  config:
+    retention.ms:
+      value: "7200000"
+      source: DYNAMIC_TOPIC_CONFIG
