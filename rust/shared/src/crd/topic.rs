@@ -63,6 +63,10 @@ pub mod versioned {
 
         /// Name of the topic in Kafka. Defaults to `metadata.name`. Immutable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("x-kubernetes-validations" = [{
+            "rule": "!self.startsWith('__')",
+            "message": "topics starting with __ are internal to Kafka"
+        }]))]
         pub topic_name: Option<TopicName>,
 
         /// Number of partitions. Can only be increased. Defaults to the broker setting
@@ -274,6 +278,10 @@ mod tests {
             spec["x-kubernetes-validations"][0]["rule"]
         );
         assert_eq!(249, properties["topicName"]["maxLength"]);
+        assert_eq!(
+            "!self.startsWith('__')",
+            properties["topicName"]["x-kubernetes-validations"][0]["rule"]
+        );
         assert!(properties["topicName"]["pattern"].is_string());
         assert_eq!(Some(1.0), properties["partitions"]["minimum"].as_f64());
         assert_eq!(

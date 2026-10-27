@@ -2325,6 +2325,9 @@ spec:
                 nullable: true
                 pattern: ^([a-zA-Z0-9._-]{3,}|[a-zA-Z0-9_-][a-zA-Z0-9._-]?|\.[a-zA-Z0-9_-])$
                 type: string
+                x-kubernetes-validations:
+                - message: topics starting with __ are internal to Kafka
+                  rule: '!self.startsWith(''__'')'
               topicOperation:
                 default:
                   reconciliationPaused: false
