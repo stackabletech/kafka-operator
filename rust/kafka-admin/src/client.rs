@@ -32,6 +32,8 @@ use crate::{
     connection::{self, Connection, Security},
 };
 
+// The highest versions that Kafka 3.9.2 supports and 4.3.1 still supports, see `validVersions` in
+// `clients/src/main/resources/common/message/<Api>Request.json` of the Kafka repository.
 const METADATA_VERSION: i16 = 12;
 const CREATE_TOPICS_VERSION: i16 = 7;
 const DELETE_TOPICS_VERSION: i16 = 6;
@@ -44,12 +46,20 @@ const LIST_PARTITION_REASSIGNMENTS_VERSION: i16 = 0;
 const BROKER_TIMEOUT_MS: i32 = 25_000;
 const _: () = assert!((BROKER_TIMEOUT_MS as u128) < connection::REQUEST_TIMEOUT.as_millis());
 
-/// Must stay below the broker's `connections.max.idle.ms` (10 minutes by default).
+/// Must stay below the broker's `connections.max.idle.ms`, 10 minutes by default, see
+/// `CONNECTIONS_MAX_IDLE_MS_DEFAULT` in
+/// `server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java`.
 const CONNECTION_MAX_IDLE: Duration = Duration::from_secs(5 * 60);
 
-/// Lets the broker apply `num.partitions` or `default.replication.factor` when creating a topic.
+/// Lets the broker apply `num.partitions` or `default.replication.factor` when creating a topic,
+/// see `NumPartitions` and `ReplicationFactor` in
+/// `clients/src/main/resources/common/message/CreateTopicsRequest.json`.
 const BROKER_DEFAULT: i32 = -1;
 
+// The codes of the enums in Kafka's Java client, in `clients/src/main/java/org/apache/kafka/`:
+// - `ConfigResource.Type` in `common/config/ConfigResource.java`
+// - `ConfigSource` in `common/requests/DescribeConfigsResponse.java`
+// - `AlterConfigOp.OpType` in `clients/admin/AlterConfigOp.java`
 const RESOURCE_TYPE_TOPIC: i8 = 2;
 const CONFIG_SOURCE_DYNAMIC_TOPIC: i8 = 1;
 const CONFIG_OPERATION_SET: i8 = 0;
@@ -559,6 +569,9 @@ mod tests {
 
     const TOPIC: &str = "orders";
     const APIS: &[(i16, i16, i16)] = &[(DeleteTopicsRequest::KEY, 0, DELETE_TOPICS_VERSION)];
+    // `ConfigSource`, like `CONFIG_SOURCE_DYNAMIC_TOPIC`
+    const CONFIG_SOURCE_STATIC_BROKER: i8 = 4;
+    const CONFIG_SOURCE_DEFAULT: i8 = 5;
 
     #[tokio::test]
     async fn try_the_next_bootstrap_server() {
@@ -687,10 +700,8 @@ mod tests {
         let response = DescribeConfigsResponse::default().with_results(vec![
             DescribeConfigsResult::default().with_configs(vec![
                 config("retention.ms", Some("1000"), CONFIG_SOURCE_DYNAMIC_TOPIC),
-                // DEFAULT_CONFIG
-                config("cleanup.policy", Some("delete"), 5),
-                // STATIC_BROKER_CONFIG
-                config("sasl.secret", None, 4),
+                config("cleanup.policy", Some("delete"), CONFIG_SOURCE_DEFAULT),
+                config("sasl.secret", None, CONFIG_SOURCE_STATIC_BROKER),
             ]),
         ]);
 
@@ -745,11 +756,10 @@ mod tests {
                         .with_name(StrBytes::from_static_str("retention.ms"))
                         .with_value(Some(StrBytes::from_static_str("1000")))
                         .with_config_source(CONFIG_SOURCE_DYNAMIC_TOPIC),
-                    // DEFAULT_CONFIG
                     CreatableTopicConfigs::default()
                         .with_name(StrBytes::from_static_str("cleanup.policy"))
                         .with_value(Some(StrBytes::from_static_str("delete")))
-                        .with_config_source(5),
+                        .with_config_source(CONFIG_SOURCE_DEFAULT),
                 ])),
         ]);
 

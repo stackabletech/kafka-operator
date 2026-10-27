@@ -27,9 +27,18 @@ use crate::{
     tls,
 };
 
+// The defaults of Kafka's Java admin client, in `clients/src/main/java/org/apache/kafka/clients/`:
+// - `socket.connection.setup.timeout.ms`, `DEFAULT_SOCKET_CONNECTION_SETUP_TIMEOUT_MS` in
+//   `CommonClientConfigs.java`
+// - `request.timeout.ms` in `admin/AdminClientConfig.java`
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Admin responses are far smaller, so a larger frame means a broken stream.
 const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
+
+/// The first version with `ClientSoftwareName` and `ClientSoftwareVersion`, see
+/// `clients/src/main/resources/common/message/ApiVersionsRequest.json` in the Kafka repository.
 const API_VERSIONS_VERSION: i16 = 3;
 
 #[derive(Debug, Snafu)]
