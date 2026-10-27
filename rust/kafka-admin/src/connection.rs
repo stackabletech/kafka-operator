@@ -6,7 +6,7 @@ use futures::{SinkExt, StreamExt};
 use kafka_protocol::{
     ResponseError,
     error::ParseResponseErrorCode,
-    messages::{ApiVersionsRequest, ApiVersionsResponse},
+    messages::{ApiKey, ApiVersionsRequest, ApiVersionsResponse},
     protocol::{Request, StrBytes, VersionRange},
 };
 use rustls::{ClientConfig, pki_types::ServerName};
@@ -23,7 +23,7 @@ use tokio_util::{
 
 use crate::{
     bootstrap::BrokerAddress,
-    codec::{self, decode_response, encode_request},
+    codec::{self, api_key, decode_response, encode_request},
     tls,
 };
 
@@ -76,23 +76,26 @@ pub enum Error {
     #[snafu(display("the broker closed the connection"))]
     ConnectionClosed,
 
-    #[snafu(display("timed out waiting for the response to the request with API key {api_key}"))]
-    RequestTimeout { source: Elapsed, api_key: i16 },
+    #[snafu(display("timed out waiting for the response to the {api_key:?} request"))]
+    RequestTimeout { source: Elapsed, api_key: ApiKey },
 
     #[snafu(display("failed to encode or decode a message"))]
     Codec { source: codec::Error },
 
-    #[snafu(display("the broker returned {error:?} for the request with API key {api_key}"))]
-    Kafka { error: ResponseError, api_key: i16 },
+    #[snafu(display("the broker returned {error:?} for the {api_key:?} request"))]
+    Kafka {
+        error: ResponseError,
+        api_key: ApiKey,
+    },
 
-    #[snafu(display("the broker does not support the API key {api_key}"))]
-    UnsupportedApi { api_key: i16 },
+    #[snafu(display("the broker does not support the {api_key:?} API"))]
+    UnsupportedApi { api_key: ApiKey },
 
     #[snafu(display(
-        "the broker supports the versions {broker_versions} of the API key {api_key}, but not {version}"
+        "the broker supports the versions {broker_versions} of the {api_key:?} API, but not {version}"
     ))]
     UnsupportedVersion {
-        api_key: i16,
+        api_key: ApiKey,
         version: i16,
         broker_versions: VersionRange,
     },
@@ -165,7 +168,7 @@ impl Connection {
         // Each API that is relevant for us has a version that is supported by all of our Kafka versions.
         // We use these versions and pin them in client.rs.
         // We will have to add API version negotiation at some point in the future.
-        check_version(&self.broker_api_versions, R::KEY, version)?;
+        check_version(&self.broker_api_versions, api_key::<R>(), version)?;
         self.send_with_version(request, version).await
     }
 
@@ -187,7 +190,9 @@ impl Connection {
                 .context(ReadSnafu)
         })
         .await
-        .context(RequestTimeoutSnafu { api_key: R::KEY })??;
+        .context(RequestTimeoutSnafu {
+            api_key: api_key::<R>(),
+        })??;
 
         decode_response::<R>(response.freeze(), version, self.correlation_id).context(CodecSnafu)
     }
@@ -217,7 +222,7 @@ fn api_versions_result(response: ApiVersionsResponse) -> Result<BTreeMap<i16, Ve
     if let Some(error) = response.error_code.err() {
         return KafkaSnafu {
             error,
-            api_key: ApiVersionsRequest::KEY,
+            api_key: ApiKey::ApiVersions,
         }
         .fail();
     }
@@ -239,11 +244,11 @@ fn api_versions_result(response: ApiVersionsResponse) -> Result<BTreeMap<i16, Ve
 
 fn check_version(
     broker_api_versions: &BTreeMap<i16, VersionRange>,
-    api_key: i16,
+    api_key: ApiKey,
     version: i16,
 ) -> Result<()> {
     let broker_versions = broker_api_versions
-        .get(&api_key)
+        .get(&(api_key as i16))
         .context(UnsupportedApiSnafu { api_key })?;
     ensure!(
         (broker_versions.min..=broker_versions.max).contains(&version),
@@ -445,16 +450,21 @@ mod tests {
         let broker_api_versions =
             BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 13 })]);
 
-        check_version(&broker_api_versions, MetadataRequest::KEY, 12)
+        check_version(&broker_api_versions, ApiKey::Metadata, 12)
             .expect("the version should be supported");
     }
 
     #[test]
     fn reject_api_unknown_to_the_broker() {
-        let error = check_version(&BTreeMap::new(), MetadataRequest::KEY, 12)
+        let error = check_version(&BTreeMap::new(), ApiKey::Metadata, 12)
             .expect_err("the API should be unsupported");
 
-        assert!(matches!(error, Error::UnsupportedApi { .. }));
+        assert!(matches!(
+            error,
+            Error::UnsupportedApi {
+                api_key: ApiKey::Metadata
+            }
+        ));
     }
 
     #[test]
@@ -462,7 +472,7 @@ mod tests {
         let broker_api_versions =
             BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 9 })]);
 
-        let error = check_version(&broker_api_versions, MetadataRequest::KEY, 12)
+        let error = check_version(&broker_api_versions, ApiKey::Metadata, 12)
             .expect_err("the version should be unsupported");
 
         assert!(matches!(

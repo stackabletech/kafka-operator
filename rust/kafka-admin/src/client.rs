@@ -10,8 +10,8 @@ use kafka_protocol::{
     ResponseError,
     error::ParseResponseErrorCode,
     messages::{
-        CreatePartitionsRequest, CreateTopicsRequest, CreateTopicsResponse, DeleteTopicsRequest,
-        DeleteTopicsResponse, DescribeConfigsRequest, DescribeConfigsResponse,
+        ApiKey, CreatePartitionsRequest, CreateTopicsRequest, CreateTopicsResponse,
+        DeleteTopicsRequest, DeleteTopicsResponse, DescribeConfigsRequest, DescribeConfigsResponse,
         IncrementalAlterConfigsRequest, ListPartitionReassignmentsRequest,
         ListPartitionReassignmentsResponse, MetadataRequest, MetadataResponse, TopicName,
         create_partitions_request::CreatePartitionsTopic,
@@ -80,16 +80,16 @@ pub enum Error {
     Send { source: connection::Error },
 
     #[snafu(display(
-        "the response to the request with API key {api_key} contains no result for the topic {topic:?}"
+        "the response to the {api_key:?} request contains no result for the topic {topic:?}"
     ))]
-    MissingResult { api_key: i16, topic: String },
+    MissingResult { api_key: ApiKey, topic: String },
 
     #[snafu(display(
-        "the broker rejected the request with API key {api_key} for the topic {topic:?} with {error}{}",
+        "the broker rejected the {api_key:?} request for the topic {topic:?} with {error}{}",
         message.as_deref().map(|message| format!(": {message}")).unwrap_or_default()
     ))]
     Kafka {
-        api_key: i16,
+        api_key: ApiKey,
         topic: String,
         error: ResponseError,
         message: Option<String>,
@@ -207,9 +207,9 @@ impl KafkaAdminClient {
             )
             .await?;
 
-        let result = first(response.results, CreatePartitionsRequest::KEY, topic)?;
+        let result = first(response.results, ApiKey::CreatePartitions, topic)?;
         check(
-            CreatePartitionsRequest::KEY,
+            ApiKey::CreatePartitions,
             topic,
             result.error_code,
             result.error_message,
@@ -231,13 +231,9 @@ impl KafkaAdminClient {
             )
             .await?;
 
-        let result = first(
-            response.responses,
-            IncrementalAlterConfigsRequest::KEY,
-            topic,
-        )?;
+        let result = first(response.responses, ApiKey::IncrementalAlterConfigs, topic)?;
         check(
-            IncrementalAlterConfigsRequest::KEY,
+            ApiKey::IncrementalAlterConfigs,
             topic,
             result.error_code,
             result.error_message,
@@ -310,11 +306,11 @@ fn describe_topic_request(topic: &str) -> MetadataRequest {
 }
 
 fn describe_topic_result(response: MetadataResponse, topic: &str) -> Result<Option<Topic>> {
-    let result = first(response.topics, MetadataRequest::KEY, topic)?;
+    let result = first(response.topics, ApiKey::Metadata, topic)?;
     if result.error_code.err() == Some(ResponseError::UnknownTopicOrPartition) {
         return Ok(None);
     }
-    check(MetadataRequest::KEY, topic, result.error_code, None)?;
+    check(ApiKey::Metadata, topic, result.error_code, None)?;
 
     let partitions = result
         .partitions
@@ -347,9 +343,9 @@ fn describe_topic_configs_result(
     response: DescribeConfigsResponse,
     topic: &str,
 ) -> Result<BTreeMap<String, String>> {
-    let result = first(response.results, DescribeConfigsRequest::KEY, topic)?;
+    let result = first(response.results, ApiKey::DescribeConfigs, topic)?;
     check(
-        DescribeConfigsRequest::KEY,
+        ApiKey::DescribeConfigs,
         topic,
         result.error_code,
         result.error_message,
@@ -397,16 +393,16 @@ fn create_topic_request(
 }
 
 fn create_topic_result(response: CreateTopicsResponse, topic: &str) -> Result<CreatedTopic> {
-    let result = first(response.topics, CreateTopicsRequest::KEY, topic)?;
+    let result = first(response.topics, ApiKey::CreateTopics, topic)?;
     check(
-        CreateTopicsRequest::KEY,
+        ApiKey::CreateTopics,
         topic,
         result.error_code,
         result.error_message,
     )?;
     // Without the details, e.g. if `DESCRIBE_CONFIGS` is not allowed, the topic was still created.
     check(
-        CreateTopicsRequest::KEY,
+        ApiKey::CreateTopics,
         topic,
         result.topic_config_error_code,
         None,
@@ -471,7 +467,7 @@ fn delete_topic_request(topic: &str) -> DeleteTopicsRequest {
 }
 
 fn delete_topic_result(response: DeleteTopicsResponse, topic: &str) -> Result<()> {
-    let result = first(response.responses, DeleteTopicsRequest::KEY, topic)?;
+    let result = first(response.responses, ApiKey::DeleteTopics, topic)?;
     //  It's ok if topic or partition are already being deleted
     if matches!(
         result.error_code.err(),
@@ -480,7 +476,7 @@ fn delete_topic_result(response: DeleteTopicsResponse, topic: &str) -> Result<()
         return Ok(());
     }
     check(
-        DeleteTopicsRequest::KEY,
+        ApiKey::DeleteTopics,
         topic,
         result.error_code,
         result.error_message,
@@ -507,7 +503,7 @@ fn list_partition_reassignments_result(
     topic: &str,
 ) -> Result<Vec<PartitionReassignment>> {
     check(
-        ListPartitionReassignmentsRequest::KEY,
+        ApiKey::ListPartitionReassignments,
         topic,
         response.error_code,
         response.error_message,
@@ -530,14 +526,14 @@ fn topic_name(topic: &str) -> TopicName {
 }
 
 // Used instead of [0] to correctly handle empty results & take ownership
-fn first<T>(results: Vec<T>, api_key: i16, topic: &str) -> Result<T> {
+fn first<T>(results: Vec<T>, api_key: ApiKey, topic: &str) -> Result<T> {
     results
         .into_iter()
         .next()
         .context(MissingResultSnafu { api_key, topic })
 }
 
-fn check(api_key: i16, topic: &str, error_code: i16, message: Option<StrBytes>) -> Result<()> {
+fn check(api_key: ApiKey, topic: &str, error_code: i16, message: Option<StrBytes>) -> Result<()> {
     match error_code.err() {
         None => Ok(()),
         Some(error) => KafkaSnafu {
@@ -928,7 +924,7 @@ mod tests {
     #[test]
     fn report_rejected_request() {
         let error = check(
-            CreateTopicsRequest::KEY,
+            ApiKey::CreateTopics,
             TOPIC,
             ResponseError::TopicAlreadyExists.code(),
             Some(StrBytes::from_static_str("Topic 'orders' already exists.")),
@@ -950,12 +946,18 @@ mod tests {
     fn reject_response_without_result() {
         let error = first(
             Vec::<DeletableTopicResult>::new(),
-            DeleteTopicsRequest::KEY,
+            ApiKey::DeleteTopics,
             TOPIC,
         )
         .expect_err("the result should be missing");
 
-        assert!(matches!(error, Error::MissingResult { .. }));
+        assert!(matches!(
+            error,
+            Error::MissingResult {
+                api_key: ApiKey::DeleteTopics,
+                ..
+            }
+        ));
     }
 
     fn kafka_admin_client(ports: &[u16]) -> KafkaAdminClient {
