@@ -101,6 +101,16 @@ pub enum Error {
     },
 }
 
+impl Error {
+    /// Whether the request failed on the socket, so that a new connection may succeed.
+    pub fn is_broken_connection(&self) -> bool {
+        matches!(
+            self,
+            Error::Write { .. } | Error::Read { .. } | Error::ConnectionClosed
+        )
+    }
+}
+
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// How to connect to the broker. Paths point to PEM files.
@@ -140,7 +150,7 @@ impl Connection {
 
         let mut connection = Self::new(stream, client_id);
         let response = connection
-            .send_with_version(api_versions_request(), API_VERSIONS_VERSION)
+            .send_with_version(&api_versions_request(), API_VERSIONS_VERSION)
             .await?;
         connection.broker_api_versions = api_versions_result(response)?;
         Ok(connection)
@@ -162,7 +172,7 @@ impl Connection {
     /// Sends the request with the given version, if the broker supports it.
     pub(crate) async fn send<R: Request>(
         &mut self,
-        request: R,
+        request: &R,
         version: i16,
     ) -> Result<R::Response> {
         // Each API that is relevant for us has a version that is supported by all of our Kafka versions.
@@ -174,11 +184,11 @@ impl Connection {
 
     async fn send_with_version<R: Request>(
         &mut self,
-        request: R,
+        request: &R,
         version: i16,
     ) -> Result<R::Response> {
         self.correlation_id = self.correlation_id.wrapping_add(1);
-        let frame = encode_request(&request, version, self.correlation_id, &self.client_id)
+        let frame = encode_request(request, version, self.correlation_id, &self.client_id)
             .context(CodecSnafu)?;
 
         let response = timeout(REQUEST_TIMEOUT, async {
@@ -497,8 +507,8 @@ mod tests {
             )
             .await;
         };
-        let (response, ()) =
-            tokio::join!(connection.send(MetadataRequest::default(), 12), broker_side);
+        let request = MetadataRequest::default();
+        let (response, ()) = tokio::join!(connection.send(&request, 12), broker_side);
 
         assert_eq!(
             2,
@@ -520,8 +530,8 @@ mod tests {
             )
             .await;
         };
-        let (response, ()) =
-            tokio::join!(connection.send(MetadataRequest::default(), 12), broker_side);
+        let request = MetadataRequest::default();
+        let (response, ()) = tokio::join!(connection.send(&request, 12), broker_side);
 
         assert!(matches!(
             response.expect_err("the correlation id should not match"),
@@ -542,8 +552,8 @@ mod tests {
                 .await
                 .expect("the frame size should be writable");
         };
-        let (response, ()) =
-            tokio::join!(connection.send(MetadataRequest::default(), 12), broker_side);
+        let request = MetadataRequest::default();
+        let (response, ()) = tokio::join!(connection.send(&request, 12), broker_side);
 
         assert!(matches!(
             response.expect_err("the frame size should be invalid"),
@@ -559,8 +569,8 @@ mod tests {
         let broker_side = async {
             read_request(&mut broker).await;
         };
-        let (response, ()) =
-            tokio::join!(connection.send(MetadataRequest::default(), 12), broker_side);
+        let request = MetadataRequest::default();
+        let (response, ()) = tokio::join!(connection.send(&request, 12), broker_side);
 
         assert!(matches!(
             response.expect_err("the request should time out"),

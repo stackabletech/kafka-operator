@@ -263,17 +263,29 @@ impl KafkaAdminClient {
         list_partition_reassignments_result(response, topic)
     }
 
-    /// Sends the request on the current connection or a new one. A failed or cancelled request
-    /// drops the connection, and a connection idle for longer than [`CONNECTION_MAX_IDLE`] is
-    /// replaced.
+    /// Sends the request on the current connection or a new one. A request that fails because
+    /// the broker closed the reused connection is sent once more on a new one. A failed or
+    /// cancelled request drops the connection, and a connection idle for longer than
+    /// [`CONNECTION_MAX_IDLE`] is replaced.
     async fn send<R: Request>(&mut self, request: R, version: i16) -> Result<R::Response> {
-        let mut connection = match self.connection.take() {
-            Some((connection, last_used)) if last_used.elapsed() < CONNECTION_MAX_IDLE => {
-                connection
+        if let Some((mut connection, last_used)) = self.connection.take()
+            && last_used.elapsed() < CONNECTION_MAX_IDLE
+        {
+            match connection.send(&request, version).await {
+                Err(error) if error.is_broken_connection() => {}
+                result => {
+                    let response = result.context(SendSnafu)?;
+                    self.connection = Some((connection, Instant::now()));
+                    return Ok(response);
+                }
             }
-            _ => self.connect().await?,
-        };
-        let response = connection.send(request, version).await.context(SendSnafu)?;
+        }
+        // After a broken connections the request is directly send on a new connection again
+        let mut connection = self.connect().await?;
+        let response = connection
+            .send(&request, version)
+            .await
+            .context(SendSnafu)?;
         self.connection = Some((connection, Instant::now()));
         Ok(response)
     }
@@ -615,6 +627,30 @@ mod tests {
         let (result, ()) = tokio::join!(client.delete_topic(TOPIC), broker_side);
 
         result.expect("the client should reconnect");
+    }
+
+    #[tokio::test]
+    async fn retry_once_if_the_broker_closed_the_reused_connection() {
+        let (listener, port) = listen().await;
+        let mut client = kafka_admin_client(&[port]);
+
+        let broker_side = async {
+            let mut broker = accept(&listener, APIS).await;
+            answer_delete_topics(&mut broker).await;
+            drop(broker);
+            let mut broker = accept(&listener, APIS).await;
+            answer_delete_topics(&mut broker).await;
+        };
+        let client_side = async {
+            client
+                .delete_topic(TOPIC)
+                .await
+                .expect("the first request should succeed");
+            client.delete_topic(TOPIC).await
+        };
+        let (result, ()) = tokio::join!(client_side, broker_side);
+
+        result.expect("the client should retry on a new connection");
     }
 
     #[test]
