@@ -1,0 +1,123 @@
+= Management access
+:description: Let the Stackable Operator for Apache Kafka manage resources inside a Kafka cluster, such as topics, through a per-cluster agent.
+
+Management access allows the Stackable Data Platform (SDP) to manage resources inside an Apache Kafka cluster, such as xref:usage-guide/topics.adoc[topics].
+
+== Agents
+
+The agent is an optional Deployment next to the Kafka cluster that manages resources inside Kafka, such as topics.
+The operator deploys it when management access is enabled.
+
+== Limitations
+
+Management access is not available for all clusters:
+
+* Clusters that use ZooKeeper are not supported, only clusters in xref:usage-guide/kraft-controller.adoc[KRaft mode].
+* Clusters with Kerberos authentication are not supported.
+
+== Configuration
+
+Enable management access with `spec.clusterConfig.managementAccess` and choose how the agent authenticates to Kafka:
+
+[source,yaml]
+----
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: simple-kafka
+spec:
+  image:
+    productVersion: 4.3.1
+  clusterConfig:
+    metadataManager: KRaft
+    tls:
+      serverSecretClass: tls
+    authentication:
+      - authenticationClass: kafka-client-tls
+    managementAccess:
+      enabled: true # <1>
+      authentication:
+        userProvided:
+          tls:
+            secretClassName: kafka-client-auth-secret # <2>
+  controllers:
+    roleGroups:
+      default:
+        replicas: 3
+  brokers:
+    roleGroups:
+      default:
+        replicas: 3
+----
+<1> Deploys the agent. Setting it to `false` removes the agent again.
+<2> The SecretClass that provisions the client certificate of the agent, here the same SecretClass that the brokers use to verify client certificates, see xref:usage-guide/security.adoc[Security].
+
+The agent supports the following authentication methods:
+
+`anonymous: {}`:: The agent connects without a client certificate.
+This is only possible if the cluster does not require client authentication.
+`tls.secretClassName`:: A client certificate provisioned by the xref:secret-operator:index.adoc[Secret Operator] from the given SecretClass.
+`tls.secretName`:: A static Secret holding the client certificate in the keys `tls.crt` and `tls.key` (PEM), for example a Secret of type `kubernetes.io/tls`.
+
+The agent verifies the brokers with the CA of the SecretClass used by the client listener, that is `spec.clusterConfig.tls.serverSecretClass` or the `clientCertSecretClass` of the TLS AuthenticationClass.
+
+== Authorization
+
+The principal of the agent must be allowed to manage topics in Kafka, for example by xref:usage-guide/security.adoc#authorization[OPA authorization].
+The principal is derived from the subject of the client certificate.
+The agent needs the following permissions:
+
+[cols="2,3", options="header"]
+|===
+| Kafka API | Operation
+
+| Metadata | `DESCRIBE` on the topic
+| CreateTopics | `CREATE` on the cluster or the topic, and `DESCRIBE_CONFIGS` on the topic
+| CreatePartitions | `ALTER` on the topic
+| DescribeConfigs | `DESCRIBE_CONFIGS` on the topic
+| IncrementalAlterConfigs | `ALTER_CONFIGS` on the topic
+| DeleteTopics | `DELETE` on the topic
+| ListPartitionReassignments | `DESCRIBE` on the cluster
+|===
+
+NOTE: Without `DESCRIBE_CONFIGS`, Kafka still creates a topic, but the agent cannot observe it.
+The KafkaTopic then reports `KafkaRejected`.
+
+== Network
+
+The agent connects to the headless Services of the broker role groups, which resolve to the broker Pods.
+The traffic of the agent therefore stays within the Kubernetes cluster, regardless of the xref:usage-guide/listenerclass.adoc[ListenerClasses] of the cluster.
+
+== Agent resources
+
+The operator creates the following resources for the agent, named after the KafkaCluster:
+
+* A Deployment `<cluster>-agent` with a single replica, limited to 500m CPU and 128Mi memory by default.
+* A ServiceAccount `<cluster>-agent`.
+* A RoleBinding `<cluster>-agent`, which binds the ClusterRole `kafka-agent-clusterrole` deployed by the Helm chart.
+
+The Deployment can be adjusted with xref:concepts:overrides.adoc#object-overrides[object overrides], for example to change the resources of the agent:
+
+[source,yaml]
+----
+spec:
+  objectOverrides:
+    - apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: simple-kafka-agent
+      spec:
+        template:
+          spec:
+            containers:
+              - name: agent
+                resources:
+                  limits:
+                    memory: 256Mi
+----
+
+== Disabling management access
+
+Setting `enabled` to `false` or removing `managementAccess` removes the agent.
+The KafkaTopics and the topics in Kafka stay as they are.
+While no agent is available, the operator reports `AgentUnavailable` in the conditions of the KafkaTopics of the cluster, see xref:usage-guide/topics.adoc#deletion[Deletion] for the effect on deleted KafkaTopics.

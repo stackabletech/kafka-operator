@@ -1,0 +1,135 @@
+= Topics
+:description: Manage Apache Kafka topics declaratively with KafkaTopic resources and the Stackable Operator for Apache Kafka.
+
+A KafkaTopic declares the desired state of a topic in an Apache Kafka cluster: its name, partitions, replication factor and configs.
+The xref:usage-guide/management-access.adoc#_agents[agent] of the cluster creates the topic and keeps it in this state.
+This requires xref:usage-guide/management-access.adoc[management access] to be enabled on the KafkaCluster.
+
+The KafkaTopic is the source of truth for its topic: changes made to the topic outside of the KafkaTopic, for example with `kafka-configs.sh`, are reverted.
+The agent checks every topic at least every five minutes.
+
+NOTE: Other operators, such as Strimzi, also provide a resource of the kind `KafkaTopic`.
+If both are installed, use the full resource name with `kubectl`, for example `kubectl get kafkatopics.kafka.stackable.tech`.
+
+== Configuration
+
+[source,yaml]
+----
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: orders
+spec:
+  clusterRef:
+    name: simple-kafka # <1>
+  topicName: shop.orders # <2>
+  partitions: 6 # <3>
+  replicationFactor: 3 # <4>
+  configOverrides: # <5>
+    retention.ms: "604800000"
+    cleanup.policy: delete
+  deletionPolicy: Retain # <6>
+----
+<1> The KafkaCluster in the same namespace that manages the topic. It cannot be changed.
+<2> The name of the topic in Kafka. Defaults to `metadata.name`. It cannot be changed.
+<3> The number of partitions. Defaults to the broker setting `num.partitions` when the topic is created.
+<4> The number of replicas of each partition. Defaults to the broker setting `default.replication.factor` when the topic is created.
+<5> The configs of the topic, see <<configs>>.
+<6> What happens to the topic when the KafkaTopic is deleted, see <<deletion>>.
+
+=== Topic name
+
+A topic name consists of up to 249 characters out of `a-z`, `A-Z`, `0-9`, `.`, `_` and `-`, and cannot be `.` or `..`.
+Kafka allows names that are not valid Kubernetes object names, for example with uppercase letters or underscores.
+Such topics need `topicName`.
+
+Topics starting with `+__+` are internal to Kafka, such as `+__consumer_offsets+`, and are rejected.
+
+The topic name cannot be changed, and `topicName` can neither be added nor removed later.
+To rename a topic, create a new KafkaTopic.
+
+=== Partitions and replication factor
+
+The number of partitions can only be increased, because Kafka cannot remove partitions.
+
+Changing the replication factor of an existing topic is not supported, because Kafka requires an explicit assignment of the replicas to brokers.
+Use `kafka-reassign-partitions.sh` or Cruise Control for this.
+
+An unsupported change is reported in the `Synced` condition, and all other changes are still applied.
+
+[[configs]]
+=== Configs
+
+`configOverrides` replaces all configs set on the topic.
+Configs that are set on the topic but missing in `configOverrides` are reset to the broker defaults.
+
+The throttles of partition reassignments, `leader.replication.throttled.replicas` and `follower.replication.throttled.replicas`, are left untouched and cannot be set in `configOverrides`.
+
+== Existing topics
+
+A KafkaTopic for a topic that already exists in Kafka takes over the topic.
+
+WARNING: Taking over a topic is destructive.
+The configs of the topic are replaced by `configOverrides`, which can delete data, for example with a shorter `retention.ms` or another `cleanup.policy`.
+With `deletionPolicy: Delete`, deleting the KafkaTopic also deletes a topic that existed before the KafkaTopic.
+
+A KafkaTopic refers to its topic by name.
+If the topic is deleted and created again outside of the KafkaTopic, the KafkaTopic takes over the new topic as well.
+
+If several KafkaTopics declare the same topic in the same cluster, the oldest KafkaTopic manages the topic, and the others report a `Conflict`.
+When the oldest KafkaTopic is deleted, the next one takes over the topic within five minutes.
+
+== Status
+
+The status shows the topic in Kafka:
+
+[source,yaml]
+----
+status:
+  conditions: ...
+  topicId: UXyU9i5ARn6W00ON2taeWA # <1>
+  topicName: shop.orders # <2>
+  partitions: 6
+  replicationFactor: 3 # <3>
+  config: # <4>
+    cleanup.policy: delete
+    retention.ms: "604800000"
+----
+<1> The topic ID as shown by `kafka-topics.sh`.
+<2> The name of the topic in Kafka.
+<3> The replication factor, excluding replicas that a running reassignment removes. It is not set if the partitions have different replication factors.
+<4> The configs set on the topic, without broker and default values.
+
+The `Ready` condition shows whether the topic exists in Kafka.
+The `Synced` condition shows whether the topic matches the KafkaTopic.
+If it does not, the reason and message of the condition explain why, for example an unsupported change, a request rejected by Kafka or a paused reconciliation.
+
+== Pausing
+
+The reconciliation of a single KafkaTopic can be paused, independently of the xref:usage-guide/operations/cluster-operations.adoc[cluster operations] of the KafkaCluster:
+
+[source,yaml]
+----
+spec:
+  topicOperation:
+    reconciliationPaused: true
+----
+
+While paused, the agent does not change the topic in Kafka, but still updates the status.
+
+[[deletion]]
+== Deletion
+
+With the default `deletionPolicy: Retain`, deleting a KafkaTopic leaves the topic in Kafka.
+
+With `deletionPolicy: Delete`, the agent deletes the topic in Kafka when the KafkaTopic is deleted, unless another KafkaTopic declares the same topic.
+The KafkaTopic gets a finalizer once the agent manages the topic, so the deletion waits until the topic is deleted.
+If the reconciliation of the KafkaTopic is paused, the deletion waits until it is resumed.
+If the brokers cannot be reached, for example while the KafkaCluster is xref:usage-guide/operations/cluster-operations.adoc[stopped], switching the KafkaTopic to `deletionPolicy: Retain` releases the deletion.
+
+When the KafkaCluster or its namespace is deleted, the operator removes the finalizers of its KafkaTopics, so the deletion does not block.
+The topics are not deleted in Kafka in this case.
+If the KafkaCluster is created again with the same PersistentVolumeClaims, its topics still exist, but without KafkaTopics.
+
+If the KafkaCluster exists but has no agent, for example because management access is disabled, the deletion waits for the agent.
+In this case, the finalizer `kafka.stackable.tech/kafkatopic` can be removed manually, which leaves the topic in Kafka.
