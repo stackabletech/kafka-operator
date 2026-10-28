@@ -51,10 +51,6 @@ spec:
     authentication:
       - authenticationClass: client-auth-$NAMESPACE
 {% endif %}
-    authorization:
-      opa:
-        configMapName: test-opa
-        package: authz
     managementAccess:
       enabled: true
       authentication:

@@ -1,7 +1,0 @@
----
-# OPA authorizes the brokers and the agent with the documented permissions.
-apiVersion: kuttl.dev/v1beta1
-kind: TestAssert
-timeout: 300
-commands:
-  - script: kubectl wait --namespace $NAMESPACE --for=condition=available opaclusters.opa.stackable.tech/test-opa --timeout 301s

@@ -63,7 +63,7 @@ The agent verifies the brokers with the CA of the SecretClass used by the client
 
 == Authorization
 
-The principal of the agent must be allowed to manage topics in Kafka, for example by xref:usage-guide/security.adoc#authorization[OPA authorization].
+The principal of the agent must be allowed to manage topics in Kafka.
 The principal is derived from the subject of the client certificate.
 The agent needs the following permissions:
 
