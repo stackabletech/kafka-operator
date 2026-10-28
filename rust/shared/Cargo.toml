@@ -22,4 +22,5 @@ indoc.workspace = true
 rstest.workspace = true
 
 [features]
+# Referenced by the attributed_string_type! macro of stackable-operator
 test-support = []
