@@ -1,0 +1,34 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      envsubst '$NAMESPACE' < 07_kafka.rego |
+      kubectl create configmap test-rego-kafka --namespace $NAMESPACE --from-file=kafka.rego=/dev/stdin
+  - script: kubectl label configmap test-rego-kafka --namespace $NAMESPACE opa.stackable.tech/bundle=true
+---
+apiVersion: opa.stackable.tech/v1alpha1
+kind: OpaCluster
+metadata:
+  name: test-opa
+spec:
+  image:
+{% if test_scenario['values']['opa-latest'].find(",") > 0 %}
+    custom: "{{ test_scenario['values']['opa-latest'].split(',')[1] }}"
+    productVersion: "{{ test_scenario['values']['opa-latest'].split(',')[0] }}"
+{% else %}
+    productVersion: "{{ test_scenario['values']['opa-latest'] }}"
+{% endif %}
+    pullPolicy: IfNotPresent
+  servers:
+    config:
+      logging:
+        containers:
+          opa:
+            console:
+              level: INFO
+            loggers:
+              decision:
+                level: INFO
+    roleGroups:
+      default: {}

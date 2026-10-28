@@ -1,0 +1,37 @@
+{% set authentication = test_scenario['values']['management-access-authentication'] %}
+package authz
+
+broker_principal_pattern := `^DC=local,DC=cluster,DC=svc,DC=$NAMESPACE,DC=test-kafka-broker-default-headless,DC=test-kafka-broker-default-[0-9]+,CN=generated certificate for pod$`
+
+{% if authentication == 'anonymous' %}
+agent_principal_pattern := `^ANONYMOUS$`
+{% elif authentication == 'secret-class' %}
+# The agent Pod has no subdomain, so its subject DN contains no Service.
+agent_principal_pattern := `^DC=local,DC=cluster,DC=svc,DC=$NAMESPACE,DC=test-kafka-agent-[a-z0-9]+-[a-z0-9]+,CN=generated certificate for pod$`
+{% else %}
+agent_principal_pattern := `^CN=kafka-agent$`
+{% endif %}
+
+default allow := false
+
+allow if {
+  input.requestContext.listenerName == "INTERNAL"
+  regex.match(broker_principal_pattern, input.requestContext.principal.name)
+}
+
+allow if {
+  regex.match(agent_principal_pattern, input.requestContext.principal.name)
+  agent_action_is_allowed
+}
+
+# The permissions of the agent as documented, limited to topics starting with "orders"
+agent_action_is_allowed if {
+  input.action.resourcePattern.resourceType == "TOPIC"
+  startswith(input.action.resourcePattern.name, "orders")
+  input.action.operation in ["DESCRIBE", "CREATE", "ALTER", "DESCRIBE_CONFIGS", "ALTER_CONFIGS", "DELETE"]
+}
+
+agent_action_is_allowed if {
+  input.action.resourcePattern.resourceType == "CLUSTER"
+  input.action.operation == "DESCRIBE"
+}
