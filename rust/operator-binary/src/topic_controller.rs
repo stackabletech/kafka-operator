@@ -13,7 +13,9 @@ use stackable_operator::{
         ConditionStatus, ManagedCondition, ManagedConditionType, update_conditions,
     },
     k8s_openapi::{
-        api::apps::v1::Deployment, apimachinery::pkg::apis::meta::v1::Time, jiff::Timestamp,
+        api::apps::v1::Deployment,
+        apimachinery::pkg::apis::meta::v1::Time,
+        jiff::{SignedDuration, Timestamp},
     },
     kube::{
         ResourceExt,
@@ -38,6 +40,12 @@ pub const TOPIC_FULL_CONTROLLER_NAME: &str =
     concatcp!(TOPIC_CONTROLLER_NAME, '.', KAFKA_OPERATOR_NAME);
 
 const AGENT_UNAVAILABLE_REASON: &str = "AgentUnavailable";
+
+/// `DeploymentConditionType` of `apps/v1`, true once the minimum number of replicas is available
+const DEPLOYMENT_CONDITION_AVAILABLE: &str = "Available";
+
+/// Shorter outages of the agent are not reported, such as a rollout that pulls a new image.
+const AGENT_UNAVAILABLE_GRACE_PERIOD: SignedDuration = SignedDuration::from_secs(60);
 
 #[derive(Debug, Snafu, EnumDiscriminants)]
 #[strum_discriminants(derive(IntoStaticStr))]
@@ -89,8 +97,16 @@ enum ClusterState {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+enum AgentState {
+    Available,
+    /// `None` if the agent Deployment does not exist
+    UnavailableSince(Option<Timestamp>),
+}
+
+#[derive(Debug, Eq, PartialEq)]
 enum OperatorAction {
     LeaveToAgent,
+    WaitForAgent { remaining: std::time::Duration },
     RemoveFinalizer,
     SetAgentUnavailableConditions { message: &'static str },
 }
@@ -122,11 +138,11 @@ pub async fn reconcile_topic(
     match operator_action_for(
         kafka_topic,
         &cluster_state_from(kafka_cluster.as_ref()),
-        agent_deployment
-            .as_ref()
-            .is_some_and(is_agent_deployment_available),
+        &agent_state_from(agent_deployment.as_ref()),
+        Timestamp::now(),
     ) {
         OperatorAction::LeaveToAgent => {}
+        OperatorAction::WaitForAgent { remaining } => return Ok(Action::requeue(remaining)),
         OperatorAction::RemoveFinalizer => remove_finalizer(kafka_topic, &ctx).await?,
         OperatorAction::SetAgentUnavailableConditions { message } => {
             set_agent_unavailable_conditions(kafka_topic, &ctx, message).await?
@@ -188,7 +204,8 @@ fn cluster_state_from(kafka_cluster: Option<&DeserializeGuard<KafkaCluster>>) ->
 fn operator_action_for(
     kafka_topic: &KafkaTopic,
     cluster_state: &ClusterState,
-    agent_available: bool,
+    agent_state: &AgentState,
+    now: Timestamp,
 ) -> OperatorAction {
     match cluster_state {
         ClusterState::MissingOrDeleting if kafka_topic.metadata.deletion_timestamp.is_some() => {
@@ -209,23 +226,50 @@ fn operator_action_for(
             message: "the KafkaCluster has no agent, because clusterConfig.managementAccess is \
                       not enabled",
         },
-        ClusterState::ManagementAccessEnabled if agent_available => OperatorAction::LeaveToAgent,
-        ClusterState::ManagementAccessEnabled => OperatorAction::SetAgentUnavailableConditions {
-            message: "the agent of the KafkaCluster is not available",
+        ClusterState::ManagementAccessEnabled => match agent_state {
+            AgentState::Available => OperatorAction::LeaveToAgent,
+            AgentState::UnavailableSince(Some(since))
+                if now.duration_since(*since) < AGENT_UNAVAILABLE_GRACE_PERIOD =>
+            {
+                OperatorAction::WaitForAgent {
+                    remaining: (AGENT_UNAVAILABLE_GRACE_PERIOD - now.duration_since(*since))
+                        .unsigned_abs(),
+                }
+            }
+            AgentState::UnavailableSince(_) => OperatorAction::SetAgentUnavailableConditions {
+                message: "the agent of the KafkaCluster is not available",
+            },
         },
     }
 }
 
-fn is_agent_deployment_available(agent_deployment: &Deployment) -> bool {
-    agent_deployment
+/// A Deployment that has no `Available` condition yet is unavailable since its creation.
+fn agent_state_from(agent_deployment: Option<&Deployment>) -> AgentState {
+    let Some(agent_deployment) = agent_deployment else {
+        return AgentState::UnavailableSince(None);
+    };
+    let available_condition = agent_deployment
         .status
         .as_ref()
         .and_then(|status| status.conditions.as_ref())
-        .is_some_and(|conditions| {
+        .and_then(|conditions| {
             conditions
                 .iter()
-                .any(|condition| condition.type_ == "Available" && condition.status == "True")
-        })
+                .find(|condition| condition.type_ == DEPLOYMENT_CONDITION_AVAILABLE)
+        });
+    match available_condition {
+        Some(condition) if condition.status == "True" => AgentState::Available,
+        Some(condition) => {
+            AgentState::UnavailableSince(condition.last_transition_time.as_ref().map(|time| time.0))
+        }
+        None => AgentState::UnavailableSince(
+            agent_deployment
+                .metadata
+                .creation_timestamp
+                .as_ref()
+                .map(|time| time.0),
+        ),
+    }
 }
 
 /// Only the conditions are applied, so the other fields stay owned by the agent and keep the
@@ -331,39 +375,96 @@ mod tests {
         }
     }
 
+    fn now() -> Timestamp {
+        Timestamp::from_second(1_000).expect("the timestamp should be valid")
+    }
+
+    fn seconds_ago(seconds: i64) -> Timestamp {
+        now() - SignedDuration::from_secs(seconds)
+    }
+
     #[rstest]
-    #[case::cluster_missing(ClusterState::MissingOrDeleting, true, true)]
-    #[case::cluster_missing_without_agent(ClusterState::MissingOrDeleting, false, true)]
-    #[case::management_access_disabled(ClusterState::ManagementAccessDisabled, false, false)]
-    #[case::agent_available(ClusterState::ManagementAccessEnabled, true, false)]
-    #[case::agent_unavailable(ClusterState::ManagementAccessEnabled, false, false)]
+    #[case::cluster_missing(ClusterState::MissingOrDeleting, AgentState::Available, true)]
+    #[case::cluster_missing_without_agent(
+        ClusterState::MissingOrDeleting,
+        AgentState::UnavailableSince(None),
+        true
+    )]
+    #[case::management_access_disabled(
+        ClusterState::ManagementAccessDisabled,
+        AgentState::UnavailableSince(None),
+        false
+    )]
+    #[case::agent_available(ClusterState::ManagementAccessEnabled, AgentState::Available, false)]
+    #[case::agent_unavailable(
+        ClusterState::ManagementAccessEnabled,
+        AgentState::UnavailableSince(None),
+        false
+    )]
     fn remove_the_finalizer_only_if_the_cluster_is_missing_or_deleting(
         #[case] cluster_state: ClusterState,
-        #[case] agent_available: bool,
+        #[case] agent_state: AgentState,
         #[case] removes_finalizer: bool,
     ) {
         assert_eq!(
             removes_finalizer,
-            operator_action_for(&kafka_topic(true, true), &cluster_state, agent_available)
-                == OperatorAction::RemoveFinalizer
+            operator_action_for(
+                &kafka_topic(true, true),
+                &cluster_state,
+                &agent_state,
+                now()
+            ) == OperatorAction::RemoveFinalizer
         );
     }
 
     #[rstest]
-    #[case::cluster_missing(ClusterState::MissingOrDeleting, true, true)]
-    #[case::management_access_disabled(ClusterState::ManagementAccessDisabled, true, true)]
-    #[case::agent_available(ClusterState::ManagementAccessEnabled, true, false)]
-    #[case::agent_unavailable(ClusterState::ManagementAccessEnabled, false, true)]
+    #[case::cluster_missing(ClusterState::MissingOrDeleting, AgentState::Available, true)]
+    #[case::management_access_disabled(
+        ClusterState::ManagementAccessDisabled,
+        AgentState::Available,
+        true
+    )]
+    #[case::agent_available(ClusterState::ManagementAccessEnabled, AgentState::Available, false)]
+    #[case::agent_deployment_missing(
+        ClusterState::ManagementAccessEnabled,
+        AgentState::UnavailableSince(None),
+        true
+    )]
+    #[case::agent_unavailable_for_longer_than_the_grace_period(
+        ClusterState::ManagementAccessEnabled,
+        AgentState::UnavailableSince(Some(seconds_ago(61))),
+        true
+    )]
     fn set_agent_unavailable_conditions_without_an_available_agent(
         #[case] cluster_state: ClusterState,
-        #[case] agent_available: bool,
+        #[case] agent_state: AgentState,
         #[case] sets_conditions: bool,
     ) {
         assert_eq!(
             sets_conditions,
             matches!(
-                operator_action_for(&kafka_topic(false, false), &cluster_state, agent_available),
+                operator_action_for(
+                    &kafka_topic(false, false),
+                    &cluster_state,
+                    &agent_state,
+                    now()
+                ),
                 OperatorAction::SetAgentUnavailableConditions { .. }
+            )
+        );
+    }
+
+    #[test]
+    fn wait_for_an_agent_that_is_unavailable_within_the_grace_period() {
+        assert_eq!(
+            OperatorAction::WaitForAgent {
+                remaining: std::time::Duration::from_secs(50)
+            },
+            operator_action_for(
+                &kafka_topic(false, false),
+                &ClusterState::ManagementAccessEnabled,
+                &AgentState::UnavailableSince(Some(seconds_ago(10))),
+                now()
             )
         );
     }
@@ -375,8 +476,41 @@ mod tests {
             operator_action_for(
                 &kafka_topic(true, false),
                 &ClusterState::MissingOrDeleting,
-                false
+                &AgentState::UnavailableSince(None),
+                now()
             )
         );
+    }
+
+    fn agent_deployment(available: Option<&str>) -> Deployment {
+        serde_json::from_value(json!({
+            "metadata": { "creationTimestamp": "1970-01-01T00:10:00Z" },
+            "status": {
+                "conditions": available.map(|status| vec![json!({
+                    "type": "Available",
+                    "status": status,
+                    "lastTransitionTime": "1970-01-01T00:15:00Z",
+                })]),
+            },
+        }))
+        .expect("the Deployment should be valid")
+    }
+
+    #[rstest]
+    #[case::missing(None, AgentState::UnavailableSince(None))]
+    #[case::available(Some(agent_deployment(Some("True"))), AgentState::Available)]
+    #[case::unavailable_since_the_transition(
+        Some(agent_deployment(Some("False"))),
+        AgentState::UnavailableSince(Some(Timestamp::from_second(900).expect("valid")))
+    )]
+    #[case::unavailable_since_the_creation(
+        Some(agent_deployment(None)),
+        AgentState::UnavailableSince(Some(Timestamp::from_second(600).expect("valid")))
+    )]
+    fn derive_the_agent_state_from_the_deployment(
+        #[case] agent_deployment: Option<Deployment>,
+        #[case] expected: AgentState,
+    ) {
+        assert_eq!(expected, agent_state_from(agent_deployment.as_ref()));
     }
 }
