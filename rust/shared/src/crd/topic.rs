@@ -126,20 +126,9 @@ pub mod versioned {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub replication_factor: Option<i16>,
 
-        /// All effective topic configs in Kafka.
+        /// The configs set on the topic in Kafka, without broker and default values.
         #[serde(default)]
-        pub config: BTreeMap<String, v1alpha1::KafkaTopicConfigStatus>,
-    }
-
-    #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct KafkaTopicConfigStatus {
-        /// The value, not set for sensitive configs.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub value: Option<String>,
-
-        /// Where the value comes from, like `DYNAMIC_TOPIC_CONFIG` or `DEFAULT_CONFIG`.
-        pub source: String,
+        pub config: BTreeMap<String, String>,
     }
 }
 

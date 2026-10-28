@@ -87,15 +87,6 @@ tests:
     dimensions:
       - kafka-kraft
       - openshift
-  - name: topic
-    dimensions:
-      - kafka-kraft
-      - openshift
-  - name: topic-authentication
-    dimensions:
-      - kafka-kraft
-      - management-access-authentication
-      - openshift
   - name: smoke
     dimensions:
       - kafka
@@ -162,6 +153,15 @@ tests:
       - openshift
       - broker-listener-class
       - bootstrap-listener-class
+  - name: topic
+    dimensions:
+      - kafka-kraft
+      - openshift
+  - name: management-access
+    dimensions:
+      - kafka-kraft
+      - management-access-authentication
+      - openshift
 
 suites:
   - name: nightly

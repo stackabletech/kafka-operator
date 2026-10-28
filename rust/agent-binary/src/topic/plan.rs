@@ -2,9 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use stackable_kafka_admin::client::{
-    ConfigSource, CreatedTopic, PartitionReassignment, Topic, TopicConfig,
-};
+use stackable_kafka_admin::client::{CreatedTopic, PartitionReassignment, Topic};
 use stackable_kafka_shared::crd::topic::{TopicName, v1alpha1::KafkaTopicSpec};
 
 /// Set by `kafka-reassign-partitions` and Cruise Control for the duration of a reassignment.
@@ -17,7 +15,7 @@ pub const THROTTLE_CONFIG_KEYS: [&str; 2] = [
 /// The state of an existing topic in Kafka.
 pub struct ObservedTopic {
     pub topic: Topic,
-    pub effective_configs: BTreeMap<String, TopicConfig>,
+    pub topic_configs: BTreeMap<String, String>,
     pub reassignments: Vec<PartitionReassignment>,
 }
 
@@ -28,7 +26,7 @@ pub struct TopicState {
     pub id: String,
     pub partition_count: i32,
     pub replication_factor: Option<i16>,
-    pub effective_configs: BTreeMap<String, TopicConfig>,
+    pub topic_configs: BTreeMap<String, String>,
 }
 
 impl TopicState {
@@ -38,7 +36,7 @@ impl TopicState {
             id: observed.topic.id.clone(),
             partition_count: observed.topic.partitions.len() as i32,
             replication_factor: replication_factor(observed),
-            effective_configs: observed.effective_configs.clone(),
+            topic_configs: observed.topic_configs.clone(),
         }
     }
 
@@ -48,7 +46,7 @@ impl TopicState {
             id: created.id,
             partition_count: created.partitions,
             replication_factor: Some(created.replication_factor),
-            effective_configs: created.configs,
+            topic_configs: created.configs,
         }
     }
 }
@@ -107,7 +105,7 @@ pub fn plan(spec: &KafkaTopicSpec, observed: Option<&ObservedTopic>) -> TopicPla
 
     let actual_partition_count = observed.topic.partitions.len() as i32;
     let (configs_to_set, configs_to_reset) =
-        config_changes(&spec.config_overrides, &observed.effective_configs);
+        config_changes(&spec.config_overrides, &observed.topic_configs);
 
     TopicPlan::Update {
         topic_update: TopicUpdate {
@@ -153,29 +151,27 @@ fn unsupported_changes(spec: &KafkaTopicSpec, observed: &ObservedTopic) -> Vec<U
 /// The configs to set and the configs to reset, so that the topic-level configs are exactly the
 /// desired ones. The throttles of partition reassignments are left alone.
 fn config_changes(
-    desired: &BTreeMap<String, String>,
-    effective_configs: &BTreeMap<String, TopicConfig>,
+    desired_topic_configs: &BTreeMap<String, String>,
+    current_topic_configs: &BTreeMap<String, String>,
 ) -> (BTreeMap<String, String>, BTreeSet<String>) {
-    // Topic configs have no PASSWORD type, so Kafka does not redact their topic-level values.
-    let topic_level_configs = effective_configs
-        .iter()
-        .filter(|(_, config)| config.source == ConfigSource::DynamicTopic)
-        .map(|(key, config)| (key, config.value.as_deref()))
-        .collect::<BTreeMap<_, _>>();
-
-    // Compared with the topic-level value, not the effective one: a desired value that equals the
-    // broker config is still pinned on the topic. Otherwise a later change of the broker config
-    // would apply to the topic until the next resync. Unchanged values are skipped, so a resync
+    // A desired value that equals the broker config is still set on the topic, so a later change of
+    // the broker config does not apply to the topic. Unchanged values are skipped, so a resync
     // without drift does not write to Kafka.
-    let configs_to_set = desired
+    let configs_to_set = desired_topic_configs
         .iter()
-        .filter(|(key, value)| topic_level_configs.get(key) != Some(&Some(value.as_str())))
+        .filter(|(key, value)| {
+            current_topic_configs.get(*key) != Some(value)
+                && !THROTTLE_CONFIG_KEYS.contains(&key.as_str())
+        })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
-    let configs_to_reset = topic_level_configs
+    let configs_to_reset = current_topic_configs
         .keys()
-        .filter(|key| !desired.contains_key(**key) && !THROTTLE_CONFIG_KEYS.contains(&key.as_str()))
-        .map(|key| key.to_string())
+        .filter(|key| {
+            !desired_topic_configs.contains_key(*key)
+                && !THROTTLE_CONFIG_KEYS.contains(&key.as_str())
+        })
+        .cloned()
         .collect();
     (configs_to_set, configs_to_reset)
 }
@@ -243,21 +239,6 @@ mod tests {
         keys.iter().map(|key| key.to_string()).collect()
     }
 
-    fn topic_configs(entries: &[(&str, &str, ConfigSource)]) -> BTreeMap<String, TopicConfig> {
-        entries
-            .iter()
-            .map(|(key, value, source)| {
-                (
-                    key.to_string(),
-                    TopicConfig {
-                        value: Some(value.to_string()),
-                        source: *source,
-                    },
-                )
-            })
-            .collect()
-    }
-
     fn update(topic_update: TopicUpdate, unsupported_changes: Vec<UnsupportedChange>) -> TopicPlan {
         TopicPlan::Update {
             topic_update,
@@ -265,8 +246,9 @@ mod tests {
         }
     }
 
-    /// A topic whose partitions have the given number of replicas
-    fn observed(replicas: &[usize], configs: &[(&str, &str, ConfigSource)]) -> ObservedTopic {
+    /// A topic whose partitions have the given number of replicas, with the given topic-level
+    /// configs
+    fn observed(replicas: &[usize], topic_configs: &[(&str, &str)]) -> ObservedTopic {
         ObservedTopic {
             topic: Topic {
                 id: "UXyU9i5ARn6W00ON2taeWA".to_owned(),
@@ -279,7 +261,7 @@ mod tests {
                     })
                     .collect(),
             },
-            effective_configs: topic_configs(configs),
+            topic_configs: configs(topic_configs),
             reassignments: vec![],
         }
     }
@@ -300,10 +282,7 @@ mod tests {
 
     #[test]
     fn do_nothing_for_a_matching_topic() {
-        let observed = observed(
-            &[2, 2],
-            &[("retention.ms", "1000", ConfigSource::DynamicTopic)],
-        );
+        let observed = observed(&[2, 2], &[("retention.ms", "1000")]);
         let spec = spec(Some(2), Some(2), &[("retention.ms", "1000")]);
 
         assert_eq!(
@@ -364,15 +343,9 @@ mod tests {
         let observed = observed(
             &[1],
             &[
-                ("retention.ms", "1000", ConfigSource::DynamicTopic),
-                ("cleanup.policy", "compact", ConfigSource::DynamicTopic),
-                ("segment.bytes", "1024", ConfigSource::Default),
-                ("max.message.bytes", "10", ConfigSource::StaticBroker),
-                (
-                    "leader.replication.throttled.replicas",
-                    "0:1",
-                    ConfigSource::DynamicTopic,
-                ),
+                ("retention.ms", "1000"),
+                ("cleanup.policy", "compact"),
+                ("leader.replication.throttled.replicas", "0:1"),
             ],
         );
 
@@ -380,7 +353,11 @@ mod tests {
             &spec(
                 None,
                 None,
-                &[("retention.ms", "2000"), ("max.message.bytes", "10")],
+                &[
+                    ("retention.ms", "2000"),
+                    ("max.message.bytes", "10"),
+                    ("follower.replication.throttled.replicas", "*"),
+                ],
             ),
             Some(&observed),
         );
@@ -388,13 +365,11 @@ mod tests {
         assert_eq!(
             update(
                 TopicUpdate {
-                    // `max.message.bytes` already has the value, but not on the topic
                     configs_to_set: configs(&[
                         ("max.message.bytes", "10"),
                         ("retention.ms", "2000")
                     ]),
-                    // `segment.bytes` is not set on the topic, the throttle belongs to a
-                    // reassignment
+                    // The throttles belong to a reassignment
                     configs_to_reset: keys(&["cleanup.policy"]),
                     ..TopicUpdate::default()
                 },

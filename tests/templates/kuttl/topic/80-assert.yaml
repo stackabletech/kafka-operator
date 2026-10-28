@@ -38,6 +38,4 @@ status:
       status: "True"
       reason: Synced
   config:
-    retention.ms:
-      value: "10800000"
-      source: DYNAMIC_TOPIC_CONFIG
+    retention.ms: "10800000"

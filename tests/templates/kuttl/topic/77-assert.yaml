@@ -1,8 +1,15 @@
 ---
-# The topic stays available, and the status keeps the config observed in Kafka.
+# The topic stays available, and the rejected value is not set on the topic.
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 timeout: 300
+resourceRefs:
+  - apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaTopic
+    name: defaults
+    ref: defaults
+assertAll:
+  - celExpr: "!has(defaults.status.config) || !('retention.ms' in defaults.status.config)"
 ---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaTopic
@@ -16,6 +23,3 @@ status:
     - type: Synced
       status: "False"
       reason: KafkaRejected
-  config:
-    retention.ms:
-      source: DEFAULT_CONFIG

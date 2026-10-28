@@ -11,6 +11,7 @@ resourceRefs:
     ref: legacy
 assertAll:
   - celExpr: legacy.status.topicId != ''
+  - celExpr: "!has(legacy.status.config) || !('cleanup.policy' in legacy.status.config)"
 ---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaTopic
@@ -26,6 +27,3 @@ status:
     - type: Synced
       status: "True"
       reason: Synced
-  config:
-    cleanup.policy:
-      source: DEFAULT_CONFIG

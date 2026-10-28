@@ -1,9 +1,7 @@
 //! The status of a `KafkaTopic` for the outcome of a sync.
 
 use snafu::ResultExt;
-use stackable_kafka_shared::crd::topic::v1alpha1::{
-    KafkaTopic, KafkaTopicConfigStatus, KafkaTopicStatus,
-};
+use stackable_kafka_shared::crd::topic::v1alpha1::{KafkaTopic, KafkaTopicStatus};
 use stackable_operator::{
     agent::condition::update_conditions,
     k8s_openapi::{apimachinery::pkg::apis::meta::v1::Time, jiff::Timestamp},
@@ -62,17 +60,7 @@ fn status_from(
             topic_name: Some(topic_state.name.clone()),
             partitions: Some(topic_state.partition_count),
             replication_factor: topic_state.replication_factor,
-            config: topic_state
-                .effective_configs
-                .iter()
-                .map(|(key, config)| {
-                    let config = KafkaTopicConfigStatus {
-                        value: config.value.clone(),
-                        source: config.source.to_string(),
-                    };
-                    (key.clone(), config)
-                })
-                .collect(),
+            config: topic_state.topic_configs.clone(),
         },
         // The topic does not exist or is managed by another KafkaTopic.
         (TopicSyncOutcome::Conflict { .. } | TopicSyncOutcome::ReconciliationPaused, None) => {
@@ -92,7 +80,6 @@ fn status_from(
 mod tests {
     use std::{collections::BTreeMap, str::FromStr};
 
-    use stackable_kafka_admin::client::{ConfigSource, TopicConfig};
     use stackable_kafka_shared::crd::topic::TopicName;
 
     use super::*;
@@ -107,13 +94,7 @@ mod tests {
             id: "UXyU9i5ARn6W00ON2taeWA".to_owned(),
             partition_count: 6,
             replication_factor: Some(3),
-            effective_configs: BTreeMap::from([(
-                "retention.ms".to_owned(),
-                TopicConfig {
-                    value: Some("1000".to_owned()),
-                    source: ConfigSource::DynamicTopic,
-                },
-            )]),
+            topic_configs: BTreeMap::from([("retention.ms".to_owned(), "1000".to_owned())]),
         }
     }
 
@@ -137,11 +118,8 @@ mod tests {
         assert_eq!(Some(6), status.partitions);
         assert_eq!(Some(3), status.replication_factor);
         assert_eq!(
-            Some(&KafkaTopicConfigStatus {
-                value: Some("1000".to_owned()),
-                source: "DYNAMIC_TOPIC_CONFIG".to_owned(),
-            }),
-            status.config.get("retention.ms")
+            Some("1000"),
+            status.config.get("retention.ms").map(String::as_str)
         );
         assert!(
             status

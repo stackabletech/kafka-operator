@@ -213,7 +213,7 @@ mod tests {
             id: "UXyU9i5ARn6W00ON2taeWA".to_owned(),
             partition_count,
             replication_factor: Some(1),
-            effective_configs: BTreeMap::new(),
+            topic_configs: BTreeMap::new(),
         }
     }
 

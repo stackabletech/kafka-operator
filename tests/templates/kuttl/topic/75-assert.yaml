@@ -17,6 +17,4 @@ status:
       status: "False"
       reason: ReconciliationPaused
   config:
-    retention.ms:
-      value: "7200000"
-      source: DYNAMIC_TOPIC_CONFIG
+    retention.ms: "7200000"

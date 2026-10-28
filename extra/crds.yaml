@@ -2383,19 +2383,9 @@ spec:
                 type: array
               config:
                 additionalProperties:
-                  properties:
-                    source:
-                      description: Where the value comes from, like `DYNAMIC_TOPIC_CONFIG` or `DEFAULT_CONFIG`.
-                      type: string
-                    value:
-                      description: The value, not set for sensitive configs.
-                      nullable: true
-                      type: string
-                  required:
-                  - source
-                  type: object
+                  type: string
                 default: {}
-                description: All effective topic configs in Kafka.
+                description: The configs set on the topic in Kafka, without broker and default values.
                 type: object
               partitions:
                 description: The number of partitions in Kafka.

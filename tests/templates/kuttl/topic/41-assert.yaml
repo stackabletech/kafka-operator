@@ -4,6 +4,14 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 timeout: 300
+resourceRefs:
+  - apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaTopic
+    name: orders
+    ref: orders
+assertAll:
+  - celExpr: "!('max.message.bytes' in orders.status.config)"
+  - celExpr: "!('segment.ms' in orders.status.config)"
 ---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaTopic
@@ -18,10 +26,4 @@ status:
       status: "True"
       reason: Synced
   config:
-    retention.ms:
-      value: "7200000"
-      source: DYNAMIC_TOPIC_CONFIG
-    max.message.bytes:
-      source: DEFAULT_CONFIG
-    segment.ms:
-      source: DEFAULT_CONFIG
+    retention.ms: "7200000"

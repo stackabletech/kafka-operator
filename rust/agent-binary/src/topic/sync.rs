@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use snafu::ResultExt;
-use stackable_kafka_admin::client::{KafkaAdminClient, TopicConfig};
+use stackable_kafka_admin::client::KafkaAdminClient;
 use stackable_kafka_shared::crd::topic::{TopicName, v1alpha1::KafkaTopic};
 use stackable_operator::kube::ResourceExt;
 use tracing::info;
@@ -86,7 +86,7 @@ async fn observe(
         .map(|partition| partition.index)
         .collect::<Vec<_>>();
     Ok(Some(ObservedTopic {
-        effective_configs: admin_client
+        topic_configs: admin_client
             .describe_topic_configs(topic_name)
             .await
             .context(KafkaSnafu)?,
@@ -136,7 +136,7 @@ async fn execute(
             // Config
             if !topic_update.configs_to_set.is_empty() || !topic_update.configs_to_reset.is_empty()
             {
-                let effective_configs = replace_configs(
+                let topic_configs = replace_configs(
                     kafka_topic,
                     admin_client,
                     &topic_name,
@@ -145,7 +145,7 @@ async fn execute(
                 )
                 .await?;
                 if let Some(topic_state) = topic_state {
-                    topic_state.effective_configs = effective_configs;
+                    topic_state.topic_configs = topic_configs;
                 }
             }
         }
@@ -204,16 +204,15 @@ async fn grow_partitions(
     Ok(())
 }
 
-/// Returns the effective configs of the topic after the change. They are described again,
-/// because IncrementalAlterConfigs does not return them and a reset key falls back to a broker
-/// config the agent does not know.
+/// Returns the topic-level configs after the change, described again because
+/// IncrementalAlterConfigs does not return them.
 async fn replace_configs(
     kafka_topic: &KafkaTopic,
     admin_client: &mut KafkaAdminClient,
     topic_name: &TopicName,
     configs_to_set: &BTreeMap<String, String>,
     configs_to_reset: &BTreeSet<String>,
-) -> Result<BTreeMap<String, TopicConfig>> {
+) -> Result<BTreeMap<String, String>> {
     admin_client
         .incremental_alter_configs(topic_name.as_ref(), configs_to_set, configs_to_reset)
         .await
