@@ -125,12 +125,12 @@ With the default `deletionPolicy: Retain`, deleting a KafkaTopic leaves the topi
 With `deletionPolicy: Delete`, the agent deletes the topic in Kafka when the KafkaTopic is deleted, unless another KafkaTopic declares the same topic.
 The KafkaTopic gets a finalizer once the agent manages the topic, so the deletion waits until the topic is deleted.
 If the reconciliation of the KafkaTopic is paused, the deletion waits until it is resumed.
-If the brokers cannot be reached, for example while the KafkaCluster is xref:usage-guide/operations/cluster-operations.adoc[stopped], the KafkaTopic reports `ConnectionFailed` and the agent retries the deletion.
+If the brokers cannot be reached, the KafkaTopic reports `ConnectionFailed` and the agent retries the deletion.
 Switching the KafkaTopic to `deletionPolicy: Retain` releases the deletion.
 
 When the KafkaCluster or its namespace is deleted, the operator removes the finalizers of its KafkaTopics, so the deletion does not block.
 The topics are not deleted in Kafka in this case.
 If the KafkaCluster is created again with the same PersistentVolumeClaims, its topics still exist, but without KafkaTopics.
 
-If the KafkaCluster exists but has no agent, for example because management access is disabled, the deletion waits for the agent.
+If the KafkaCluster exists but has no agent, for example because management access is disabled or the KafkaCluster is xref:usage-guide/operations/cluster-operations.adoc[stopped], the deletion waits for the agent.
 In this case, the finalizer `kafka.stackable.tech/kafkatopic` can be removed manually, which leaves the topic in Kafka.
