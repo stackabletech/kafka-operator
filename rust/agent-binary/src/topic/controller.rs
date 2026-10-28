@@ -20,6 +20,7 @@ use tracing::info;
 use super::{
     condition::TopicSyncOutcome,
     finalizer::{add_finalizer, reconcile_finalizer},
+    plan::TopicState,
     sync::sync,
     update_status::update_status,
 };
@@ -103,8 +104,12 @@ pub async fn reconcile_topic(
     // Left untouched while paused, like operators that only update the status then. A deletion
     // waits until the reconciliation is resumed.
     let paused = kafka_topic.spec.topic_operation.reconciliation_paused;
-    if !paused && let Some(action) = reconcile_finalizer(kafka_topic, &ctx).await? {
-        return Ok(action);
+    if !paused {
+        match reconcile_finalizer(kafka_topic, &ctx).await {
+            Ok(Some(action)) => return Ok(action),
+            Ok(None) => {}
+            Err(error) => return fail_with_status(kafka_topic, &ctx, error, None).await,
+        }
     }
 
     // sync (Kafka)
@@ -123,13 +128,23 @@ pub async fn reconcile_topic(
             update_status(kafka_topic, &ctx, &sync_outcome, topic_state.as_ref()).await?;
             Ok(requeue(&sync_outcome))
         }
-        Err(Error::Kafka { source }) => {
-            let sync_outcome = TopicSyncOutcome::from_client_error(&source);
-            update_status(kafka_topic, &ctx, &sync_outcome, topic_state.as_ref()).await?;
-            Err(Error::Kafka { source })
-        }
-        Err(error) => Err(error),
+        Err(error) => fail_with_status(kafka_topic, &ctx, error, topic_state.as_ref()).await,
     }
+}
+
+/// Reports a Kafka error in the status of the `KafkaTopic` before returning it. Other errors are
+/// returned as they are.
+async fn fail_with_status<T>(
+    kafka_topic: &KafkaTopic,
+    ctx: &Ctx,
+    error: Error,
+    topic_state: Option<&TopicState>,
+) -> Result<T> {
+    if let Error::Kafka { source } = &error {
+        let sync_outcome = TopicSyncOutcome::from_client_error(source);
+        update_status(kafka_topic, ctx, &sync_outcome, topic_state).await?;
+    }
+    Err(error)
 }
 
 fn requeue(sync_outcome: &TopicSyncOutcome) -> Action {
