@@ -67,7 +67,8 @@ pub struct Ctx {
     pub(crate) client: stackable_operator::client::Client,
     pub(crate) kafka_topics: Store<DeserializeGuard<KafkaTopic>>,
     /// Reads the TLS files on every new connection and reconnects after a failed request, so
-    /// rotated certificates are picked up without restarting the agent.
+    /// rotated certificates are picked up without restarting the agent. The Kafka requests of
+    /// all reconciles are serialized on its single connection.
     pub(crate) admin_client: Mutex<KafkaAdminClient>,
 }
 
