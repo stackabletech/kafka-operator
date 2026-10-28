@@ -99,7 +99,7 @@ enum ClusterState {
 #[derive(Debug, Eq, PartialEq)]
 enum AgentState {
     Available,
-    /// `None` if the agent Deployment does not exist
+    /// `None` if the agent Deployment does not exist or has no replicas
     UnavailableSince(Option<Timestamp>),
 }
 
@@ -243,11 +243,21 @@ fn operator_action_for(
     }
 }
 
-/// A Deployment that has no `Available` condition yet is unavailable since its creation.
+/// A Deployment that has no `Available` condition yet is unavailable since its creation. One with
+/// zero replicas, e.g. of a stopped KafkaCluster, is unavailable at once, although Kubernetes
+/// reports it as `Available`.
 fn agent_state_from(agent_deployment: Option<&Deployment>) -> AgentState {
     let Some(agent_deployment) = agent_deployment else {
         return AgentState::UnavailableSince(None);
     };
+    if agent_deployment
+        .spec
+        .as_ref()
+        .and_then(|spec| spec.replicas)
+        == Some(0)
+    {
+        return AgentState::UnavailableSince(None);
+    }
     let available_condition = agent_deployment
         .status
         .as_ref()
@@ -353,7 +363,7 @@ async fn remove_finalizer(kafka_topic: &KafkaTopic, ctx: &Ctx) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
-    use stackable_operator::kube::api::ObjectMeta;
+    use stackable_operator::{k8s_openapi::api::apps::v1::DeploymentSpec, kube::api::ObjectMeta};
 
     use super::*;
 
@@ -496,9 +506,21 @@ mod tests {
         .expect("the Deployment should be valid")
     }
 
+    fn scaled_to_zero(mut agent_deployment: Deployment) -> Deployment {
+        agent_deployment.spec = Some(DeploymentSpec {
+            replicas: Some(0),
+            ..DeploymentSpec::default()
+        });
+        agent_deployment
+    }
+
     #[rstest]
     #[case::missing(None, AgentState::UnavailableSince(None))]
     #[case::available(Some(agent_deployment(Some("True"))), AgentState::Available)]
+    #[case::scaled_to_zero(
+        Some(scaled_to_zero(agent_deployment(Some("True")))),
+        AgentState::UnavailableSince(None)
+    )]
     #[case::unavailable_since_the_transition(
         Some(agent_deployment(Some("False"))),
         AgentState::UnavailableSince(Some(Timestamp::from_second(900).expect("valid")))
