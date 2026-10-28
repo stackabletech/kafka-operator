@@ -102,7 +102,7 @@ status:
 
 The `Ready` condition shows whether the topic exists in Kafka.
 The `Synced` condition shows whether the topic matches the KafkaTopic.
-If it does not, the reason and message of the condition explain why, for example an unsupported change, a request rejected by Kafka or a paused reconciliation.
+If it does not, the reason and message of the condition explain why, for example an unsupported change, a request rejected by Kafka, a paused reconciliation or an agent that is not running.
 
 == Pausing
 

@@ -8,6 +8,9 @@ Management access allows the Stackable Data Platform (SDP) to manage resources i
 The agent is an optional Deployment next to the Kafka cluster that manages resources inside Kafka, such as topics.
 The operator deploys it when management access is enabled.
 
+The agent runs the image of the operator, pulled with the pull secrets of the Kafka image in `spec.image.pullSecrets`.
+If the operator image is not public, these pull secrets must grant access to its registry as well, or the Deployment of the agent gets its own pull secrets with <<agent-resources,object overrides>>.
+
 == Limitations
 
 Management access is not available for all clusters:
@@ -88,6 +91,7 @@ The KafkaTopic then reports `KafkaRejected`.
 The agent connects to the headless Services of the broker role groups, which resolve to the broker Pods.
 The traffic of the agent therefore stays within the Kubernetes cluster, regardless of the xref:usage-guide/listenerclass.adoc[ListenerClasses] of the cluster.
 
+[[agent-resources]]
 == Agent resources
 
 The operator creates the following resources for the agent, named after the KafkaCluster:
