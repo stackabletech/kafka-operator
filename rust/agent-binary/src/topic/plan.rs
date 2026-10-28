@@ -164,7 +164,7 @@ fn unsupported_changes(spec: &KafkaTopicSpec, observed: &ObservedTopic) -> Vec<U
 }
 
 /// The configs to set and the configs to reset, so that the topic-level configs are exactly the
-/// desired ones. The throttles of partition reassignments are left alone.
+/// desired ones. The throttles of partition reassignments are not reset.
 fn config_changes(
     desired_topic_configs: &BTreeMap<String, String>,
     current_topic_configs: &BTreeMap<String, String>,
@@ -174,10 +174,7 @@ fn config_changes(
     // without drift does not write to Kafka.
     let configs_to_set = desired_topic_configs
         .iter()
-        .filter(|(key, value)| {
-            current_topic_configs.get(*key) != Some(value)
-                && !THROTTLE_CONFIG_KEYS.contains(&key.as_str())
-        })
+        .filter(|(key, value)| current_topic_configs.get(*key) != Some(value))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     let configs_to_reset = current_topic_configs
@@ -370,11 +367,7 @@ mod tests {
             &spec(
                 None,
                 None,
-                &[
-                    ("retention.ms", "2000"),
-                    ("max.message.bytes", "10"),
-                    ("follower.replication.throttled.replicas", "*"),
-                ],
+                &[("retention.ms", "2000"), ("max.message.bytes", "10")],
             ),
             Some(&observed),
         );
