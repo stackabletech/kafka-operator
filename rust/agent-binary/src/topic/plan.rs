@@ -49,6 +49,21 @@ impl TopicState {
             topic_configs: created.configs,
         }
     }
+
+    /// The topic-level configs as they are after the changes are applied.
+    pub fn apply_config_changes(
+        &mut self,
+        configs_to_set: &BTreeMap<String, String>,
+        configs_to_reset: &BTreeSet<String>,
+    ) {
+        self.topic_configs
+            .retain(|key, _| !configs_to_reset.contains(key));
+        self.topic_configs.extend(
+            configs_to_set
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -211,6 +226,8 @@ fn target_replication_factors(observed: &ObservedTopic) -> Vec<usize> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use stackable_kafka_admin::client::Partition;
 
     use super::*;
@@ -376,6 +393,27 @@ mod tests {
                 vec![]
             ),
             plan
+        );
+    }
+
+    #[test]
+    fn apply_config_changes_to_the_topic_state() {
+        let mut topic_state = TopicState::observed(
+            TopicName::from_str("orders").expect("the topic name should be valid"),
+            &observed(
+                &[1],
+                &[("retention.ms", "1000"), ("cleanup.policy", "compact")],
+            ),
+        );
+
+        topic_state.apply_config_changes(
+            &configs(&[("retention.ms", "2000"), ("max.message.bytes", "10")]),
+            &keys(&["cleanup.policy"]),
+        );
+
+        assert_eq!(
+            configs(&[("max.message.bytes", "10"), ("retention.ms", "2000")]),
+            topic_state.topic_configs
         );
     }
 

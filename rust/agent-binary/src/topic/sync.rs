@@ -136,7 +136,7 @@ async fn execute(
             // Config
             if !topic_update.configs_to_set.is_empty() || !topic_update.configs_to_reset.is_empty()
             {
-                let topic_configs = replace_configs(
+                alter_configs(
                     kafka_topic,
                     admin_client,
                     &topic_name,
@@ -145,7 +145,10 @@ async fn execute(
                 )
                 .await?;
                 if let Some(topic_state) = topic_state {
-                    topic_state.topic_configs = topic_configs;
+                    topic_state.apply_config_changes(
+                        &topic_update.configs_to_set,
+                        &topic_update.configs_to_reset,
+                    );
                 }
             }
         }
@@ -204,15 +207,13 @@ async fn grow_partitions(
     Ok(())
 }
 
-/// Returns the topic-level configs after the change, described again because
-/// IncrementalAlterConfigs does not return them.
-async fn replace_configs(
+async fn alter_configs(
     kafka_topic: &KafkaTopic,
     admin_client: &mut KafkaAdminClient,
     topic_name: &TopicName,
     configs_to_set: &BTreeMap<String, String>,
     configs_to_reset: &BTreeSet<String>,
-) -> Result<BTreeMap<String, String>> {
+) -> Result<()> {
     admin_client
         .incremental_alter_configs(topic_name.as_ref(), configs_to_set, configs_to_reset)
         .await
@@ -224,8 +225,5 @@ async fn replace_configs(
         kafka_topic = %kafka_topic.name_any(),
         "Changed the topic configs"
     );
-    admin_client
-        .describe_topic_configs(topic_name.as_ref())
-        .await
-        .context(KafkaSnafu)
+    Ok(())
 }
