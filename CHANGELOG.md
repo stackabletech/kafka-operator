@@ -48,15 +48,13 @@ All notable changes to this project will be documented in this file.
   operator upgrade, delete each broker StatefulSet so that the operator immediately recreates it
   with the new labels ([#1011]).
 - Make operations infallible where dependent on static inputs ([#1017]).
-- Bump stackable-operator to 0.119.0 ([#1029]).
-- test: Bump vector-aggregator to 0.58.0 ([#1039]).
 - Internal operator refactoring: build each role group through per-role modules (brokers,
   controllers) and a shared role group builder, with the broker and controller configuration held
   in typed fields of the validated cluster ([#1041]).
-- test: Update OPA to 1.20.2 in integration tests and docs example ([#1042]).
 - Remove `serde_yaml` ([#1043]).
 - All pods now set `securityContext.seccompProfile.type` to `RuntimeDefault` ([#1043]).
 - Support Vector 0.58.0 ([#1039], [#1044], [#1046]).
+- test: Update OPA to 1.20.2 in integration tests and docs example ([#1042]).
 - The operator Deployment runs with a restricted security context and a read-only root filesystem, so it can be deployed into namespaces that enforce the `restricted` Pod Security Standard ([#1049]).
 
 ### Fixed
