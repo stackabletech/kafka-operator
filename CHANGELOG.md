@@ -57,6 +57,7 @@ All notable changes to this project will be documented in this file.
 - Remove `serde_yaml` ([#1043]).
 - All pods now set `securityContext.seccompProfile.type` to `RuntimeDefault` ([#1043]).
 - Support Vector 0.58.0 ([#1039], [#1044], [#1046]).
+- The operator Deployment runs with a restricted security context and a read-only root filesystem, so it can be deployed into namespaces that enforce the `restricted` Pod Security Standard ([#1049]).
 
 ### Fixed
 
@@ -103,6 +104,7 @@ All notable changes to this project will be documented in this file.
 [#1044]: https://github.com/stackabletech/kafka-operator/pull/1044
 [#1046]: https://github.com/stackabletech/kafka-operator/pull/1046
 [#1047]: https://github.com/stackabletech/kafka-operator/pull/1047
+[#1049]: https://github.com/stackabletech/kafka-operator/pull/1049
 
 ## [26.7.0] - 2026-07-21
 

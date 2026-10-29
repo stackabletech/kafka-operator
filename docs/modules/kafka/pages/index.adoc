@@ -3,8 +3,8 @@
 :keywords: Stackable operator, Apache Kafka, Kubernetes, operator, SQL, engineer, broker, big data, CRD, StatefulSet, ConfigMap, Service, Druid, ZooKeeper, NiFi, S3, demo, version
 :kafka: https://kafka.apache.org/
 :github: https://github.com/stackabletech/kafka-operator/
-:crd: {crd-docs-base-url}/kafka-operator/{crd-docs-version}/
-:crd-kafkacluster: {crd-docs}/kafka.stackable.tech/kafkacluster/v1alpha1/
+:crd: {crd-ref}{crd-ref-release}&operator=kafka-operator
+:crd-kafkacluster: {crd-ref}/kafka.stackable.tech/v1alpha1/kafkacluster{crd-ref-release}
 :feature-tracker: https://features.stackable.tech/unified
 :metadata-quorum: https://cwiki.apache.org/confluence/display/KAFKA/KIP-500%3A+Replace+ZooKeeper+with+a+Self-Managed+Metadata+Quorum
 :pegelonline: https://www.pegelonline.wsv.de/webservice/ueberblick
