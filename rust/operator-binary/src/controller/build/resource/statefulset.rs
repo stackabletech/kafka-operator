@@ -217,8 +217,14 @@ mod tests {
     use super::*;
     use crate::{
         controller::{
-            build::role_group::controller::QUORUM_MANAGER_CONTAINER_NAME,
-            test_support::{minimal_kafka, validated_cluster},
+            build::{
+                resource::config_map::build_config_map,
+                role_group::{self, controller::QUORUM_MANAGER_CONTAINER_NAME},
+            },
+            test_support::{
+                broker_role_group_config, controller_role_group_config, minimal_kafka,
+                validated_cluster,
+            },
         },
         crd::role::KAFKA_NODE_ID_OFFSET,
     };
@@ -261,20 +267,36 @@ mod tests {
         validated_cluster(&kafka)
     }
 
+    /// The [`RoleGroupBuilder`] of the `default` controller role group.
+    fn controller_builder(cluster: &crate::controller::ValidatedCluster) -> RoleGroupBuilder<'_> {
+        role_group::controller::build(
+            cluster,
+            &"default".parse().expect("valid role group name"),
+            controller_role_group_config(cluster, "default"),
+        )
+        .expect("the role group builds")
+    }
+
+    /// The [`RoleGroupBuilder`] of the `default` broker role group.
+    fn broker_builder(cluster: &crate::controller::ValidatedCluster) -> RoleGroupBuilder<'_> {
+        let (builder, _) = role_group::broker::build(
+            cluster,
+            &"default".parse().expect("valid role group name"),
+            broker_role_group_config(cluster, "default"),
+        )
+        .expect("the role group builds");
+        builder
+    }
+
     #[test]
     fn statefulsets_use_ordered_ready_pod_management_for_controllers_only() {
         let cluster = kraft_mode_cluster();
-        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
 
-        for (name, expected_policy) in [
-            ("simple-kafka-controller-default", "OrderedReady"),
-            ("simple-kafka-broker-default", "Parallel"),
+        for (builder, expected_policy) in [
+            (controller_builder(&cluster), "OrderedReady"),
+            (broker_builder(&cluster), "Parallel"),
         ] {
-            let sts = resources
-                .stateful_sets
-                .iter()
-                .find(|sts| sts.metadata.name.as_deref() == Some(name))
-                .unwrap_or_else(|| panic!("the {name} StatefulSet is built"));
+            let sts = build_statefulset(&builder).expect("the StatefulSet builds");
             assert_eq!(
                 sts.spec
                     .as_ref()
@@ -289,13 +311,9 @@ mod tests {
     fn controller_containers(
         cluster: &crate::controller::ValidatedCluster,
     ) -> Vec<stackable_operator::k8s_openapi::api::core::v1::Container> {
-        let resources = crate::controller::build::build(cluster).expect("build succeeds");
-        let sts = resources
-            .stateful_sets
-            .into_iter()
-            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
-            .expect("the controller StatefulSet is built");
-        sts.spec
+        build_statefulset(&controller_builder(cluster))
+            .expect("the StatefulSet builds")
+            .spec
             .expect("the StatefulSet has a spec")
             .template
             .spec
@@ -364,13 +382,9 @@ mod tests {
     #[test]
     fn quorum_manager_sidecar_has_every_env_var_controller_properties_rendering_references() {
         let cluster = kraft_mode_cluster();
-        let resources = crate::controller::build::build(&cluster).expect("build succeeds");
 
-        let controller_properties = resources
-            .config_maps
-            .iter()
-            .find(|cm| cm.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
-            .expect("the controller rolegroup ConfigMap is built")
+        let controller_properties = build_config_map(&controller_builder(&cluster))
+            .expect("the ConfigMap builds")
             .data
             .as_ref()
             .expect("the ConfigMap carries data")
@@ -441,13 +455,9 @@ mod tests {
     fn broker_kafka_container(
         cluster: &crate::controller::ValidatedCluster,
     ) -> stackable_operator::k8s_openapi::api::core::v1::Container {
-        let resources = crate::controller::build::build(cluster).expect("build succeeds");
-        let sts = resources
-            .stateful_sets
-            .into_iter()
-            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-broker-default"))
-            .expect("the broker StatefulSet is built");
-        sts.spec
+        build_statefulset(&broker_builder(cluster))
+            .expect("the StatefulSet builds")
+            .spec
             .expect("the StatefulSet has a spec")
             .template
             .spec
