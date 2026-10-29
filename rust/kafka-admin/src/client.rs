@@ -270,12 +270,13 @@ impl KafkaAdminClient {
 
     /// Sends the request on the current connection or a new one. A request that fails because
     /// the broker closed the reused connection is sent once more on a new one. A failed or
-    /// cancelled request drops the connection, and a connection idle for longer than
-    /// [`CONNECTION_MAX_IDLE`] is replaced.
+    /// cancelled request drops the connection, unless only the version check failed, and a
+    /// connection idle for longer than [`CONNECTION_MAX_IDLE`] is replaced.
     async fn send<R: Request>(&mut self, request: R, version: i16) -> Result<R::Response> {
-        if let Some((mut connection, last_used)) = self.connection.take()
+        if let Some((connection, last_used)) = self.connection.take()
             && last_used.elapsed() < CONNECTION_MAX_IDLE
         {
+            let mut connection = self.with_version_checked::<R>(connection, last_used, version)?;
             match connection.send(&request, version).await {
                 Err(error) if error.is_broken_connection() => {}
                 result => {
@@ -286,13 +287,30 @@ impl KafkaAdminClient {
             }
         }
         // After a broken connections the request is directly send on a new connection again
-        let mut connection = self.connect().await?;
+        let connection = self.connect().await?;
+        let mut connection = self.with_version_checked::<R>(connection, Instant::now(), version)?;
         let response = connection
             .send(&request, version)
             .await
             .context(SendSnafu)?;
         self.connection = Some((connection, Instant::now()));
         Ok(response)
+    }
+
+    /// Keeps the connection if the broker does not support the version, as the check does no I/O.
+    fn with_version_checked<R: Request>(
+        &mut self,
+        connection: Connection,
+        last_used: Instant,
+        version: i16,
+    ) -> Result<Connection> {
+        match connection.check_version::<R>(version) {
+            Ok(()) => Ok(connection),
+            Err(source) => {
+                self.connection = Some((connection, last_used));
+                Err(Error::Send { source })
+            }
+        }
     }
 
     /// Connects to the first bootstrap server that answers. Any broker works, because brokers in

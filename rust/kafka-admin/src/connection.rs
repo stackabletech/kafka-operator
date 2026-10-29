@@ -147,7 +147,7 @@ impl Connection {
 
         let mut connection = Self::new(stream, client_id);
         let response = connection
-            .send_with_version(&api_versions_request(), API_VERSIONS_VERSION)
+            .send(&api_versions_request(), API_VERSIONS_VERSION)
             .await?;
         connection.broker_api_versions = api_versions_result(response)?;
         Ok(connection)
@@ -166,20 +166,17 @@ impl Connection {
         }
     }
 
-    /// Sends the request with the given version, if the broker supports it.
-    pub(crate) async fn send<R: Request>(
-        &mut self,
-        request: &R,
-        version: i16,
-    ) -> Result<R::Response> {
+    /// Whether the broker supports the version of the API of `R`. No request is sent, so the
+    /// connection stays usable after a failed check.
+    pub(crate) fn check_version<R: Request>(&self, version: i16) -> Result<()> {
         // Each API that is relevant for us has a version that is supported by all of our Kafka versions.
         // We use these versions and pin them in client.rs.
         // We will have to add API version negotiation at some point in the future.
-        check_version(&self.broker_api_versions, api_key::<R>(), version)?;
-        self.send_with_version(request, version).await
+        check_version(&self.broker_api_versions, api_key::<R>(), version)
     }
 
-    async fn send_with_version<R: Request>(
+    /// Sends the request with the given version, see [`Self::check_version`].
+    pub(crate) async fn send<R: Request>(
         &mut self,
         request: &R,
         version: i16,
