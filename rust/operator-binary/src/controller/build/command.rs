@@ -157,6 +157,8 @@ pub fn controller_kafka_container_command(
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
         {set_realm_env}
 
+        {import_opa_tls_cert}
+
         {derive_pod_index}
         {export_replica_id}
 
@@ -180,6 +182,7 @@ pub fn controller_kafka_container_command(
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         // Mirrors `broker_kafka_container_commands`: empty when Kerberos is disabled.
         set_realm_env = export_kerberos_realm_command(kafka_security).unwrap_or_default(),
+        import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
         config_dir = STACKABLE_CONFIG_DIR,

@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file.
 - Support for Kafka 4.3.1 ([#1022]).
 - Add `/ready` endpoint to the operator Deployment, which reports the CRD installation status ([#1029]).
 - Brokers now have a default affinity to the OPA Pods when OPA authorization is configured ([#1035]).
+- The OPA authorizer is now also configured on KRaft controllers. Previously, requests that brokers
+  forward to the controllers (e.g. creating or deleting topics) were not authorized at all.
+  The Kafka nodes are super users, so that traffic between them does not hit OPA ([#XXX]).
 
 ### Changed
 
@@ -99,6 +102,7 @@ All notable changes to this project will be documented in this file.
 [#1046]: https://github.com/stackabletech/kafka-operator/pull/1046
 [#1047]: https://github.com/stackabletech/kafka-operator/pull/1047
 [#1049]: https://github.com/stackabletech/kafka-operator/pull/1049
+[#XXX]: https://github.com/stackabletech/kafka-operator/issues/XXX
 
 ## [26.7.0] - 2026-07-21
 

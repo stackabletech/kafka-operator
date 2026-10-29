@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::kraft_controllers;
+use super::{kraft_controllers, opa_authorizer_properties};
 use crate::{
     controller::{
         ValidatedClusterConfig,
@@ -95,23 +95,7 @@ pub fn build(
         }
     }
 
-    // Enable OPA authorization
-    if let Some(opa_connect_string) = cluster_config.opa_connect() {
-        result.extend([
-            (
-                "authorizer.class.name".to_string(),
-                "org.openpolicyagent.kafka.OpaAuthorizer".to_string(),
-            ),
-            (
-                "opa.authorizer.metrics.enabled".to_string(),
-                "true".to_string(),
-            ),
-            (
-                "opa.authorizer.url".to_string(),
-                opa_connect_string.to_string(),
-            ),
-        ]);
-    }
+    result.extend(opa_authorizer_properties(cluster_config, pod_descriptors));
 
     result.extend(broker_config_settings(&cluster_config.kafka_security));
     result.extend(graceful_shutdown_config_properties());
