@@ -210,7 +210,9 @@ fn add_vector_container(
 
 #[cfg(test)]
 mod tests {
-    use stackable_operator::k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+    use stackable_operator::k8s_openapi::apimachinery::pkg::{
+        api::resource::Quantity, util::intstr::IntOrString,
+    };
 
     use super::*;
     use crate::{
@@ -528,8 +530,6 @@ mod tests {
         expected_memory_request: &str,
         expected_memory_limit: &str,
     ) {
-        use stackable_operator::k8s_openapi::apimachinery::pkg::api::resource::Quantity;
-
         let requests = resources
             .requests
             .as_ref()
