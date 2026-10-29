@@ -172,7 +172,7 @@ impl Connection {
         // Each API that is relevant for us has a version that is supported by all of our Kafka versions.
         // We use these versions and pin them in client.rs.
         // We will have to add API version negotiation at some point in the future.
-        check_version(&self.broker_api_versions, api_key::<R>(), version)
+        check_version_in_range(&self.broker_api_versions, api_key::<R>(), version)
     }
 
     /// Sends the request with the given version, see [`Self::check_version`].
@@ -246,7 +246,7 @@ fn api_versions_result(response: ApiVersionsResponse) -> Result<BTreeMap<i16, Ve
         .collect())
 }
 
-fn check_version(
+fn check_version_in_range(
     broker_api_versions: &BTreeMap<i16, VersionRange>,
     api_key: ApiKey,
     version: i16,
@@ -330,7 +330,7 @@ pub(crate) mod test_support {
             &mut broker,
             &request,
             request.correlation_id,
-            api_versions(apis),
+            api_versions_response(apis),
         )
         .await;
         broker
@@ -385,7 +385,7 @@ pub(crate) mod test_support {
             .expect("the response should be writable");
     }
 
-    pub(crate) fn api_versions(apis: &[(i16, i16, i16)]) -> ApiVersionsResponse {
+    pub(crate) fn api_versions_response(apis: &[(i16, i16, i16)]) -> ApiVersionsResponse {
         ApiVersionsResponse::default().with_api_keys(
             apis.iter()
                 .map(|(api_key, min_version, max_version)| {
@@ -405,7 +405,7 @@ mod tests {
     use tokio::io::AsyncWriteExt;
 
     use super::{
-        test_support::{accept, api_versions, listen, read_request, write_response},
+        test_support::{accept, api_versions_response, listen, read_request, write_response},
         *,
     };
 
@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn read_api_versions() {
-        let response = api_versions(&[(MetadataRequest::KEY, 0, 13)]);
+        let response = api_versions_response(&[(MetadataRequest::KEY, 0, 13)]);
 
         assert_eq!(
             BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 13 })]),
@@ -454,13 +454,13 @@ mod tests {
         let broker_api_versions =
             BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 13 })]);
 
-        check_version(&broker_api_versions, ApiKey::Metadata, 12)
+        check_version_in_range(&broker_api_versions, ApiKey::Metadata, 12)
             .expect("the version should be supported");
     }
 
     #[test]
     fn reject_api_unknown_to_the_broker() {
-        let error = check_version(&BTreeMap::new(), ApiKey::Metadata, 12)
+        let error = check_version_in_range(&BTreeMap::new(), ApiKey::Metadata, 12)
             .expect_err("the API should be unsupported");
 
         assert!(matches!(
@@ -476,7 +476,7 @@ mod tests {
         let broker_api_versions =
             BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 9 })]);
 
-        let error = check_version(&broker_api_versions, ApiKey::Metadata, 12)
+        let error = check_version_in_range(&broker_api_versions, ApiKey::Metadata, 12)
             .expect_err("the version should be unsupported");
 
         assert!(matches!(

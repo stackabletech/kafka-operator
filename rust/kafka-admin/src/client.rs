@@ -186,7 +186,8 @@ impl KafkaAdminClient {
         describe_topic_configs_result(response, topic)
     }
 
-    /// `None` uses the broker default for the number of partitions or the replication factor.
+    /// Creates the topic. Without `partitions` or `replication_factor`, the broker applies its
+    /// `num.partitions` or `default.replication.factor`.
     pub async fn create_topic(
         &mut self,
         topic: &str,
@@ -212,8 +213,8 @@ impl KafkaAdminClient {
             )
             .await?;
 
-        let result = first(response.results, ApiKey::CreatePartitions, topic)?;
-        check(
+        let result = first_result(response.results, ApiKey::CreatePartitions, topic)?;
+        check_error_code(
             ApiKey::CreatePartitions,
             topic,
             result.error_code,
@@ -236,8 +237,8 @@ impl KafkaAdminClient {
             )
             .await?;
 
-        let result = first(response.responses, ApiKey::IncrementalAlterConfigs, topic)?;
-        check(
+        let result = first_result(response.responses, ApiKey::IncrementalAlterConfigs, topic)?;
+        check_error_code(
             ApiKey::IncrementalAlterConfigs,
             topic,
             result.error_code,
@@ -344,11 +345,11 @@ fn describe_topic_request(topic: &str) -> MetadataRequest {
 }
 
 fn describe_topic_result(response: MetadataResponse, topic: &str) -> Result<Option<Topic>> {
-    let result = first(response.topics, ApiKey::Metadata, topic)?;
+    let result = first_result(response.topics, ApiKey::Metadata, topic)?;
     if result.error_code.err() == Some(ResponseError::UnknownTopicOrPartition) {
         return Ok(None);
     }
-    check(ApiKey::Metadata, topic, result.error_code, None)?;
+    check_error_code(ApiKey::Metadata, topic, result.error_code, None)?;
 
     let partitions = result
         .partitions
@@ -381,8 +382,8 @@ fn describe_topic_configs_result(
     response: DescribeConfigsResponse,
     topic: &str,
 ) -> Result<BTreeMap<String, String>> {
-    let result = first(response.results, ApiKey::DescribeConfigs, topic)?;
-    check(
+    let result = first_result(response.results, ApiKey::DescribeConfigs, topic)?;
+    check_error_code(
         ApiKey::DescribeConfigs,
         topic,
         result.error_code,
@@ -431,15 +432,15 @@ fn create_topic_request(
 }
 
 fn create_topic_result(response: CreateTopicsResponse, topic: &str) -> Result<CreatedTopic> {
-    let result = first(response.topics, ApiKey::CreateTopics, topic)?;
-    check(
+    let result = first_result(response.topics, ApiKey::CreateTopics, topic)?;
+    check_error_code(
         ApiKey::CreateTopics,
         topic,
         result.error_code,
         result.error_message,
     )?;
     // Without the details, e.g. if `DESCRIBE_CONFIGS` is not allowed, the topic was still created.
-    check(
+    check_error_code(
         ApiKey::CreateTopics,
         topic,
         result.topic_config_error_code,
@@ -505,7 +506,7 @@ fn delete_topic_request(topic: &str) -> DeleteTopicsRequest {
 }
 
 fn delete_topic_result(response: DeleteTopicsResponse, topic: &str) -> Result<()> {
-    let result = first(response.responses, ApiKey::DeleteTopics, topic)?;
+    let result = first_result(response.responses, ApiKey::DeleteTopics, topic)?;
     //  It's ok if topic or partition are already being deleted
     if matches!(
         result.error_code.err(),
@@ -513,7 +514,7 @@ fn delete_topic_result(response: DeleteTopicsResponse, topic: &str) -> Result<()
     ) {
         return Ok(());
     }
-    check(
+    check_error_code(
         ApiKey::DeleteTopics,
         topic,
         result.error_code,
@@ -540,7 +541,7 @@ fn list_partition_reassignments_result(
     response: ListPartitionReassignmentsResponse,
     topic: &str,
 ) -> Result<Vec<PartitionReassignment>> {
-    check(
+    check_error_code(
         ApiKey::ListPartitionReassignments,
         topic,
         response.error_code,
@@ -564,14 +565,19 @@ fn topic_name(topic: &str) -> TopicName {
 }
 
 // Used instead of [0] to correctly handle empty results & take ownership
-fn first<T>(results: Vec<T>, api_key: ApiKey, topic: &str) -> Result<T> {
+fn first_result<T>(results: Vec<T>, api_key: ApiKey, topic: &str) -> Result<T> {
     results
         .into_iter()
         .next()
         .context(MissingResultSnafu { api_key, topic })
 }
 
-fn check(api_key: ApiKey, topic: &str, error_code: i16, message: Option<StrBytes>) -> Result<()> {
+fn check_error_code(
+    api_key: ApiKey,
+    topic: &str,
+    error_code: i16,
+    message: Option<StrBytes>,
+) -> Result<()> {
     match error_code.err() {
         None => Ok(()),
         Some(error) => KafkaSnafu {
@@ -985,7 +991,7 @@ mod tests {
 
     #[test]
     fn report_rejected_request() {
-        let error = check(
+        let error = check_error_code(
             ApiKey::CreateTopics,
             TOPIC,
             ResponseError::TopicAlreadyExists.code(),
@@ -1006,7 +1012,7 @@ mod tests {
 
     #[test]
     fn reject_response_without_result() {
-        let error = first(
+        let error = first_result(
             Vec::<DeletableTopicResult>::new(),
             ApiKey::DeleteTopics,
             TOPIC,
