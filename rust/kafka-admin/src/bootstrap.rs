@@ -1,6 +1,6 @@
 //! The bootstrap servers of a Kafka cluster.
 
-use std::fmt;
+use std::{fmt, net::Ipv6Addr};
 
 use snafu::{OptionExt, Snafu, ensure};
 
@@ -23,10 +23,11 @@ pub struct BrokerAddress {
 
 impl fmt::Display for BrokerAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.host.contains(':') {
-            write!(f, "[{}]:{}", self.host, self.port)
+        let Self { host, port } = self;
+        if host.parse::<Ipv6Addr>().is_ok() {
+            write!(f, "[{host}]:{port}")
         } else {
-            write!(f, "{}:{}", self.host, self.port)
+            write!(f, "{host}:{port}")
         }
     }
 }
@@ -89,6 +90,19 @@ mod tests {
             expected,
             parse_bootstrap_servers(value).expect("the bootstrap servers should be valid")
         );
+    }
+
+    #[rstest]
+    #[case("kafka", "kafka:9092")]
+    #[case("10.0.0.1", "10.0.0.1:9092")]
+    #[case("fd00::1", "[fd00::1]:9092")]
+    fn format_address_with_brackets_around_ipv6(#[case] host: &str, #[case] expected: &str) {
+        let address = BrokerAddress {
+            host: host.to_owned(),
+            port: 9092,
+        };
+
+        assert_eq!(expected, address.to_string());
     }
 
     #[rstest]
