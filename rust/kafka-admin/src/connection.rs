@@ -24,7 +24,6 @@ use tokio_util::{
 use crate::{
     bootstrap::BrokerAddress,
     codec::{self, api_key, decode_response, encode_request},
-    tls,
 };
 
 // The defaults of Kafka's Java admin client, in `clients/src/main/java/org/apache/kafka/clients/`:
@@ -54,9 +53,6 @@ pub enum Error {
         source: Elapsed,
         address: BrokerAddress,
     },
-
-    #[snafu(display("failed to configure TLS"))]
-    Tls { source: tls::Error },
 
     #[snafu(display("{host:?} is not a valid TLS server name"))]
     InvalidServerName { host: String },
@@ -136,14 +132,15 @@ pub(crate) struct Connection {
 }
 
 impl Connection {
-    /// Connects to the broker and fetches the API versions it supports.
+    /// Connects to the broker and fetches the API versions it supports. Without a `tls_config`,
+    /// the connection is plaintext.
     pub(crate) async fn connect(
         address: &BrokerAddress,
-        security: &Security,
+        tls_config: Option<Arc<ClientConfig>>,
         client_id: &str,
     ) -> Result<Self> {
         let tcp_stream = connect_tcp(address).await?;
-        let stream = match tls::client_config(security).context(TlsSnafu)? {
+        let stream = match tls_config {
             None => Either::Left(tcp_stream),
             Some(config) => Either::Right(tls_handshake(tcp_stream, address, config).await?),
         };
@@ -274,7 +271,7 @@ fn check_version(
 async fn tls_handshake(
     tcp_stream: TcpStream,
     address: &BrokerAddress,
-    config: ClientConfig,
+    config: Arc<ClientConfig>,
 ) -> Result<TlsStream<TcpStream>> {
     let host = &address.host;
     let server_name = ServerName::try_from(host.clone())
@@ -282,7 +279,7 @@ async fn tls_handshake(
         .context(InvalidServerNameSnafu { host })?;
     timeout(
         CONNECT_TIMEOUT,
-        TlsConnector::from(Arc::new(config)).connect(server_name, tcp_stream),
+        TlsConnector::from(config).connect(server_name, tcp_stream),
     )
     .await
     .context(ConnectTimeoutSnafu {
@@ -423,7 +420,7 @@ mod tests {
             port,
         };
         let (connection, broker) = tokio::join!(
-            Connection::connect(&address, &Security::Plaintext, "test"),
+            Connection::connect(&address, None, "test"),
             accept(&listener, &[(MetadataRequest::KEY, 0, 13)])
         );
         (connection.expect("the connection should succeed"), broker)

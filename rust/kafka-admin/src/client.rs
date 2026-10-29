@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    sync::Arc,
     time::Duration,
 };
 
@@ -30,6 +31,7 @@ use tokio::time::Instant;
 use crate::{
     bootstrap::BrokerAddress,
     connection::{self, Connection, Security},
+    tls,
 };
 
 // The highest versions that Kafka 3.9.2 supports and 4.3.1 still supports, see `validVersions` in
@@ -69,6 +71,9 @@ const CONFIG_OPERATION_DELETE: i8 = 1;
 pub enum Error {
     #[snafu(display("no bootstrap servers given"))]
     NoBootstrapServers,
+
+    #[snafu(display("failed to configure TLS"))]
+    Tls { source: tls::Error },
 
     #[snafu(display("failed to connect to the bootstrap server {server}"))]
     Connect {
@@ -293,9 +298,12 @@ impl KafkaAdminClient {
     /// Connects to the first bootstrap server that answers. Any broker works, because brokers in
     /// KRaft mode forward admin requests to the active controller.
     async fn connect(&self) -> Result<Connection> {
+        let tls_config = tls::client_config(&self.security)
+            .context(TlsSnafu)?
+            .map(Arc::new);
         let mut last_error = Error::NoBootstrapServers;
         for server in &self.bootstrap_servers {
-            match Connection::connect(server, &self.security, &self.client_id).await {
+            match Connection::connect(server, tls_config.clone(), &self.client_id).await {
                 Ok(connection) => return Ok(connection),
                 Err(source) => {
                     last_error = Error::Connect {
