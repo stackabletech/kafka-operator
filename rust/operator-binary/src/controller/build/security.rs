@@ -44,7 +44,7 @@ const OPA_TLS_MOUNT_PATH: &str = "/stackable/tls-opa";
 constant!(OPA_TLS_VOLUME_NAME: VolumeName = "tls-opa");
 const SSL_STORE_PASSWORD: &str = "";
 const SSL_STORE_TYPE_PKCS12: &str = "PKCS12";
-const SSL_CLIENT_AUTH_REQUIRED: &str = "required";
+pub(super) const SSL_CLIENT_AUTH_REQUIRED: &str = "required";
 const SASL_MECHANISM_GSSAPI: &str = "GSSAPI";
 const STACKABLE_KCAT_BINARY: &str = "/stackable/kcat";
 const PROPERTY_SECURITY_PROTOCOL: &str = "security.protocol";
@@ -263,6 +263,39 @@ pub fn controller_admin_client_properties(
     properties
 }
 
+/// Adds the volume and volume mount holding the CA of the OPA TLS `SecretClass`, if configured.
+///
+/// The CA is imported into the internal truststore on startup, see [`copy_opa_tls_cert_command`].
+fn add_opa_tls_volume_and_volume_mount(
+    security: &ValidatedKafkaSecurity,
+    pod_builder: &mut PodBuilder,
+    cb_kafka: &mut ContainerBuilder,
+) -> Result<(), Error> {
+    if let Some(secret_class) = security.opa_secret_class() {
+        cb_kafka
+            .add_volume_mount(&*OPA_TLS_VOLUME_NAME, OPA_TLS_MOUNT_PATH)
+            .expect("The mount paths are statically defined and there should be no duplicates.");
+
+        pod_builder
+            .add_volume(
+                VolumeBuilder::new(&*OPA_TLS_VOLUME_NAME)
+                    .ephemeral(
+                        SecretOperatorVolumeSourceBuilder::new(
+                            secret_class,
+                            // Only the truststore is required to connect to OPA.
+                            SecretClassVolumeProvisionParts::Public,
+                        )
+                        .build()
+                        .context(OpaTlsCertSecretClassVolumeBuildSnafu)?,
+                    )
+                    .build(),
+            )
+            .context(AddVolumeSnafu)?;
+    }
+
+    Ok(())
+}
+
 /// Adds required volumes and volume mounts to the broker pod and container builders
 /// depending on the tls and authentication settings.
 ///
@@ -320,27 +353,7 @@ pub fn add_broker_volume_and_volume_mounts(
         )
         .expect("The mount paths are statically defined and there should be no duplicates.");
 
-    if let Some(secret_class) = security.opa_secret_class() {
-        cb_kafka
-            .add_volume_mount(&*OPA_TLS_VOLUME_NAME, OPA_TLS_MOUNT_PATH)
-            .expect("The mount paths are statically defined and there should be no duplicates.");
-
-        pod_builder
-            .add_volume(
-                VolumeBuilder::new(&*OPA_TLS_VOLUME_NAME)
-                    .ephemeral(
-                        SecretOperatorVolumeSourceBuilder::new(
-                            secret_class,
-                            // Only the truststore is required to connect to OPA.
-                            SecretClassVolumeProvisionParts::Public,
-                        )
-                        .build()
-                        .context(OpaTlsCertSecretClassVolumeBuildSnafu)?,
-                    )
-                    .build(),
-            )
-            .context(AddVolumeSnafu)?;
-    }
+    add_opa_tls_volume_and_volume_mount(security, pod_builder, cb_kafka)?;
 
     Ok(())
 }
@@ -384,6 +397,8 @@ pub fn add_controller_volume_and_volume_mounts(
             STACKABLE_TLS_KAFKA_INTERNAL_DIR,
         )
         .expect("The mount paths are statically defined and there should be no duplicates.");
+
+    add_opa_tls_volume_and_volume_mount(security, pod_builder, cb_kafka)?;
 
     Ok(())
 }
@@ -456,6 +471,32 @@ fn push_client_ssl_truststore(props: &mut Vec<(String, Option<String>)>, dir: &s
     ));
 }
 
+/// Inserts the `opa.authorizer.truststore.*` settings if OPA is configured with TLS.
+///
+/// The OPA CA is imported into the internal truststore, see [`copy_opa_tls_cert_command`].
+fn insert_opa_truststore_settings(
+    config: &mut BTreeMap<String, String>,
+    security: &ValidatedKafkaSecurity,
+) {
+    if security.opa_secret_class().is_some() {
+        config.insert(
+            "opa.authorizer.truststore.path".to_string(),
+            format!(
+                "{}/{}",
+                STACKABLE_TLS_KAFKA_INTERNAL_DIR, TRUSTSTORE_P12_FILE_NAME
+            ),
+        );
+        config.insert(
+            "opa.authorizer.truststore.password".to_string(),
+            SSL_STORE_PASSWORD.to_string(),
+        );
+        config.insert(
+            "opa.authorizer.truststore.type".to_string(),
+            SSL_STORE_TYPE_PKCS12.to_string(),
+        );
+    }
+}
+
 /// Returns required Kafka configuration settings for the `broker.properties` file
 /// depending on the tls and authentication settings.
 pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<String, String> {
@@ -526,24 +567,7 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
         SSL_CLIENT_AUTH_REQUIRED.to_string(),
     );
 
-    //OPA Tls
-    if security.opa_secret_class().is_some() {
-        config.insert(
-            "opa.authorizer.truststore.path".to_string(),
-            format!(
-                "{}/{}",
-                STACKABLE_TLS_KAFKA_INTERNAL_DIR, TRUSTSTORE_P12_FILE_NAME
-            ),
-        );
-        config.insert(
-            "opa.authorizer.truststore.password".to_string(),
-            SSL_STORE_PASSWORD.to_string(),
-        );
-        config.insert(
-            "opa.authorizer.truststore.type".to_string(),
-            SSL_STORE_TYPE_PKCS12.to_string(),
-        );
-    }
+    insert_opa_truststore_settings(&mut config, security);
 
     // common
     config.insert(
@@ -582,6 +606,8 @@ pub fn controller_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap
             SSL_CLIENT_AUTH_REQUIRED.to_string(),
         );
     }
+
+    insert_opa_truststore_settings(&mut config, security);
 
     // Kerberos
     if security.has_kerberos_enabled() {
@@ -1158,6 +1184,14 @@ pub(crate) mod tests {
     }
 
     // ---- controller_config_settings ----
+
+    #[test]
+    fn controller_config_opa_adds_authorizer_truststore() {
+        let config = controller_config_settings(&opa());
+        assert!(config.contains_key("opa.authorizer.truststore.path"));
+        assert!(config.contains_key("opa.authorizer.truststore.password"));
+        assert!(config.contains_key("opa.authorizer.truststore.type"));
+    }
 
     #[test]
     fn controller_config_plaintext_has_internal_tls() {

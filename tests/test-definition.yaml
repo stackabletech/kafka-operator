@@ -95,6 +95,15 @@ tests:
       - use-opa-tls
       - opa-latest
       - krb5
+  # Tests OPA authorization with KRaft controllers, which have to authorize the requests
+  # that the brokers forward to them (e.g. creating and deleting topics).
+  - name: opa-kraft
+    dimensions:
+      - kafka-kraft
+      - openshift
+      - use-opa-tls
+      - opa-latest
+      - krb5
   - name: configuration
     dimensions:
       - kafka-latest
