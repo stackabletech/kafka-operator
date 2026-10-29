@@ -100,15 +100,11 @@ mod tests {
             KafkaRole::Broker => {
                 &broker_role_group_config(&validated, "default")
                     .config
-                    .config
-                    .common_config
                     .affinity
             }
             KafkaRole::Controller => {
                 &controller_role_group_config(&validated, "default")
                     .config
-                    .config
-                    .common_config
                     .affinity
             }
         };

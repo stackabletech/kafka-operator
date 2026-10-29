@@ -18,16 +18,12 @@ pub fn graceful_shutdown_config_properties() -> BTreeMap<String, String> {
 }
 
 pub fn add_graceful_shutdown_config(
-    graceful_shutdown_timeout: Option<Duration>,
+    graceful_shutdown_timeout: &Duration,
     pod_builder: &mut PodBuilder,
 ) -> Result<(), Error> {
-    // This must be always set by the merge mechanism, as we provide a default value,
-    // users can not disable graceful shutdown.
-    if let Some(graceful_shutdown_timeout) = &graceful_shutdown_timeout {
-        pod_builder
-            .termination_grace_period(graceful_shutdown_timeout)
-            .context(SetTerminationGracePeriodSnafu)?;
-    }
+    pod_builder
+        .termination_grace_period(graceful_shutdown_timeout)
+        .context(SetTerminationGracePeriodSnafu)?;
 
     Ok(())
 }

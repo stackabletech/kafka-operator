@@ -17,20 +17,19 @@ pub(crate) mod controller;
 use indoc::formatdoc;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
+    commons::affinity::StackableAffinity,
     k8s_openapi::api::{
         apps::v1::StatefulSet,
         core::v1::{ConfigMap, Container, PersistentVolumeClaim, PodTemplateSpec, Service, Volume},
     },
+    shared::time::Duration,
     v2::types::kubernetes::ContainerName,
 };
 
 use super::resource;
 use crate::{
     controller::{RoleGroupName, ValidatedCluster, validate::ValidatedLogging},
-    crd::{
-        STACKABLE_KERBEROS_KEYTAB_PATH,
-        role::{KafkaRole, commons::CommonConfig},
-    },
+    crd::{STACKABLE_KERBEROS_KEYTAB_PATH, role::KafkaRole},
 };
 
 /// Why emitting one role group's Kubernetes objects failed. The caller adds which role and role
@@ -56,9 +55,10 @@ pub(crate) struct RoleGroupBuilder<'a> {
     /// Used for the names and labels of the role group's objects.
     pub(crate) role: KafkaRole,
     pub(crate) role_group_name: RoleGroupName,
-    /// The role group's merged config that is common to every role; read for the pod's affinity
-    /// and its graceful shutdown timeout.
-    pub(crate) common: CommonConfig,
+    /// Read for the pod's affinity.
+    pub(crate) affinity: StackableAffinity,
+    /// Read for the pod's termination grace period.
+    pub(crate) graceful_shutdown_timeout: Duration,
     /// The role group's validated logging; read for the Vector sidecar, which runs only when the
     /// Vector agent is enabled.
     pub(crate) logging: ValidatedLogging,

@@ -98,7 +98,7 @@ mod tests {
         let validated = validated_cluster(&kafka);
         let rg = broker_role_group_config(&validated, "default");
         (
-            rg.config.config.resources.clone(),
+            rg.config.resources.clone(),
             rg.product_specific_common_config
                 .jvm_argument_overrides
                 .clone(),

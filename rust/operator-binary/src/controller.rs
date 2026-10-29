@@ -18,7 +18,12 @@ use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     cluster_resources::ClusterResourceApplyStrategy,
-    commons::{networking::DomainName, product_image_selection::ResolvedProductImage},
+    commons::{
+        affinity::StackableAffinity,
+        networking::DomainName,
+        product_image_selection::ResolvedProductImage,
+        resources::{NoRuntimeLimits, Resources},
+    },
     constant,
     crd::listener,
     k8s_openapi::api::{
@@ -40,7 +45,7 @@ use stackable_operator::{
         role_group_utils::ResourceNames,
         role_utils,
         types::{
-            kubernetes::{ConfigMapName, ListenerName, NamespaceName, Uid},
+            kubernetes::{ConfigMapName, ListenerClassName, ListenerName, NamespaceName, Uid},
             operator::{ClusterName, ControllerName, OperatorName, ProductName, ProductVersion},
         },
     },
@@ -67,7 +72,7 @@ use crate::{
     crd::{
         APP_NAME, KAFKA_OPERATOR_NAME, KafkaPodDescriptor, MetadataManager,
         authorization::KafkaAuthorizationConfig,
-        role::{KafkaRole, broker::BrokerConfig, controller::ControllerConfig},
+        role::{KafkaRole, commons::Storage},
         v1alpha1,
     },
 };
@@ -402,20 +407,30 @@ impl Resource for ValidatedCluster {
     }
 }
 
-/// A broker role group's validated, merged config together with its validated logging.
+/// A broker role group's validated config: the fields of the merged
+/// [`BrokerConfig`](crate::crd::role::broker::BrokerConfig) that the build step reads, with the
+/// logging validated and the values the merge always sets unwrapped.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedBrokerConfig {
-    pub config: BrokerConfig,
-    /// Validated logging configuration (derived from `config.logging` during validation).
+    pub resources: Resources<Storage, NoRuntimeLimits>,
     pub logging: validate::ValidatedLogging,
+    pub affinity: StackableAffinity,
+    pub graceful_shutdown_timeout: Duration,
+    pub requested_secret_lifetime: Duration,
+    pub bootstrap_listener_class: ListenerClassName,
+    pub broker_listener_class: ListenerClassName,
 }
 
-/// A controller role group's validated, merged config together with its validated logging.
+/// A controller role group's validated config: the fields of the merged
+/// [`ControllerConfig`](crate::crd::role::controller::ControllerConfig) that the build step
+/// reads, with the logging validated and the values the merge always sets unwrapped.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedControllerConfig {
-    pub config: ControllerConfig,
-    /// Validated logging configuration (derived from `config.logging` during validation).
+    pub resources: Resources<Storage, NoRuntimeLimits>,
     pub logging: validate::ValidatedLogging,
+    pub affinity: StackableAffinity,
+    pub graceful_shutdown_timeout: Duration,
+    pub requested_secret_lifetime: Duration,
 }
 
 /// The [`RoleGroupConfig`](role_utils::RoleGroupConfig) of one broker role group.

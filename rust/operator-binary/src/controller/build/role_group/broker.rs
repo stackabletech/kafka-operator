@@ -1,7 +1,7 @@
 //! Building one broker role group.
 
 use indoc::formatdoc;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::pod::volume::{
         ListenerOperatorVolumeSourceBuilder, ListenerOperatorVolumeSourceBuilderError,
@@ -21,7 +21,8 @@ use stackable_operator::{
 use super::{RoleGroupBuilder, controller_jaas_section};
 use crate::{
     controller::{
-        BrokerRoleGroupConfig, PodDescriptorsError, RoleGroupName, ValidatedCluster,
+        BrokerRoleGroupConfig, PodDescriptorsError, RoleGroupName, ValidatedBrokerConfig,
+        ValidatedCluster,
         build::{
             command::broker_kafka_container_commands,
             container::{
@@ -47,10 +48,7 @@ use crate::{
         STACKABLE_LISTENER_BOOTSTRAP_DIR, STACKABLE_LISTENER_BROKER_DIR, STACKABLE_LOG_CONFIG_DIR,
         STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_DIR_NAME,
         listener::node_address_cmd,
-        role::{
-            KafkaRole,
-            broker::{BrokerConfig, BrokerContainer},
-        },
+        role::{KafkaRole, broker::BrokerContainer},
     },
     listener,
 };
@@ -73,9 +71,6 @@ pub enum Error {
 
     #[snafu(display("failed to build pod descriptors"))]
     BuildPodDescriptors { source: PodDescriptorsError },
-
-    #[snafu(display("missing secret lifetime"))]
-    MissingSecretLifetime,
 
     #[snafu(display("failed to build the TLS volumes"))]
     BuildTlsVolumes { source: security::Error },
@@ -106,7 +101,7 @@ pub(crate) fn build<'a>(
     role_group_name: &RoleGroupName,
     rg_config: &BrokerRoleGroupConfig,
 ) -> Result<(RoleGroupBuilder<'a>, listener::v1alpha1::Listener), Error> {
-    let config = &rg_config.config.config;
+    let config = &rg_config.config;
     let logging = &rg_config.config.logging;
 
     let mut config_map_data = role_config_map_data(cluster, role_group_name, rg_config)?;
@@ -130,7 +125,8 @@ pub(crate) fn build<'a>(
         cluster,
         role: ROLE,
         role_group_name: role_group_name.clone(),
-        common: config.common_config.clone(),
+        affinity: config.affinity.clone(),
+        graceful_shutdown_timeout: config.graceful_shutdown_timeout,
         logging: logging.clone(),
         vector_container_name: BrokerContainer::Vector.name(),
         role_containers,
@@ -198,7 +194,7 @@ fn role_config_map_data(
 fn volume_claim_templates(
     cluster: &ValidatedCluster,
     role_group_name: &RoleGroupName,
-    config: &BrokerConfig,
+    config: &ValidatedBrokerConfig,
 ) -> Vec<PersistentVolumeClaim> {
     // Used for PVC templates, which cannot be modified once they are deployed. The version label
     // is omitted so the labels stay stable across version upgrades.
@@ -225,7 +221,7 @@ fn role_pod(
     role_group_name: &RoleGroupName,
     rg_config: &BrokerRoleGroupConfig,
 ) -> Result<(Vec<Container>, Vec<Volume>), Error> {
-    let config = &rg_config.config.config;
+    let config = &rg_config.config;
     let logging = &rg_config.config.logging;
     let kafka_security = &cluster.cluster_config.kafka_security;
     let image = &cluster.image;
@@ -239,13 +235,12 @@ fn role_pod(
     // order is pinned by `pod_volumes_keep_their_order` in `build/mod.rs`.
 
     // The TLS certificates are requested with the role group's secret lifetime.
-    let requested_secret_lifetime = config
-        .common_config
-        .requested_secret_lifetime
-        .context(MissingSecretLifetimeSnafu)?;
-    let mut pod_volumes =
-        mount_broker_tls_volumes(kafka_security, &mut cb_kafka, &requested_secret_lifetime)
-            .context(BuildTlsVolumesSnafu)?;
+    let mut pod_volumes = mount_broker_tls_volumes(
+        kafka_security,
+        &mut cb_kafka,
+        &config.requested_secret_lifetime,
+    )
+    .context(BuildTlsVolumesSnafu)?;
 
     if let Some(kerberos_volume) = mount_broker_kerberos_volume(kafka_security, &mut cb_kafka)
         .context(BuildKerberosVolumeSnafu)?
@@ -347,7 +342,7 @@ fn role_pod(
 fn broker_listener_volume(
     cluster: &ValidatedCluster,
     role_group_name: &RoleGroupName,
-    config: &BrokerConfig,
+    config: &ValidatedBrokerConfig,
 ) -> Result<Volume, Error> {
     let recommended_labels =
         recommended_labels_for_role_group_resources(cluster, &ROLE, role_group_name);

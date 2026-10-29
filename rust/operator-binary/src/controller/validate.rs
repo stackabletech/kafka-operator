@@ -42,6 +42,7 @@ use crate::{
         role::{
             KafkaRole,
             broker::{BrokerConfig, BrokerConfigFragment, BrokerContainer},
+            commons::CommonConfig,
             controller::{ControllerConfig, ControllerConfigFragment, ControllerContainer},
         },
         tls, v1alpha1,
@@ -102,6 +103,20 @@ pub enum Error {
         "the Vector aggregator discovery ConfigMap name is required when the Vector agent is enabled"
     ))]
     MissingVectorAggregatorConfigMapName,
+
+    #[snafu(display(
+        "the graceful shutdown timeout of {role} role group {role_group_name:?} is missing"
+    ))]
+    MissingGracefulShutdownTimeout {
+        role: KafkaRole,
+        role_group_name: String,
+    },
+
+    #[snafu(display("the secret lifetime of {role} role group {role_group_name:?} is missing"))]
+    MissingSecretLifetime {
+        role: KafkaRole,
+        role_group_name: String,
+    },
 
     #[snafu(display(
         "at least one KRaft controller replica is required while any broker replicas are \
@@ -169,11 +184,11 @@ where
 
 /// Validates a broker role group's logging configuration.
 fn validate_broker_logging(
-    config: &BrokerConfig,
+    logging: &Logging<BrokerContainer>,
     vector_aggregator_config_map_name: &Option<ConfigMapName>,
 ) -> Result<ValidatedLogging> {
     validate_logging(
-        &config.logging,
+        logging,
         BrokerContainer::Kafka,
         BrokerContainer::Vector,
         vector_aggregator_config_map_name,
@@ -182,11 +197,11 @@ fn validate_broker_logging(
 
 /// Validates a controller role group's logging configuration.
 fn validate_controller_logging(
-    config: &ControllerConfig,
+    logging: &Logging<ControllerContainer>,
     vector_aggregator_config_map_name: &Option<ConfigMapName>,
 ) -> Result<ValidatedLogging> {
     validate_logging(
-        &config.logging,
+        logging,
         ControllerContainer::Kafka,
         ControllerContainer::Vector,
         vector_aggregator_config_map_name,
@@ -377,13 +392,38 @@ fn validate_broker_role_group_configs(
         .iter()
         .map(|(role_group_name, role_group)| {
             let merged = validate_role_group_config(role, role_group, &default_config, cluster_id)?;
-            let logging =
-                validate_broker_logging(&merged.config, vector_aggregator_config_map_name)?;
+            let BrokerConfig {
+                common_config:
+                    CommonConfig {
+                        affinity,
+                        graceful_shutdown_timeout,
+                        requested_secret_lifetime,
+                    },
+                bootstrap_listener_class,
+                broker_listener_class,
+                logging,
+                resources,
+            } = merged.config;
             let validated = BrokerRoleGroupConfig {
                 replicas: merged.replicas,
                 config: ValidatedBrokerConfig {
-                    config: merged.config,
-                    logging,
+                    resources,
+                    logging: validate_broker_logging(&logging, vector_aggregator_config_map_name)?,
+                    affinity,
+                    graceful_shutdown_timeout: graceful_shutdown_timeout.with_context(|| {
+                        MissingGracefulShutdownTimeoutSnafu {
+                            role: KafkaRole::Broker,
+                            role_group_name: role_group_name.to_owned(),
+                        }
+                    })?,
+                    requested_secret_lifetime: requested_secret_lifetime.with_context(|| {
+                        MissingSecretLifetimeSnafu {
+                            role: KafkaRole::Broker,
+                            role_group_name: role_group_name.to_owned(),
+                        }
+                    })?,
+                    bootstrap_listener_class,
+                    broker_listener_class,
                 },
                 config_overrides: merged.config_overrides,
                 env_overrides: merged.env_overrides,
@@ -408,13 +448,37 @@ fn validate_controller_role_group_configs(
         .iter()
         .map(|(role_group_name, role_group)| {
             let merged = validate_role_group_config(role, role_group, &default_config, cluster_id)?;
-            let logging =
-                validate_controller_logging(&merged.config, vector_aggregator_config_map_name)?;
+            let ControllerConfig {
+                common_config:
+                    CommonConfig {
+                        affinity,
+                        graceful_shutdown_timeout,
+                        requested_secret_lifetime,
+                    },
+                logging,
+                resources,
+            } = merged.config;
             let validated = ControllerRoleGroupConfig {
                 replicas: merged.replicas,
                 config: ValidatedControllerConfig {
-                    config: merged.config,
-                    logging,
+                    resources,
+                    logging: validate_controller_logging(
+                        &logging,
+                        vector_aggregator_config_map_name,
+                    )?,
+                    affinity,
+                    graceful_shutdown_timeout: graceful_shutdown_timeout.with_context(|| {
+                        MissingGracefulShutdownTimeoutSnafu {
+                            role: KafkaRole::Controller,
+                            role_group_name: role_group_name.to_owned(),
+                        }
+                    })?,
+                    requested_secret_lifetime: requested_secret_lifetime.with_context(|| {
+                        MissingSecretLifetimeSnafu {
+                            role: KafkaRole::Controller,
+                            role_group_name: role_group_name.to_owned(),
+                        }
+                    })?,
                 },
                 config_overrides: merged.config_overrides,
                 env_overrides: merged.env_overrides,

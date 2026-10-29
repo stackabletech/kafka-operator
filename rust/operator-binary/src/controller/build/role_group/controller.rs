@@ -2,7 +2,7 @@
 
 use std::str::FromStr;
 
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     builder::pod::{container::FieldPathEnvVar, resources::ResourceRequirementsBuilder},
     commons::product_image_selection::ResolvedProductImage,
@@ -79,9 +79,6 @@ pub enum Error {
     #[snafu(display("failed to build pod descriptors"))]
     BuildPodDescriptors { source: PodDescriptorsError },
 
-    #[snafu(display("missing secret lifetime"))]
-    MissingSecretLifetime,
-
     #[snafu(display("failed to build the TLS volume"))]
     BuildTlsVolumes { source: security::Error },
 
@@ -115,7 +112,7 @@ pub(crate) fn build<'a>(
     role_group_name: &RoleGroupName,
     rg_config: &ControllerRoleGroupConfig,
 ) -> Result<RoleGroupBuilder<'a>, Error> {
-    let config = &rg_config.config.config;
+    let config = &rg_config.config;
     let logging = &rg_config.config.logging;
 
     let mut config_map_data = role_config_map_data(cluster, role_group_name, rg_config)?;
@@ -139,7 +136,8 @@ pub(crate) fn build<'a>(
         cluster,
         role: ROLE,
         role_group_name: role_group_name.clone(),
-        common: config.common_config.clone(),
+        affinity: config.affinity.clone(),
+        graceful_shutdown_timeout: config.graceful_shutdown_timeout,
         logging: logging.clone(),
         vector_container_name: ControllerContainer::Vector.name(),
         role_containers,
@@ -219,7 +217,7 @@ fn role_pod(
     role_group_name: &RoleGroupName,
     rg_config: &ControllerRoleGroupConfig,
 ) -> Result<(Vec<Container>, Vec<Volume>), Error> {
-    let config = &rg_config.config.config;
+    let config = &rg_config.config;
     let logging = &rg_config.config.logging;
     let kafka_security = &cluster.cluster_config.kafka_security;
     let image = &cluster.image;
@@ -325,9 +323,7 @@ fn role_pod(
             command: Some(vec![
                 "/bin/bash".to_string(),
                 "-c".to_string(),
-                controller_remove_self_pre_stop_command(
-                    config.common_config.graceful_shutdown_timeout,
-                ),
+                controller_remove_self_pre_stop_command(config.graceful_shutdown_timeout),
             ]),
         }),
         ..LifecycleHandler::default()
@@ -336,13 +332,13 @@ fn role_pod(
     pod_volumes.push(log_config_volume(logging, &resource_names));
 
     // The TLS certificate is requested with the role group's secret lifetime.
-    let requested_secret_lifetime = config
-        .common_config
-        .requested_secret_lifetime
-        .context(MissingSecretLifetimeSnafu)?;
     pod_volumes.push(
-        mount_controller_tls_volume(kafka_security, &mut cb_kafka, &requested_secret_lifetime)
-            .context(BuildTlsVolumesSnafu)?,
+        mount_controller_tls_volume(
+            kafka_security,
+            &mut cb_kafka,
+            &config.requested_secret_lifetime,
+        )
+        .context(BuildTlsVolumesSnafu)?,
     );
 
     let containers = vec![

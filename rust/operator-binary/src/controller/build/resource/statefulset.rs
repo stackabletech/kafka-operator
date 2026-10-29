@@ -90,7 +90,7 @@ pub fn build_statefulset(builder: &RoleGroupBuilder) -> Result<StatefulSet, Erro
     pod_builder
         .metadata(metadata)
         .image_pull_secrets_from_product_image(resolved_product_image)
-        .affinity(&builder.common.affinity);
+        .affinity(&builder.affinity);
 
     add_common_pod_config(
         &mut pod_builder,
@@ -109,7 +109,7 @@ pub fn build_statefulset(builder: &RoleGroupBuilder) -> Result<StatefulSet, Erro
         &resource_names,
     );
 
-    add_graceful_shutdown_config(builder.common.graceful_shutdown_timeout, &mut pod_builder)
+    add_graceful_shutdown_config(&builder.graceful_shutdown_timeout, &mut pod_builder)
         .context(GracefulShutdownSnafu)?;
 
     let mut pod_template = pod_builder.build_template();
