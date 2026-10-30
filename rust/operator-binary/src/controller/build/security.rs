@@ -13,7 +13,6 @@ use stackable_operator::{
     },
     commons::secret_class::SecretClassVolumeProvisionParts,
     constant,
-    crd::authentication::core,
     k8s_openapi::api::core::v1::Volume,
     shared::time::Duration,
     v2::types::kubernetes::VolumeName,
@@ -271,7 +270,7 @@ pub fn mount_broker_tls_volumes(
     let mut volumes = Vec::new();
 
     // add tls (server or client authentication volumes) if required
-    if let Some(tls_server_secret_class) = tls_secret_class(security) {
+    if let Some(tls_server_secret_class) = security.tls_secret_class() {
         // We have to mount tls pem files for kcat's readiness-probe command (the mount can be
         // used directly)
         volumes.push(create_kcat_tls_volume(
@@ -588,19 +587,6 @@ pub fn controller_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap
     config
 }
 
-/// Returns the `SecretClass` provided in a `AuthenticationClass` for TLS.
-fn tls_secret_class(security: &ValidatedKafkaSecurity) -> Option<&str> {
-    security
-        .tls_client_authentication_class()
-        .and_then(|auth_class| match &auth_class.spec.provider {
-            core::v1alpha1::AuthenticationClassProvider::Tls(tls) => {
-                tls.client_cert_secret_class.as_deref()
-            }
-            _ => None,
-        })
-        .or_else(|| security.tls_server_secret_class())
-}
-
 /// Creates ephemeral volumes to mount the `SecretClass` into the Pods for kcat client
 fn create_kcat_tls_volume(
     volume_name: &VolumeName,
@@ -692,107 +678,13 @@ fn kcat_client_sasl_ssl(cert_directory: &str, service_name: &str) -> Vec<String>
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    use std::{collections::BTreeMap, str::FromStr};
-
-    use stackable_operator::{
-        builder::meta::ObjectMetaBuilder,
-        crd::authentication::{core, kerberos, tls},
-        v2::types::kubernetes::SecretClassName,
-    };
+mod tests {
+    use std::collections::BTreeMap;
 
     use super::*;
-    use crate::crd::authentication::ResolvedAuthenticationClasses;
-
-    fn tls_auth_class() -> core::v1alpha1::AuthenticationClass {
-        core::v1alpha1::AuthenticationClass {
-            metadata: ObjectMetaBuilder::new().name("tls-auth").build(),
-            spec: core::v1alpha1::AuthenticationClassSpec {
-                provider: core::v1alpha1::AuthenticationClassProvider::Tls(
-                    tls::v1alpha1::AuthenticationProvider {
-                        client_cert_secret_class: Some("client-auth-secret-class".to_string()),
-                    },
-                ),
-            },
-        }
-    }
-
-    fn kerberos_auth_class() -> core::v1alpha1::AuthenticationClass {
-        core::v1alpha1::AuthenticationClass {
-            metadata: ObjectMetaBuilder::new().name("kerberos-auth").build(),
-            spec: core::v1alpha1::AuthenticationClassSpec {
-                provider: core::v1alpha1::AuthenticationClassProvider::Kerberos(
-                    kerberos::v1alpha1::AuthenticationProvider {
-                        kerberos_secret_class: "kerberos-secret-class".to_string(),
-                    },
-                ),
-            },
-        }
-    }
-
-    fn no_auth() -> ResolvedAuthenticationClasses {
-        ResolvedAuthenticationClasses::new(vec![])
-    }
-
-    /// Plaintext: no TLS, no authentication, no OPA.
-    pub(crate) fn plaintext() -> ValidatedKafkaSecurity {
-        ValidatedKafkaSecurity::new(
-            no_auth(),
-            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
-            None,
-            None,
-        )
-    }
-
-    /// Server TLS only (encryption without client authentication).
-    fn server_tls() -> ValidatedKafkaSecurity {
-        ValidatedKafkaSecurity::new(
-            no_auth(),
-            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
-            Some("tls".parse().unwrap()),
-            None,
-        )
-    }
-
-    /// Mutual TLS (client-certificate authentication).
-    fn client_auth_tls() -> ValidatedKafkaSecurity {
-        ValidatedKafkaSecurity::new(
-            ResolvedAuthenticationClasses::new(vec![tls_auth_class()]),
-            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
-            Some("tls".parse().unwrap()),
-            None,
-        )
-    }
-
-    /// Kerberos, which also requires server and internal TLS.
-    pub(crate) fn kerberos() -> ValidatedKafkaSecurity {
-        ValidatedKafkaSecurity::new(
-            ResolvedAuthenticationClasses::new(vec![kerberos_auth_class()]),
-            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
-            Some("tls".parse().unwrap()),
-            None,
-        )
-    }
-
-    /// Internal TLS only (broker/controller encryption without client TLS).
-    fn internal_tls() -> ValidatedKafkaSecurity {
-        ValidatedKafkaSecurity::new(
-            no_auth(),
-            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
-            None,
-            None,
-        )
-    }
-
-    /// OPA authorization with a TLS truststore (internal + server TLS also enabled).
-    fn opa() -> ValidatedKafkaSecurity {
-        ValidatedKafkaSecurity::new(
-            no_auth(),
-            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
-            Some("tls".parse().unwrap()),
-            Some("opa-tls".parse().unwrap()),
-        )
-    }
+    use crate::controller::test_support::{
+        client_auth_tls, internal_tls, kerberos, opa, plaintext, server_tls,
+    };
 
     fn as_str_vec(commands: &[String]) -> Vec<&str> {
         commands.iter().map(String::as_str).collect()

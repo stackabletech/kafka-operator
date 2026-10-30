@@ -20,6 +20,7 @@ use stackable_operator::{
     v2::{
         builder::{meta::ownerreference_from_resource, pod::container::EnvVarSet},
         product_logging::framework::vector_container,
+        rbac::RbacResourceNames,
         role_group_utils::ResourceNames,
         types::kubernetes::{ContainerName, VolumeName},
     },

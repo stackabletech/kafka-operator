@@ -15,6 +15,7 @@ use std::{
 
 use const_format::concatcp;
 use snafu::{ResultExt, Snafu};
+use stackable_kafka_shared::agent::ClientSecurity;
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     cluster_resources::ClusterResourceApplyStrategy,
@@ -25,9 +26,9 @@ use stackable_operator::{
         resources::{NoRuntimeLimits, Resources},
     },
     constant,
-    crd::listener,
+    crd::{listener, management_access::v1alpha1::TlsClientCredential},
     k8s_openapi::api::{
-        apps::v1::StatefulSet,
+        apps::v1::{Deployment, StatefulSet},
         core::v1::{ConfigMap, Service, ServiceAccount},
         policy::v1::PodDisruptionBudget,
         rbac::v1::RoleBinding,
@@ -35,17 +36,21 @@ use stackable_operator::{
     kube::{
         Resource,
         api::{DynamicObject, ObjectMeta},
-        core::{DeserializeGuard, error_boundary},
+        core::{DeserializeGuard, Selector, error_boundary},
         runtime::{controller::Action, reflector::ObjectRef},
     },
     logging::controller::ReconcilerError,
     shared::time::Duration,
     v2::{
         HasName, HasUid, NameIsValidLabelValue,
+        agent_utils::AgentResourceNames,
+        kvp::label,
         role_group_utils::ResourceNames,
         role_utils,
         types::{
-            kubernetes::{ConfigMapName, ListenerClassName, ListenerName, NamespaceName, Uid},
+            kubernetes::{
+                ConfigMapName, ListenerClassName, ListenerName, NamespaceName, SecretClassName, Uid,
+            },
             operator::{ClusterName, ControllerName, OperatorName, ProductName, ProductVersion},
         },
     },
@@ -85,6 +90,11 @@ constant!(PRODUCT_NAME: ProductName = APP_NAME);
 constant!(OPERATOR_NAME: OperatorName = KAFKA_OPERATOR_NAME);
 constant!(CONTROLLER_NAME: ControllerName = KAFKA_CONTROLLER_NAME);
 
+/// Selector matching the agents of all KafkaClusters, e.g. to watch them.
+pub fn all_agents_selector() -> Selector {
+    Selector::from_iter(BTreeMap::from(label::all_agents_selector(&PRODUCT_NAME)))
+}
+
 #[derive(Snafu, Debug)]
 pub enum PodDescriptorsError {
     #[snafu(display(
@@ -117,6 +127,7 @@ pub struct Applied;
 /// bootstrap [`Listener`](listener)s.
 pub struct KubernetesResources<T> {
     pub stateful_sets: Vec<StatefulSet>,
+    pub deployments: Vec<Deployment>,
     pub services: Vec<Service>,
     pub listeners: Vec<listener::v1alpha1::Listener>,
     pub config_maps: Vec<ConfigMap>,
@@ -162,6 +173,7 @@ pub struct ValidatedCluster {
     /// address-less around the first reconcile runs; the listener-operator populates the ingress
     /// addresses and the `Listener` watch triggers a new run once it does.
     pub bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
+    pub agent_config: Option<ValidatedAgentConfig>,
 }
 
 /// The number of pods a role group runs when its `replicas` is unset.
@@ -286,6 +298,14 @@ impl ValidatedCluster {
         }
     }
 
+    /// Type-safe names for the resources of the agent.
+    pub fn agent_resource_names(&self) -> AgentResourceNames {
+        AgentResourceNames {
+            cluster_name: self.name.clone(),
+            product_name: PRODUCT_NAME.clone(),
+        }
+    }
+
     /// Type-safe names for the resources of a given role group.
     pub(crate) fn role_group_resource_names(
         &self,
@@ -364,6 +384,34 @@ impl ValidatedClusterConfig {
         self.authorization_config
             .as_ref()
             .map(|auth_config| auth_config.opa_connect.as_str())
+    }
+}
+
+/// The configuration of the agent deployed with the cluster.
+pub struct ValidatedAgentConfig {
+    pub image: String,
+    pub connection: AgentConnection,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum AgentConnection {
+    Plaintext,
+    Tls {
+        server_ca_secret_class: SecretClassName,
+    },
+    MutualTls {
+        server_ca_secret_class: SecretClassName,
+        client_credential: TlsClientCredential,
+    },
+}
+
+impl From<&AgentConnection> for ClientSecurity {
+    fn from(connection: &AgentConnection) -> Self {
+        match connection {
+            AgentConnection::Plaintext => Self::Plaintext,
+            AgentConnection::Tls { .. } => Self::Tls,
+            AgentConnection::MutualTls { .. } => Self::MutualTls,
+        }
     }
 }
 
@@ -450,6 +498,7 @@ pub type ControllerRoleGroupConfig = role_utils::RoleGroupConfig<
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
     pub operator_environment: OperatorEnvironmentOptions,
+    pub operator_image: Option<String>,
 }
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
@@ -519,9 +568,13 @@ pub async fn reconcile_kafka(
         .context(DereferenceSnafu)?;
 
     // validate (no client required)
-    let validated_cluster =
-        validate::validate(kafka, dereferenced_objects, &ctx.operator_environment)
-            .context(ValidateClusterSnafu)?;
+    let validated_cluster = validate::validate(
+        kafka,
+        dereferenced_objects,
+        &ctx.operator_environment,
+        ctx.operator_image.as_deref(),
+    )
+    .context(ValidateClusterSnafu)?;
 
     tracing::debug!(
         kerberos_enabled = validated_cluster.cluster_config.kafka_security.has_kerberos_enabled(),
@@ -567,23 +620,30 @@ pub fn error_policy(
 
 #[cfg(test)]
 pub(crate) mod test_support {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, str::FromStr};
 
     use stackable_operator::{
+        builder::meta::ObjectMetaBuilder,
         cli::OperatorEnvironmentOptions,
         commons::networking::DomainName,
-        crd::{authentication::core, listener},
+        crd::{
+            authentication::{core, kerberos, tls},
+            listener,
+        },
         utils::{cluster_info::KubernetesClusterInfo, yaml_from_str_singleton_map},
+        v2::types::kubernetes::SecretClassName,
     };
 
     use super::{
         BrokerRoleGroupConfig, ControllerRoleGroupConfig, ValidatedCluster,
-        dereference::DereferencedObjects, validate::validate,
+        dereference::DereferencedObjects, security::ValidatedKafkaSecurity, validate::validate,
     };
     use crate::crd::{
         authentication::ResolvedAuthenticationClasses, authorization::KafkaAuthorizationConfig,
         v1alpha1,
     };
+
+    pub const OPERATOR_IMAGE: &str = "oci.stackable.tech/sdp/kafka-operator:0.0.0-dev";
 
     /// The expected `app.kubernetes.io/version` label value for the given product version.
     ///
@@ -599,6 +659,96 @@ pub(crate) mod test_support {
 
     pub fn minimal_kafka(yaml: &str) -> v1alpha1::KafkaCluster {
         yaml_from_str_singleton_map(yaml).expect("invalid test KafkaCluster YAML")
+    }
+
+    fn tls_auth_class() -> core::v1alpha1::AuthenticationClass {
+        core::v1alpha1::AuthenticationClass {
+            metadata: ObjectMetaBuilder::new().name("tls-auth").build(),
+            spec: core::v1alpha1::AuthenticationClassSpec {
+                provider: core::v1alpha1::AuthenticationClassProvider::Tls(
+                    tls::v1alpha1::AuthenticationProvider {
+                        client_cert_secret_class: Some("client-auth-secret-class".to_string()),
+                    },
+                ),
+            },
+        }
+    }
+
+    fn kerberos_auth_class() -> core::v1alpha1::AuthenticationClass {
+        core::v1alpha1::AuthenticationClass {
+            metadata: ObjectMetaBuilder::new().name("kerberos-auth").build(),
+            spec: core::v1alpha1::AuthenticationClassSpec {
+                provider: core::v1alpha1::AuthenticationClassProvider::Kerberos(
+                    kerberos::v1alpha1::AuthenticationProvider {
+                        kerberos_secret_class: "kerberos-secret-class".to_string(),
+                    },
+                ),
+            },
+        }
+    }
+
+    fn no_auth() -> ResolvedAuthenticationClasses {
+        ResolvedAuthenticationClasses::new(vec![])
+    }
+
+    /// Plaintext: no TLS, no authentication, no OPA.
+    pub fn plaintext() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            None,
+            None,
+        )
+    }
+
+    /// Server TLS only (encryption without client authentication).
+    pub fn server_tls() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            Some("tls".parse().unwrap()),
+            None,
+        )
+    }
+
+    /// Mutual TLS (client-certificate authentication).
+    pub fn client_auth_tls() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![tls_auth_class()]),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            Some("tls".parse().unwrap()),
+            None,
+        )
+    }
+
+    /// Kerberos, which also requires server and internal TLS.
+    pub fn kerberos() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            ResolvedAuthenticationClasses::new(vec![kerberos_auth_class()]),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            Some("tls".parse().unwrap()),
+            None,
+        )
+    }
+
+    /// Internal TLS only (broker/controller encryption without client TLS).
+    pub fn internal_tls() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            None,
+            None,
+        )
+    }
+
+    /// OPA authorization with a TLS truststore (internal + server TLS also enabled).
+    pub fn opa() -> ValidatedKafkaSecurity {
+        ValidatedKafkaSecurity::new(
+            no_auth(),
+            SecretClassName::from_str("tls").expect("tls secret class name is valid"),
+            Some("tls".parse().unwrap()),
+            Some("opa-tls".parse().unwrap()),
+        )
     }
 
     fn cluster_info() -> KubernetesClusterInfo {
@@ -711,6 +861,7 @@ pub(crate) mod test_support {
                 bootstrap_listeners: Vec::new(),
             },
             &operator_environment(),
+            Some(OPERATOR_IMAGE),
         )
         .expect("validate should succeed for the test fixture")
     }
@@ -719,6 +870,13 @@ pub(crate) mod test_support {
     /// the result. Used for tests asserting on a specific validation failure.
     pub fn validate_err(
         kafka: &v1alpha1::KafkaCluster,
+    ) -> Result<ValidatedCluster, super::validate::Error> {
+        validate_with_operator_image(kafka, Some(OPERATOR_IMAGE))
+    }
+
+    pub fn validate_with_operator_image(
+        kafka: &v1alpha1::KafkaCluster,
+        operator_image: Option<&str>,
     ) -> Result<ValidatedCluster, super::validate::Error> {
         validate(
             kafka,
@@ -729,6 +887,7 @@ pub(crate) mod test_support {
                 bootstrap_listeners: Vec::new(),
             },
             &operator_environment(),
+            operator_image,
         )
     }
 }
@@ -940,6 +1099,7 @@ spec: {}
                         operator_service_name: "kafka-operator".to_owned(),
                         image_repository: "oci.stackable.tech/sdp".to_owned(),
                     },
+                    operator_image: None,
                 });
 
                 reconcile_kafka(Arc::new(kafka), ctx).await

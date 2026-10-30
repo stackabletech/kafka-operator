@@ -20,6 +20,9 @@ use crate::{
         RoleName, ValidatedCluster,
         build::{
             resource::{
+                agent::{
+                    build_agent_deployment, build_agent_role_binding, build_agent_service_account,
+                },
                 discovery::build_discovery_configmap,
                 pdb::build_pdb,
                 rbac::{build_role_binding, build_service_account},
@@ -143,20 +146,40 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>
 
     config_maps.push(build_discovery_configmap(cluster).context(DiscoveryConfigMapSnafu)?);
 
+    let mut deployments = vec![];
+    let mut service_accounts = vec![build_service_account(cluster)];
+    let mut role_bindings = vec![build_role_binding(cluster)];
+    if let Some(agent_config) = &cluster.agent_config {
+        deployments.push(build_agent_deployment(cluster, agent_config));
+        service_accounts.push(build_agent_service_account(cluster));
+        role_bindings.push(build_agent_role_binding(cluster));
+    }
+
     Ok(KubernetesResources {
         stateful_sets,
+        deployments,
         services,
         listeners,
         config_maps,
         pod_disruption_budgets,
-        service_accounts: vec![build_service_account(cluster)],
-        role_bindings: vec![build_role_binding(cluster)],
+        service_accounts,
+        role_bindings,
         status: PhantomData,
     })
 }
 
 pub(crate) fn recommended_labels_for_cluster_resources(cluster: &ValidatedCluster) -> Labels {
     label::recommended_labels_for_cluster_resources(
+        &cluster.name,
+        &PRODUCT_NAME,
+        &cluster.product_version,
+        &OPERATOR_NAME,
+        &CONTROLLER_NAME,
+    )
+}
+
+pub(crate) fn recommended_labels_for_agent_resources(cluster: &ValidatedCluster) -> Labels {
+    label::recommended_labels_for_agent_resources(
         &cluster.name,
         &PRODUCT_NAME,
         &cluster.product_version,
@@ -208,6 +231,10 @@ pub(crate) fn recommended_labels_for_unversioned_role_group_resources(
         role_name,
         role_group_name,
     )
+}
+
+pub(crate) fn agent_selector(cluster: &ValidatedCluster) -> Labels {
+    label::agent_selector(&cluster.name, &PRODUCT_NAME)
 }
 
 /// Selector labels matching the pods of a role group.
@@ -534,6 +561,8 @@ mod tests {
             sorted_names(&resources.role_bindings),
             ["simple-kafka-rolebinding"]
         );
+        // No agent without management access.
+        assert!(resources.deployments.is_empty());
     }
 
     #[test]

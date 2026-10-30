@@ -78,6 +78,7 @@ impl<'a> Applier<'a> {
         // compile here instead of silently never being applied.
         let KubernetesResources {
             stateful_sets,
+            deployments,
             services,
             listeners,
             config_maps,
@@ -97,6 +98,7 @@ impl<'a> Applier<'a> {
         let config_maps = self.add_resources(config_maps).await?;
         let pod_disruption_budgets = self.add_resources(pod_disruption_budgets).await?;
         let stateful_sets = self.add_resources(stateful_sets).await?;
+        let deployments = self.add_resources(deployments).await?;
 
         self.cluster_resources
             .delete_orphaned_resources(self.client)
@@ -105,6 +107,7 @@ impl<'a> Applier<'a> {
 
         Ok(KubernetesResources {
             stateful_sets,
+            deployments,
             services,
             listeners,
             config_maps,

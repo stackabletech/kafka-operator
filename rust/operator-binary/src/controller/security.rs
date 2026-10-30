@@ -101,6 +101,18 @@ impl ValidatedKafkaSecurity {
             .get_tls_authentication_class()
     }
 
+    /// The `SecretClass` of a TLS `AuthenticationClass`, otherwise the server `SecretClass`.
+    pub fn tls_secret_class(&self) -> Option<&str> {
+        self.tls_client_authentication_class()
+            .and_then(|auth_class| match &auth_class.spec.provider {
+                core::v1alpha1::AuthenticationClassProvider::Tls(tls) => {
+                    tls.client_cert_secret_class.as_deref()
+                }
+                _ => None,
+            })
+            .or_else(|| self.tls_server_secret_class())
+    }
+
     /// Retrieve the internal `SecretClass`. Internal (inter-broker) TLS is mandatory, so this is
     /// always set (defaults to `tls`).
     pub fn tls_internal_secret_class(&self) -> &str {
