@@ -8,6 +8,4 @@ spec:
   clusterRef:
     name: test-kafka
   topicName: orders
-  partitions: 5
-  replicationFactor: 1
   deletionPolicy: Delete

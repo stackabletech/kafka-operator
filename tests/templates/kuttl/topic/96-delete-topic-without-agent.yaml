@@ -1,5 +1,5 @@
 ---
-# kuttl would wait for the deletion, which only finishes with the KafkaCluster.
+# Not a kuttl delete, as that waits for the deletion, which only finishes with the KafkaCluster.
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:

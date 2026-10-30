@@ -6,7 +6,4 @@ metadata:
 spec:
   clusterRef:
     name: test-kafka
-  topicName: legacy
-  partitions: 1
-  replicationFactor: 1
   deletionPolicy: Delete

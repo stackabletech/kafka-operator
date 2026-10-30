@@ -8,6 +8,4 @@ metadata:
 spec:
   clusterRef:
     name: test-kafka
-  partitions: 1
-  replicationFactor: 1
   deletionPolicy: Delete

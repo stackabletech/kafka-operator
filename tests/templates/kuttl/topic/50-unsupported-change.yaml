@@ -5,10 +5,5 @@ kind: KafkaTopic
 metadata:
   name: orders
 spec:
-  clusterRef:
-    name: test-kafka
-  topicName: orders
   partitions: 2
   replicationFactor: 3
-  configOverrides:
-    retention.ms: "7200000"

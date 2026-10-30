@@ -6,6 +6,7 @@ metadata:
 spec:
   clusterRef:
     name: test-kafka
+  # Equal to the name on purpose, so that step 31 can test that topicName is immutable.
   topicName: orders
   partitions: 3
   replicationFactor: 1

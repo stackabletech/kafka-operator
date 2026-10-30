@@ -7,8 +7,5 @@ metadata:
 spec:
   clusterRef:
     name: test-kafka
-  topicName: throttled
-  partitions: 1
-  replicationFactor: 1
   configOverrides:
     leader.replication.throttled.replicas: "*"
