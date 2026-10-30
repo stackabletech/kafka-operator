@@ -1,0 +1,21 @@
+---
+# The broker defaults num.partitions and default.replication.factor are both 1.
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: defaults
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Available
+    - type: Synced
+      status: "True"
+      reason: Synced
+  topicName: defaults
+  partitions: 1
+  replicationFactor: 1

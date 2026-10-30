@@ -1,0 +1,11 @@
+---
+# From here on, the operator takes over the KafkaTopic, because the agent is removed in the
+# following steps.
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: cleanup
+spec:
+  clusterRef:
+    name: test-kafka
+  deletionPolicy: Delete

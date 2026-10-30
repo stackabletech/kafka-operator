@@ -13,6 +13,12 @@ All notable changes to this project will be documented in this file.
 - Support for Kafka 4.3.1 ([#1022]).
 - Add `/ready` endpoint to the operator Deployment, which reports the CRD installation status ([#1029]).
 - Brokers now have a default affinity to the OPA Pods when OPA authorization is configured ([#1035]).
+- Add management access via `spec.clusterConfig.managementAccess`. When enabled, the operator
+  deploys an agent per KafkaCluster, which authenticates anonymously or with a TLS client
+  certificate ([#1028]).
+- Add the KafkaTopic CRD to manage topics declaratively. The agent creates and adopts topics,
+  replaces their configs with `configOverrides`, increases their partitions and optionally deletes
+  them. The operator removes the finalizers of KafkaTopics whose KafkaCluster is deleted ([#1050]).
 
 ### Changed
 
@@ -56,6 +62,9 @@ All notable changes to this project will be documented in this file.
 - Support Vector 0.58.0 ([#1039], [#1044], [#1046]).
 - test: Update OPA to 1.20.2 in integration tests and docs example ([#1042]).
 - The operator Deployment runs with a restricted security context and a read-only root filesystem, so it can be deployed into namespaces that enforce the `restricted` Pod Security Standard ([#1049]).
+- The `/ready` endpoint of the operator now also waits for the KafkaTopic CRD. If the CRDs are not
+  maintained by the operator (`maintenance.customResourceDefinitions.maintain: false`), install the
+  KafkaTopic CRD together with the KafkaCluster CRD ([#1050]).
 
 ### Fixed
 
@@ -92,6 +101,7 @@ All notable changes to this project will be documented in this file.
 [#1021]: https://github.com/stackabletech/kafka-operator/pull/1021
 [#1022]: https://github.com/stackabletech/kafka-operator/pull/1022
 [#1024]: https://github.com/stackabletech/kafka-operator/pull/1024
+[#1028]: https://github.com/stackabletech/kafka-operator/pull/1028
 [#1029]: https://github.com/stackabletech/kafka-operator/pull/1029
 [#1034]: https://github.com/stackabletech/kafka-operator/pull/1034
 [#1035]: https://github.com/stackabletech/kafka-operator/pull/1035
@@ -103,6 +113,7 @@ All notable changes to this project will be documented in this file.
 [#1046]: https://github.com/stackabletech/kafka-operator/pull/1046
 [#1047]: https://github.com/stackabletech/kafka-operator/pull/1047
 [#1049]: https://github.com/stackabletech/kafka-operator/pull/1049
+[#1050]: https://github.com/stackabletech/kafka-operator/pull/1050
 
 ## [26.7.0] - 2026-07-21
 

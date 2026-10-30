@@ -1,0 +1,16 @@
+{% set authentication = test_scenario['values']['management-access-authentication'] %}
+---
+# Runs after the agent is ready, so the commands are not polled during the startup.
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 60
+commands:
+{% if authentication == 'anonymous' %}
+  - script: test "$(kubectl get deployment --namespace $NAMESPACE test-kafka-agent --output jsonpath='{.spec.template.spec.volumes[*].name}')" = "tls-kafka"
+  - script: test "$(kubectl get deployment --namespace $NAMESPACE test-kafka-agent --output jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KAFKA_CLIENT_SECURITY")].value}')" = tls
+{% else %}
+  - script: test "$(kubectl get deployment --namespace $NAMESPACE test-kafka-agent --output jsonpath='{.spec.template.spec.volumes[*].name}')" = "tls-kafka tls-management-access"
+  - script: test "$(kubectl get deployment --namespace $NAMESPACE test-kafka-agent --output jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KAFKA_CLIENT_SECURITY")].value}')" = mutual-tls
+{% endif %}
+  # The headless Service keeps the traffic within the Kubernetes cluster.
+  - script: test "$(kubectl get deployment --namespace $NAMESPACE test-kafka-agent --output jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KAFKA_BOOTSTRAP_SERVERS")].value}')" = "test-kafka-broker-default-headless.$NAMESPACE.svc.cluster.local:9093"

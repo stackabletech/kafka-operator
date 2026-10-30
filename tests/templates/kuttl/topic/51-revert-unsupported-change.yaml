@@ -1,0 +1,8 @@
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: orders
+spec:
+  partitions: 5
+  replicationFactor: 1

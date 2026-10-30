@@ -1,12 +1,15 @@
 // TODO: Look into how to properly resolve `clippy::large_enum_variant`.
 // This will need changes in our and upstream error types.
-#![allow(clippy::result_large_err)]
+#![allow(clippy::large_enum_variant, clippy::result_large_err)]
 
 use std::sync::Arc;
 
 use anyhow::anyhow;
 use clap::Parser;
 use futures::{FutureExt, StreamExt, TryFutureExt};
+use stackable_kafka_shared::crd::topic::{
+    KafkaTopic, KafkaTopicVersion, v1alpha1 as topic_v1alpha1,
+};
 use stackable_operator::{
     YamlSchema,
     cli::{Command, RunArguments},
@@ -39,11 +42,13 @@ use stackable_operator::{
 use crate::{
     controller::{KAFKA_FULL_CONTROLLER_NAME, all_agents_selector},
     crd::{KAFKA_OPERATOR_NAME, KafkaCluster, KafkaClusterVersion, v1alpha1},
+    topic_controller::{TOPIC_FULL_CONTROLLER_NAME, kafka_topics_of_cluster},
     webhooks::conversion::create_webhook_server,
 };
 
 mod controller;
 mod crd;
+mod topic_controller;
 mod webhooks;
 
 mod built_info {
@@ -79,8 +84,12 @@ struct KafkaRun {
 async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => KafkaCluster::merged_crd(KafkaClusterVersion::V1Alpha1)?
-            .print_yaml_schema(built_info::PKG_VERSION, &SerializeOptions::default())?,
+        Command::Crd => {
+            KafkaCluster::merged_crd(KafkaClusterVersion::V1Alpha1)?
+                .print_yaml_schema(built_info::PKG_VERSION, &SerializeOptions::default())?;
+            KafkaTopic::merged_crd(KafkaTopicVersion::V1Alpha1)?
+                .print_yaml_schema(built_info::PKG_VERSION, &SerializeOptions::default())?;
+        }
         Command::Run(KafkaRun {
             common:
                 RunArguments {
@@ -127,6 +136,10 @@ async fn main() -> anyhow::Result<()> {
             let kafka_cluster_crd_check = readiness_checks.register(format!(
                 "CRD {crd} established",
                 crd = v1alpha1::KafkaCluster::crd_name()
+            ));
+            let kafka_topic_crd_check = readiness_checks.register(format!(
+                "CRD {crd} established",
+                crd = topic_v1alpha1::KafkaTopic::crd_name()
             ));
 
             let webhook_server = create_webhook_server(
@@ -229,13 +242,86 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .map(anyhow::Ok);
 
+            // Topic controller to clean up after deleted or unavailable agents
+            let topic_event_recorder = Arc::new(Recorder::new(
+                client.as_kube_client(),
+                Reporter {
+                    controller: TOPIC_FULL_CONTROLLER_NAME.to_string(),
+                    instance: None,
+                },
+            ));
+
+            let topic_controller = Controller::new(
+                watch_namespace.get_api::<DeserializeGuard<topic_v1alpha1::KafkaTopic>>(&client),
+                watcher::Config::default(),
+            );
+            let kafka_topic_store_for_clusters = topic_controller.store();
+            let kafka_topic_store_for_agents = topic_controller.store();
+            let topic_controller = topic_controller
+                .watches(
+                    watch_namespace.get_api::<DeserializeGuard<v1alpha1::KafkaCluster>>(&client),
+                    watcher::Config::default(),
+                    move |kafka_cluster| {
+                        kafka_topics_of_cluster(
+                            &kafka_topic_store_for_clusters,
+                            kafka_cluster.namespace(),
+                            Some(&kafka_cluster.name_any()),
+                        )
+                    },
+                )
+                .watches(
+                    watch_namespace.get_api::<DeserializeGuard<Deployment>>(&client),
+                    watcher::Config::default().labels_from(&all_agents_selector()),
+                    move |agent_deployment| {
+                        kafka_topics_of_cluster(
+                            &kafka_topic_store_for_agents,
+                            agent_deployment.namespace(),
+                            agent_deployment
+                                .labels()
+                                .get("app.kubernetes.io/instance")
+                                .map(String::as_str),
+                        )
+                    },
+                )
+                .graceful_shutdown_on(sigterm_watcher.handle())
+                .run(
+                    topic_controller::reconcile_topic,
+                    topic_controller::error_policy,
+                    Arc::new(topic_controller::Ctx {
+                        client: client.clone(),
+                    }),
+                )
+                .for_each_concurrent(16, move |result| {
+                    let topic_event_recorder = topic_event_recorder.clone();
+                    async move {
+                        report_controller_reconciled(
+                            &topic_event_recorder,
+                            TOPIC_FULL_CONTROLLER_NAME,
+                            &result,
+                        )
+                        .await;
+                    }
+                })
+                .map(anyhow::Ok);
+
             let delayed_kafka_controller = async {
                 signal::crd_established(&client, v1alpha1::KafkaCluster::crd_name()).await?;
                 kafka_cluster_crd_check.mark_passed();
                 kafka_controller.await
             };
 
-            futures::try_join!(delayed_kafka_controller, eos_checker, webhook_server)?;
+            let delayed_topic_controller = async {
+                signal::crd_established(&client, topic_v1alpha1::KafkaTopic::crd_name()).await?;
+                kafka_topic_crd_check.mark_passed();
+                topic_controller.await
+            };
+
+            futures::try_join!(
+                delayed_kafka_controller,
+                delayed_topic_controller,
+                eos_checker,
+                webhook_server
+            )?;
         }
     };
 

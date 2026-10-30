@@ -11,7 +11,16 @@ publish = false
 [dependencies]
 stackable-operator.workspace = true
 
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+snafu.workspace = true
 strum.workspace = true
 
 [dev-dependencies]
+indoc.workspace = true
 rstest.workspace = true
+
+[features]
+# Referenced by the attributed_string_type! macro of stackable-operator
+test-support = []

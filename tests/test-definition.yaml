@@ -72,6 +72,12 @@ dimensions:
       - "cluster-internal"
       - "external-stable"
       - "external-unstable"
+  # How the agent authenticates to Kafka
+  - name: management-access-authentication
+    values:
+      - anonymous
+      - secret-class
+      - secret
 tests:
   - name: operations-kraft
     dimensions:
@@ -147,6 +153,15 @@ tests:
       - openshift
       - broker-listener-class
       - bootstrap-listener-class
+  - name: topic
+    dimensions:
+      - kafka-kraft
+      - openshift
+  - name: management-access
+    dimensions:
+      - kafka-kraft
+      - management-access-authentication
+      - openshift
 
 suites:
   - name: nightly

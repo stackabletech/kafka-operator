@@ -1,0 +1,16 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaTopic
+    name: orders
+  - apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaTopic
+    name: legacy
+  - apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaTopic
+    name: throttled
+  - apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaTopic
+    name: defaults

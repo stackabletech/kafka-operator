@@ -1,0 +1,6 @@
+---
+# A config set by someone else than the agent, e.g. an administrator with kafka-configs.sh
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: bash kafka-cli.sh kafka-configs.sh --alter --entity-type topics --entity-name orders --add-config segment.ms=86400000

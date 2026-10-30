@@ -1,0 +1,15 @@
+---
+# The operator keeps the finalizer while the KafkaCluster exists, so the deletion waits for an
+# agent.
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+commands:
+  - script: sleep 30
+resourceRefs:
+  - apiVersion: kafka.stackable.tech/v1alpha1
+    kind: KafkaTopic
+    name: cleanup
+    ref: cleanup
+assertAll:
+  - celExpr: has(cleanup.metadata.deletionTimestamp)

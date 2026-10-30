@@ -2247,3 +2247,179 @@ spec:
     storage: true
     subresources:
       status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: kafkatopics.kafka.stackable.tech
+spec:
+  group: kafka.stackable.tech
+  names:
+    kind: KafkaTopic
+    plural: kafkatopics
+    singular: kafkatopic
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: A Kafka topic, created and updated by the agent of the referenced Kafka cluster.
+        properties:
+          spec:
+            description: |-
+              A Kafka topic managed by the agent of the referenced Kafka cluster.
+
+              The referenced `KafkaCluster` must have `clusterConfig.managementAccess` enabled or this
+              resource will not be reconciled.
+            properties:
+              clusterRef:
+                description: The KafkaCluster managing this topic. Immutable.
+                properties:
+                  name:
+                    description: Name of a KafkaCluster in the namespace of this KafkaTopic.
+                    maxLength: 40
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: clusterRef is immutable
+                  rule: self == oldSelf
+              configOverrides:
+                additionalProperties:
+                  type: string
+                default: {}
+                description: |-
+                  Topic configs like `retention.ms`. All other topic-level configs are reset to the broker
+                  defaults, except the replication throttles set by partition reassignments.
+                type: object
+              deletionPolicy:
+                default: Retain
+                description: What happens to a resource in the product when the object managing it is deleted.
+                enum:
+                - Retain
+                - Delete
+                type: string
+              partitions:
+                description: |-
+                  Number of partitions. Can only be increased. Defaults to the broker setting
+                  `num.partitions` when the topic is created.
+                format: int32
+                minimum: 1.0
+                nullable: true
+                type: integer
+              replicationFactor:
+                description: |-
+                  Number of replicas of each partition. Changes are not applied to existing topics.
+                  Defaults to the broker setting `default.replication.factor` when the topic is created.
+                format: int16
+                maximum: 32767.0
+                minimum: 1.0
+                nullable: true
+                type: integer
+              topicName:
+                description: Name of the topic in Kafka. Defaults to `metadata.name`. Immutable.
+                maxLength: 249
+                minLength: 1
+                nullable: true
+                pattern: ^([a-zA-Z0-9._-]{3,}|[a-zA-Z0-9_-][a-zA-Z0-9._-]?|\.[a-zA-Z0-9_-])$
+                type: string
+                x-kubernetes-validations:
+                - message: topics starting with __ are internal to Kafka
+                  rule: '!self.startsWith(''__'')'
+              topicOperation:
+                default:
+                  reconciliationPaused: false
+                description: Operations on this topic, independent of the `clusterOperation` of the KafkaCluster.
+                properties:
+                  reconciliationPaused:
+                    default: false
+                    description: Stops the agent from changing the resource in the product. The status is still updated.
+                    type: boolean
+                type: object
+            required:
+            - clusterRef
+            type: object
+            x-kubernetes-validations:
+            - message: topicName is immutable
+              rule: has(self.topicName) == has(oldSelf.topicName) && (!has(self.topicName) || self.topicName == oldSelf.topicName)
+          status:
+            nullable: true
+            properties:
+              conditions:
+                default: []
+                description: '`Ready` and `Synced`.'
+                items:
+                  description: Condition contains details for one aspect of the current state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message is a human readable message indicating details about the transition. This may be an empty string.
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                      format: int64
+                      type: integer
+                    reason:
+                      description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              config:
+                additionalProperties:
+                  type: string
+                default: {}
+                description: The configs set on the topic in Kafka, without broker and default values.
+                type: object
+              partitions:
+                description: The number of partitions in Kafka.
+                format: int32
+                nullable: true
+                type: integer
+              replicationFactor:
+                description: |-
+                  The replication factor, not counting replicas that a running reassignment removes.
+                  Not set if the partitions have different replication factors.
+                format: int16
+                maximum: 32767.0
+                minimum: -32768.0
+                nullable: true
+                type: integer
+              topicId:
+                description: The topic id in Kafka, as shown by `kafka-topics.sh`.
+                nullable: true
+                type: string
+              topicName:
+                description: The name of the topic in Kafka.
+                maxLength: 249
+                minLength: 1
+                nullable: true
+                pattern: ^([a-zA-Z0-9._-]{3,}|[a-zA-Z0-9_-][a-zA-Z0-9._-]?|\.[a-zA-Z0-9_-])$
+                type: string
+            type: object
+        required:
+        - spec
+        title: KafkaTopic
+        type: object
+    selectableFields:
+    - jsonPath: .spec.clusterRef.name
+    served: true
+    storage: true
+    subresources:
+      status: {}
