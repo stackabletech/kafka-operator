@@ -13,10 +13,10 @@ use stackable_operator::{
 
 use crate::{
     controller::{
-        RoleGroupName, ValidatedCluster, build::recommended_labels_for_role_group_resources,
-        security::ValidatedKafkaSecurity,
+        RoleGroupName, ValidatedBrokerConfig, ValidatedCluster,
+        build::recommended_labels_for_role_group_resources, security::ValidatedKafkaSecurity,
     },
-    crd::role::{KafkaRole, broker::BrokerConfig},
+    crd::role::KafkaRole,
 };
 
 /// The name of a broker role group's bootstrap [`Listener`](listener::v1alpha1::Listener),
@@ -79,7 +79,7 @@ pub fn build_broker_rolegroup_bootstrap_listener(
     validated_cluster: &ValidatedCluster,
     role: &KafkaRole,
     role_group_name: &RoleGroupName,
-    merged_config: &BrokerConfig,
+    merged_config: &ValidatedBrokerConfig,
 ) -> listener::v1alpha1::Listener {
     let kafka_security = &validated_cluster.cluster_config.kafka_security;
 
