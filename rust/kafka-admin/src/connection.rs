@@ -24,7 +24,6 @@ use tokio_util::{
 use crate::{
     bootstrap::BrokerAddress,
     codec::{self, api_key, decode_response, encode_request},
-    tls,
 };
 
 // The defaults of Kafka's Java admin client, in `clients/src/main/java/org/apache/kafka/clients/`:
@@ -54,9 +53,6 @@ pub enum Error {
         source: Elapsed,
         address: BrokerAddress,
     },
-
-    #[snafu(display("failed to configure TLS"))]
-    Tls { source: tls::Error },
 
     #[snafu(display("{host:?} is not a valid TLS server name"))]
     InvalidServerName { host: String },
@@ -136,21 +132,22 @@ pub(crate) struct Connection {
 }
 
 impl Connection {
-    /// Connects to the broker and fetches the API versions it supports.
+    /// Connects to the broker and fetches the API versions it supports. Without a `tls_config`,
+    /// the connection is plaintext.
     pub(crate) async fn connect(
         address: &BrokerAddress,
-        security: &Security,
+        tls_config: Option<Arc<ClientConfig>>,
         client_id: &str,
     ) -> Result<Self> {
         let tcp_stream = connect_tcp(address).await?;
-        let stream = match tls::client_config(security).context(TlsSnafu)? {
+        let stream = match tls_config {
             None => Either::Left(tcp_stream),
             Some(config) => Either::Right(tls_handshake(tcp_stream, address, config).await?),
         };
 
         let mut connection = Self::new(stream, client_id);
         let response = connection
-            .send_with_version(&api_versions_request(), API_VERSIONS_VERSION)
+            .send(&api_versions_request(), API_VERSIONS_VERSION)
             .await?;
         connection.broker_api_versions = api_versions_result(response)?;
         Ok(connection)
@@ -169,20 +166,17 @@ impl Connection {
         }
     }
 
-    /// Sends the request with the given version, if the broker supports it.
-    pub(crate) async fn send<R: Request>(
-        &mut self,
-        request: &R,
-        version: i16,
-    ) -> Result<R::Response> {
+    /// Whether the broker supports the version of the API of `R`. No request is sent, so the
+    /// connection stays usable after a failed check.
+    pub(crate) fn check_version<R: Request>(&self, version: i16) -> Result<()> {
         // Each API that is relevant for us has a version that is supported by all of our Kafka versions.
         // We use these versions and pin them in client.rs.
         // We will have to add API version negotiation at some point in the future.
-        check_version(&self.broker_api_versions, api_key::<R>(), version)?;
-        self.send_with_version(request, version).await
+        check_version_in_range(&self.broker_api_versions, api_key::<R>(), version)
     }
 
-    async fn send_with_version<R: Request>(
+    /// Sends the request with the given version, see [`Self::check_version`].
+    pub(crate) async fn send<R: Request>(
         &mut self,
         request: &R,
         version: i16,
@@ -252,7 +246,7 @@ fn api_versions_result(response: ApiVersionsResponse) -> Result<BTreeMap<i16, Ve
         .collect())
 }
 
-fn check_version(
+fn check_version_in_range(
     broker_api_versions: &BTreeMap<i16, VersionRange>,
     api_key: ApiKey,
     version: i16,
@@ -274,7 +268,7 @@ fn check_version(
 async fn tls_handshake(
     tcp_stream: TcpStream,
     address: &BrokerAddress,
-    config: ClientConfig,
+    config: Arc<ClientConfig>,
 ) -> Result<TlsStream<TcpStream>> {
     let host = &address.host;
     let server_name = ServerName::try_from(host.clone())
@@ -282,7 +276,7 @@ async fn tls_handshake(
         .context(InvalidServerNameSnafu { host })?;
     timeout(
         CONNECT_TIMEOUT,
-        TlsConnector::from(Arc::new(config)).connect(server_name, tcp_stream),
+        TlsConnector::from(config).connect(server_name, tcp_stream),
     )
     .await
     .context(ConnectTimeoutSnafu {
@@ -336,7 +330,7 @@ pub(crate) mod test_support {
             &mut broker,
             &request,
             request.correlation_id,
-            api_versions(apis),
+            api_versions_response(apis),
         )
         .await;
         broker
@@ -391,7 +385,7 @@ pub(crate) mod test_support {
             .expect("the response should be writable");
     }
 
-    pub(crate) fn api_versions(apis: &[(i16, i16, i16)]) -> ApiVersionsResponse {
+    pub(crate) fn api_versions_response(apis: &[(i16, i16, i16)]) -> ApiVersionsResponse {
         ApiVersionsResponse::default().with_api_keys(
             apis.iter()
                 .map(|(api_key, min_version, max_version)| {
@@ -411,7 +405,7 @@ mod tests {
     use tokio::io::AsyncWriteExt;
 
     use super::{
-        test_support::{accept, api_versions, listen, read_request, write_response},
+        test_support::{accept, api_versions_response, listen, read_request, write_response},
         *,
     };
 
@@ -423,7 +417,7 @@ mod tests {
             port,
         };
         let (connection, broker) = tokio::join!(
-            Connection::connect(&address, &Security::Plaintext, "test"),
+            Connection::connect(&address, None, "test"),
             accept(&listener, &[(MetadataRequest::KEY, 0, 13)])
         );
         (connection.expect("the connection should succeed"), broker)
@@ -431,7 +425,7 @@ mod tests {
 
     #[test]
     fn read_api_versions() {
-        let response = api_versions(&[(MetadataRequest::KEY, 0, 13)]);
+        let response = api_versions_response(&[(MetadataRequest::KEY, 0, 13)]);
 
         assert_eq!(
             BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 13 })]),
@@ -460,13 +454,13 @@ mod tests {
         let broker_api_versions =
             BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 13 })]);
 
-        check_version(&broker_api_versions, ApiKey::Metadata, 12)
+        check_version_in_range(&broker_api_versions, ApiKey::Metadata, 12)
             .expect("the version should be supported");
     }
 
     #[test]
     fn reject_api_unknown_to_the_broker() {
-        let error = check_version(&BTreeMap::new(), ApiKey::Metadata, 12)
+        let error = check_version_in_range(&BTreeMap::new(), ApiKey::Metadata, 12)
             .expect_err("the API should be unsupported");
 
         assert!(matches!(
@@ -482,7 +476,7 @@ mod tests {
         let broker_api_versions =
             BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 9 })]);
 
-        let error = check_version(&broker_api_versions, ApiKey::Metadata, 12)
+        let error = check_version_in_range(&broker_api_versions, ApiKey::Metadata, 12)
             .expect_err("the version should be unsupported");
 
         assert!(matches!(

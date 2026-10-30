@@ -1053,7 +1053,7 @@ spec:
                                   - secretName
                                 properties:
                                   secretClassName:
-                                    description: An AutoTLS SecretClass used to provision the certificate.
+                                    description: A SecretClass providing the certificate.
                                     maxLength: 253
                                     minLength: 1
                                     pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$

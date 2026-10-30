@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    sync::Arc,
     time::Duration,
 };
 
@@ -30,6 +31,7 @@ use tokio::time::Instant;
 use crate::{
     bootstrap::BrokerAddress,
     connection::{self, Connection, Security},
+    tls,
 };
 
 // The highest versions that Kafka 3.9.2 supports and 4.3.1 still supports, see `validVersions` in
@@ -69,6 +71,9 @@ const CONFIG_OPERATION_DELETE: i8 = 1;
 pub enum Error {
     #[snafu(display("no bootstrap servers given"))]
     NoBootstrapServers,
+
+    #[snafu(display("failed to configure TLS"))]
+    Tls { source: tls::Error },
 
     #[snafu(display("failed to connect to the bootstrap server {server}"))]
     Connect {
@@ -181,7 +186,8 @@ impl KafkaAdminClient {
         describe_topic_configs_result(response, topic)
     }
 
-    /// `None` uses the broker default for the number of partitions or the replication factor.
+    /// Creates the topic. Without `partitions` or `replication_factor`, the broker applies its
+    /// `num.partitions` or `default.replication.factor`.
     pub async fn create_topic(
         &mut self,
         topic: &str,
@@ -207,8 +213,8 @@ impl KafkaAdminClient {
             )
             .await?;
 
-        let result = first(response.results, ApiKey::CreatePartitions, topic)?;
-        check(
+        let result = first_result(response.results, ApiKey::CreatePartitions, topic)?;
+        check_error_code(
             ApiKey::CreatePartitions,
             topic,
             result.error_code,
@@ -231,8 +237,8 @@ impl KafkaAdminClient {
             )
             .await?;
 
-        let result = first(response.responses, ApiKey::IncrementalAlterConfigs, topic)?;
-        check(
+        let result = first_result(response.responses, ApiKey::IncrementalAlterConfigs, topic)?;
+        check_error_code(
             ApiKey::IncrementalAlterConfigs,
             topic,
             result.error_code,
@@ -265,12 +271,13 @@ impl KafkaAdminClient {
 
     /// Sends the request on the current connection or a new one. A request that fails because
     /// the broker closed the reused connection is sent once more on a new one. A failed or
-    /// cancelled request drops the connection, and a connection idle for longer than
-    /// [`CONNECTION_MAX_IDLE`] is replaced.
+    /// cancelled request drops the connection, unless only the version check failed, and a
+    /// connection idle for longer than [`CONNECTION_MAX_IDLE`] is replaced.
     async fn send<R: Request>(&mut self, request: R, version: i16) -> Result<R::Response> {
-        if let Some((mut connection, last_used)) = self.connection.take()
+        if let Some((connection, last_used)) = self.connection.take()
             && last_used.elapsed() < CONNECTION_MAX_IDLE
         {
+            let mut connection = self.with_version_checked::<R>(connection, last_used, version)?;
             match connection.send(&request, version).await {
                 Err(error) if error.is_broken_connection() => {}
                 result => {
@@ -281,7 +288,8 @@ impl KafkaAdminClient {
             }
         }
         // After a broken connections the request is directly send on a new connection again
-        let mut connection = self.connect().await?;
+        let connection = self.connect().await?;
+        let mut connection = self.with_version_checked::<R>(connection, Instant::now(), version)?;
         let response = connection
             .send(&request, version)
             .await
@@ -290,12 +298,31 @@ impl KafkaAdminClient {
         Ok(response)
     }
 
+    /// Keeps the connection if the broker does not support the version, as the check does no I/O.
+    fn with_version_checked<R: Request>(
+        &mut self,
+        connection: Connection,
+        last_used: Instant,
+        version: i16,
+    ) -> Result<Connection> {
+        match connection.check_version::<R>(version) {
+            Ok(()) => Ok(connection),
+            Err(source) => {
+                self.connection = Some((connection, last_used));
+                Err(Error::Send { source })
+            }
+        }
+    }
+
     /// Connects to the first bootstrap server that answers. Any broker works, because brokers in
     /// KRaft mode forward admin requests to the active controller.
     async fn connect(&self) -> Result<Connection> {
+        let tls_config = tls::client_config(&self.security)
+            .context(TlsSnafu)?
+            .map(Arc::new);
         let mut last_error = Error::NoBootstrapServers;
         for server in &self.bootstrap_servers {
-            match Connection::connect(server, &self.security, &self.client_id).await {
+            match Connection::connect(server, tls_config.clone(), &self.client_id).await {
                 Ok(connection) => return Ok(connection),
                 Err(source) => {
                     last_error = Error::Connect {
@@ -318,11 +345,11 @@ fn describe_topic_request(topic: &str) -> MetadataRequest {
 }
 
 fn describe_topic_result(response: MetadataResponse, topic: &str) -> Result<Option<Topic>> {
-    let result = first(response.topics, ApiKey::Metadata, topic)?;
+    let result = first_result(response.topics, ApiKey::Metadata, topic)?;
     if result.error_code.err() == Some(ResponseError::UnknownTopicOrPartition) {
         return Ok(None);
     }
-    check(ApiKey::Metadata, topic, result.error_code, None)?;
+    check_error_code(ApiKey::Metadata, topic, result.error_code, None)?;
 
     let partitions = result
         .partitions
@@ -355,8 +382,8 @@ fn describe_topic_configs_result(
     response: DescribeConfigsResponse,
     topic: &str,
 ) -> Result<BTreeMap<String, String>> {
-    let result = first(response.results, ApiKey::DescribeConfigs, topic)?;
-    check(
+    let result = first_result(response.results, ApiKey::DescribeConfigs, topic)?;
+    check_error_code(
         ApiKey::DescribeConfigs,
         topic,
         result.error_code,
@@ -405,15 +432,15 @@ fn create_topic_request(
 }
 
 fn create_topic_result(response: CreateTopicsResponse, topic: &str) -> Result<CreatedTopic> {
-    let result = first(response.topics, ApiKey::CreateTopics, topic)?;
-    check(
+    let result = first_result(response.topics, ApiKey::CreateTopics, topic)?;
+    check_error_code(
         ApiKey::CreateTopics,
         topic,
         result.error_code,
         result.error_message,
     )?;
     // Without the details, e.g. if `DESCRIBE_CONFIGS` is not allowed, the topic was still created.
-    check(
+    check_error_code(
         ApiKey::CreateTopics,
         topic,
         result.topic_config_error_code,
@@ -479,7 +506,7 @@ fn delete_topic_request(topic: &str) -> DeleteTopicsRequest {
 }
 
 fn delete_topic_result(response: DeleteTopicsResponse, topic: &str) -> Result<()> {
-    let result = first(response.responses, ApiKey::DeleteTopics, topic)?;
+    let result = first_result(response.responses, ApiKey::DeleteTopics, topic)?;
     //  It's ok if topic or partition are already being deleted
     if matches!(
         result.error_code.err(),
@@ -487,7 +514,7 @@ fn delete_topic_result(response: DeleteTopicsResponse, topic: &str) -> Result<()
     ) {
         return Ok(());
     }
-    check(
+    check_error_code(
         ApiKey::DeleteTopics,
         topic,
         result.error_code,
@@ -514,7 +541,7 @@ fn list_partition_reassignments_result(
     response: ListPartitionReassignmentsResponse,
     topic: &str,
 ) -> Result<Vec<PartitionReassignment>> {
-    check(
+    check_error_code(
         ApiKey::ListPartitionReassignments,
         topic,
         response.error_code,
@@ -538,14 +565,19 @@ fn topic_name(topic: &str) -> TopicName {
 }
 
 // Used instead of [0] to correctly handle empty results & take ownership
-fn first<T>(results: Vec<T>, api_key: ApiKey, topic: &str) -> Result<T> {
+fn first_result<T>(results: Vec<T>, api_key: ApiKey, topic: &str) -> Result<T> {
     results
         .into_iter()
         .next()
         .context(MissingResultSnafu { api_key, topic })
 }
 
-fn check(api_key: ApiKey, topic: &str, error_code: i16, message: Option<StrBytes>) -> Result<()> {
+fn check_error_code(
+    api_key: ApiKey,
+    topic: &str,
+    error_code: i16,
+    message: Option<StrBytes>,
+) -> Result<()> {
     match error_code.err() {
         None => Ok(()),
         Some(error) => KafkaSnafu {
@@ -959,7 +991,7 @@ mod tests {
 
     #[test]
     fn report_rejected_request() {
-        let error = check(
+        let error = check_error_code(
             ApiKey::CreateTopics,
             TOPIC,
             ResponseError::TopicAlreadyExists.code(),
@@ -980,7 +1012,7 @@ mod tests {
 
     #[test]
     fn reject_response_without_result() {
-        let error = first(
+        let error = first_result(
             Vec::<DeletableTopicResult>::new(),
             ApiKey::DeleteTopics,
             TOPIC,
