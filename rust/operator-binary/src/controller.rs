@@ -19,7 +19,12 @@ use stackable_kafka_shared::agent::ClientSecurity;
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     cluster_resources::ClusterResourceApplyStrategy,
-    commons::{networking::DomainName, product_image_selection::ResolvedProductImage},
+    commons::{
+        affinity::StackableAffinity,
+        networking::DomainName,
+        product_image_selection::ResolvedProductImage,
+        resources::{NoRuntimeLimits, Resources},
+    },
     constant,
     crd::{listener, management_access::v1alpha1::TlsClientCredential},
     k8s_openapi::api::{
@@ -43,7 +48,9 @@ use stackable_operator::{
         role_group_utils::ResourceNames,
         role_utils,
         types::{
-            kubernetes::{ConfigMapName, ListenerName, NamespaceName, SecretClassName, Uid},
+            kubernetes::{
+                ConfigMapName, ListenerClassName, ListenerName, NamespaceName, SecretClassName, Uid,
+            },
             operator::{ClusterName, ControllerName, OperatorName, ProductName, ProductVersion},
         },
     },
@@ -70,7 +77,7 @@ use crate::{
     crd::{
         APP_NAME, KAFKA_OPERATOR_NAME, KafkaPodDescriptor, MetadataManager,
         authorization::KafkaAuthorizationConfig,
-        role::{AnyConfig, AnyConfigOverrides, KafkaRole},
+        role::{KafkaRole, commons::Storage},
         v1alpha1,
     },
 };
@@ -152,9 +159,15 @@ pub struct ValidatedCluster {
     /// value.
     pub product_version: ProductVersion,
     pub cluster_config: ValidatedClusterConfig,
-    /// Per-role configuration (e.g. the Pod disruption budget), keyed by role.
-    pub role_configs: BTreeMap<KafkaRole, ValidatedRoleConfig>,
-    pub role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
+    /// The broker role-level config. The CRD requires the broker role.
+    pub broker_config: ValidatedRoleConfig,
+    /// The validated config of every broker role group, keyed by role group name.
+    pub broker_role_group_configs: BTreeMap<RoleGroupName, BrokerRoleGroupConfig>,
+    /// The controller role-level config, or `None` if the role is absent (ZooKeeper mode).
+    pub controller_config: Option<ValidatedRoleConfig>,
+    /// The validated config of every controller role group, keyed by role group name; empty if
+    /// the role is absent.
+    pub controller_role_group_configs: BTreeMap<RoleGroupName, ControllerRoleGroupConfig>,
     /// The broker role groups' bootstrap `Listener`s as currently stored in the cluster (fetched
     /// in the dereference step), from which the discovery `ConfigMap` is built. Missing or still
     /// address-less around the first reconcile runs; the listener-operator populates the ingress
@@ -163,43 +176,41 @@ pub struct ValidatedCluster {
     pub agent_config: Option<ValidatedAgentConfig>,
 }
 
+/// The number of pods a role group runs when its `replicas` is unset.
+///
+/// An unset count stays unset on the StatefulSet, and Kubernetes then runs one pod. This default
+/// applies only where the operator needs a concrete count: to predict the pods (their names and
+/// node IDs) and to sum a role's replicas.
+pub(crate) const DEFAULT_REPLICAS: u16 = 1;
+
+/// The role group's replica count, or [`DEFAULT_REPLICAS`] if it is unset.
+pub(crate) fn replicas_or_default(replicas: Option<u16>) -> u16 {
+    replicas.unwrap_or(DEFAULT_REPLICAS)
+}
+
 impl ValidatedCluster {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        name: ClusterName,
-        namespace: NamespaceName,
-        uid: Uid,
-        cluster_domain: DomainName,
-        image: ResolvedProductImage,
-        cluster_config: ValidatedClusterConfig,
-        role_configs: BTreeMap<KafkaRole, ValidatedRoleConfig>,
-        role_group_configs: BTreeMap<KafkaRole, BTreeMap<RoleGroupName, ValidatedRoleGroupConfig>>,
-        bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
-        agent_config: Option<ValidatedAgentConfig>,
-    ) -> Self {
+    /// The `ObjectMeta` that lets [`ValidatedCluster`] act as the owner [`Resource`] for child
+    /// objects: just `name`, `namespace` and `uid`.
+    pub(crate) fn object_meta(
+        name: &ClusterName,
+        namespace: &NamespaceName,
+        uid: &Uid,
+    ) -> ObjectMeta {
+        ObjectMeta {
+            name: Some(name.to_string()),
+            namespace: Some(namespace.to_string()),
+            uid: Some(uid.to_string()),
+            ..ObjectMeta::default()
+        }
+    }
+
+    /// The product version as a valid label value, for the recommended `app.kubernetes.io/version`
+    /// label.
+    pub(crate) fn product_version(image: &ResolvedProductImage) -> ProductVersion {
         // `app_version_label_value` is constructed to be a valid label value, so it is also a
         // valid `ProductVersion`.
-        let product_version = ProductVersion::from_str(&image.app_version_label_value)
-            .expect("the app version label value is a valid product version");
-        Self {
-            metadata: ObjectMeta {
-                name: Some(name.to_string()),
-                namespace: Some(namespace.to_string()),
-                uid: Some(uid.to_string()),
-                ..ObjectMeta::default()
-            },
-            name,
-            namespace,
-            uid,
-            cluster_domain,
-            image,
-            product_version,
-            cluster_config,
-            role_configs,
-            role_group_configs,
-            bootstrap_listeners,
-            agent_config,
-        }
+        ProductVersion::from_str(&image.app_version_label_value)
+            .expect("the app version label value is a valid product version")
     }
 
     /// Predicts the pods of this cluster (or just `requested_kafka_role`'s pods, if given).
@@ -218,8 +229,25 @@ impl ValidatedCluster {
         let mut pod_descriptors = Vec::new();
         let mut seen_hashes = HashMap::<u32, (KafkaRole, RoleGroupName)>::new();
 
-        for (role, role_groups) in &self.role_group_configs {
-            for (role_group_name, validated_rg) in role_groups {
+        // In `KafkaRole` variant order, which decides the reported side of a hash collision.
+        let broker_role_groups: Vec<(&RoleGroupName, Option<u16>)> = self
+            .broker_role_group_configs
+            .iter()
+            .map(|(role_group_name, rg)| (role_group_name, rg.replicas))
+            .collect();
+        let controller_role_groups: Vec<(&RoleGroupName, Option<u16>)> = self
+            .controller_role_group_configs
+            .iter()
+            .map(|(role_group_name, rg)| (role_group_name, rg.replicas))
+            .collect();
+        let role_groups = [
+            (KafkaRole::Broker, broker_role_groups),
+            (KafkaRole::Controller, controller_role_groups),
+        ];
+
+        for (role, role_groups) in &role_groups {
+            for (role_group_name, replicas) in role_groups {
+                let role_group_name = *role_group_name;
                 let node_id_hash_offset = node_id_hash32_offset(role, role_group_name.as_ref());
 
                 // The node id hash offset must be unique across the cluster.
@@ -241,8 +269,8 @@ impl ValidatedCluster {
                     let role_group_statefulset_name = resource_names.stateful_set_name();
                     let role_group_service_name = resource_names.headless_service_name();
                     // Pods must be predicted from a concrete count (e.g. for KRaft quorum
-                    // voters), so an unset replica count falls back to 1.
-                    for replica in 0..validated_rg.replicas.unwrap_or(1) {
+                    // voters), so an unset replica count falls back to the default.
+                    for replica in 0..replicas_or_default(*replicas) {
                         pod_descriptors.push(KafkaPodDescriptor {
                             namespace: self.namespace.clone(),
                             role_group_service_name: role_group_service_name.clone(),
@@ -427,19 +455,44 @@ impl Resource for ValidatedCluster {
     }
 }
 
-/// The validated, merged per-role-group config.
+/// A broker role group's validated config: the fields of the merged
+/// [`BrokerConfig`](crate::crd::role::broker::BrokerConfig) that the build step reads, with the
+/// logging validated and the values the merge always sets unwrapped.
 #[derive(Clone, Debug, PartialEq)]
-pub struct ValidatedKafkaConfig {
-    pub config: AnyConfig,
-    /// Validated logging configuration (derived from `config.logging` during validation).
+pub struct ValidatedBrokerConfig {
+    pub resources: Resources<Storage, NoRuntimeLimits>,
     pub logging: validate::ValidatedLogging,
+    pub affinity: StackableAffinity,
+    pub graceful_shutdown_timeout: Duration,
+    pub requested_secret_lifetime: Duration,
+    pub bootstrap_listener_class: ListenerClassName,
+    pub broker_listener_class: ListenerClassName,
 }
 
-/// A validated, merged Kafka role-group config.
-pub type ValidatedRoleGroupConfig = stackable_operator::v2::role_utils::RoleGroupConfig<
-    ValidatedKafkaConfig,
-    stackable_operator::v2::role_utils::JavaCommonConfig,
-    AnyConfigOverrides,
+/// A controller role group's validated config: the fields of the merged
+/// [`ControllerConfig`](crate::crd::role::controller::ControllerConfig) that the build step
+/// reads, with the logging validated and the values the merge always sets unwrapped.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ValidatedControllerConfig {
+    pub resources: Resources<Storage, NoRuntimeLimits>,
+    pub logging: validate::ValidatedLogging,
+    pub affinity: StackableAffinity,
+    pub graceful_shutdown_timeout: Duration,
+    pub requested_secret_lifetime: Duration,
+}
+
+/// The [`RoleGroupConfig`](role_utils::RoleGroupConfig) of one broker role group.
+pub type BrokerRoleGroupConfig = role_utils::RoleGroupConfig<
+    ValidatedBrokerConfig,
+    role_utils::JavaCommonConfig,
+    v1alpha1::KafkaBrokerConfigOverrides,
+>;
+
+/// The [`RoleGroupConfig`](role_utils::RoleGroupConfig) of one controller role group.
+pub type ControllerRoleGroupConfig = role_utils::RoleGroupConfig<
+    ValidatedControllerConfig,
+    role_utils::JavaCommonConfig,
+    v1alpha1::KafkaControllerConfigOverrides,
 >;
 
 pub struct Ctx {
@@ -582,10 +635,13 @@ pub(crate) mod test_support {
     };
 
     use super::{
-        ValidatedCluster, dereference::DereferencedObjects, security::ValidatedKafkaSecurity,
-        validate::validate,
+        BrokerRoleGroupConfig, ControllerRoleGroupConfig, ValidatedCluster,
+        dereference::DereferencedObjects, security::ValidatedKafkaSecurity, validate::validate,
     };
-    use crate::crd::{authentication::ResolvedAuthenticationClasses, v1alpha1};
+    use crate::crd::{
+        authentication::ResolvedAuthenticationClasses, authorization::KafkaAuthorizationConfig,
+        v1alpha1,
+    };
 
     pub const OPERATOR_IMAGE: &str = "oci.stackable.tech/sdp/kafka-operator:0.0.0-dev";
 
@@ -767,6 +823,49 @@ pub(crate) mod test_support {
         validate_err(kafka).expect("validate should succeed for the test fixture")
     }
 
+    /// The validated config of the named broker role group.
+    pub fn broker_role_group_config<'a>(
+        cluster: &'a ValidatedCluster,
+        role_group: &str,
+    ) -> &'a BrokerRoleGroupConfig {
+        cluster
+            .broker_role_group_configs
+            .get(&role_group.parse().expect("valid role group name"))
+            .expect("the broker role group exists")
+    }
+
+    /// The validated config of the named controller role group.
+    pub fn controller_role_group_config<'a>(
+        cluster: &'a ValidatedCluster,
+        role_group: &str,
+    ) -> &'a ControllerRoleGroupConfig {
+        cluster
+            .controller_role_group_configs
+            .get(&role_group.parse().expect("valid role group name"))
+            .expect("the controller role group exists")
+    }
+
+    /// Runs the real validate step with the given dereferenced `AuthenticationClass`es and OPA
+    /// config, for fixtures that exercise the Kerberos, TLS-authentication or OPA paths.
+    pub fn validated_cluster_with_security(
+        kafka: &v1alpha1::KafkaCluster,
+        authentication_classes: Vec<core::v1alpha1::AuthenticationClass>,
+        authorization_config: Option<KafkaAuthorizationConfig>,
+    ) -> ValidatedCluster {
+        validate(
+            kafka,
+            DereferencedObjects {
+                authentication_classes: ResolvedAuthenticationClasses::new(authentication_classes),
+                authorization_config,
+                kubernetes_cluster_info: cluster_info(),
+                bootstrap_listeners: Vec::new(),
+            },
+            &operator_environment(),
+            Some(OPERATOR_IMAGE),
+        )
+        .expect("validate should succeed for the test fixture")
+    }
+
     /// Runs the real validate step against a minimal (auth/OPA-free) fixture, without unwrapping
     /// the result. Used for tests asserting on a specific validation failure.
     pub fn validate_err(
@@ -861,6 +960,65 @@ mod tests {
                 assert_eq!(colliding_role, KafkaRole::Broker);
             }
             other => panic!("expected a node-id hash collision error, got {other:?}"),
+        }
+    }
+
+    /// The predicted pods follow the StatefulSet's replica count: a role group scaled to zero
+    /// predicts no pods, and one without a replica count predicts `DEFAULT_REPLICAS` pods, as
+    /// Kubernetes runs for `replicas: null`. Each descriptor carries the role group's StatefulSet
+    /// name and the pod's index, from which its pod name (`<statefulset>-<index>`, the name
+    /// Kubernetes gives the pod) is rendered.
+    #[test]
+    fn pod_descriptors_follow_the_replica_count() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  unset: {}
+                  stopped:
+                    replicas: 0
+                  three:
+                    replicas: 3
+            "#,
+        );
+        let validated = validated_cluster(&kafka);
+        let descriptors = validated
+            .pod_descriptors(None)
+            .expect("non-colliding role groups must not error");
+
+        for (role_group, expected_replicas) in [
+            ("unset", super::DEFAULT_REPLICAS),
+            ("stopped", 0),
+            ("three", 3),
+        ] {
+            let stateful_set_name = validated
+                .role_group_resource_names(
+                    &KafkaRole::Broker,
+                    &role_group.parse().expect("valid role group name"),
+                )
+                .stateful_set_name()
+                .to_string();
+            let replicas: Vec<u16> = descriptors
+                .iter()
+                .filter(|d| d.role_group_statefulset_name.to_string() == stateful_set_name)
+                .map(|d| d.replica)
+                .collect();
+            assert_eq!(
+                replicas,
+                (0..expected_replicas).collect::<Vec<_>>(),
+                "{role_group}: one descriptor per pod, indexed from 0"
+            );
         }
     }
 

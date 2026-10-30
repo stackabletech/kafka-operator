@@ -7,13 +7,9 @@ use std::{collections::BTreeMap, str::FromStr};
 
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    builder::{
-        self,
-        pod::{
-            PodBuilder,
-            container::ContainerBuilder,
-            volume::{SecretFormat, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
-        },
+    builder::pod::{
+        container::ContainerBuilder,
+        volume::{SecretFormat, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
     },
     commons::secret_class::SecretClassVolumeProvisionParts,
     constant,
@@ -40,7 +36,7 @@ const INTER_BROKER_LISTENER_NAME: &str = "inter.broker.listener.name";
 const KEYSTORE_P12_FILE_NAME: &str = "keystore.p12";
 const OPA_TLS_MOUNT_PATH: &str = "/stackable/tls-opa";
 // opa
-constant!(OPA_TLS_VOLUME_NAME: VolumeName = "tls-opa");
+constant!(pub(crate) OPA_TLS_VOLUME_NAME: VolumeName = "tls-opa");
 const SSL_STORE_PASSWORD: &str = "";
 const SSL_STORE_TYPE_PKCS12: &str = "PKCS12";
 const SSL_CLIENT_AUTH_REQUIRED: &str = "required";
@@ -57,10 +53,10 @@ const PROPERTY_SASL_JAAS_CONFIG: &str = "sasl.jaas.config";
 pub(crate) const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &str = "/stackable/tls-kafka-internal";
 constant!(pub(crate) STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME: VolumeName = "tls-kafka-internal");
 const STACKABLE_TLS_KAFKA_SERVER_DIR: &str = "/stackable/tls-kafka-server";
-constant!(STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME: VolumeName = "tls-kafka-server");
+constant!(pub(crate) STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME: VolumeName = "tls-kafka-server");
 // directories
 const STACKABLE_TLS_KCAT_DIR: &str = "/stackable/tls-kcat";
-constant!(STACKABLE_TLS_KCAT_VOLUME_NAME: VolumeName = "tls-kcat");
+constant!(pub(crate) STACKABLE_TLS_KCAT_VOLUME_NAME: VolumeName = "tls-kcat");
 const TRUSTSTORE_P12_FILE_NAME: &str = "truststore.p12";
 
 #[derive(Snafu, Debug)]
@@ -69,9 +65,6 @@ pub enum Error {
     SecretVolumeBuild {
         source: stackable_operator::builder::pod::volume::SecretOperatorVolumeSourceBuilderError,
     },
-
-    #[snafu(display("failed to add needed volume"))]
-    AddVolume { source: builder::pod::Error },
 
     #[snafu(display("failed to build OPA TLS certificate volume"))]
     OpaTlsCertSecretClassVolumeBuild {
@@ -207,17 +200,17 @@ pub fn client_properties(security: &ValidatedKafkaSecurity) -> Vec<(String, Opti
 /// Client-side (unprefixed `security.protocol`/`ssl.*`) properties for an admin CLI tool
 /// (e.g. `kafka-metadata-quorum.sh`) talking to the CONTROLLER listener from *inside* a
 /// controller pod, over the `tls-kafka-internal` volume mounted by
-/// `add_controller_volume_and_volume_mounts`.
+/// `mount_controller_tls_volume`.
 /// When Kerberos is enabled the CONTROLLER listener is `SASL_SSL` (see
 /// [`get_kafka_listener_config`][glc]), so these calls must authenticate with GSSAPI. They do
 /// so as the controller's *own* pod principal, from the pod-scoped keytab mounted by
-/// [`add_kerberos_pod_config`][akpc] — the correct identity for a voter registering itself.
+/// [`mount_controller_kerberos_volume`] — the correct identity for a voter registering itself.
 ///
 /// The principal contains `${env:…}` placeholders, so the rendered file must be passed
 /// through `config-utils template` before use; see [`quorum_manager_container_command`][qmcc].
 ///
 /// [glc]: crate::controller::build::properties::listener::get_kafka_listener_config
-/// [akpc]: crate::controller::build::kerberos::add_kerberos_pod_config
+/// [`mount_controller_kerberos_volume`]: crate::controller::build::kerberos::mount_controller_kerberos_volume
 /// [qmcc]: crate::controller::build::command::quorum_manager_container_command
 pub fn controller_admin_client_properties(
     security: &ValidatedKafkaSecurity,
@@ -262,41 +255,38 @@ pub fn controller_admin_client_properties(
     properties
 }
 
-/// Adds required volumes and volume mounts to the broker pod and container builders
-/// depending on the tls and authentication settings.
+/// Adds the volume mounts the tls and authentication settings require to the broker's container
+/// builder and returns the pod volumes they mount, in pod order.
 ///
 /// # Panics
 ///
 /// Panics if the volume mounts cannot be added to the container builders. Only call this on
 /// container builders whose mount paths are still distinct from the ones added here.
-pub fn add_broker_volume_and_volume_mounts(
+pub fn mount_broker_tls_volumes(
     security: &ValidatedKafkaSecurity,
-    pod_builder: &mut PodBuilder,
     cb_kafka: &mut ContainerBuilder,
     requested_secret_lifetime: &Duration,
-) -> Result<(), Error> {
+) -> Result<Vec<Volume>, Error> {
+    let mut volumes = Vec::new();
+
     // add tls (server or client authentication volumes) if required
     if let Some(tls_server_secret_class) = security.tls_secret_class() {
         // We have to mount tls pem files for kcat's readiness-probe command (the mount can be
         // used directly)
-        pod_builder
-            .add_volume(create_kcat_tls_volume(
-                &STACKABLE_TLS_KCAT_VOLUME_NAME,
-                tls_server_secret_class,
-                requested_secret_lifetime,
-            )?)
-            .context(AddVolumeSnafu)?;
+        volumes.push(create_kcat_tls_volume(
+            &STACKABLE_TLS_KCAT_VOLUME_NAME,
+            tls_server_secret_class,
+            requested_secret_lifetime,
+        )?);
         cb_kafka
             .add_volume_mount(&*STACKABLE_TLS_KCAT_VOLUME_NAME, STACKABLE_TLS_KCAT_DIR)
             .expect("The mount paths are statically defined and there should be no duplicates.");
         // Keystores fore the kafka container
-        pod_builder
-            .add_volume(create_tls_keystore_volume(
-                &STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
-                tls_server_secret_class,
-                requested_secret_lifetime,
-            )?)
-            .context(AddVolumeSnafu)?;
+        volumes.push(create_tls_keystore_volume(
+            &STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
+            tls_server_secret_class,
+            requested_secret_lifetime,
+        )?);
         cb_kafka
             .add_volume_mount(
                 &*STACKABLE_TLS_KAFKA_SERVER_VOLUME_NAME,
@@ -305,13 +295,11 @@ pub fn add_broker_volume_and_volume_mounts(
             .expect("The mount paths are statically defined and there should be no duplicates.");
     }
 
-    pod_builder
-        .add_volume(create_tls_keystore_volume(
-            &STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
-            security.tls_internal_secret_class(),
-            requested_secret_lifetime,
-        )?)
-        .context(AddVolumeSnafu)?;
+    volumes.push(create_tls_keystore_volume(
+        &STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
+        security.tls_internal_secret_class(),
+        requested_secret_lifetime,
+    )?);
     cb_kafka
         .add_volume_mount(
             &*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
@@ -324,59 +312,52 @@ pub fn add_broker_volume_and_volume_mounts(
             .add_volume_mount(&*OPA_TLS_VOLUME_NAME, OPA_TLS_MOUNT_PATH)
             .expect("The mount paths are statically defined and there should be no duplicates.");
 
-        pod_builder
-            .add_volume(
-                VolumeBuilder::new(&*OPA_TLS_VOLUME_NAME)
-                    .ephemeral(
-                        SecretOperatorVolumeSourceBuilder::new(
-                            secret_class,
-                            // Only the truststore is required to connect to OPA.
-                            SecretClassVolumeProvisionParts::Public,
-                        )
-                        .build()
-                        .context(OpaTlsCertSecretClassVolumeBuildSnafu)?,
+        volumes.push(
+            VolumeBuilder::new(&*OPA_TLS_VOLUME_NAME)
+                .ephemeral(
+                    SecretOperatorVolumeSourceBuilder::new(
+                        secret_class,
+                        // Only the truststore is required to connect to OPA.
+                        SecretClassVolumeProvisionParts::Public,
                     )
-                    .build(),
-            )
-            .context(AddVolumeSnafu)?;
+                    .build()
+                    .context(OpaTlsCertSecretClassVolumeBuildSnafu)?,
+                )
+                .build(),
+        );
     }
 
-    Ok(())
+    Ok(volumes)
 }
 
-/// Adds required volumes and volume mounts to the controller pod and container builders
-/// depending on the tls and authentication settings.
+/// Adds the internal TLS volume mount to the controller's container builder and returns the pod
+/// volume it mounts.
 ///
 /// # Panics
 ///
 /// Panics if the volume mounts cannot be added to the container builder. Only call this on a
 /// container builder whose mount paths are still distinct from the ones added here.
-pub fn add_controller_volume_and_volume_mounts(
+pub fn mount_controller_tls_volume(
     security: &ValidatedKafkaSecurity,
-    pod_builder: &mut PodBuilder,
     cb_kafka: &mut ContainerBuilder,
     requested_secret_lifetime: &Duration,
-) -> Result<(), Error> {
-    pod_builder
-        .add_volume(
-            VolumeBuilder::new(&*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME)
-                .ephemeral(
-                    SecretOperatorVolumeSourceBuilder::new(
-                        security.tls_internal_secret_class(),
-                        // Kafka needs both the public certificate and the private key for
-                        // the internal communication.
-                        SecretClassVolumeProvisionParts::PublicPrivate,
-                    )
-                    .with_pod_scope()
-                    .with_format(SecretFormat::TlsPkcs12)
-                    .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
-                    .with_auto_tls_cert_domain_components_in_subject_dn(true)
-                    .build()
-                    .context(SecretVolumeBuildSnafu)?,
-                )
-                .build(),
+) -> Result<Volume, Error> {
+    let volume = VolumeBuilder::new(&*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME)
+        .ephemeral(
+            SecretOperatorVolumeSourceBuilder::new(
+                security.tls_internal_secret_class(),
+                // Kafka needs both the public certificate and the private key for
+                // the internal communication.
+                SecretClassVolumeProvisionParts::PublicPrivate,
+            )
+            .with_pod_scope()
+            .with_format(SecretFormat::TlsPkcs12)
+            .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
+            .with_auto_tls_cert_domain_components_in_subject_dn(true)
+            .build()
+            .context(SecretVolumeBuildSnafu)?,
         )
-        .context(AddVolumeSnafu)?;
+        .build();
     cb_kafka
         .add_volume_mount(
             &*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
@@ -384,7 +365,7 @@ pub fn add_controller_volume_and_volume_mounts(
         )
         .expect("The mount paths are statically defined and there should be no duplicates.");
 
-    Ok(())
+    Ok(volume)
 }
 
 /// Inserts the `listener.<name>.ssl.{keystore,truststore}.{location,password,type}`
@@ -965,7 +946,7 @@ mod tests {
     #[test]
     fn controller_admin_client_properties_always_uses_tls_even_without_external_client_tls() {
         // Internal (broker/controller) TLS is mandatory (`tls_internal_secret_class()` always
-        // returns a SecretClass, defaulting to "tls"), and `add_controller_volume_and_volume_mounts`
+        // returns a SecretClass, defaulting to "tls"), and `mount_controller_tls_volume`
         // unconditionally mounts both the keystore and truststore on controller pods, independent
         // of the external client TLS/authentication settings. So even the "plaintext" fixture
         // (no external client TLS, no client-cert auth) still needs SSL to reach the CONTROLLER
