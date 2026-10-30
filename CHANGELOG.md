@@ -42,11 +42,8 @@ All notable changes to this project will be documented in this file.
   environment variables by name, so an override replaces the operator's value instead of
   producing a duplicated entry whose precedence depended on Kubernetes' duplicate-name
   handling ([#1011]).
-- BREAKING: Remove the `app.kubernetes.io/component` and `app.kubernetes.io/role-group` labels
-  from the resources they don't apply to (previously set to `none` or a placeholder value).
-  Broker StatefulSets created by older operator versions cannot be updated in place: after the
-  operator upgrade, delete each broker StatefulSet so that the operator immediately recreates it
-  with the new labels ([#1011]).
+- Remove the `app.kubernetes.io/component` and `app.kubernetes.io/role-group` labels from the
+  resources they don't apply to ([#1011], [#1052]).
 - Make operations infallible where dependent on static inputs ([#1017]).
 - Internal operator refactoring: build each role group through per-role modules (brokers,
   controllers) and a shared role group builder, with the broker and controller configuration held
@@ -103,6 +100,7 @@ All notable changes to this project will be documented in this file.
 [#1046]: https://github.com/stackabletech/kafka-operator/pull/1046
 [#1047]: https://github.com/stackabletech/kafka-operator/pull/1047
 [#1049]: https://github.com/stackabletech/kafka-operator/pull/1049
+[#1052]: https://github.com/stackabletech/kafka-operator/pull/1052
 
 ## [26.7.0] - 2026-07-21
 

@@ -196,8 +196,7 @@ fn volume_claim_templates(
     role_group_name: &RoleGroupName,
     config: &ValidatedBrokerConfig,
 ) -> Vec<PersistentVolumeClaim> {
-    // Used for PVC templates, which cannot be modified once they are deployed. The version label
-    // is omitted so the labels stay stable across version upgrades.
+    // The PVC templates are immutable once deployed, so their labels must stay stable.
     let unversioned_recommended_labels =
         recommended_labels_for_unversioned_role_group_resources(cluster, &ROLE, role_group_name);
 
