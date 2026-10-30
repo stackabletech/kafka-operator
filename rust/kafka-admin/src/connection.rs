@@ -1,0 +1,574 @@
+//! A connection to a single Kafka broker.
+
+use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc, time::Duration};
+
+use futures::{SinkExt, StreamExt};
+use kafka_protocol::{
+    ResponseError,
+    error::ParseResponseErrorCode,
+    messages::{ApiKey, ApiVersionsRequest, ApiVersionsResponse},
+    protocol::{Request, StrBytes, VersionRange},
+};
+use rustls::{ClientConfig, pki_types::ServerName};
+use snafu::{OptionExt, ResultExt, Snafu, ensure};
+use tokio::{
+    net::TcpStream,
+    time::{error::Elapsed, timeout},
+};
+use tokio_rustls::{TlsConnector, client::TlsStream};
+use tokio_util::{
+    codec::{Framed, LengthDelimitedCodec},
+    either::Either,
+};
+
+use crate::{
+    bootstrap::BrokerAddress,
+    codec::{self, api_key, decode_response, encode_request},
+};
+
+// The defaults of Kafka's Java admin client, in `clients/src/main/java/org/apache/kafka/clients/`:
+// - `socket.connection.setup.timeout.ms`, `DEFAULT_SOCKET_CONNECTION_SETUP_TIMEOUT_MS` in
+//   `CommonClientConfigs.java`
+// - `request.timeout.ms` in `admin/AdminClientConfig.java`
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Admin responses are far smaller, so a larger frame means a broken stream.
+const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
+
+/// The first version with `ClientSoftwareName` and `ClientSoftwareVersion`, see
+/// `clients/src/main/resources/common/message/ApiVersionsRequest.json` in the Kafka repository.
+const API_VERSIONS_VERSION: i16 = 3;
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("failed to connect to {address}"))]
+    Connect {
+        source: io::Error,
+        address: BrokerAddress,
+    },
+
+    #[snafu(display("timed out connecting to {address}"))]
+    ConnectTimeout {
+        source: Elapsed,
+        address: BrokerAddress,
+    },
+
+    #[snafu(display("{host:?} is not a valid TLS server name"))]
+    InvalidServerName { host: String },
+
+    #[snafu(display("failed the TLS handshake with {address}"))]
+    TlsHandshake {
+        source: io::Error,
+        address: BrokerAddress,
+    },
+
+    #[snafu(display("failed to write to the broker"))]
+    Write { source: io::Error },
+
+    #[snafu(display("failed to read from the broker"))]
+    Read { source: io::Error },
+
+    #[snafu(display("the broker closed the connection"))]
+    ConnectionClosed,
+
+    #[snafu(display("timed out waiting for the response to the {api_key:?} request"))]
+    RequestTimeout { source: Elapsed, api_key: ApiKey },
+
+    #[snafu(display("failed to encode or decode a message"))]
+    Codec { source: codec::Error },
+
+    #[snafu(display("the broker returned {error:?} for the {api_key:?} request"))]
+    Kafka {
+        error: ResponseError,
+        api_key: ApiKey,
+    },
+
+    #[snafu(display("the broker does not support the {api_key:?} API"))]
+    UnsupportedApi { api_key: ApiKey },
+
+    #[snafu(display(
+        "the broker supports the versions {broker_versions} of the {api_key:?} API, but not {version}"
+    ))]
+    UnsupportedVersion {
+        api_key: ApiKey,
+        version: i16,
+        broker_versions: VersionRange,
+    },
+}
+
+impl Error {
+    /// Whether the request failed on the socket, so that a new connection may succeed.
+    pub fn is_broken_connection(&self) -> bool {
+        matches!(
+            self,
+            Error::Write { .. } | Error::Read { .. } | Error::ConnectionClosed
+        )
+    }
+}
+
+type Result<T, E = Error> = std::result::Result<T, E>;
+
+/// How to connect to the broker. Paths point to PEM files.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Security {
+    Plaintext,
+    Tls {
+        ca: PathBuf,
+    },
+    MutualTls {
+        ca: PathBuf,
+        certificate: PathBuf,
+        key: PathBuf,
+    },
+}
+
+/// One request at a time. After a failed or cancelled request, the client drops the connection.
+pub(crate) struct Connection {
+    stream: Framed<Either<TcpStream, TlsStream<TcpStream>>, LengthDelimitedCodec>,
+    client_id: String,
+    correlation_id: i32,
+    broker_api_versions: BTreeMap<i16, VersionRange>,
+}
+
+impl Connection {
+    /// Connects to the broker and fetches the API versions it supports. Without a `tls_config`,
+    /// the connection is plaintext.
+    pub(crate) async fn connect(
+        address: &BrokerAddress,
+        tls_config: Option<Arc<ClientConfig>>,
+        client_id: &str,
+    ) -> Result<Self> {
+        let tcp_stream = connect_tcp(address).await?;
+        let stream = match tls_config {
+            None => Either::Left(tcp_stream),
+            Some(config) => Either::Right(tls_handshake(tcp_stream, address, config).await?),
+        };
+
+        let mut connection = Self::new(stream, client_id);
+        let response = connection
+            .send(&api_versions_request(), API_VERSIONS_VERSION)
+            .await?;
+        connection.broker_api_versions = api_versions_result(response)?;
+        Ok(connection)
+    }
+
+    fn new(stream: Either<TcpStream, TlsStream<TcpStream>>, client_id: &str) -> Self {
+        let codec = LengthDelimitedCodec::builder()
+            .length_field_type::<u32>()
+            .max_frame_length(MAX_FRAME_SIZE)
+            .new_codec();
+        Self {
+            stream: Framed::new(stream, codec),
+            client_id: client_id.to_owned(),
+            correlation_id: 0,
+            broker_api_versions: BTreeMap::new(),
+        }
+    }
+
+    /// Whether the broker supports the version of the API of `R`. No request is sent, so the
+    /// connection stays usable after a failed check.
+    pub(crate) fn check_version<R: Request>(&self, version: i16) -> Result<()> {
+        // Each API that is relevant for us has a version that is supported by all of our Kafka versions.
+        // We use these versions and pin them in client.rs.
+        // We will have to add API version negotiation at some point in the future.
+        check_version_in_range(&self.broker_api_versions, api_key::<R>(), version)
+    }
+
+    /// Sends the request with the given version, see [`Self::check_version`].
+    pub(crate) async fn send<R: Request>(
+        &mut self,
+        request: &R,
+        version: i16,
+    ) -> Result<R::Response> {
+        self.correlation_id = self.correlation_id.wrapping_add(1);
+        let frame = encode_request(request, version, self.correlation_id, &self.client_id)
+            .context(CodecSnafu)?;
+
+        let response = timeout(REQUEST_TIMEOUT, async {
+            self.stream.send(frame).await.context(WriteSnafu)?;
+            self.stream
+                .next()
+                .await
+                .context(ConnectionClosedSnafu)?
+                .context(ReadSnafu)
+        })
+        .await
+        .context(RequestTimeoutSnafu {
+            api_key: api_key::<R>(),
+        })??;
+
+        decode_response::<R>(response.freeze(), version, self.correlation_id).context(CodecSnafu)
+    }
+}
+
+async fn connect_tcp(address: &BrokerAddress) -> Result<TcpStream> {
+    timeout(
+        CONNECT_TIMEOUT,
+        TcpStream::connect((address.host.as_str(), address.port)),
+    )
+    .await
+    .context(ConnectTimeoutSnafu {
+        address: address.clone(),
+    })?
+    .context(ConnectSnafu {
+        address: address.clone(),
+    })
+}
+
+fn api_versions_request() -> ApiVersionsRequest {
+    ApiVersionsRequest::default()
+        .with_client_software_name(StrBytes::from_static_str("stackable-kafka-admin"))
+        .with_client_software_version(StrBytes::from_static_str(env!("CARGO_PKG_VERSION")))
+}
+
+fn api_versions_result(response: ApiVersionsResponse) -> Result<BTreeMap<i16, VersionRange>> {
+    if let Some(error) = response.error_code.err() {
+        return KafkaSnafu {
+            error,
+            api_key: ApiKey::ApiVersions,
+        }
+        .fail();
+    }
+
+    Ok(response
+        .api_keys
+        .iter()
+        .map(|api| {
+            (
+                api.api_key,
+                VersionRange {
+                    min: api.min_version,
+                    max: api.max_version,
+                },
+            )
+        })
+        .collect())
+}
+
+fn check_version_in_range(
+    broker_api_versions: &BTreeMap<i16, VersionRange>,
+    api_key: ApiKey,
+    version: i16,
+) -> Result<()> {
+    let broker_versions = broker_api_versions
+        .get(&(api_key as i16))
+        .context(UnsupportedApiSnafu { api_key })?;
+    ensure!(
+        (broker_versions.min..=broker_versions.max).contains(&version),
+        UnsupportedVersionSnafu {
+            api_key,
+            version,
+            broker_versions: *broker_versions,
+        }
+    );
+    Ok(())
+}
+
+async fn tls_handshake(
+    tcp_stream: TcpStream,
+    address: &BrokerAddress,
+    config: Arc<ClientConfig>,
+) -> Result<TlsStream<TcpStream>> {
+    let host = &address.host;
+    let server_name = ServerName::try_from(host.clone())
+        .ok()
+        .context(InvalidServerNameSnafu { host })?;
+    timeout(
+        CONNECT_TIMEOUT,
+        TlsConnector::from(config).connect(server_name, tcp_stream),
+    )
+    .await
+    .context(ConnectTimeoutSnafu {
+        address: address.clone(),
+    })?
+    .context(TlsHandshakeSnafu {
+        address: address.clone(),
+    })
+}
+
+/// A mock Kafka broker for tests, speaking the wire protocol over a local TCP socket.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use bytes::{BufMut, Bytes, BytesMut};
+    use kafka_protocol::{
+        messages::{
+            ApiVersionsRequest, ApiVersionsResponse, RequestHeader, ResponseHeader,
+            api_versions_response::ApiVersion,
+        },
+        protocol::{Encodable, HeaderVersion, Request, decode_request_header_from_buffer},
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::{TcpListener, TcpStream},
+    };
+
+    use super::API_VERSIONS_VERSION;
+
+    pub(crate) async fn listen() -> (TcpListener, u16) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("the mock broker should be able to listen");
+        let port = listener
+            .local_addr()
+            .expect("the mock broker should have an address")
+            .port();
+        (listener, port)
+    }
+
+    /// Accepts a connection and answers its ApiVersions request with the given
+    /// `(api_key, min_version, max_version)` ranges.
+    pub(crate) async fn accept(listener: &TcpListener, apis: &[(i16, i16, i16)]) -> TcpStream {
+        let (mut broker, _) = listener
+            .accept()
+            .await
+            .expect("the mock broker should accept the connection");
+        let (request, _) = read_request(&mut broker).await;
+        assert_eq!(ApiVersionsRequest::KEY, request.request_api_key);
+        assert_eq!(API_VERSIONS_VERSION, request.request_api_version);
+        write_response(
+            &mut broker,
+            &request,
+            request.correlation_id,
+            api_versions_response(apis),
+        )
+        .await;
+        broker
+    }
+
+    pub(crate) async fn read_request(broker: &mut TcpStream) -> (RequestHeader, Bytes) {
+        let size = broker
+            .read_i32()
+            .await
+            .expect("the request size should be readable");
+        let mut frame = vec![0; size as usize];
+        broker
+            .read_exact(&mut frame)
+            .await
+            .expect("the request should be readable");
+        let mut frame = Bytes::from(frame);
+        let header = decode_request_header_from_buffer(&mut frame)
+            .expect("the request header should be decodable");
+        (header, frame)
+    }
+
+    pub(crate) async fn read_request_body<R: Request>(
+        broker: &mut TcpStream,
+    ) -> (RequestHeader, R) {
+        let (header, mut body) = read_request(broker).await;
+        assert_eq!(R::KEY, header.request_api_key);
+        let request = R::decode(&mut body, header.request_api_version)
+            .expect("the request should be decodable");
+        (header, request)
+    }
+
+    pub(crate) async fn write_response<M: Encodable + HeaderVersion>(
+        broker: &mut TcpStream,
+        request: &RequestHeader,
+        correlation_id: i32,
+        response: M,
+    ) {
+        let mut body = BytesMut::new();
+        ResponseHeader::default()
+            .with_correlation_id(correlation_id)
+            .encode(&mut body, M::header_version(request.request_api_version))
+            .expect("the response header should be encodable");
+        response
+            .encode(&mut body, request.request_api_version)
+            .expect("the response should be encodable");
+        let mut frame = BytesMut::new();
+        frame.put_i32(body.len() as i32);
+        frame.extend_from_slice(&body);
+        broker
+            .write_all(&frame)
+            .await
+            .expect("the response should be writable");
+    }
+
+    pub(crate) fn api_versions_response(apis: &[(i16, i16, i16)]) -> ApiVersionsResponse {
+        ApiVersionsResponse::default().with_api_keys(
+            apis.iter()
+                .map(|(api_key, min_version, max_version)| {
+                    ApiVersion::default()
+                        .with_api_key(*api_key)
+                        .with_min_version(*min_version)
+                        .with_max_version(*max_version)
+                })
+                .collect(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use kafka_protocol::messages::{MetadataRequest, MetadataResponse};
+    use tokio::io::AsyncWriteExt;
+
+    use super::{
+        test_support::{accept, api_versions_response, listen, read_request, write_response},
+        *,
+    };
+
+    /// Connects to a mock broker supporting Metadata versions 0 to 13.
+    async fn connect() -> (Connection, TcpStream) {
+        let (listener, port) = listen().await;
+        let address = BrokerAddress {
+            host: "127.0.0.1".to_owned(),
+            port,
+        };
+        let (connection, broker) = tokio::join!(
+            Connection::connect(&address, None, "test"),
+            accept(&listener, &[(MetadataRequest::KEY, 0, 13)])
+        );
+        (connection.expect("the connection should succeed"), broker)
+    }
+
+    #[test]
+    fn read_api_versions() {
+        let response = api_versions_response(&[(MetadataRequest::KEY, 0, 13)]);
+
+        assert_eq!(
+            BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 13 })]),
+            api_versions_result(response).expect("the API versions should be valid")
+        );
+    }
+
+    #[test]
+    fn reject_api_versions_with_error() {
+        let response = ApiVersionsResponse::default()
+            .with_error_code(ResponseError::UnsupportedVersion.code());
+
+        let error = api_versions_result(response).expect_err("the response should be rejected");
+
+        assert!(matches!(
+            error,
+            Error::Kafka {
+                error: ResponseError::UnsupportedVersion,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn accept_supported_version() {
+        let broker_api_versions =
+            BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 13 })]);
+
+        check_version_in_range(&broker_api_versions, ApiKey::Metadata, 12)
+            .expect("the version should be supported");
+    }
+
+    #[test]
+    fn reject_api_unknown_to_the_broker() {
+        let error = check_version_in_range(&BTreeMap::new(), ApiKey::Metadata, 12)
+            .expect_err("the API should be unsupported");
+
+        assert!(matches!(
+            error,
+            Error::UnsupportedApi {
+                api_key: ApiKey::Metadata
+            }
+        ));
+    }
+
+    #[test]
+    fn reject_version_unsupported_by_the_broker() {
+        let broker_api_versions =
+            BTreeMap::from([(MetadataRequest::KEY, VersionRange { min: 0, max: 9 })]);
+
+        let error = check_version_in_range(&broker_api_versions, ApiKey::Metadata, 12)
+            .expect_err("the version should be unsupported");
+
+        assert!(matches!(
+            error,
+            Error::UnsupportedVersion { version: 12, .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn send_request_and_receive_response() {
+        let (mut connection, mut broker) = connect().await;
+
+        let broker_side = async {
+            let (request, _) = read_request(&mut broker).await;
+            assert_eq!(MetadataRequest::KEY, request.request_api_key);
+            assert_eq!(12, request.request_api_version);
+            write_response(
+                &mut broker,
+                &request,
+                request.correlation_id,
+                MetadataResponse::default().with_controller_id(2.into()),
+            )
+            .await;
+        };
+        let request = MetadataRequest::default();
+        let (response, ()) = tokio::join!(connection.send(&request, 12), broker_side);
+
+        assert_eq!(
+            2,
+            *response.expect("the request should succeed").controller_id
+        );
+    }
+
+    #[tokio::test]
+    async fn reject_response_with_other_correlation_id() {
+        let (mut connection, mut broker) = connect().await;
+
+        let broker_side = async {
+            let (request, _) = read_request(&mut broker).await;
+            write_response(
+                &mut broker,
+                &request,
+                request.correlation_id + 1,
+                MetadataResponse::default(),
+            )
+            .await;
+        };
+        let request = MetadataRequest::default();
+        let (response, ()) = tokio::join!(connection.send(&request, 12), broker_side);
+
+        assert!(matches!(
+            response.expect_err("the correlation id should not match"),
+            Error::Codec {
+                source: codec::Error::CorrelationIdMismatch { .. }
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn reject_invalid_frame_size() {
+        let (mut connection, mut broker) = connect().await;
+
+        let broker_side = async {
+            read_request(&mut broker).await;
+            broker
+                .write_i32(-1)
+                .await
+                .expect("the frame size should be writable");
+        };
+        let request = MetadataRequest::default();
+        let (response, ()) = tokio::join!(connection.send(&request, 12), broker_side);
+
+        assert!(matches!(
+            response.expect_err("the frame size should be invalid"),
+            Error::Read { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn time_out_without_response() {
+        let (mut connection, mut broker) = connect().await;
+        tokio::time::pause();
+
+        let broker_side = async {
+            read_request(&mut broker).await;
+        };
+        let request = MetadataRequest::default();
+        let (response, ()) = tokio::join!(connection.send(&request, 12), broker_side);
+
+        assert!(matches!(
+            response.expect_err("the request should time out"),
+            Error::RequestTimeout { .. }
+        ));
+    }
+}
