@@ -318,15 +318,11 @@ const PRE_STOP_MAX_DEADLINE_SECONDS: u64 = 120;
 /// The wall-clock budget (seconds) [`controller_remove_self_pre_stop_command`] retries voter removal
 /// for, derived from the pod's actual `gracefulShutdownTimeout` rather than a single fixed
 /// constant.
-fn pre_stop_deadline_seconds(graceful_shutdown_timeout: Option<Duration>) -> u64 {
-    graceful_shutdown_timeout
-        .map(|timeout| {
-            let secs = timeout.as_secs();
-            secs.saturating_sub(PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS)
-                .clamp(PRE_STOP_MIN_DEADLINE_SECONDS, PRE_STOP_MAX_DEADLINE_SECONDS)
-                .min(secs) // never outlive the grace period itself
-        })
-        .unwrap_or(PRE_STOP_MIN_DEADLINE_SECONDS)
+fn pre_stop_deadline_seconds(graceful_shutdown_timeout: Duration) -> u64 {
+    let secs = graceful_shutdown_timeout.as_secs();
+    secs.saturating_sub(PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS)
+        .clamp(PRE_STOP_MIN_DEADLINE_SECONDS, PRE_STOP_MAX_DEADLINE_SECONDS)
+        .min(secs) // never outlive the grace period itself
 }
 
 /// Pause (seconds) between two voter-removal attempts inside the `preStop` script's retry
@@ -364,9 +360,7 @@ fn strip_shell_comments(script: &str) -> String {
 /// [`CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT`] its inputs; the logic, and the reasoning behind
 /// it, lives in that script (whose maintenance comments [`strip_shell_comments`] drops on
 /// the way in).
-pub fn controller_remove_self_pre_stop_command(
-    graceful_shutdown_timeout: Option<Duration>,
-) -> String {
+pub fn controller_remove_self_pre_stop_command(graceful_shutdown_timeout: Duration) -> String {
     formatdoc! {"
         set -uo pipefail
         {derive_pod_index}
@@ -786,7 +780,7 @@ mod tests {
     /// assigned by the generated command.
     #[test]
     fn generated_pre_stop_command_defines_every_input_the_script_requires() {
-        let command = controller_remove_self_pre_stop_command(None);
+        let command = controller_remove_self_pre_stop_command(Duration::from_minutes_unchecked(30));
         let required_inputs: Vec<&str> = CONTROLLER_REMOVE_SELF_PRE_STOP_SCRIPT
             .lines()
             .filter_map(|line| line.trim().strip_prefix(r#": "${"#))
@@ -811,32 +805,25 @@ mod tests {
     /// documented floor/cap regardless of how short or long that timeout is.
     #[test]
     fn pre_stop_deadline_seconds_is_derived_from_graceful_shutdown_timeout_within_floor_and_cap() {
-        // No configured timeout (shouldn't happen in practice) falls back to the floor.
-        assert_eq!(
-            pre_stop_deadline_seconds(None),
-            PRE_STOP_MIN_DEADLINE_SECONDS
-        );
-
         // A short timeout (shorter than the reserved buffer) still gets at least the floor.
-        assert_eq!(pre_stop_deadline_seconds(Some(Duration::from_secs(10))), 10);
+        assert_eq!(pre_stop_deadline_seconds(Duration::from_secs(10)), 10);
 
         // A generous timeout (the operator's own 30-minute default) is capped, not handed the
         // entire budget minus the reserve.
         assert_eq!(
-            pre_stop_deadline_seconds(Some(Duration::from_minutes_unchecked(30))),
+            pre_stop_deadline_seconds(Duration::from_minutes_unchecked(30)),
             PRE_STOP_MAX_DEADLINE_SECONDS
         );
 
         // A timeout comfortably between the floor and the cap (once the reserve is subtracted)
         // is used as-is.
         assert_eq!(
-            pre_stop_deadline_seconds(Some(Duration::from_secs(90))),
+            pre_stop_deadline_seconds(Duration::from_secs(90)),
             90 - PRE_STOP_RESERVED_FOR_KAFKA_SHUTDOWN_SECONDS
         );
 
         // ...and the generated script is handed that value, rather than a literal.
-        let command =
-            controller_remove_self_pre_stop_command(Some(Duration::from_minutes_unchecked(30)));
+        let command = controller_remove_self_pre_stop_command(Duration::from_minutes_unchecked(30));
         assert!(command.contains(&format!(
             "REMOVAL_DEADLINE_SECONDS={PRE_STOP_MAX_DEADLINE_SECONDS}"
         )));

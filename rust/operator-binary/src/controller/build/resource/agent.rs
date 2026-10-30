@@ -196,10 +196,8 @@ fn agent_env_vars(cluster: &ValidatedCluster, agent_config: &ValidatedAgentConfi
 fn bootstrap_servers(cluster: &ValidatedCluster) -> String {
     let client_port = cluster.cluster_config.kafka_security.client_port();
     cluster
-        .role_group_configs
-        .get(&KafkaRole::Broker)
-        .into_iter()
-        .flat_map(|role_group_configs| role_group_configs.keys())
+        .broker_role_group_configs
+        .keys()
         .map(|role_group_name| {
             headless_service_address(
                 &cluster

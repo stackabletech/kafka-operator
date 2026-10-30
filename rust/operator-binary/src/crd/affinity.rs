@@ -57,7 +57,10 @@ mod tests {
     };
 
     use crate::{
-        controller::test_support::{minimal_kafka, validated_cluster},
+        controller::test_support::{
+            broker_role_group_config, controller_role_group_config, minimal_kafka,
+            validated_cluster,
+        },
         crd::KafkaRole,
     };
 
@@ -93,15 +96,21 @@ mod tests {
 
         let kafka = minimal_kafka(input);
         let validated = validated_cluster(&kafka);
-        let merged_config = validated
-            .role_group_configs
-            .get(&role)
-            .and_then(|groups| groups.get(&"default".parse().unwrap()))
-            .map(|rg| &rg.config.config)
-            .expect("role group should exist");
+        let affinity = match role {
+            KafkaRole::Broker => {
+                &broker_role_group_config(&validated, "default")
+                    .config
+                    .affinity
+            }
+            KafkaRole::Controller => {
+                &controller_role_group_config(&validated, "default")
+                    .config
+                    .affinity
+            }
+        };
 
         assert_eq!(
-            merged_config.affinity,
+            *affinity,
             StackableAffinity {
                 pod_affinity: match role {
                     // Only brokers are configured with the OPA authorizer.
