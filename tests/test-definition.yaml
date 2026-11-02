@@ -38,16 +38,16 @@ dimensions:
       - 4.3.1
   - name: use-client-tls
     values:
-      - "true"
       - "false"
+      - "true"
   - name: use-client-auth-tls
     values:
-      - "true"
       - "false"
+      - "true"
   - name: use-opa-tls
     values:
-      - "true"
       - "false"
+      - "true"
   - name: openshift
     values:
       - "false"
