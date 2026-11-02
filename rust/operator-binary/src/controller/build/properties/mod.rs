@@ -153,6 +153,25 @@ pub(crate) fn opa_authorizer_properties(
 /// (mTLS), whose subject DN is `CN=generated certificate for pod,DC=<pod>,DC=<service>,
 /// DC=<namespace>,DC=svc,DC=<cluster domain parts>`, see the secret-operator.
 /// With Kerberos, the node principals are mapped to the short name of the service.
+///
+/// # Why the `CN=generated certificate for pod` entry is required
+///
+/// The secret-operator always adds this common name to the subject of the pod certificates,
+/// regardless of whether domain components are added as well. Kafka's default principal for an
+/// mTLS client is the complete subject DN in RFC 2253 notation, which lists the RDNs in reverse
+/// order, so the CN is the last component: `DC=local,...,DC=<pod>,CN=generated certificate for pod`.
+///
+/// Kafka compares each `super.users` entry for exact equality with the principal; there is no
+/// support for wildcards or prefixes (the only wildcard Kafka knows is `User:*` in ACLs, which
+/// matches all users). An entry without the CN, or with a `*` in place of it, therefore never
+/// matches, and the brokers and controllers would be denied access to each other.
+///
+/// This could only be avoided by rewriting the principal with `ssl.principal.mapping.rules`,
+/// which is not done here.
+///
+/// See the Kafka documentation:
+/// - [Authorization and ACLs](https://kafka.apache.org/44/security/authorization-and-acls/)
+/// - [`ssl.principal.mapping.rules`](https://kafka.apache.org/44/security/authorization-and-acls/#customizing-ssl-user-name)
 fn super_users(pod_descriptors: &[KafkaPodDescriptor], kerberos_enabled: bool) -> String {
     let mut principals: BTreeSet<String> = pod_descriptors
         .iter()
