@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 - Brokers now have a default affinity to the OPA Pods when OPA authorization is configured ([#1035]).
 - The OPA authorizer is now also configured on KRaft controllers. Previously, requests that brokers
   forward to the controllers (e.g. creating or deleting topics) were not authorized at all.
-  The Kafka nodes are super users, so that traffic between them does not hit OPA ([#XXX]).
+  The Kafka nodes are super users, so that traffic between them does not hit OPA ([#1051]).
 
 ### Changed
 
@@ -45,12 +45,12 @@ All notable changes to this project will be documented in this file.
   environment variables by name, so an override replaces the operator's value instead of
   producing a duplicated entry whose precedence depended on Kubernetes' duplicate-name
   handling ([#1011]).
-- BREAKING: Remove the `app.kubernetes.io/component` and `app.kubernetes.io/role-group` labels
-  from the resources they don't apply to (previously set to `none` or a placeholder value).
-  Broker StatefulSets created by older operator versions cannot be updated in place: after the
-  operator upgrade, delete each broker StatefulSet so that the operator immediately recreates it
-  with the new labels ([#1011]).
+- Remove the `app.kubernetes.io/component` and `app.kubernetes.io/role-group` labels from the
+  resources they don't apply to ([#1011], [#1052]).
 - Make operations infallible where dependent on static inputs ([#1017]).
+- Internal operator refactoring: build each role group through per-role modules (brokers,
+  controllers) and a shared role group builder, with the broker and controller configuration held
+  in typed fields of the validated cluster ([#1041]).
 - Remove `serde_yaml` ([#1043]).
 - All pods now set `securityContext.seccompProfile.type` to `RuntimeDefault` ([#1043]).
 - Support Vector 0.58.0 ([#1039], [#1044], [#1046]).
@@ -96,13 +96,15 @@ All notable changes to this project will be documented in this file.
 [#1034]: https://github.com/stackabletech/kafka-operator/pull/1034
 [#1035]: https://github.com/stackabletech/kafka-operator/pull/1035
 [#1039]: https://github.com/stackabletech/kafka-operator/pull/1039
+[#1041]: https://github.com/stackabletech/kafka-operator/pull/1041
 [#1042]: https://github.com/stackabletech/kafka-operator/pull/1042
 [#1043]: https://github.com/stackabletech/kafka-operator/pull/1043
 [#1044]: https://github.com/stackabletech/kafka-operator/pull/1044
 [#1046]: https://github.com/stackabletech/kafka-operator/pull/1046
 [#1047]: https://github.com/stackabletech/kafka-operator/pull/1047
 [#1049]: https://github.com/stackabletech/kafka-operator/pull/1049
-[#XXX]: https://github.com/stackabletech/kafka-operator/issues/XXX
+[#1051]: https://github.com/stackabletech/kafka-operator/pull/1051
+[#1052]: https://github.com/stackabletech/kafka-operator/pull/1052
 
 ## [26.7.0] - 2026-07-21
 

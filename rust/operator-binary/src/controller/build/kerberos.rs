@@ -2,19 +2,16 @@ use std::str::FromStr;
 
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    builder::{
-        self,
-        pod::{
-            PodBuilder,
-            container::ContainerBuilder,
-            volume::{
-                SecretOperatorVolumeSourceBuilder, SecretOperatorVolumeSourceBuilderError,
-                VolumeBuilder,
-            },
+    builder::pod::{
+        container::ContainerBuilder,
+        volume::{
+            SecretOperatorVolumeSourceBuilder, SecretOperatorVolumeSourceBuilderError,
+            VolumeBuilder,
         },
     },
     commons::secret_class::SecretClassVolumeProvisionParts,
     constant,
+    k8s_openapi::api::core::v1::Volume,
     v2::{
         builder::pod::container::{EnvVarName, EnvVarSet},
         types::kubernetes::VolumeName,
@@ -37,64 +34,94 @@ pub enum Error {
     KerberosSecretVolume {
         source: SecretOperatorVolumeSourceBuilderError,
     },
-
-    #[snafu(display("failed to add needed volume"))]
-    AddVolume { source: builder::pod::Error },
 }
 
-/// Adds the Kerberos keytab and `krb5.conf` volume to the pod builder and mounts it into the
-/// Kafka and kcat-prober containers, when Kerberos is enabled.
+/// Mounts the Kerberos keytab and `krb5.conf` volume into a broker's `kafka` container and
+/// returns the pod volume, when Kerberos is enabled; `None` otherwise.
+///
+/// Brokers are exposed through listener-operator `Listener` volumes (the broker and bootstrap
+/// listeners), so the keytab's principals must cover both.
 ///
 /// # Panics
 ///
-/// Panics if the volume mounts cannot be added to the container builders. Only call this on
-/// container builders whose mount paths are still distinct from the ones added here.
-pub fn add_kerberos_pod_config(
+/// Panics if the volume mount cannot be added to the container builder. Only call this on a
+/// container builder whose mount paths are still distinct from the ones added here.
+pub fn mount_broker_kerberos_volume(
     kafka_security: &ValidatedKafkaSecurity,
-    role: &KafkaRole,
     cb_kafka: &mut ContainerBuilder,
-    pb: &mut PodBuilder,
-) -> Result<(), Error> {
-    if let Some(kerberos_secret_class) = kafka_security.kerberos_secret_class() {
-        // Mount keytab
-        let mut volume_builder = SecretOperatorVolumeSourceBuilder::new(
-            kerberos_secret_class,
-            // We need both public (krb5.conf) and private (keytab) parts.
-            SecretClassVolumeProvisionParts::PublicPrivate,
-        );
-        match role {
-            // Brokers are exposed through listener-operator `Listener` volumes (the broker
-            // and bootstrap listeners), so the keytab principal must cover both.
-            KafkaRole::Broker => {
-                volume_builder
-                    .with_listener_volume_scope(&*LISTENER_BROKER_VOLUME_NAME)
-                    .with_listener_volume_scope(&*LISTENER_BOOTSTRAP_VOLUME_NAME);
-            }
-            // KRaft controllers have no listener-operator `Listener` volume: they are only
-            // reachable through their own StatefulSet pod DNS name, so the keytab must be
-            // pod-scoped, matching how the controller's internal TLS cert is provisioned in
-            // `add_controller_volume_and_volume_mounts`.
-            KafkaRole::Controller => {
-                volume_builder.with_pod_scope();
-            }
-        }
-        let kerberos_secret_operator_volume = volume_builder
-            .with_kerberos_service_name(role.kerberos_service_name())
-            .build()
-            .context(KerberosSecretVolumeSnafu)?;
-        pb.add_volume(
-            VolumeBuilder::new(&*KERBEROS_VOLUME_NAME)
-                .ephemeral(kerberos_secret_operator_volume)
-                .build(),
-        )
-        .context(AddVolumeSnafu)?;
+) -> Result<Option<Volume>, Error> {
+    let Some(kerberos_secret_class) = kafka_security.kerberos_secret_class() else {
+        return Ok(None);
+    };
+    let mut keytab = keytab_volume_source(&kerberos_secret_class);
+    keytab
+        .with_listener_volume_scope(&*LISTENER_BROKER_VOLUME_NAME)
+        .with_listener_volume_scope(&*LISTENER_BOOTSTRAP_VOLUME_NAME);
+    mount_keytab_volume(
+        &mut keytab,
+        KafkaRole::Broker.kerberos_service_name(),
+        cb_kafka,
+    )
+    .map(Some)
+}
 
-        cb_kafka
-            .add_volume_mount(&*KERBEROS_VOLUME_NAME, STACKABLE_KERBEROS_DIR)
-            .expect("The mount paths are statically defined and there should be no duplicates.");
-    }
+/// Mounts the Kerberos keytab and `krb5.conf` volume into a controller's `kafka` container and
+/// returns the pod volume, when Kerberos is enabled; `None` otherwise.
+///
+/// KRaft controllers have no listener-operator `Listener` volume: they are only reachable through
+/// their own StatefulSet pod DNS name, so the keytab must be pod-scoped, matching how the
+/// controller's internal TLS certificate is provisioned in
+/// [`mount_controller_tls_volume`](super::security::mount_controller_tls_volume).
+///
+/// # Panics
+///
+/// Panics if the volume mount cannot be added to the container builder. Only call this on a
+/// container builder whose mount paths are still distinct from the ones added here.
+pub fn mount_controller_kerberos_volume(
+    kafka_security: &ValidatedKafkaSecurity,
+    cb_kafka: &mut ContainerBuilder,
+) -> Result<Option<Volume>, Error> {
+    let Some(kerberos_secret_class) = kafka_security.kerberos_secret_class() else {
+        return Ok(None);
+    };
+    let mut keytab = keytab_volume_source(&kerberos_secret_class);
+    keytab.with_pod_scope();
+    mount_keytab_volume(
+        &mut keytab,
+        KafkaRole::Controller.kerberos_service_name(),
+        cb_kafka,
+    )
+    .map(Some)
+}
 
-    Ok(())
+/// The secret-operator volume source for the keytab and `krb5.conf`, before it is scoped to the
+/// addresses the role's principals must cover.
+fn keytab_volume_source(kerberos_secret_class: &str) -> SecretOperatorVolumeSourceBuilder {
+    SecretOperatorVolumeSourceBuilder::new(
+        kerberos_secret_class,
+        // We need both public (krb5.conf) and private (keytab) parts.
+        SecretClassVolumeProvisionParts::PublicPrivate,
+    )
+}
+
+/// Builds the scoped `keytab` volume source into the pod volume and mounts it into the `kafka`
+/// container.
+fn mount_keytab_volume(
+    keytab: &mut SecretOperatorVolumeSourceBuilder,
+    kerberos_service_name: &str,
+    cb_kafka: &mut ContainerBuilder,
+) -> Result<Volume, Error> {
+    let kerberos_secret_operator_volume = keytab
+        .with_kerberos_service_name(kerberos_service_name)
+        .build()
+        .context(KerberosSecretVolumeSnafu)?;
+    cb_kafka
+        .add_volume_mount(&*KERBEROS_VOLUME_NAME, STACKABLE_KERBEROS_DIR)
+        .expect("The mount paths are statically defined and there should be no duplicates.");
+
+    Ok(VolumeBuilder::new(&*KERBEROS_VOLUME_NAME)
+        .ephemeral(kerberos_secret_operator_volume)
+        .build())
 }
 
 constant!(pub KRB5_CONFIG: EnvVarName = "KRB5_CONFIG");
