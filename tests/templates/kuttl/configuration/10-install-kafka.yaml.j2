@@ -17,6 +17,7 @@ spec:
 {% endif %}
     pullPolicy: IfNotPresent
   clusterConfig:
+    metadataManager: KRaft
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
   clusterConfig:
     vectorAggregatorConfigMapName: vector-aggregator-discovery
