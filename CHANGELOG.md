@@ -15,7 +15,8 @@ All notable changes to this project will be documented in this file.
 - Brokers now have a default affinity to the OPA Pods when OPA authorization is configured ([#1035]).
 - The OPA authorizer is now also configured on KRaft controllers. Previously, requests that brokers
   forward to the controllers (e.g. creating or deleting topics) were not authorized at all.
-  The Kafka nodes are super users, so that traffic between them does not hit OPA ([#1051]).
+  The Kafka nodes are now configured as super users, so that traffic between them does not hit OPA.
+  Controllers now get the same affinity to OPA as brokers ([#1051]).
 
 ### Changed
 

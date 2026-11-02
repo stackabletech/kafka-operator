@@ -2,9 +2,12 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use stackable_operator::{
-    commons::resources::{
-        CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
-        PvcConfigFragment, Resources, ResourcesFragment,
+    commons::{
+        opa::OpaConfig,
+        resources::{
+            CpuLimitsFragment, MemoryLimitsFragment, NoRuntimeLimits, NoRuntimeLimitsFragment,
+            PvcConfigFragment, Resources, ResourcesFragment,
+        },
     },
     config::{fragment::Fragment, merge::Merge},
     constant,
@@ -78,11 +81,13 @@ pub struct ControllerConfig {
 }
 
 impl ControllerConfig {
-    pub fn default_config(cluster_name: &str, role: &str) -> ControllerConfigFragment {
+    pub fn default_config(
+        cluster_name: &str,
+        role: &str,
+        opa_config: Option<&OpaConfig>,
+    ) -> ControllerConfigFragment {
         ControllerConfigFragment {
-            // Only brokers are configured with the OPA authorizer, so controllers get no affinity
-            // to the OPA Pods.
-            common_config: CommonConfig::default_config(cluster_name, role, None),
+            common_config: CommonConfig::default_config(cluster_name, role, opa_config),
             logging: product_logging::spec::default_logging(),
             resources: ResourcesFragment {
                 cpu: CpuLimitsFragment {

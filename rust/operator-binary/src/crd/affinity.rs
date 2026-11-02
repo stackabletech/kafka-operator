@@ -8,7 +8,8 @@ use stackable_operator::{
 
 use crate::crd::APP_NAME;
 
-/// `opa_config` is only passed for roles that send authorization requests to OPA.
+/// `opa_config` is only passed if OPA authorization is configured. Brokers and controllers
+/// both run the OPA authorizer, so both send authorization requests to OPA.
 pub fn get_affinity(
     cluster_name: &str,
     role: &str,
@@ -112,39 +113,32 @@ mod tests {
         assert_eq!(
             *affinity,
             StackableAffinity {
-                pod_affinity: match role {
-                    // Only brokers are configured with the OPA authorizer.
-                    KafkaRole::Broker => Some(PodAffinity {
-                        preferred_during_scheduling_ignored_during_execution: Some(vec![
-                            WeightedPodAffinityTerm {
-                                pod_affinity_term: PodAffinityTerm {
-                                    label_selector: Some(LabelSelector {
-                                        match_expressions: None,
-                                        match_labels: Some(BTreeMap::from([
-                                            (
-                                                "app.kubernetes.io/name".to_string(),
-                                                "opa".to_string()
-                                            ),
-                                            (
-                                                "app.kubernetes.io/instance".to_string(),
-                                                "simple-opa".to_string(),
-                                            ),
-                                            (
-                                                "app.kubernetes.io/component".to_string(),
-                                                "server".to_string(),
-                                            ),
-                                        ])),
-                                    }),
-                                    topology_key: "kubernetes.io/hostname".to_string(),
-                                    ..PodAffinityTerm::default()
-                                },
-                                weight: 50,
-                            }
-                        ]),
-                        required_during_scheduling_ignored_during_execution: None,
-                    }),
-                    KafkaRole::Controller => None,
-                },
+                pod_affinity: Some(PodAffinity {
+                    preferred_during_scheduling_ignored_during_execution: Some(vec![
+                        WeightedPodAffinityTerm {
+                            pod_affinity_term: PodAffinityTerm {
+                                label_selector: Some(LabelSelector {
+                                    match_expressions: None,
+                                    match_labels: Some(BTreeMap::from([
+                                        ("app.kubernetes.io/name".to_string(), "opa".to_string()),
+                                        (
+                                            "app.kubernetes.io/instance".to_string(),
+                                            "simple-opa".to_string(),
+                                        ),
+                                        (
+                                            "app.kubernetes.io/component".to_string(),
+                                            "server".to_string(),
+                                        ),
+                                    ])),
+                                }),
+                                topology_key: "kubernetes.io/hostname".to_string(),
+                                ..PodAffinityTerm::default()
+                            },
+                            weight: 50,
+                        }
+                    ]),
+                    required_during_scheduling_ignored_during_execution: None,
+                }),
                 pod_anti_affinity: Some(PodAntiAffinity {
                     preferred_during_scheduling_ignored_during_execution: Some(vec![
                         WeightedPodAffinityTerm {
