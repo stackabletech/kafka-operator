@@ -339,7 +339,9 @@ pub fn mount_broker_tls_volumes(
         )
         .expect("The mount paths are statically defined and there should be no duplicates.");
 
-    volumes.extend(mount_opa_tls_volume(security, cb_kafka)?);
+    if let Some(opa_tls_volume) = mount_opa_tls_volume(security, cb_kafka)? {
+        volumes.push(opa_tls_volume);
+    }
 
     Ok(volumes)
 }
