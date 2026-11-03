@@ -6,7 +6,7 @@ use crate::{
         ValidatedClusterConfig,
         build::{
             graceful_shutdown::graceful_shutdown_config_properties,
-            security::{SSL_CLIENT_AUTH_REQUIRED, controller_config_settings},
+            security::controller_config_settings,
         },
     },
     crd::{
@@ -74,18 +74,10 @@ pub fn build(
     }
 
     result.extend(opa_authorizer_properties(cluster_config, pod_descriptors));
-    if cluster_config.opa_connect().is_some()
-        && !cluster_config.kafka_security.has_kerberos_enabled()
-    {
-        // The nodes are identified as super users by the subject of their internal certificate.
-        // Without client authentication, the principal on the CONTROLLER listener is ANONYMOUS.
-        // With Kerberos, the principal is derived from the SASL authentication instead.
-        result.insert(
-            KafkaListenerName::Controller.listener_ssl_client_auth(),
-            SSL_CLIENT_AUTH_REQUIRED.to_string(),
-        );
-    }
-    result.extend(controller_config_settings(&cluster_config.kafka_security));
+    result.extend(controller_config_settings(
+        &cluster_config.kafka_security,
+        cluster_config.opa_connect().is_some(),
+    ));
     result.extend(graceful_shutdown_config_properties());
     result.extend(overrides);
 

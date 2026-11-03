@@ -560,7 +560,10 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
 
 /// Returns required Kafka configuration settings for the `controller.properties` file
 /// depending on the tls and authentication settings.
-pub fn controller_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<String, String> {
+pub fn controller_config_settings(
+    security: &ValidatedKafkaSecurity,
+    opa_authorization: bool,
+) -> BTreeMap<String, String> {
     let mut config = BTreeMap::new();
 
     insert_listener_ssl_stores(
@@ -579,7 +582,13 @@ pub fn controller_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap
     // We set either client tls with authentication or client tls without authentication
     // If authentication is explicitly required we do not want to have any other CAs to
     // be trusted.
-    if security.tls_client_authentication_class().is_some() {
+    //
+    // With OPA, the nodes are identified as super users by the subject of their internal
+    // certificate. Without client authentication, the principal on the CONTROLLER listener is
+    // ANONYMOUS. With Kerberos, the principal is derived from the SASL authentication instead.
+    if security.tls_client_authentication_class().is_some()
+        || (opa_authorization && !security.has_kerberos_enabled())
+    {
         // client auth required
         config.insert(
             KafkaListenerName::Controller.listener_ssl_client_auth(),
@@ -1167,7 +1176,7 @@ pub(crate) mod tests {
 
     #[test]
     fn controller_config_opa_adds_authorizer_truststore() {
-        let config = controller_config_settings(&opa());
+        let config = controller_config_settings(&opa(), false);
         assert!(config.contains_key("opa.authorizer.truststore.path"));
         assert!(config.contains_key("opa.authorizer.truststore.password"));
         assert!(config.contains_key("opa.authorizer.truststore.type"));
@@ -1178,7 +1187,7 @@ pub(crate) mod tests {
         // Internal TLS is mandatory, so the controller config is non-empty even for a plaintext
         // cluster: it carries the controller + internal SSL stores, but no client-cert auth
         // (there is no client authentication class).
-        let config = controller_config_settings(&plaintext());
+        let config = controller_config_settings(&plaintext(), false);
         assert!(
             config.contains_key(&KafkaListenerName::Controller.listener_ssl_keystore_location())
         );
@@ -1187,8 +1196,19 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn controller_config_opa_requires_client_auth_unless_kerberos() {
+        let key = KafkaListenerName::Controller.listener_ssl_client_auth();
+
+        let config = controller_config_settings(&internal_tls(), true);
+        assert_eq!(config.get(&key).map(String::as_str), Some("required"));
+
+        assert!(!controller_config_settings(&internal_tls(), false).contains_key(&key));
+        assert!(!controller_config_settings(&kerberos(), true).contains_key(&key));
+    }
+
+    #[test]
     fn controller_config_internal_tls_covers_controller_and_internal() {
-        let config = controller_config_settings(&internal_tls());
+        let config = controller_config_settings(&internal_tls(), false);
         assert!(config.contains_key("listener.name.controller.ssl.keystore.location"));
         assert!(config.contains_key("listener.name.internal.ssl.keystore.location"));
     }
@@ -1204,7 +1224,7 @@ pub(crate) mod tests {
 
     #[test]
     fn controller_config_sets_the_controller_sasl_mechanism_with_kerberos() {
-        let config = controller_config_settings(&kerberos());
+        let config = controller_config_settings(&kerberos(), false);
         assert_eq!(
             config.get("sasl.mechanism.controller.protocol"),
             Some(&"GSSAPI".to_string())
@@ -1218,14 +1238,14 @@ pub(crate) mod tests {
                 .contains_key("sasl.mechanism.controller.protocol")
         );
         assert!(
-            !controller_config_settings(&internal_tls())
+            !controller_config_settings(&internal_tls(), false)
                 .contains_key("sasl.mechanism.controller.protocol")
         );
     }
 
     #[test]
     fn controller_config_kerberos_adds_sasl() {
-        let config = controller_config_settings(&kerberos());
+        let config = controller_config_settings(&kerberos(), false);
         assert_eq!(
             config.get("sasl.enabled.mechanisms"),
             Some(&"GSSAPI".to_string())
