@@ -76,7 +76,11 @@ pub enum Error {
 pub fn copy_opa_tls_cert_command(security: &ValidatedKafkaSecurity) -> String {
     match security.opa_secret_class().is_some() {
         true => format!(
-            "keytool -importcert -file {opa_mount_path}/ca.crt -keystore {tls_dir}/{truststore} -storepass '{tls_password}' -alias opa-ca -noprompt",
+            // The truststore lives on a volume that survives container restarts, so drop any
+            // previously imported alias first. This prevents keytool -import from failing and
+            // leaving the pods in a crash loop.
+            "keytool -delete -alias opa-ca -keystore {tls_dir}/{truststore} -storepass '{tls_password}' 2>/dev/null || true\n\
+             keytool -importcert -file {opa_mount_path}/ca.crt -keystore {tls_dir}/{truststore} -storepass '{tls_password}' -alias opa-ca -noprompt",
             opa_mount_path = OPA_TLS_MOUNT_PATH,
             tls_dir = STACKABLE_TLS_KAFKA_INTERNAL_DIR,
             truststore = TRUSTSTORE_P12_FILE_NAME,
