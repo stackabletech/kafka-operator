@@ -8,6 +8,11 @@ use strum::{Display, EnumString};
 /// Directory of the CA certificate the Kafka brokers are verified with.
 pub const KAFKA_TLS_DIR: &str = "/stackable/secrets/tls-kafka";
 
+/// Port of the HTTP health endpoints, which the probes of the agent Deployment call.
+pub const HEALTH_PORT: u16 = 8080;
+pub const LIVENESS_PATH: &str = "/healthz";
+pub const READINESS_PATH: &str = "/readyz";
+
 constant!(pub ENV_CLUSTER_NAME: EnvVarName = "KAFKA_CLUSTER_NAME");
 constant!(pub ENV_CLUSTER_NAMESPACE: EnvVarName = "KAFKA_CLUSTER_NAMESPACE");
 constant!(pub ENV_CLIENT_SECURITY: EnvVarName = "KAFKA_CLIENT_SECURITY");

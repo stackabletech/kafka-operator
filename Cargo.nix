@@ -10498,8 +10498,20 @@ rec {
             packageId = "anyhow";
           }
           {
+            name = "axum";
+            packageId = "axum";
+          }
+          {
             name = "clap";
             packageId = "clap";
+          }
+          {
+            name = "snafu";
+            packageId = "snafu 0.9.2";
+          }
+          {
+            name = "stackable-kafka-shared";
+            packageId = "stackable-kafka-shared";
           }
           {
             name = "stackable-operator";

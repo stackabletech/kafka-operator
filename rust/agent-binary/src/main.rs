@@ -1,11 +1,16 @@
 //! The Stackable Kafka agent: a per-cluster controller that reconciles in-cluster resources like `KafkaTopic`s.
 
+use std::sync::Arc;
+
 use clap::Parser;
 use stackable_operator::{
     cli::{Command, CommonOptions},
     telemetry::Tracing,
     utils::signal::SignalWatcher,
+    webhook::health::HealthCheckRegistry,
 };
+
+mod health;
 
 mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
@@ -35,8 +40,10 @@ async fn main() -> anyhow::Result<()> {
                 description = built_info::PKG_DESCRIPTION
             );
 
+            let readiness = Arc::new(HealthCheckRegistry::new());
+
             let sigterm_watcher = SignalWatcher::sigterm()?;
-            sigterm_watcher.handle().await;
+            health::serve(readiness, sigterm_watcher.handle()).await?;
         }
     }
 

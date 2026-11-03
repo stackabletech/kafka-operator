@@ -3189,8 +3189,11 @@ name = "stackable-kafka-agent"
 version = "0.0.0-dev"
 dependencies = [
  "anyhow",
+ "axum",
  "built",
  "clap",
+ "snafu 0.9.2",
+ "stackable-kafka-shared",
  "stackable-operator",
  "tokio",
  "tracing",
