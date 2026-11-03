@@ -19,7 +19,6 @@ spec:
   clusterConfig:
     metadataManager: KRaft
 {% if lookup('env', 'VECTOR_AGGREGATOR') %}
-  clusterConfig:
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
   controllers:
