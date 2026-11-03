@@ -260,7 +260,7 @@ pub fn controller_admin_client_properties(
 /// the pod volume it mounts.
 ///
 /// The CA is imported into the internal truststore on startup, see [`copy_opa_tls_cert_command`].
-fn mount_opa_tls_volume(
+pub fn mount_opa_tls_volume(
     security: &ValidatedKafkaSecurity,
     cb_kafka: &mut ContainerBuilder,
 ) -> Result<Option<Volume>, Error> {
@@ -346,18 +346,17 @@ pub fn mount_broker_tls_volumes(
     Ok(volumes)
 }
 
-/// Adds the internal TLS volume mount to the controller's container builder and returns the pod
-/// volumes they mount.
+/// Adds the internal TLS volume mount to the controller's container builder.
 ///
 /// # Panics
 ///
-/// Panics if the volume mounts cannot be added to the container builder. Only call this on a
+/// Panics if the volume mount cannot be added to the container builder. Only call this on a
 /// container builder whose mount paths are still distinct from the ones added here.
 pub fn mount_controller_tls_volume(
     security: &ValidatedKafkaSecurity,
     cb_kafka: &mut ContainerBuilder,
     requested_secret_lifetime: &Duration,
-) -> Result<Vec<Volume>, Error> {
+) -> Result<Volume, Error> {
     let volume = VolumeBuilder::new(&*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME)
         .ephemeral(
             SecretOperatorVolumeSourceBuilder::new(
@@ -381,10 +380,7 @@ pub fn mount_controller_tls_volume(
         )
         .expect("The mount paths are statically defined and there should be no duplicates.");
 
-    let mut volumes = vec![volume];
-    volumes.extend(mount_opa_tls_volume(security, cb_kafka)?);
-
-    Ok(volumes)
+    Ok(volume)
 }
 
 /// Inserts the `listener.<name>.ssl.{keystore,truststore}.{location,password,type}`

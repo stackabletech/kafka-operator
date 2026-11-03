@@ -45,6 +45,7 @@ use crate::{
             security::{
                 self, STACKABLE_TLS_KAFKA_INTERNAL_DIR, STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                 controller_admin_client_properties, mount_controller_tls_volume,
+                mount_opa_tls_volume,
             },
         },
         node_id_hasher::node_id_hash32_offset,
@@ -80,7 +81,7 @@ pub enum Error {
     BuildPodDescriptors { source: PodDescriptorsError },
 
     #[snafu(display("failed to build the TLS volume"))]
-    BuildTlsVolumes { source: security::Error },
+    BuildInternalTlsVolume { source: security::Error },
 
     #[snafu(display("failed to build the Kerberos volume"))]
     BuildKerberosVolume { source: kerberos::Error },
@@ -90,6 +91,9 @@ pub enum Error {
 
     #[snafu(display("failed to construct JVM arguments"))]
     ConstructJvmArguments { source: jvm::Error },
+
+    #[snafu(display("failed to build the OPA TLS volume"))]
+    BuildOpaTlsVolume { source: security::Error },
 }
 
 // Env vars the operator sets on the controller's `kafka` and `quorum-manager` containers.
@@ -332,14 +336,21 @@ fn role_pod(
     pod_volumes.push(log_config_volume(logging, &resource_names));
 
     // The TLS certificate is requested with the role group's secret lifetime.
-    pod_volumes.extend(
+    pod_volumes.push(
         mount_controller_tls_volume(
             kafka_security,
             &mut cb_kafka,
             &config.requested_secret_lifetime,
         )
-        .context(BuildTlsVolumesSnafu)?,
+        .context(BuildInternalTlsVolumeSnafu)?,
     );
+
+    // Mount the OPA TLS certificate if any.
+    if let Some(opa_tls_volume) =
+        mount_opa_tls_volume(kafka_security, &mut cb_kafka).context(BuildOpaTlsVolumeSnafu)?
+    {
+        pod_volumes.push(opa_tls_volume);
+    }
 
     let containers = vec![
         cb_kafka.build(),
