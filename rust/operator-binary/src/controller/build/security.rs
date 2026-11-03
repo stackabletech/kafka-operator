@@ -260,7 +260,7 @@ pub fn controller_admin_client_properties(
 /// the pod volume it mounts.
 ///
 /// The CA is imported into the internal truststore on startup, see [`copy_opa_tls_cert_command`].
-fn add_opa_tls_volume_mount(
+fn mount_opa_tls_volume(
     security: &ValidatedKafkaSecurity,
     cb_kafka: &mut ContainerBuilder,
 ) -> Result<Option<Volume>, Error> {
@@ -339,7 +339,7 @@ pub fn mount_broker_tls_volumes(
         )
         .expect("The mount paths are statically defined and there should be no duplicates.");
 
-    volumes.extend(add_opa_tls_volume_mount(security, cb_kafka)?);
+    volumes.extend(mount_opa_tls_volume(security, cb_kafka)?);
 
     Ok(volumes)
 }
@@ -380,7 +380,7 @@ pub fn mount_controller_tls_volume(
         .expect("The mount paths are statically defined and there should be no duplicates.");
 
     let mut volumes = vec![volume];
-    volumes.extend(add_opa_tls_volume_mount(security, cb_kafka)?);
+    volumes.extend(mount_opa_tls_volume(security, cb_kafka)?);
 
     Ok(volumes)
 }
