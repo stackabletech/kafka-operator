@@ -9,10 +9,13 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+stackable-kafka-shared.workspace = true
 stackable-operator.workspace = true
 
 anyhow.workspace = true
+axum.workspace = true
 clap.workspace = true
+snafu.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 

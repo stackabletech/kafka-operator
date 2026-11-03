@@ -14,6 +14,7 @@ stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git",
 stackable-kafka-shared = { path = "rust/shared" }
 
 anyhow = "1.0"
+axum = "0.8"
 built = { version = "0.8", features = ["chrono", "git2"] }
 clap = "4.6"
 const_format = "0.2"

@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use stackable_kafka_shared::agent::{
     ClientSecurity, ENV_BOOTSTRAP_SERVERS, ENV_CLIENT_SECURITY, ENV_CLUSTER_NAME,
-    ENV_CLUSTER_NAMESPACE, KAFKA_TLS_DIR,
+    ENV_CLUSTER_NAMESPACE, HEALTH_PORT, KAFKA_TLS_DIR, LIVENESS_PATH, READINESS_PATH,
 };
 use stackable_operator::{
     builder::{
@@ -12,6 +12,7 @@ use stackable_operator::{
         pod::{
             PodBuilder,
             container::ContainerBuilder,
+            probe::ProbeBuilder,
             resources::ResourceRequirementsBuilder,
             security::PodSecurityContextBuilder,
             volume::{SecretFormat, SecretOperatorVolumeSourceBuilder, VolumeBuilder},
@@ -22,11 +23,14 @@ use stackable_operator::{
     k8s_openapi::{
         api::{
             apps::v1::{Deployment, DeploymentSpec, DeploymentStrategy},
-            core::v1::{EnvVar, EnvVarSource, ObjectFieldSelector, ServiceAccount},
+            core::v1::{
+                EnvVar, EnvVarSource, HTTPGetAction, ObjectFieldSelector, Probe, ServiceAccount,
+            },
             rbac::v1::RoleBinding,
         },
-        apimachinery::pkg::apis::meta::v1::LabelSelector,
+        apimachinery::pkg::{apis::meta::v1::LabelSelector, util::intstr::IntOrString},
     },
+    shared::time::Duration,
     v2::{
         builder::{
             meta::ownerreference_from_resource,
@@ -49,6 +53,7 @@ use crate::{
 };
 
 constant!(AGENT_CONTAINER_NAME: ContainerName = "agent");
+const HEALTH_PORT_NAME: &str = "health";
 constant!(KAFKA_TLS_VOLUME_NAME: VolumeName = "tls-kafka");
 constant!(KUBERNETES_NODE_NAME: EnvVarName = "KUBERNETES_NODE_NAME");
 constant!(KUBERNETES_CLUSTER_DOMAIN: EnvVarName = "KUBERNETES_CLUSTER_DOMAIN");
@@ -92,6 +97,9 @@ pub fn build_agent_deployment(
         .command(vec!["stackable-kafka-agent".to_owned()])
         .args(vec!["run".to_owned()])
         .add_env_vars(agent_env_vars(cluster, agent_config))
+        .add_container_port(HEALTH_PORT_NAME, HEALTH_PORT.into())
+        .readiness_probe(http_probe(READINESS_PATH, Duration::from_secs(10)))
+        .liveness_probe(http_probe(LIVENESS_PATH, Duration::from_secs(60)))
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("100m")
@@ -139,6 +147,18 @@ pub fn build_agent_deployment(
         }),
         status: None,
     }
+}
+
+fn http_probe(path: &str, period: Duration) -> Probe {
+    ProbeBuilder::http_get(HTTPGetAction {
+        path: Some(path.to_owned()),
+        port: IntOrString::String(HEALTH_PORT_NAME.to_owned()),
+        ..HTTPGetAction::default()
+    })
+    .with_period(period)
+    .with_failure_threshold(3)
+    .build()
+    .expect("the probe period is a constant that fits into an i32")
 }
 
 pub fn build_agent_service_account(cluster: &ValidatedCluster) -> ServiceAccount {
@@ -357,6 +377,16 @@ mod tests {
             json!(["stackable-kafka-agent"])
         );
         assert_eq!(pod_spec["containers"][0]["args"], json!(["run"]));
+        assert_eq!(pod_spec["containers"][0]["ports"][0]["name"], "health");
+        assert_eq!(pod_spec["containers"][0]["ports"][0]["containerPort"], 8080);
+        assert_eq!(
+            pod_spec["containers"][0]["readinessProbe"]["httpGet"],
+            json!({"path": "/readyz", "port": "health"})
+        );
+        assert_eq!(
+            pod_spec["containers"][0]["livenessProbe"]["httpGet"],
+            json!({"path": "/healthz", "port": "health"})
+        );
         assert_eq!(
             pod_spec["containers"][0]["volumeMounts"],
             json!([
