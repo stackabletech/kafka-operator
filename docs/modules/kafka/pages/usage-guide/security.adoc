@@ -252,3 +252,10 @@ The secret operator always sets it in the subject of the pod certificates.
 
 NOTE: Everything that presents a certificate with the subject DN of a node, issued by the CA of the `internalSecretClass`, is treated as a Kafka node.
 Restrict who can obtain such certificates accordingly.
+
+If you previously set `super.users` for the Kafka nodes yourself, for example with `configOverrides`, you can remove that override.
+The operator now sets the principals of all nodes automatically.
+Keep an override only if you need additional super users, such as specific client principals, and then include the entries for the nodes as well, because the override replaces the value set by the operator.
+
+NOTE: Scaling a role changes the nodes of the cluster and with them the node properties.
+This restarts all Pods of the cluster, see xref:usage-guide/operations/cluster-operations.adoc#scaling-restarts[Scaling operations restart the whole cluster].
