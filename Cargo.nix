@@ -10498,6 +10498,10 @@ rec {
             packageId = "anyhow";
           }
           {
+            name = "axum";
+            packageId = "axum";
+          }
+          {
             name = "clap";
             packageId = "clap";
           }

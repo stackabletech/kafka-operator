@@ -29,11 +29,13 @@ use stackable_operator::{
     telemetry::Tracing,
     utils::signal::SignalWatcher,
     v2::types::{kubernetes::NamespaceName, operator::ClusterName},
+    webhook::health::HealthCheckRegistry,
 };
 
 use crate::topic::controller::{self, TOPIC_FULL_CONTROLLER_NAME};
 
 mod config;
+mod health;
 mod topic;
 
 pub const AGENT_NAME: &str = "kafka-agent.stackable.tech";
@@ -111,6 +113,10 @@ async fn main() -> anyhow::Result<()> {
             );
             let admin_client = KafkaAdminClient::new(bootstrap_servers, security, KAFKA_CLIENT_ID);
 
+            let mut readiness = HealthCheckRegistry::new();
+            let kafka_topics_synced = readiness.register("kafka-topics-synced");
+            let readiness = Arc::new(readiness);
+
             // Watches for the SIGTERM signal and gracefully shuts down the controller.
             let sigterm_watcher = SignalWatcher::sigterm()?;
 
@@ -131,7 +137,7 @@ async fn main() -> anyhow::Result<()> {
                 watcher::Config::default().fields(&format!("spec.clusterRef.name={cluster_name}")),
             );
             let kafka_topic_store = topic_controller.store();
-            topic_controller
+            let topic_controller = topic_controller
                 .graceful_shutdown_on(sigterm_watcher.handle())
                 .run(
                     controller::reconcile_topic,
@@ -139,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
                     Arc::new(controller::Ctx::new(
                         client,
                         admin_client,
-                        kafka_topic_store,
+                        kafka_topic_store.clone(),
                     )),
                 )
                 .for_each_concurrent(
@@ -157,8 +163,22 @@ async fn main() -> anyhow::Result<()> {
                             .await;
                         }
                     },
-                )
-                .await;
+                );
+
+            let mark_ready = async {
+                kafka_topic_store.wait_until_ready().await?;
+                kafka_topics_synced.mark_passed();
+                anyhow::Ok(())
+            };
+
+            tokio::try_join!(
+                async {
+                    topic_controller.await;
+                    anyhow::Ok(())
+                },
+                mark_ready,
+                async { Ok(health::serve(readiness, sigterm_watcher.handle()).await?) },
+            )?;
         }
     }
 

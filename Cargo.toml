@@ -15,6 +15,7 @@ stackable-kafka-admin = { path = "rust/kafka-admin" }
 stackable-kafka-shared = { path = "rust/shared" }
 
 anyhow = "1.0"
+axum = "0.8"
 base64 = "0.22"
 built = { version = "0.8", features = ["chrono", "git2"] }
 bytes = "1.12"

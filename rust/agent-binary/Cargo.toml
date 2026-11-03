@@ -14,6 +14,7 @@ stackable-kafka-shared.workspace = true
 stackable-operator.workspace = true
 
 anyhow.workspace = true
+axum.workspace = true
 clap.workspace = true
 const_format.workspace = true
 futures.workspace = true
