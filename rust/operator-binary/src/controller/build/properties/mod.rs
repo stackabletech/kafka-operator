@@ -83,25 +83,12 @@ pub(crate) fn kraft_controllers(
 
     controllers
         .map(|desc| {
-            if kerberos_enabled {
-                format!(
-                    "{sts}-{replica}.{service}.{namespace}.svc.{cluster_domain}:{client_port}",
-                    sts = desc.role_group_statefulset_name,
-                    replica = desc.replica,
-                    service = desc.role_group_service_name,
-                    namespace = desc.namespace,
-                    cluster_domain = desc.cluster_domain,
-                    client_port = desc.client_port,
-                )
+            let host = if kerberos_enabled {
+                desc.pod_fqdn()
             } else {
-                format!(
-                    "{service}.{namespace}.svc.{cluster_domain}:{client_port}",
-                    service = desc.role_group_service_name,
-                    namespace = desc.namespace,
-                    cluster_domain = desc.cluster_domain,
-                    client_port = desc.client_port,
-                )
-            }
+                desc.service_fqdn()
+            };
+            format!("{host}:{port}", port = desc.client_port)
         })
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -178,17 +165,9 @@ fn super_users(pod_descriptors: &[KafkaPodDescriptor], kerberos_enabled: bool) -
         .map(|desc| {
             // The certificate encodes `CN`, then the `DC`s from the pod up to the cluster domain
             // suffix. Java prints the subject DN in RFC 2253 order, which is reversed.
-            let cluster_domain = desc.cluster_domain.to_string();
-            let domain_components = [
-                format!("{}-{}", desc.role_group_statefulset_name, desc.replica),
-                desc.role_group_service_name.to_string(),
-                desc.namespace.to_string(),
-                "svc".to_string(),
-            ]
-            .into_iter()
-            .chain(cluster_domain.split('.').map(str::to_string));
+            let pod_fqdn = desc.pod_fqdn();
             let mut rdns: Vec<String> = vec!["CN=generated certificate for pod".to_string()];
-            rdns.extend(domain_components.map(|dc| format!("DC={dc}")));
+            rdns.extend(pod_fqdn.split('.').map(|dc| format!("DC={dc}")));
             rdns.reverse();
             format!("User:{}", rdns.join(","))
         })
