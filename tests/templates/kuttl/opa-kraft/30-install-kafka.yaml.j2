@@ -1,0 +1,56 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: |
+      kubectl apply -n $NAMESPACE -f - <<EOF
+      ---
+      apiVersion: authentication.stackable.tech/v1alpha1
+      kind: AuthenticationClass
+      metadata:
+        name: kerberos-auth-$NAMESPACE
+      spec:
+        provider:
+          kerberos:
+            kerberosSecretClass: kerberos-$NAMESPACE
+      ---
+      apiVersion: kafka.stackable.tech/v1alpha1
+      kind: KafkaCluster
+      metadata:
+        name: test-kafka
+      spec:
+        image:
+{% if test_scenario['values']['kafka-kraft'].find(",") > 0 %}
+          custom: "{{ test_scenario['values']['kafka-kraft'].split(',')[1] }}"
+          productVersion: "{{ test_scenario['values']['kafka-kraft'].split(',')[0] }}"
+{% else %}
+          productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
+{% endif %}
+          pullPolicy: IfNotPresent
+        clusterConfig:
+          # KRaft: metadata is managed by the controllers role, no ZooKeeper involved.
+          metadataManager: KRaft
+          authentication:
+            - authenticationClass: kerberos-auth-$NAMESPACE
+          authorization:
+            opa:
+              configMapName: test-opa
+              package: authz
+          tls:
+            serverSecretClass: tls
+          vectorAggregatorConfigMapName: vector-aggregator-discovery
+        controllers:
+          config:
+            logging:
+              enableVectorAgent: true
+          roleGroups:
+            default:
+              replicas: 3
+        brokers:
+          config:
+            logging:
+              enableVectorAgent: true
+          roleGroups:
+            default:
+              replicas: 3
+      EOF
