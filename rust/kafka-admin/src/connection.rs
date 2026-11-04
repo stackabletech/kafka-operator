@@ -1,6 +1,6 @@
 //! A connection to a single Kafka broker.
 
-use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, io, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use futures::{SinkExt, StreamExt};
 use kafka_protocol::{
@@ -12,7 +12,7 @@ use kafka_protocol::{
 use rustls::{ClientConfig, pki_types::ServerName};
 use snafu::{OptionExt, ResultExt, Snafu, ensure};
 use tokio::{
-    net::TcpStream,
+    net::{TcpStream, lookup_host},
     time::{error::Elapsed, timeout},
 };
 use tokio_rustls::{TlsConnector, client::TlsStream};
@@ -42,6 +42,15 @@ const API_VERSIONS_VERSION: i16 = 3;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
+    #[snafu(display("failed to resolve {address}"))]
+    Resolve {
+        source: io::Error,
+        address: BrokerAddress,
+    },
+
+    #[snafu(display("{address} does not resolve to any address"))]
+    NoAddresses { address: BrokerAddress },
+
     #[snafu(display("failed to connect to {address}"))]
     Connect {
         source: io::Error,
@@ -139,10 +148,74 @@ impl Connection {
         tls_config: Option<Arc<ClientConfig>>,
         client_id: &str,
     ) -> Result<Self> {
-        let tcp_stream = connect_tcp(address).await?;
-        let stream = match tls_config {
+        let socket_addresses = lookup_host((address.host.as_str(), address.port))
+            .await
+            .context(ResolveSnafu {
+                address: address.clone(),
+            })?;
+        Self::connect_any(socket_addresses, address, tls_config, client_id).await
+    }
+
+    /// One [`CONNECT_TIMEOUT`] per address, so a broker that accepts but never answers does not
+    /// hide the others.
+    async fn connect_any(
+        socket_addresses: impl IntoIterator<Item = SocketAddr>,
+        address: &BrokerAddress,
+        tls_config: Option<Arc<ClientConfig>>,
+        client_id: &str,
+    ) -> Result<Self> {
+        let tls = match tls_config {
+            None => None,
+            Some(config) => {
+                let host = &address.host;
+                let server_name = ServerName::try_from(host.clone())
+                    .ok()
+                    .context(InvalidServerNameSnafu { host })?;
+                Some((server_name, config))
+            }
+        };
+
+        let mut last_error = NoAddressesSnafu {
+            address: address.clone(),
+        }
+        .build();
+        for socket_address in socket_addresses {
+            let attempt = Self::connect_to(socket_address, address, tls.as_ref(), client_id);
+            match timeout(CONNECT_TIMEOUT, attempt).await {
+                Ok(Ok(connection)) => return Ok(connection),
+                Ok(Err(error)) => last_error = error,
+                Err(source) => {
+                    last_error = Error::ConnectTimeout {
+                        source,
+                        address: address.clone(),
+                    }
+                }
+            }
+        }
+        Err(last_error)
+    }
+
+    async fn connect_to(
+        socket_address: SocketAddr,
+        address: &BrokerAddress,
+        tls: Option<&(ServerName<'static>, Arc<ClientConfig>)>,
+        client_id: &str,
+    ) -> Result<Self> {
+        let tcp_stream = TcpStream::connect(socket_address)
+            .await
+            .context(ConnectSnafu {
+                address: address.clone(),
+            })?;
+        let stream = match tls {
             None => Either::Left(tcp_stream),
-            Some(config) => Either::Right(tls_handshake(tcp_stream, address, config).await?),
+            Some((server_name, config)) => Either::Right(
+                TlsConnector::from(config.clone())
+                    .connect(server_name.clone(), tcp_stream)
+                    .await
+                    .context(TlsHandshakeSnafu {
+                        address: address.clone(),
+                    })?,
+            ),
         };
 
         let mut connection = Self::new(stream, client_id);
@@ -202,20 +275,6 @@ impl Connection {
     }
 }
 
-async fn connect_tcp(address: &BrokerAddress) -> Result<TcpStream> {
-    timeout(
-        CONNECT_TIMEOUT,
-        TcpStream::connect((address.host.as_str(), address.port)),
-    )
-    .await
-    .context(ConnectTimeoutSnafu {
-        address: address.clone(),
-    })?
-    .context(ConnectSnafu {
-        address: address.clone(),
-    })
-}
-
 fn api_versions_request() -> ApiVersionsRequest {
     ApiVersionsRequest::default()
         .with_client_software_name(StrBytes::from_static_str("stackable-kafka-admin"))
@@ -263,28 +322,6 @@ fn check_version_in_range(
         }
     );
     Ok(())
-}
-
-async fn tls_handshake(
-    tcp_stream: TcpStream,
-    address: &BrokerAddress,
-    config: Arc<ClientConfig>,
-) -> Result<TlsStream<TcpStream>> {
-    let host = &address.host;
-    let server_name = ServerName::try_from(host.clone())
-        .ok()
-        .context(InvalidServerNameSnafu { host })?;
-    timeout(
-        CONNECT_TIMEOUT,
-        TlsConnector::from(config).connect(server_name, tcp_stream),
-    )
-    .await
-    .context(ConnectTimeoutSnafu {
-        address: address.clone(),
-    })?
-    .context(TlsHandshakeSnafu {
-        address: address.clone(),
-    })
 }
 
 /// A mock Kafka broker for tests, speaking the wire protocol over a local TCP socket.
@@ -483,6 +520,35 @@ mod tests {
             error,
             Error::UnsupportedVersion { version: 12, .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn try_the_next_address_if_the_broker_does_not_answer() {
+        let (silent_listener, silent_port) = listen().await;
+        let (listener, port) = listen().await;
+        let address = BrokerAddress {
+            host: "127.0.0.1".to_owned(),
+            port,
+        };
+        let socket_addresses =
+            [silent_port, port].map(|port| SocketAddr::from(([127, 0, 0, 1], port)));
+        tokio::time::pause();
+
+        let silent_side = async {
+            let (mut broker, _) = silent_listener
+                .accept()
+                .await
+                .expect("the silent broker should accept the connection");
+            read_request(&mut broker).await;
+            broker
+        };
+        let (connection, _silent_broker, _broker) = tokio::join!(
+            Connection::connect_any(socket_addresses, &address, None, "test"),
+            silent_side,
+            accept(&listener, &[(MetadataRequest::KEY, 0, 13)])
+        );
+
+        connection.expect("the second address should be used");
     }
 
     #[tokio::test]
