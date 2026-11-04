@@ -53,6 +53,9 @@ const _: () = assert!((BROKER_TIMEOUT_MS as u128) < connection::REQUEST_TIMEOUT.
 /// `server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java`.
 const CONNECTION_MAX_IDLE: Duration = Duration::from_secs(5 * 60);
 
+/// Connecting is skipped for this long after all bootstrap servers failed, so an outage fails fast.
+const CONNECT_COOLDOWN: Duration = Duration::from_secs(30);
+
 /// Lets the broker apply `num.partitions` or `default.replication.factor` when creating a topic,
 /// see `NumPartitions` and `ReplicationFactor` in
 /// `clients/src/main/resources/common/message/CreateTopicsRequest.json`.
@@ -80,6 +83,12 @@ pub enum Error {
         source: connection::Error,
         server: BrokerAddress,
     },
+
+    #[snafu(display(
+        "not connecting for {}s after all bootstrap servers failed",
+        CONNECT_COOLDOWN.as_secs()
+    ))]
+    ConnectCooldown { source: Arc<Error> },
 
     #[snafu(display("failed to send the request to the broker"))]
     Send { source: connection::Error },
@@ -151,6 +160,8 @@ pub struct KafkaAdminClient {
     client_id: String,
     /// The connection and the time of its last successful request
     connection: Option<(Connection, Instant)>,
+    /// When and why all bootstrap servers last failed, see [`CONNECT_COOLDOWN`]
+    connect_failure: Option<(Instant, Arc<Error>)>,
 }
 
 impl KafkaAdminClient {
@@ -161,6 +172,7 @@ impl KafkaAdminClient {
             security,
             client_id: client_id.to_owned(),
             connection: None,
+            connect_failure: None,
         }
     }
 
@@ -316,14 +328,25 @@ impl KafkaAdminClient {
 
     /// Connects to the first bootstrap server that answers. Any broker works, because brokers in
     /// KRaft mode forward admin requests to the active controller.
-    async fn connect(&self) -> Result<Connection> {
+    async fn connect(&mut self) -> Result<Connection> {
+        if let Some((failed_at, failure)) = &self.connect_failure
+            && failed_at.elapsed() < CONNECT_COOLDOWN
+        {
+            return Err(Error::ConnectCooldown {
+                source: Arc::clone(failure),
+            });
+        }
+
         let tls_config = tls::client_config(&self.security)
             .context(TlsSnafu)?
             .map(Arc::new);
         let mut last_error = Error::NoBootstrapServers;
         for server in &self.bootstrap_servers {
             match Connection::connect(server, tls_config.clone(), &self.client_id).await {
-                Ok(connection) => return Ok(connection),
+                Ok(connection) => {
+                    self.connect_failure = None;
+                    return Ok(connection);
+                }
                 Err(source) => {
                     last_error = Error::Connect {
                         source,
@@ -332,7 +355,9 @@ impl KafkaAdminClient {
                 }
             }
         }
-        Err(last_error)
+        let failure = Arc::new(last_error);
+        self.connect_failure = Some((Instant::now(), Arc::clone(&failure)));
+        Err(Error::ConnectCooldown { source: failure })
     }
 }
 
@@ -615,15 +640,7 @@ mod tests {
 
     #[tokio::test]
     async fn try_the_next_bootstrap_server() {
-        // Use a port that is always rejected
-        let unreachable = TcpSocket::new_v4().expect("the socket should be creatable");
-        unreachable
-            .bind("127.0.0.1:0".parse().expect("the address should be valid"))
-            .expect("the socket should be bindable");
-        let unreachable_port = unreachable
-            .local_addr()
-            .expect("the socket should have an address")
-            .port();
+        let (_unreachable, unreachable_port) = unreachable_socket();
         let (listener, port) = listen().await;
         let mut client = kafka_admin_client(&[unreachable_port, port]);
 
@@ -634,6 +651,43 @@ mod tests {
         let (result, ()) = tokio::join!(client.delete_topic(TOPIC), broker_side);
 
         result.expect("the second bootstrap server should be used");
+    }
+
+    #[tokio::test]
+    async fn skip_connecting_during_the_cooldown() {
+        let (unreachable, unreachable_port) = unreachable_socket();
+        let mut client = kafka_admin_client(&[unreachable_port]);
+        tokio::time::pause();
+
+        let failure = client
+            .delete_topic(TOPIC)
+            .await
+            .expect_err("the connection should fail");
+        assert!(matches!(
+            failure,
+            Error::ConnectCooldown { ref source } if matches!(**source, Error::Connect { .. })
+        ));
+
+        let skipped = client
+            .delete_topic(TOPIC)
+            .await
+            .expect_err("connecting should be skipped");
+        assert!(matches!(
+            skipped,
+            Error::ConnectCooldown { ref source } if matches!(**source, Error::Connect { .. })
+        ));
+        assert_eq!(failure.to_string(), skipped.to_string());
+
+        tokio::time::advance(CONNECT_COOLDOWN).await;
+        tokio::time::resume();
+        let listener = unreachable.listen(1).expect("the socket should listen");
+        let broker_side = async {
+            let mut broker = accept(&listener, APIS).await;
+            answer_delete_topics(&mut broker).await;
+        };
+        let (result, ()) = tokio::join!(client.delete_topic(TOPIC), broker_side);
+
+        result.expect("the client should connect again after the cooldown");
     }
 
     #[tokio::test]
@@ -1026,6 +1080,19 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// A bound but not listening socket, so connections to its port are rejected.
+    fn unreachable_socket() -> (TcpSocket, u16) {
+        let socket = TcpSocket::new_v4().expect("the socket should be creatable");
+        socket
+            .bind("127.0.0.1:0".parse().expect("the address should be valid"))
+            .expect("the socket should be bindable");
+        let port = socket
+            .local_addr()
+            .expect("the socket should have an address")
+            .port();
+        (socket, port)
     }
 
     fn kafka_admin_client(ports: &[u16]) -> KafkaAdminClient {
