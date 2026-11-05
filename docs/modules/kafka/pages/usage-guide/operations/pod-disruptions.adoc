@@ -1,5 +1,6 @@
 
 = Allowed Pod disruptions
+:description: PodDisruptionBudgets the Stackable operator writes for Apache Kafka brokers and KRaft controllers, and how to disable them.
 
 You can configure the permitted Pod disruptions for Kafka nodes as described in xref:concepts:operations/pod_disruptions.adoc[].
 
