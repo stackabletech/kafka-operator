@@ -14,8 +14,9 @@ pub(crate) fn validate(
         .topic_name()
         .map_err(|error| TopicSyncOutcome::InvalidSpec {
             message: format!(
-                "metadata.name is not a valid topic name, recreate the KafkaTopic with topicName \
-                 set: {error}"
+                "metadata.name is not a valid topic name of at most {} characters, recreate the \
+                 KafkaTopic with topicName set: {error}",
+                TopicName::MAX_LENGTH
             ),
         })?;
 
