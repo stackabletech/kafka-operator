@@ -2,3 +2,12 @@
 = Cluster operation
 
 The managed Kafka instances can be configured with different cluster operations like pausing reconciliation or stopping the cluster. See xref:concepts:operations/cluster_operations.adoc[cluster operations] for more details.
+
+== [[scaling-restarts]]Scaling operations restart the whole cluster
+
+Changing the number of replicas of any Kafka role (brokers or controllers) restarts all Pods of the Kafka cluster, not only the Pods of the scaled role.
+
+Scaling a role changes the ConfigMap with the node properties.
+The restart controller detects this change and triggers a restart, which results in all Pods of the cluster being restarted.
+
+Plan scaling operations accordingly, for example by performing them during a maintenance window.

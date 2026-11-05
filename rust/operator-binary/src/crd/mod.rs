@@ -379,6 +379,32 @@ pub struct KafkaPodDescriptor {
     pub client_port: Port,
 }
 
+impl KafkaPodDescriptor {
+    /// The FQDN of the role group's headless `Service`:
+    /// `<service>.<namespace>.svc.<cluster domain>`.
+    pub(crate) fn service_fqdn(&self) -> String {
+        format!(
+            "{service}.{namespace}.svc.{cluster_domain}",
+            service = self.role_group_service_name,
+            namespace = self.namespace,
+            cluster_domain = self.cluster_domain,
+        )
+    }
+
+    /// The FQDN of the `Pod`: `<statefulset>-<replica>.<service FQDN>`.
+    ///
+    /// The statefulset, service and namespace names are DNS labels and contain no dots, so
+    /// splitting the result on `.` yields the individual labels.
+    pub(crate) fn pod_fqdn(&self) -> String {
+        format!(
+            "{sts}-{replica}.{service_fqdn}",
+            sts = self.role_group_statefulset_name,
+            replica = self.replica,
+            service_fqdn = self.service_fqdn(),
+        )
+    }
+}
+
 #[derive(Clone, Default, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KafkaClusterStatus {
