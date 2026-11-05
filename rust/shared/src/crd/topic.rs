@@ -82,8 +82,13 @@ pub mod versioned {
         pub replication_factor: Option<i16>,
 
         /// Topic configs like `retention.ms`. All other topic-level configs are reset to the broker
-        /// defaults, except the replication throttles set by partition reassignments.
+        /// defaults, except the replication throttles set by partition reassignments. At most 64
+        /// configs with values of up to 1024 characters.
         #[serde(default)]
+        #[schemars(extend(
+            "maxProperties" = 64,
+            "additionalProperties" = { "type": "string", "maxLength": 1024 }
+        ))]
         pub config_overrides: BTreeMap<String, String>,
 
         // no doc - docs in DeletionPolicy enum.
@@ -285,6 +290,11 @@ mod tests {
         assert_eq!(
             Some(1.0),
             properties["replicationFactor"]["minimum"].as_f64()
+        );
+        assert_eq!(64, properties["configOverrides"]["maxProperties"]);
+        assert_eq!(
+            serde_json::json!({ "type": "string", "maxLength": 1024 }),
+            properties["configOverrides"]["additionalProperties"]
         );
     }
 }

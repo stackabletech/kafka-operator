@@ -2288,11 +2288,14 @@ spec:
                   rule: self == oldSelf
               configOverrides:
                 additionalProperties:
+                  maxLength: 1024
                   type: string
                 default: {}
                 description: |-
                   Topic configs like `retention.ms`. All other topic-level configs are reset to the broker
-                  defaults, except the replication throttles set by partition reassignments.
+                  defaults, except the replication throttles set by partition reassignments. At most 64
+                  configs with values of up to 1024 characters.
+                maxProperties: 64
                 type: object
               deletionPolicy:
                 default: Retain
