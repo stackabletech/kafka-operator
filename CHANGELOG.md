@@ -11,7 +11,7 @@ All notable changes to this project will be documented in this file.
 - Support Kerberos (GSSAPI) authentication on KRaft controllers, covering both
   broker-to-controller and controller-to-controller (Raft) traffic ([#1024]).
 - The logs of the `containerdebug` process are now collected by the Vector agent and forwarded to
-  the Vector aggregator ([#1053]).
+  the Vector aggregator ([#1055]).
 - Support for Kafka 4.3.1 ([#1022]).
 - Add `/ready` endpoint to the operator Deployment, which reports the CRD installation status ([#1029]).
 - Brokers now have a default affinity to the OPA Pods when OPA authorization is configured ([#1035]).
@@ -76,7 +76,7 @@ All notable changes to this project will be documented in this file.
 - The `containerdebug` process writes its log file again. The operator set
   `CONTAINERDEBUG_LOG_DIRECTORY`, which containerdebug stopped reading in its version 0.2.0 when it
   moved to `stackable-telemetry`; the directory is now set via `FILE_LOG_DIRECTORY`. The file is
-  rotated hourly and at most two files are kept, because rotation is opt-in ([#1053]).
+  rotated hourly and at most two files are kept, because rotation is opt-in ([#1055]).
 
 ### Removed
 
@@ -112,7 +112,7 @@ All notable changes to this project will be documented in this file.
 [#1049]: https://github.com/stackabletech/kafka-operator/pull/1049
 [#1051]: https://github.com/stackabletech/kafka-operator/pull/1051
 [#1052]: https://github.com/stackabletech/kafka-operator/pull/1052
-[#1053]: https://github.com/stackabletech/kafka-operator/pull/1053
+[#1055]: https://github.com/stackabletech/kafka-operator/pull/1055
 
 ## [26.7.0] - 2026-07-21
 
