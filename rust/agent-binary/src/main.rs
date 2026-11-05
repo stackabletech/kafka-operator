@@ -21,6 +21,7 @@ use stackable_operator::{
         core::DeserializeGuard,
         runtime::{
             Controller,
+            controller::Config as ControllerConfig,
             events::{Recorder, Reporter},
             watcher,
         },
@@ -135,7 +136,9 @@ async fn main() -> anyhow::Result<()> {
                 client.get_api::<DeserializeGuard<KafkaTopic>>(cluster_namespace.as_ref()),
                 // Works because the CRD declares the field as a selectableField.
                 watcher::Config::default().fields(&format!("spec.clusterRef.name={cluster_name}")),
-            );
+            )
+            // Each reconcile then acts on the current object; Kafka requests are serialized anyway.
+            .with_config(ControllerConfig::default().concurrency(1));
             let kafka_topic_store = topic_controller.store();
             let topic_controller = topic_controller
                 .graceful_shutdown_on(sigterm_watcher.handle())
