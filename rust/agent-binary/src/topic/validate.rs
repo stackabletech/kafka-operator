@@ -90,9 +90,7 @@ fn is_same_topic(
     topic_name: &TopicName,
 ) -> bool {
     other_kafka_topic.spec.cluster_ref.name == kafka_topic.spec.cluster_ref.name
-        && other_kafka_topic
-            .topic_name()
-            .is_ok_and(|other_topic_name| &other_topic_name == topic_name)
+        && other_kafka_topic.declared_topic_name() == topic_name.as_ref()
 }
 
 #[cfg(test)]

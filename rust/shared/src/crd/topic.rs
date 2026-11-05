@@ -142,6 +142,14 @@ impl v1alpha1::KafkaTopic {
             None => TopicName::from_str(&self.name_any()),
         }
     }
+
+    /// [`Self::topic_name`] as a plain string, for comparisons, where validating it is redundant.
+    pub fn declared_topic_name(&self) -> &str {
+        match &self.spec.topic_name {
+            Some(topic_name) => topic_name.as_ref(),
+            None => self.metadata.name.as_deref().unwrap_or_default(),
+        }
+    }
 }
 
 #[cfg(test)]
