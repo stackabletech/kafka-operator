@@ -127,5 +127,7 @@ mod tests {
         // The two Kafka log formats must be handled ...
         assert!(content.contains("files_log4j"));
         assert!(content.contains("files_log4j2"));
+        assert!(content.contains("files_tracing_rs"));
+        assert!(content.contains("*.tracing-rs.json"));
     }
 }

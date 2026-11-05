@@ -5,6 +5,7 @@
 
 use std::str::FromStr;
 
+use const_format::concatcp;
 use stackable_operator::{
     builder::pod::{container::FieldPathEnvVar, volume::VolumeBuilder},
     commons::{
@@ -42,8 +43,13 @@ use crate::{
 stackable_operator::constant!(pub(crate) POD_NAME: EnvVarName = "POD_NAME");
 stackable_operator::constant!(KAFKA_CLIENT_PORT: EnvVarName = "KAFKA_CLIENT_PORT");
 stackable_operator::constant!(EXTRA_ARGS: EnvVarName = "EXTRA_ARGS");
-// Needed for the `containerdebug` process to log its tracing information to.
-stackable_operator::constant!(pub(crate) CONTAINERDEBUG_LOG_DIRECTORY: EnvVarName = "CONTAINERDEBUG_LOG_DIRECTORY");
+// Let the `containerdebug` process write its tracing information to a file. These are the generic
+// `stackable-telemetry` variables and apply to the whole Kafka container, so any other
+// telemetry-based process in it would log into the same directory and the Vector agent would label
+// its events with `container: containerdebug`.
+stackable_operator::constant!(pub(crate) FILE_LOG_DIRECTORY: EnvVarName = "FILE_LOG_DIRECTORY");
+stackable_operator::constant!(FILE_LOG_MAX_FILES: EnvVarName = "FILE_LOG_MAX_FILES");
+stackable_operator::constant!(FILE_LOG_ROTATION_PERIOD: EnvVarName = "FILE_LOG_ROTATION_PERIOD");
 
 // The env var and the ZooKeeper discovery ConfigMap key holding the ZooKeeper connection
 // string (the same string, as the env var name is used as the ConfigMap key).
@@ -103,10 +109,15 @@ pub(crate) fn common_kafka_env(
             &KAFKA_LOG4J_OPTS,
             kafka_log_opts(&resolved_product_image.product_version),
         )
+        // The directory must be exactly one level below the log directory, because the Vector
+        // agent derives the container name from that path segment.
         .with_value(
-            &CONTAINERDEBUG_LOG_DIRECTORY,
-            format!("{STACKABLE_LOG_DIR}/containerdebug"),
+            &FILE_LOG_DIRECTORY,
+            concatcp!(STACKABLE_LOG_DIR, "/containerdebug"),
         )
+        // Rotation is opt-in, so without these the file would grow unbounded.
+        .with_value(&FILE_LOG_ROTATION_PERIOD, "hourly")
+        .with_value(&FILE_LOG_MAX_FILES, "2")
         .with_value(
             &KAFKA_NODE_ID_OFFSET,
             node_id_hash32_offset(kafka_role, role_group_name.as_ref()).to_string(),
@@ -169,7 +180,9 @@ mod tests {
         let _ = *POD_NAME;
         let _ = *KAFKA_CLIENT_PORT;
         let _ = *EXTRA_ARGS;
-        let _ = *CONTAINERDEBUG_LOG_DIRECTORY;
+        let _ = *FILE_LOG_DIRECTORY;
+        let _ = *FILE_LOG_MAX_FILES;
+        let _ = *FILE_LOG_ROTATION_PERIOD;
         let _ = *ZOOKEEPER;
         let _ = *ZOOKEEPER_CONFIG_MAP_KEY;
     }
