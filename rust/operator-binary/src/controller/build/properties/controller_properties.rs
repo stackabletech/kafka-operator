@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::kraft_controllers;
+use super::{kraft_controllers, opa_authorizer_properties};
 use crate::{
     controller::{
         ValidatedClusterConfig,
@@ -73,7 +73,11 @@ pub fn build(
         );
     }
 
-    result.extend(controller_config_settings(&cluster_config.kafka_security));
+    result.extend(opa_authorizer_properties(cluster_config, pod_descriptors));
+    result.extend(controller_config_settings(
+        &cluster_config.kafka_security,
+        cluster_config.opa_connect().is_some(),
+    ));
     result.extend(graceful_shutdown_config_properties());
     result.extend(overrides);
 

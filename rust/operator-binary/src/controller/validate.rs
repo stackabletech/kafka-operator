@@ -328,6 +328,7 @@ pub fn validate(
                 ControllerConfig::default_config(
                     &kafka.name_any(),
                     &KafkaRole::Controller.to_string(),
+                    kafka.spec.cluster_config.authorization.opa.as_ref(),
                 ),
                 cluster_id,
                 &vector_aggregator_config_map_name,
