@@ -27,6 +27,7 @@ use stackable_operator::{
         core::DeserializeGuard,
         runtime::{
             Controller,
+            controller::Config as ControllerConfig,
             events::{Recorder, Reporter},
             reflector::ObjectRef,
             watcher,
@@ -254,7 +255,9 @@ async fn main() -> anyhow::Result<()> {
             let topic_controller = Controller::new(
                 watch_namespace.get_api::<DeserializeGuard<topic_v1alpha1::KafkaTopic>>(&client),
                 watcher::Config::default(),
-            );
+            )
+            // Bounds the memory of the startup burst, which reconciles every KafkaTopic at once.
+            .with_config(ControllerConfig::default().concurrency(4));
             let kafka_topic_store_for_clusters = topic_controller.store();
             let kafka_topic_store_for_agents = topic_controller.store();
             let topic_controller = topic_controller
