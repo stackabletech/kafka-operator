@@ -207,8 +207,12 @@ fn operator_action_for(
     agent_state: &AgentState,
     now: Timestamp,
 ) -> OperatorAction {
-    match cluster_state {
-        ClusterState::MissingOrDeleting if kafka_topic.metadata.deletion_timestamp.is_some() => {
+    match (cluster_state, agent_state) {
+        // A running agent manages the KafkaTopics, whatever the KafkaCluster says.
+        (_, AgentState::Available) => OperatorAction::LeaveToAgent,
+        (ClusterState::MissingOrDeleting, _)
+            if kafka_topic.metadata.deletion_timestamp.is_some() =>
+        {
             if kafka_topic
                 .finalizers()
                 .iter()
@@ -219,27 +223,28 @@ fn operator_action_for(
                 OperatorAction::LeaveToAgent
             }
         }
-        ClusterState::MissingOrDeleting => OperatorAction::SetAgentUnavailableConditions {
+        (ClusterState::MissingOrDeleting, _) => OperatorAction::SetAgentUnavailableConditions {
             message: "the KafkaCluster does not exist",
         },
-        ClusterState::ManagementAccessDisabled => OperatorAction::SetAgentUnavailableConditions {
-            message: "the KafkaCluster has no agent, because clusterConfig.managementAccess is \
-                      not enabled",
-        },
-        ClusterState::ManagementAccessEnabled => match agent_state {
-            AgentState::Available => OperatorAction::LeaveToAgent,
-            AgentState::UnavailableSince(Some(since))
-                if now.duration_since(*since) < AGENT_UNAVAILABLE_GRACE_PERIOD =>
-            {
-                OperatorAction::WaitForAgent {
-                    remaining: (AGENT_UNAVAILABLE_GRACE_PERIOD - now.duration_since(*since))
-                        .unsigned_abs(),
-                }
+        (ClusterState::ManagementAccessDisabled, _) => {
+            OperatorAction::SetAgentUnavailableConditions {
+                message: "the KafkaCluster has no agent, because clusterConfig.managementAccess \
+                          is not enabled",
             }
-            AgentState::UnavailableSince(_) => OperatorAction::SetAgentUnavailableConditions {
+        }
+        (ClusterState::ManagementAccessEnabled, AgentState::UnavailableSince(Some(since)))
+            if now.duration_since(*since) < AGENT_UNAVAILABLE_GRACE_PERIOD =>
+        {
+            OperatorAction::WaitForAgent {
+                remaining: (AGENT_UNAVAILABLE_GRACE_PERIOD - now.duration_since(*since))
+                    .unsigned_abs(),
+            }
+        }
+        (ClusterState::ManagementAccessEnabled, AgentState::UnavailableSince(_)) => {
+            OperatorAction::SetAgentUnavailableConditions {
                 message: "the agent of the KafkaCluster is not available",
-            },
-        },
+            }
+        }
     }
 }
 
@@ -394,10 +399,19 @@ mod tests {
     }
 
     #[rstest]
-    #[case::cluster_missing(ClusterState::MissingOrDeleting, AgentState::Available, true)]
+    #[case::cluster_missing_with_agent(
+        ClusterState::MissingOrDeleting,
+        AgentState::Available,
+        false
+    )]
     #[case::cluster_missing_without_agent(
         ClusterState::MissingOrDeleting,
         AgentState::UnavailableSince(None),
+        true
+    )]
+    #[case::cluster_missing_within_the_grace_period(
+        ClusterState::MissingOrDeleting,
+        AgentState::UnavailableSince(Some(seconds_ago(10))),
         true
     )]
     #[case::management_access_disabled(
@@ -411,7 +425,7 @@ mod tests {
         AgentState::UnavailableSince(None),
         false
     )]
-    fn remove_the_finalizer_only_if_the_cluster_is_missing_or_deleting(
+    fn remove_the_finalizer_only_if_the_cluster_is_missing_or_deleting_without_agent(
         #[case] cluster_state: ClusterState,
         #[case] agent_state: AgentState,
         #[case] removes_finalizer: bool,
@@ -428,10 +442,29 @@ mod tests {
     }
 
     #[rstest]
-    #[case::cluster_missing(ClusterState::MissingOrDeleting, AgentState::Available, true)]
-    #[case::management_access_disabled(
+    #[case::cluster_missing_with_agent(
+        ClusterState::MissingOrDeleting,
+        AgentState::Available,
+        false
+    )]
+    #[case::cluster_missing_without_agent(
+        ClusterState::MissingOrDeleting,
+        AgentState::UnavailableSince(None),
+        true
+    )]
+    #[case::cluster_missing_within_the_grace_period(
+        ClusterState::MissingOrDeleting,
+        AgentState::UnavailableSince(Some(seconds_ago(10))),
+        true
+    )]
+    #[case::management_access_disabled_with_agent(
         ClusterState::ManagementAccessDisabled,
         AgentState::Available,
+        false
+    )]
+    #[case::management_access_disabled_without_agent(
+        ClusterState::ManagementAccessDisabled,
+        AgentState::UnavailableSince(None),
         true
     )]
     #[case::agent_available(ClusterState::ManagementAccessEnabled, AgentState::Available, false)]
