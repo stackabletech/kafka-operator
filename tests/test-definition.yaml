@@ -38,16 +38,16 @@ dimensions:
       - 4.3.1
   - name: use-client-tls
     values:
-      - "true"
       - "false"
+      - "true"
   - name: use-client-auth-tls
     values:
-      - "true"
       - "false"
+      - "true"
   - name: use-opa-tls
     values:
-      - "true"
       - "false"
+      - "true"
   - name: openshift
     values:
       - "false"
@@ -97,6 +97,15 @@ tests:
     dimensions:
       - kafka-latest
       - zookeeper-latest
+      - openshift
+      - use-opa-tls
+      - opa-latest
+      - krb5
+  # Tests OPA authorization with KRaft controllers, which have to authorize the requests
+  # that the brokers forward to them (e.g. creating and deleting topics).
+  - name: opa-kraft
+    dimensions:
+      - kafka-kraft
       - openshift
       - use-opa-tls
       - opa-latest

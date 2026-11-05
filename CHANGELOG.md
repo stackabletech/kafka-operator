@@ -19,6 +19,10 @@ All notable changes to this project will be documented in this file.
 - Add the KafkaTopic CRD to manage topics declaratively. The agent creates and adopts topics,
   replaces their configs with `configOverrides`, increases their partitions and optionally deletes
   them. The operator removes the finalizers of KafkaTopics whose KafkaCluster is deleted ([#1050]).
+- The OPA authorizer is now also configured on KRaft controllers. Previously, requests that brokers
+  forward to the controllers (e.g. creating or deleting topics) were not authorized at all.
+  The Kafka nodes are now configured as super users, so that traffic between them does not hit OPA.
+  Controllers now get the same affinity to OPA as brokers ([#1051]).
 
 ### Changed
 
@@ -111,6 +115,7 @@ All notable changes to this project will be documented in this file.
 [#1047]: https://github.com/stackabletech/kafka-operator/pull/1047
 [#1049]: https://github.com/stackabletech/kafka-operator/pull/1049
 [#1050]: https://github.com/stackabletech/kafka-operator/pull/1050
+[#1051]: https://github.com/stackabletech/kafka-operator/pull/1051
 [#1052]: https://github.com/stackabletech/kafka-operator/pull/1052
 
 ## [26.7.0] - 2026-07-21
