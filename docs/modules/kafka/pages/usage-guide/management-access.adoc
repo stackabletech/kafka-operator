@@ -100,6 +100,8 @@ The operator creates the following resources for the agent, named after the Kafk
 * A ServiceAccount `<cluster>-agent`.
 * A RoleBinding `<cluster>-agent`, which binds the ClusterRole `kafka-agent-clusterrole` deployed by the Helm chart.
 
+The agent reports not ready while it cannot list the KafkaTopics of its cluster, and the operator then reports `AgentUnavailable` after a minute.
+
 The Deployment can be adjusted with xref:concepts:overrides.adoc#object-overrides[object overrides], for example to change the resources of the agent:
 
 [source,yaml]

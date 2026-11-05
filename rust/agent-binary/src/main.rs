@@ -18,6 +18,7 @@ use stackable_operator::{
     cli::{Command, CommonOptions},
     client,
     kube::{
+        api::ListParams,
         core::DeserializeGuard,
         runtime::{
             Controller,
@@ -116,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
 
             let mut readiness = HealthCheckRegistry::new();
             let kafka_topics_synced = readiness.register("kafka-topics-synced");
+            let kafka_topics_access = readiness.register("kafka-topics-access");
             let readiness = Arc::new(readiness);
 
             // Watches for the SIGTERM signal and gracefully shuts down the controller.
@@ -132,10 +134,18 @@ async fn main() -> anyhow::Result<()> {
                 },
             ));
 
+            // Works because the CRD declares the field as a selectableField.
+            let cluster_selector = format!("spec.clusterRef.name={cluster_name}");
+            let check_api_access = health::check_k8s_api_access(
+                kafka_topics_access,
+                client.get_api::<KafkaTopic>(cluster_namespace.as_ref()),
+                ListParams::default().fields(&cluster_selector).limit(1),
+                sigterm_watcher.handle(),
+            );
+
             let topic_controller = Controller::new(
                 client.get_api::<DeserializeGuard<KafkaTopic>>(cluster_namespace.as_ref()),
-                // Works because the CRD declares the field as a selectableField.
-                watcher::Config::default().fields(&format!("spec.clusterRef.name={cluster_name}")),
+                watcher::Config::default().fields(&cluster_selector),
             )
             // Each reconcile then acts on the current object; Kafka requests are serialized anyway.
             .with_config(ControllerConfig::default().concurrency(1));
@@ -180,6 +190,10 @@ async fn main() -> anyhow::Result<()> {
                     anyhow::Ok(())
                 },
                 mark_ready,
+                async {
+                    check_api_access.await;
+                    anyhow::Ok(())
+                },
                 async { Ok(health::serve(readiness, sigterm_watcher.handle()).await?) },
             )?;
         }
