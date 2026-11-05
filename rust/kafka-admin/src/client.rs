@@ -56,6 +56,9 @@ const CONNECTION_MAX_IDLE: Duration = Duration::from_secs(5 * 60);
 /// Connecting is skipped for this long after all bootstrap servers failed, so an outage fails fast.
 const CONNECT_COOLDOWN: Duration = Duration::from_secs(30);
 
+/// Failures faster than this, like a refused connection, do not start the cooldown.
+const CONNECT_COOLDOWN_THRESHOLD: Duration = Duration::from_secs(1);
+
 /// Lets the broker apply `num.partitions` or `default.replication.factor` when creating a topic,
 /// see `NumPartitions` and `ReplicationFactor` in
 /// `clients/src/main/resources/common/message/CreateTopicsRequest.json`.
@@ -340,6 +343,7 @@ impl KafkaAdminClient {
         let tls_config = tls::client_config(&self.security)
             .context(TlsSnafu)?
             .map(Arc::new);
+        let started = Instant::now();
         let mut last_error = Error::NoBootstrapServers;
         for server in &self.bootstrap_servers {
             match Connection::connect(server, tls_config.clone(), &self.client_id).await {
@@ -354,6 +358,9 @@ impl KafkaAdminClient {
                     };
                 }
             }
+        }
+        if started.elapsed() < CONNECT_COOLDOWN_THRESHOLD {
+            return Err(last_error);
         }
         let failure = Arc::new(last_error);
         self.connect_failure = Some((Instant::now(), Arc::clone(&failure)));
@@ -654,15 +661,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn skip_connecting_during_the_cooldown() {
-        let (unreachable, unreachable_port) = unreachable_socket();
+    async fn retry_at_once_after_a_fast_failure() {
+        let (_unreachable, unreachable_port) = unreachable_socket();
         let mut client = kafka_admin_client(&[unreachable_port]);
+
+        for _ in 0..2 {
+            let error = client
+                .delete_topic(TOPIC)
+                .await
+                .expect_err("the connection should be refused");
+            assert!(matches!(error, Error::Connect { .. }));
+        }
+    }
+
+    #[tokio::test]
+    async fn skip_connecting_during_the_cooldown() {
+        // Accepts connections but never answers, until the test takes them over
+        let (listener, port) = listen().await;
+        let mut client = kafka_admin_client(&[port]);
         tokio::time::pause();
 
         let failure = client
             .delete_topic(TOPIC)
             .await
-            .expect_err("the connection should fail");
+            .expect_err("the connection should time out");
         assert!(matches!(
             failure,
             Error::ConnectCooldown { ref source } if matches!(**source, Error::Connect { .. })
@@ -680,8 +702,12 @@ mod tests {
 
         tokio::time::advance(CONNECT_COOLDOWN).await;
         tokio::time::resume();
-        let listener = unreachable.listen(1).expect("the socket should listen");
         let broker_side = async {
+            let (timed_out, _) = listener
+                .accept()
+                .await
+                .expect("the timed out connection should be accepted");
+            drop(timed_out);
             let mut broker = accept(&listener, APIS).await;
             answer_delete_topics(&mut broker).await;
         };
