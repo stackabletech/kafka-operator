@@ -403,12 +403,12 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
 mod tests {
     use super::*;
     use crate::controller::{
-        build::container::CONTAINERDEBUG_LOG_DIRECTORY,
+        build::container::FILE_LOG_DIRECTORY,
         test_support::{broker_role_group_config, minimal_kafka, validated_cluster},
     };
 
     /// The user-supplied `envOverrides` must be merged in after all operator-set environment
-    /// variables, so that they can override any of them. `CONTAINERDEBUG_LOG_DIRECTORY` is used
+    /// variables, so that they can override any of them. `FILE_LOG_DIRECTORY` is used
     /// as the example here because it is set unconditionally by the operator. The controller
     /// builder merges the same [`EnvVarSet`] the same way.
     #[test]
@@ -437,7 +437,7 @@ mod tests {
         let mut validated_rg = broker_role_group_config(&cluster, "default").clone();
         validated_rg.env_overrides = validated_rg
             .env_overrides
-            .with_value(&CONTAINERDEBUG_LOG_DIRECTORY, "/custom/log/dir");
+            .with_value(&FILE_LOG_DIRECTORY, "/custom/log/dir");
 
         let (builder, _) =
             build(&cluster, &role_group_name, &validated_rg).expect("the role group builds");
@@ -458,7 +458,7 @@ mod tests {
 
         let containerdebug: Vec<_> = env
             .iter()
-            .filter(|env_var| env_var.name == "CONTAINERDEBUG_LOG_DIRECTORY")
+            .filter(|env_var| env_var.name == "FILE_LOG_DIRECTORY")
             .collect();
         assert_eq!(
             containerdebug.len(),

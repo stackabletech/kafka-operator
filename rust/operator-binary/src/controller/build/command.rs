@@ -60,6 +60,7 @@ pub fn broker_kafka_container_commands(
         {COMMON_BASH_TRAP_FUNCTIONS}
         {remove_vector_shutdown_file_command}
         prepare_signal_handlers
+        mkdir --parents \"$FILE_LOG_DIRECTORY\"
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
         {set_realm_env}
 
@@ -154,6 +155,7 @@ pub fn controller_kafka_container_command(
         {COMMON_BASH_TRAP_FUNCTIONS}
         {remove_vector_shutdown_file_command}
         prepare_signal_handlers
+        mkdir --parents \"$FILE_LOG_DIRECTORY\"
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
         {set_realm_env}
 
