@@ -26,10 +26,11 @@ use crate::{
     codec::{self, api_key, decode_response, encode_request},
 };
 
-// The defaults of Kafka's Java admin client, in `clients/src/main/java/org/apache/kafka/clients/`:
+// The defaults of Kafka's Java admin client:
 // - `socket.connection.setup.timeout.ms`, `DEFAULT_SOCKET_CONNECTION_SETUP_TIMEOUT_MS` in
-//   `CommonClientConfigs.java`
-// - `request.timeout.ms` in `admin/AdminClientConfig.java`
+//   https://github.com/apache/kafka/blob/4.3.1/clients/src/main/java/org/apache/kafka/clients/CommonClientConfigs.java
+// - `request.timeout.ms` in
+//   https://github.com/apache/kafka/blob/4.3.1/clients/src/main/java/org/apache/kafka/clients/admin/AdminClientConfig.java
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -37,7 +38,7 @@ pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
 
 /// The first version with `ClientSoftwareName` and `ClientSoftwareVersion`, see
-/// `clients/src/main/resources/common/message/ApiVersionsRequest.json` in the Kafka repository.
+/// <https://github.com/apache/kafka/blob/4.3.1/clients/src/main/resources/common/message/ApiVersionsRequest.json>
 const API_VERSIONS_VERSION: i16 = 3;
 
 #[derive(Debug, Snafu)]

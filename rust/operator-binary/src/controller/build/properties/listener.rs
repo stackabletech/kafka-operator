@@ -157,6 +157,8 @@ pub(crate) fn pod_fqdn(
     format!("${{env:POD_NAME}}.{sts_service_name}.{namespace}.svc.{cluster_domain}")
 }
 
+/// `<service>.<namespace>.svc.<cluster-domain>:<port>`, which resolves to the Pods of a headless
+/// Service.
 pub(crate) fn headless_service_address(
     headless_service_name: &ServiceName,
     namespace: &NamespaceName,
