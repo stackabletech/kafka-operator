@@ -38,7 +38,7 @@ pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
 
 /// The first version with `ClientSoftwareName` and `ClientSoftwareVersion`, see
-/// https://github.com/apache/kafka/blob/4.3.1/clients/src/main/resources/common/message/ApiVersionsRequest.json
+/// <https://github.com/apache/kafka/blob/4.3.1/clients/src/main/resources/common/message/ApiVersionsRequest.json>
 const API_VERSIONS_VERSION: i16 = 3;
 
 #[derive(Debug, Snafu)]

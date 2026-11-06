@@ -51,7 +51,7 @@ const _: () = assert!((BROKER_TIMEOUT_MS as u128) < connection::REQUEST_TIMEOUT.
 
 /// Must stay below the broker's `connections.max.idle.ms`, 10 minutes by default, see
 /// `CONNECTIONS_MAX_IDLE_MS_DEFAULT` in
-/// https://github.com/apache/kafka/blob/4.3.1/server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java
+/// <https://github.com/apache/kafka/blob/4.3.1/server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java>
 const CONNECTION_MAX_IDLE: Duration = Duration::from_secs(5 * 60);
 
 /// Connecting is skipped for this long after all bootstrap servers failed, so an outage fails fast.
@@ -62,7 +62,7 @@ const CONNECT_COOLDOWN_THRESHOLD: Duration = Duration::from_secs(1);
 
 /// Lets the broker apply `num.partitions` or `default.replication.factor` when creating a topic,
 /// see `NumPartitions` and `ReplicationFactor` in
-/// https://github.com/apache/kafka/blob/4.3.1/clients/src/main/resources/common/message/CreateTopicsRequest.json
+/// <https://github.com/apache/kafka/blob/4.3.1/clients/src/main/resources/common/message/CreateTopicsRequest.json>
 const BROKER_DEFAULT: i32 = -1;
 
 // The codes of the enums in Kafka's Java client:
