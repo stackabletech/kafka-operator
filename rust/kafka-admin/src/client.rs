@@ -35,7 +35,8 @@ use crate::{
 };
 
 // The highest versions that Kafka 3.9.2 supports and 4.3.1 still supports, see `validVersions` in
-// `clients/src/main/resources/common/message/<Api>Request.json` of the Kafka repository.
+// the `<Api>Request.json` files of
+// https://github.com/apache/kafka/tree/4.3.1/clients/src/main/resources/common/message
 const METADATA_VERSION: i16 = 12;
 const CREATE_TOPICS_VERSION: i16 = 7;
 const DELETE_TOPICS_VERSION: i16 = 6;
@@ -50,7 +51,7 @@ const _: () = assert!((BROKER_TIMEOUT_MS as u128) < connection::REQUEST_TIMEOUT.
 
 /// Must stay below the broker's `connections.max.idle.ms`, 10 minutes by default, see
 /// `CONNECTIONS_MAX_IDLE_MS_DEFAULT` in
-/// `server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java`.
+/// https://github.com/apache/kafka/blob/4.3.1/server/src/main/java/org/apache/kafka/network/SocketServerConfigs.java
 const CONNECTION_MAX_IDLE: Duration = Duration::from_secs(5 * 60);
 
 /// Connecting is skipped for this long after all bootstrap servers failed, so an outage fails fast.
@@ -61,13 +62,16 @@ const CONNECT_COOLDOWN_THRESHOLD: Duration = Duration::from_secs(1);
 
 /// Lets the broker apply `num.partitions` or `default.replication.factor` when creating a topic,
 /// see `NumPartitions` and `ReplicationFactor` in
-/// `clients/src/main/resources/common/message/CreateTopicsRequest.json`.
+/// https://github.com/apache/kafka/blob/4.3.1/clients/src/main/resources/common/message/CreateTopicsRequest.json
 const BROKER_DEFAULT: i32 = -1;
 
-// The codes of the enums in Kafka's Java client, in `clients/src/main/java/org/apache/kafka/`:
-// - `ConfigResource.Type` in `common/config/ConfigResource.java`
-// - `ConfigSource` in `common/requests/DescribeConfigsResponse.java`
-// - `AlterConfigOp.OpType` in `clients/admin/AlterConfigOp.java`
+// The codes of the enums in Kafka's Java client:
+// - `ConfigResource.Type` in
+//   https://github.com/apache/kafka/blob/4.3.1/clients/src/main/java/org/apache/kafka/common/config/ConfigResource.java
+// - `ConfigSource` in
+//   https://github.com/apache/kafka/blob/4.3.1/clients/src/main/java/org/apache/kafka/common/requests/DescribeConfigsResponse.java
+// - `AlterConfigOp.OpType` in
+//   https://github.com/apache/kafka/blob/4.3.1/clients/src/main/java/org/apache/kafka/clients/admin/AlterConfigOp.java
 const RESOURCE_TYPE_TOPIC: i8 = 2;
 const CONFIG_SOURCE_DYNAMIC_TOPIC: i8 = 1;
 const CONFIG_OPERATION_SET: i8 = 0;
@@ -111,6 +115,11 @@ pub enum Error {
         error: ResponseError,
         message: Option<String>,
     },
+
+    #[snafu(display(
+        "the topic {topic:?} was created, but the broker answered {error} instead of its configs"
+    ))]
+    CreatedWithoutConfigs { topic: String, error: ResponseError },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -118,7 +127,10 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 impl Error {
     /// Whether the broker answered with an error code, as opposed to a connection problem.
     pub fn is_rejected_by_kafka(&self) -> bool {
-        matches!(self, Error::Kafka { .. })
+        matches!(
+            self,
+            Error::Kafka { .. } | Error::CreatedWithoutConfigs { .. }
+        )
     }
 }
 
@@ -201,8 +213,8 @@ impl KafkaAdminClient {
         describe_topic_configs_result(response, topic)
     }
 
-    /// Creates the topic. Without `partitions` or `replication_factor`, the broker applies its
-    /// `num.partitions` or `default.replication.factor`.
+    /// Creates the topic. Without `partitions` or `replication_factor`, the broker uses its own
+    /// default for the missing value.
     pub async fn create_topic(
         &mut self,
         topic: &str,
@@ -471,13 +483,10 @@ fn create_topic_result(response: CreateTopicsResponse, topic: &str) -> Result<Cr
         result.error_code,
         result.error_message,
     )?;
-    // Without the details, e.g. if `DESCRIBE_CONFIGS` is not allowed, the topic was still created.
-    check_error_code(
-        ApiKey::CreateTopics,
-        topic,
-        result.topic_config_error_code,
-        None,
-    )?;
+    // Without the `DESCRIBE_CONFIGS` permission the configs are missing, but the topic exists.
+    if let Some(error) = result.topic_config_error_code.err() {
+        return CreatedWithoutConfigsSnafu { topic, error }.fail();
+    }
     Ok(CreatedTopic {
         id: topic_id(result.topic_id.as_bytes()),
         partitions: result.num_partitions,
@@ -641,7 +650,7 @@ mod tests {
 
     const TOPIC: &str = "orders";
     const APIS: &[(i16, i16, i16)] = &[(DeleteTopicsRequest::KEY, 0, DELETE_TOPICS_VERSION)];
-    // `ConfigSource`, like `CONFIG_SOURCE_DYNAMIC_TOPIC`
+    // Config sources that `topic_level_configs` must filter out, see `CONFIG_SOURCE_DYNAMIC_TOPIC`
     const CONFIG_SOURCE_STATIC_BROKER: i8 = 4;
     const CONFIG_SOURCE_DEFAULT: i8 = 5;
 
@@ -931,7 +940,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            Error::Kafka {
+            Error::CreatedWithoutConfigs {
                 error: ResponseError::TopicAuthorizationFailed,
                 ..
             }
