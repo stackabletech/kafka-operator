@@ -18,6 +18,7 @@ use stackable_operator::{
     },
     config::merge::Merge,
     constant,
+    crd::management_access::v1alpha1::{Anonymous, TlsClientCredential},
     deep_merger::ObjectOverrides,
     kube::{CustomResource, runtime::reflector::ObjectRef},
     role_utils::GenericRoleConfig,
@@ -241,6 +242,37 @@ pub mod versioned {
         ///
         #[serde(skip_serializing_if = "Option::is_none")]
         pub broker_id_pod_config_map_name: Option<ConfigMapName>,
+
+        // no doc - docs in KafkaManagementAccess struct.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub management_access: Option<v1alpha1::KafkaManagementAccess>,
+    }
+
+    /// Management access of the Stackable Data Platform to this Kafka cluster, used to manage
+    /// resources like `KafkaTopic`s. The credential must be authorized in Kafka by the user.
+    #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaManagementAccess {
+        /// Whether management access is enabled.
+        pub enabled: bool,
+
+        /// How the Stackable Data Platform authenticates to Kafka.
+        pub authentication: v1alpha1::KafkaManagementAccessAuthentication,
+    }
+
+    #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KafkaManagementAccessAuthentication {
+        // no doc - docs in UserProvidedAuthentication enum.
+        pub user_provided: v1alpha1::UserProvidedAuthentication,
+    }
+
+    /// A credential provided by the user.
+    #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub enum UserProvidedAuthentication {
+        Anonymous(Anonymous),
+        Tls(TlsClientCredential),
     }
 
     #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Merge, PartialEq, Serialize)]
@@ -274,6 +306,7 @@ impl Default for v1alpha1::KafkaClusterConfig {
             zookeeper_config_map_name: None,
             metadata_manager: None,
             broker_id_pod_config_map_name: None,
+            management_access: None,
         }
     }
 }
