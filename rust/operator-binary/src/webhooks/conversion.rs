@@ -1,4 +1,5 @@
 use snafu::{ResultExt, Snafu};
+use stackable_kafka_shared::crd::topic::{KafkaTopic, KafkaTopicVersion};
 use stackable_operator::{
     cli::OperatorEnvironmentOptions,
     kube::{Client, core::crd::MergeError},
@@ -29,10 +30,16 @@ pub async fn create_webhook_server(
     readiness_checks: HealthCheckRegistry,
     client: Client,
 ) -> Result<WebhookServer, Error> {
-    let crds_and_handlers = vec![(
-        KafkaCluster::merged_crd(KafkaClusterVersion::V1Alpha1).context(MergeCrdSnafu)?,
-        KafkaCluster::try_convert,
-    )];
+    let crds_and_handlers = vec![
+        (
+            KafkaCluster::merged_crd(KafkaClusterVersion::V1Alpha1).context(MergeCrdSnafu)?,
+            KafkaCluster::try_convert as fn(_) -> _,
+        ),
+        (
+            KafkaTopic::merged_crd(KafkaTopicVersion::V1Alpha1).context(MergeCrdSnafu)?,
+            KafkaTopic::try_convert as fn(_) -> _,
+        ),
+    ];
 
     let conversion_webhook_options = ConversionWebhookOptions {
         disable_crd_maintenance,

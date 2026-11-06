@@ -1,0 +1,15 @@
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: orders
+spec:
+  clusterRef:
+    name: test-kafka
+  # Equal to the name on purpose, so that step 31 can test that topicName is immutable.
+  topicName: orders
+  partitions: 3
+  replicationFactor: 1
+  configOverrides:
+    retention.ms: "3600000"
+    max.message.bytes: "2097152"

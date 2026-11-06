@@ -1,0 +1,8 @@
+---
+# The API server rejects topics starting with __, which are internal to Kafka.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: >-
+      kubectl apply --namespace $NAMESPACE --filename 22_internal_topic.yaml 2>&1
+      | grep "topics starting with __ are internal to Kafka"

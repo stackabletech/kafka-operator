@@ -1,0 +1,9 @@
+---
+# Adopts the topic that the KafkaTopic orders retained in Kafka.
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: orders
+spec:
+  clusterRef:
+    name: test-kafka

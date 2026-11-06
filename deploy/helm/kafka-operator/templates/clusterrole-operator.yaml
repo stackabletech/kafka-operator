@@ -128,6 +128,24 @@ rules:
       - {{ include "kafka-operator.name" . }}clusters/status
     verbs:
       - patch
+  # KafkaTopics: watched to take over while no agent is available, and their finalizer removed
+  # once the KafkaCluster is gone.
+  - apiGroups:
+      - {{ include "kafka-operator.name" . }}.stackable.tech
+    resources:
+      - kafkatopics
+    verbs:
+      - get
+      - list
+      - watch
+      - patch
+  # Status subresource: conditions set while the agent is unavailable.
+  - apiGroups:
+      - {{ include "kafka-operator.name" . }}.stackable.tech
+    resources:
+      - kafkatopics/status
+    verbs:
+      - patch
   # Read authentication class configuration referenced in the KafkaCluster spec.
   - apiGroups:
       - authentication.stackable.tech

@@ -1,0 +1,11 @@
+---
+# orders has the default deletion policy Retain, legacy has Delete.
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+commands:
+  - script: test -z "$(kubectl get kafkatopics --namespace $NAMESPACE --output name)"
+  - script: bash kafka-cli.sh kafka-topics.sh --list | grep -x orders
+  - script: |
+      topics=$(bash kafka-cli.sh kafka-topics.sh --list)
+      ! echo "$topics" | grep -x legacy
