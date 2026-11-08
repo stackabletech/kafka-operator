@@ -1,4 +1,5 @@
 = Graceful shutdown
+:description: Graceful shutdown of Apache Kafka brokers, covering the shutdown timeout and how brokers hand over partition leadership before stopping.
 
 You can configure the graceful shutdown as described in xref:concepts:operations/graceful_shutdown.adoc[].
 
