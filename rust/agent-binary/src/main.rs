@@ -178,9 +178,11 @@ async fn main() -> anyhow::Result<()> {
                     },
                 );
 
+            // The writer is only dropped once the controller has shut down.
             let mark_ready = async {
-                kafka_topic_store.wait_until_ready().await?;
-                kafka_topics_synced.mark_passed();
+                if kafka_topic_store.wait_until_ready().await.is_ok() {
+                    kafka_topics_synced.mark_passed();
+                }
                 anyhow::Ok(())
             };
 
