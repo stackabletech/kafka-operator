@@ -1,4 +1,5 @@
 = Cluster ID
+:description: The Apache Kafka cluster ID stored in ZooKeeper, covering how mismatches arise when restarting a cluster, replacing a ZNode or upgrading SDP.
 
 Kafka has an internal check to ensure that a broker cannot join a different cluster to the one in which it was previously registered (this is important to avoid various kinds of metadata inconsistencies in the cluster).
 The clusterId is stored locally after initial registration and is verified upon cluster startup that it still matches what is in ZooKeeper.

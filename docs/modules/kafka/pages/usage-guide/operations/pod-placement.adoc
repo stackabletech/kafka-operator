@@ -1,4 +1,5 @@
 = Pod placement
+:description: Pod placement for Apache Kafka brokers, covering the default anti-affinity and placement next to OPA when OPA authorization is used.
 
 You can configure Pod placement for Kafka brokers and controllers as described in xref:concepts:pod_placement.adoc[].
 

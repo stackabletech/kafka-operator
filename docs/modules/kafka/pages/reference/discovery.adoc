@@ -3,6 +3,7 @@
 :brokerPort: 9092
 
 = Discovery
+:description: Reference for the discovery ConfigMap the Stackable operator for Apache Kafka publishes, with the connection string other tools use to reach the brokers.
 :page-aliases: discovery.adoc
 
 The Stackable Operator for Apache Kafka publishes a xref:concepts:service_discovery.adoc[service discovery ConfigMap] which exposes a client configuration bundle that allows access to the Apache Kafka cluster.

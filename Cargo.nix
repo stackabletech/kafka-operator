@@ -38,27 +38,45 @@ rec {
   # "public" attributes that we attempt to keep stable with new versions of crate2nix.
   #
 
-  rootCrate = rec {
-    packageId = "stackable-kafka-operator";
 
-    # Use this attribute to refer to the derivation building your root crate package.
-    # You can override the features with rootCrate.build.override { features = [ "default" "feature1" ... ]; }.
-    build = internal.buildRustCrateWithFeatures {
-      inherit packageId;
-    };
-
-    # Debug support which might change between releases.
-    # File a bug if you depend on any for non-debug work!
-    debug = internal.debugCrate { inherit packageId; };
-  };
   # Refer your crate build derivation by name here.
   # You can override the features with
   # workspaceMembers."${crateName}".build.override { features = [ "default" "feature1" ... ]; }.
   workspaceMembers = {
+    "stackable-kafka-admin" = rec {
+      packageId = "stackable-kafka-admin";
+      build = internal.buildRustCrateWithFeatures {
+        packageId = "stackable-kafka-admin";
+      };
+
+      # Debug support which might change between releases.
+      # File a bug if you depend on any for non-debug work!
+      debug = internal.debugCrate { inherit packageId; };
+    };
+    "stackable-kafka-agent" = rec {
+      packageId = "stackable-kafka-agent";
+      build = internal.buildRustCrateWithFeatures {
+        packageId = "stackable-kafka-agent";
+      };
+
+      # Debug support which might change between releases.
+      # File a bug if you depend on any for non-debug work!
+      debug = internal.debugCrate { inherit packageId; };
+    };
     "stackable-kafka-operator" = rec {
       packageId = "stackable-kafka-operator";
       build = internal.buildRustCrateWithFeatures {
         packageId = "stackable-kafka-operator";
+      };
+
+      # Debug support which might change between releases.
+      # File a bug if you depend on any for non-debug work!
+      debug = internal.debugCrate { inherit packageId; };
+    };
+    "stackable-kafka-shared" = rec {
+      packageId = "stackable-kafka-shared";
+      build = internal.buildRustCrateWithFeatures {
+        packageId = "stackable-kafka-shared";
       };
 
       # Debug support which might change between releases.
@@ -1578,6 +1596,53 @@ rec {
             packageId = "libc";
             usesDefaultFeatures = false;
             target = { target, features }: (("loongarch64" == target."arch" or null) && ("linux" == target."os" or null));
+          }
+        ];
+
+      };
+      "crc" = rec {
+        crateName = "crc";
+        version = "3.4.0";
+        edition = "2021";
+        sha256 = "03dsq5qsv86m35ikg84l80d00wnkjm8q4pjxgac0vaqjrnhs5f2y";
+        license = "MIT OR Apache-2.0";
+        authors = [
+          "Rui Hu <code@mrhooray.com>"
+          "Akhil Velagapudi <4@4khil.com>"
+        ];
+        dependencies = [
+          {
+            name = "crc-catalog";
+            packageId = "crc-catalog";
+          }
+        ];
+
+      };
+      "crc-catalog" = rec {
+        crateName = "crc-catalog";
+        version = "2.5.0";
+        edition = "2018";
+        sha256 = "0lq8dl60g457za8la86pak6i7ydxanm2lrpkqh5kyjkbz7m9hxi1";
+        libName = "crc_catalog";
+        license = "MIT OR Apache-2.0";
+        authors = [
+          "Akhil Velagapudi <akhilvelagapudi@gmail.com>"
+        ];
+
+      };
+      "crc32c" = rec {
+        crateName = "crc32c";
+        version = "0.6.8";
+        edition = "2018";
+        sha256 = "0iwyr3jivcnhylczqgk1rkpp9b46r25vi5dj1y7il29dc8hsyirs";
+        license = "Apache-2.0/MIT";
+        authors = [
+          "Zack Owens"
+        ];
+        buildDependencies = [
+          {
+            name = "rustc_version";
+            packageId = "rustc_version";
           }
         ];
 
@@ -5616,6 +5681,53 @@ rec {
           "serde" = [ "dep:serde" ];
         };
         resolvedDefaultFeatures = [ "darling" ];
+      };
+      "kafka-protocol" = rec {
+        crateName = "kafka-protocol";
+        version = "0.18.0";
+        edition = "2021";
+        sha256 = "1nidzrl3whxjf81qz88wh5dqgwh510m4vjhqpw687ka03cpmr789";
+        libName = "kafka_protocol";
+        license = "MIT/Apache-2.0";
+        authors = [
+          "Diggory Blake <diggsey@googlemail.com>"
+          "Charlotte McElwain <charlotte.c.mcelwain@gmail.com>"
+          "belltoy <belltoy@gmail.com>"
+        ];
+        dependencies = [
+          {
+            name = "anyhow";
+            packageId = "anyhow";
+          }
+          {
+            name = "bytes";
+            packageId = "bytes";
+          }
+          {
+            name = "crc";
+            packageId = "crc";
+          }
+          {
+            name = "crc32c";
+            packageId = "crc32c";
+          }
+          {
+            name = "indexmap";
+            packageId = "indexmap";
+          }
+          {
+            name = "uuid";
+            packageId = "uuid";
+          }
+        ];
+        features = {
+          "default" = [ "client" "broker" "gzip" "zstd" "snappy" "lz4" ];
+          "gzip" = [ "dep:flate2" ];
+          "lz4" = [ "dep:lz4" ];
+          "snappy" = [ "dep:snap" ];
+          "zstd" = [ "dep:zstd" ];
+        };
+        resolvedDefaultFeatures = [ "broker" "client" ];
       };
       "konst" = rec {
         crateName = "konst";
@@ -9799,10 +9911,10 @@ rec {
       };
       "serde-saphyr" = rec {
         crateName = "serde-saphyr";
-        version = "2.1.0";
+        version = "2.1.1";
         edition = "2024";
         crateBin = [];
-        sha256 = "1diixjn80w882xrgqqqci3rdifj4f0nn0yg9lqbj8qy59xqw4k9z";
+        sha256 = "1zh7iwfc84z3brgqgbfyips049hq6l4pv3d557wyc1qbalnvhgyl";
         libName = "serde_saphyr";
         license = "MIT OR Apache-2.0";
         dependencies = [
@@ -10599,6 +10711,50 @@ rec {
           "std" = [ "alloc" ];
         };
       };
+      "stackable-agent" = rec {
+        crateName = "stackable-agent";
+        version = "0.1.0";
+        edition = "2024";
+        workspace_member = null;
+        src = pkgs.fetchgit {
+          url = "https://github.com/stackabletech/operator-rs.git";
+          rev = "b0b8ca31a79da03b3fa20507b709390d2647efe4";
+          sha256 = "1yfmjslv9s111zc4zfqzi2aankchiw8yjxx2zlc17wgayqrbmxrj";
+        };
+        libName = "stackable_agent";
+        license = "Apache-2.0";
+        authors = [
+          "Stackable GmbH <info@stackable.de>"
+        ];
+        dependencies = [
+          {
+            name = "k8s-openapi";
+            packageId = "k8s-openapi";
+            usesDefaultFeatures = false;
+            features = [ "schemars" "v1_36" ];
+          }
+          {
+            name = "schemars";
+            packageId = "schemars";
+            features = [ "url2" ];
+          }
+          {
+            name = "serde";
+            packageId = "serde";
+            features = [ "derive" ];
+          }
+          {
+            name = "stackable-versioned";
+            packageId = "stackable-versioned";
+          }
+          {
+            name = "strum";
+            packageId = "strum";
+            features = [ "derive" ];
+          }
+        ];
+
+      };
       "stackable-certs" = rec {
         crateName = "stackable-certs";
         version = "0.5.0";
@@ -10703,6 +10859,140 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" "rustls" ];
       };
+      "stackable-kafka-admin" = rec {
+        crateName = "stackable-kafka-admin";
+        version = "0.0.0-dev";
+        edition = "2024";
+        src = lib.cleanSourceWith { filter = sourceFilter;  src = ./rust/kafka-admin; };
+        libName = "stackable_kafka_admin";
+        license = "OSL-3.0";
+        authors = [
+          "Stackable GmbH <info@stackable.tech>"
+        ];
+        dependencies = [
+          {
+            name = "anyhow";
+            packageId = "anyhow";
+          }
+          {
+            name = "base64";
+            packageId = "base64 0.22.1";
+          }
+          {
+            name = "bytes";
+            packageId = "bytes";
+          }
+          {
+            name = "futures";
+            packageId = "futures";
+          }
+          {
+            name = "kafka-protocol";
+            packageId = "kafka-protocol";
+            usesDefaultFeatures = false;
+            features = [ "broker" "client" ];
+          }
+          {
+            name = "rustls";
+            packageId = "rustls";
+            usesDefaultFeatures = false;
+            features = [ "logging" "ring" "std" "tls12" ];
+          }
+          {
+            name = "snafu";
+            packageId = "snafu 0.9.2";
+          }
+          {
+            name = "tokio";
+            packageId = "tokio";
+            features = [ "full" ];
+          }
+          {
+            name = "tokio-rustls";
+            packageId = "tokio-rustls";
+            usesDefaultFeatures = false;
+            features = [ "logging" "ring" "tls12" ];
+          }
+          {
+            name = "tokio-util";
+            packageId = "tokio-util";
+            features = [ "codec" ];
+          }
+        ];
+        devDependencies = [
+          {
+            name = "rstest";
+            packageId = "rstest";
+          }
+          {
+            name = "tokio";
+            packageId = "tokio";
+            features = [ "full" "test-util" ];
+          }
+        ];
+
+      };
+      "stackable-kafka-agent" = rec {
+        crateName = "stackable-kafka-agent";
+        version = "0.0.0-dev";
+        edition = "2024";
+        crateBin = [
+          {
+            name = "stackable-kafka-agent";
+            path = "src/main.rs";
+            requiredFeatures = [ ];
+          }
+        ];
+        src = lib.cleanSourceWith { filter = sourceFilter;  src = ./rust/agent-binary; };
+        license = "OSL-3.0";
+        authors = [
+          "Stackable GmbH <info@stackable.tech>"
+        ];
+        dependencies = [
+          {
+            name = "anyhow";
+            packageId = "anyhow";
+          }
+          {
+            name = "axum";
+            packageId = "axum";
+          }
+          {
+            name = "clap";
+            packageId = "clap";
+          }
+          {
+            name = "snafu";
+            packageId = "snafu 0.9.2";
+          }
+          {
+            name = "stackable-kafka-shared";
+            packageId = "stackable-kafka-shared";
+          }
+          {
+            name = "stackable-operator";
+            packageId = "stackable-operator";
+            features = [ "agent" "crds" "webhook" ];
+          }
+          {
+            name = "tokio";
+            packageId = "tokio";
+            features = [ "full" ];
+          }
+          {
+            name = "tracing";
+            packageId = "tracing";
+          }
+        ];
+        buildDependencies = [
+          {
+            name = "built";
+            packageId = "built";
+            features = [ "chrono" "git2" ];
+          }
+        ];
+
+      };
       "stackable-kafka-operator" = rec {
         crateName = "stackable-kafka-operator";
         version = "0.0.0-dev";
@@ -10758,9 +11048,13 @@ rec {
             packageId = "snafu 0.9.2";
           }
           {
+            name = "stackable-kafka-shared";
+            packageId = "stackable-kafka-shared";
+          }
+          {
             name = "stackable-operator";
             packageId = "stackable-operator";
-            features = [ "crds" "webhook" ];
+            features = [ "agent" "crds" "webhook" ];
           }
           {
             name = "strum";
@@ -10782,6 +11076,36 @@ rec {
             name = "built";
             packageId = "built";
             features = [ "chrono" "git2" ];
+          }
+        ];
+        devDependencies = [
+          {
+            name = "rstest";
+            packageId = "rstest";
+          }
+        ];
+
+      };
+      "stackable-kafka-shared" = rec {
+        crateName = "stackable-kafka-shared";
+        version = "0.0.0-dev";
+        edition = "2024";
+        src = lib.cleanSourceWith { filter = sourceFilter;  src = ./rust/shared; };
+        libName = "stackable_kafka_shared";
+        license = "OSL-3.0";
+        authors = [
+          "Stackable GmbH <info@stackable.tech>"
+        ];
+        dependencies = [
+          {
+            name = "stackable-operator";
+            packageId = "stackable-operator";
+            features = [ "agent" "crds" "webhook" ];
+          }
+          {
+            name = "strum";
+            packageId = "strum";
+            features = [ "derive" ];
           }
         ];
         devDependencies = [
@@ -10917,6 +11241,11 @@ rec {
             packageId = "snafu 0.9.2";
           }
           {
+            name = "stackable-agent";
+            packageId = "stackable-agent";
+            optional = true;
+          }
+          {
             name = "stackable-operator-derive";
             packageId = "stackable-operator-derive";
           }
@@ -10995,7 +11324,7 @@ rec {
           "time" = [ "stackable-shared/time" ];
           "webhook" = [ "dep:stackable-webhook" ];
         };
-        resolvedDefaultFeatures = [ "crds" "default" "webhook" ];
+        resolvedDefaultFeatures = [ "agent" "crds" "default" "webhook" ];
       };
       "stackable-operator-derive" = rec {
         crateName = "stackable-operator-derive";
@@ -12202,7 +12531,7 @@ rec {
           "tracing" = [ "dep:tracing" ];
           "windows-sys" = [ "dep:windows-sys" ];
         };
-        resolvedDefaultFeatures = [ "bytes" "default" "fs" "full" "io-std" "io-util" "libc" "macros" "mio" "net" "parking_lot" "process" "rt" "rt-multi-thread" "signal" "signal-hook-registry" "socket2" "sync" "time" "tokio-macros" "windows-sys" ];
+        resolvedDefaultFeatures = [ "bytes" "default" "fs" "full" "io-std" "io-util" "libc" "macros" "mio" "net" "parking_lot" "process" "rt" "rt-multi-thread" "signal" "signal-hook-registry" "socket2" "sync" "test-util" "time" "tokio-macros" "windows-sys" ];
       };
       "tokio-macros" = rec {
         crateName = "tokio-macros";

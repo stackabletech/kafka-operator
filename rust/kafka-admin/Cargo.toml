@@ -1,0 +1,25 @@
+[package]
+name = "stackable-kafka-admin"
+description = "Kafka admin client of the Stackable agent for Apache Kafka"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+bytes.workspace = true
+futures.workspace = true
+kafka-protocol.workspace = true
+rustls.workspace = true
+snafu.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+tokio-util.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

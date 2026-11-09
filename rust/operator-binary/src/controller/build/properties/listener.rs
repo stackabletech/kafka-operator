@@ -6,7 +6,13 @@
 
 use std::collections::BTreeMap;
 
-use stackable_operator::{commons::networking::DomainName, v2::types::kubernetes::NamespaceName};
+use stackable_operator::{
+    commons::networking::DomainName,
+    v2::types::{
+        common::Port,
+        kubernetes::{NamespaceName, ServiceName},
+    },
+};
 
 use crate::{
     controller::{RoleGroupName, ValidatedCluster, security::ValidatedKafkaSecurity},
@@ -149,6 +155,17 @@ pub(crate) fn pod_fqdn(
     cluster_domain: &DomainName,
 ) -> String {
     format!("${{env:POD_NAME}}.{sts_service_name}.{namespace}.svc.{cluster_domain}")
+}
+
+/// `<service>.<namespace>.svc.<cluster-domain>:<port>`, which resolves to the Pods of a headless
+/// Service.
+pub(crate) fn headless_service_address(
+    headless_service_name: &ServiceName,
+    namespace: &NamespaceName,
+    cluster_domain: &DomainName,
+    port: &Port,
+) -> String {
+    format!("{headless_service_name}.{namespace}.svc.{cluster_domain}:{port}")
 }
 
 #[cfg(test)]
