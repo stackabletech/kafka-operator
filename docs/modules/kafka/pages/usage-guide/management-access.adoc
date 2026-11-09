@@ -112,6 +112,7 @@ spec:
       kind: Deployment
       metadata:
         name: simple-kafka-agent
+        namespace: default
       spec:
         template:
           spec:
@@ -123,7 +124,8 @@ spec:
 ----
 
 The default resources of the agent are sufficient for a few thousand topics.
-The operator keeps all KafkaTopics of all clusters it watches in memory and reconciles them whenever it starts, so with many thousands of topics, increase its CPU and memory in the Helm values of the operator.
+The operator also keeps all KafkaTopics of all clusters it watches in memory, and every change of a KafkaCluster or its agent Deployment makes it check all KafkaTopics of that cluster.
+With many thousands of topics, increase the CPU and memory of the operator in its Helm values.
 
 == Disabling management access
 

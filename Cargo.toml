@@ -24,6 +24,8 @@ const_format = "0.2"
 futures = "0.3"
 indoc = "2.0"
 kafka-protocol = { version = "0.18", default-features = false, features = ["broker", "client"] }
+# Enables `Controller::watches_stream`. The version must match the kube re-exported by stackable-operator, which leaves the feature off on purpose.
+kube-runtime = { version = "*", default-features = false, features = ["unstable-runtime-stream-control"] }
 regex = "1.13"
 rstest = "0.28"
 rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }

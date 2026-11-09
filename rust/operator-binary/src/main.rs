@@ -26,10 +26,10 @@ use stackable_operator::{
         CustomResourceExt, ResourceExt,
         core::DeserializeGuard,
         runtime::{
-            Controller,
+            Controller, WatchStreamExt as _,
             controller::Config as ControllerConfig,
             events::{Recorder, Reporter},
-            reflector::ObjectRef,
+            reflector::{self, ObjectRef},
             watcher,
         },
     },
@@ -49,6 +49,7 @@ use crate::{
 
 mod controller;
 mod crd;
+mod store;
 mod topic_controller;
 mod webhooks;
 
@@ -260,10 +261,17 @@ async fn main() -> anyhow::Result<()> {
             .with_config(ControllerConfig::default().concurrency(4));
             let kafka_topic_store_for_clusters = topic_controller.store();
             let kafka_topic_store_for_agents = topic_controller.store();
+            let (kafka_clusters, kafka_clusters_writer) = reflector::store();
+            let (agent_deployments, agent_deployments_writer) = reflector::store();
             let topic_controller = topic_controller
-                .watches(
-                    watch_namespace.get_api::<DeserializeGuard<v1alpha1::KafkaCluster>>(&client),
-                    watcher::Config::default(),
+                .watches_stream(
+                    watcher(
+                        watch_namespace
+                            .get_api::<DeserializeGuard<v1alpha1::KafkaCluster>>(&client),
+                        watcher::Config::default(),
+                    )
+                    .reflect(kafka_clusters_writer)
+                    .touched_objects(),
                     move |kafka_cluster| {
                         kafka_topics_of_cluster(
                             &kafka_topic_store_for_clusters,
@@ -272,9 +280,13 @@ async fn main() -> anyhow::Result<()> {
                         )
                     },
                 )
-                .watches(
-                    watch_namespace.get_api::<DeserializeGuard<Deployment>>(&client),
-                    watcher::Config::default().labels_from(&all_agents_selector()),
+                .watches_stream(
+                    watcher(
+                        watch_namespace.get_api::<Deployment>(&client),
+                        watcher::Config::default().labels_from(&all_agents_selector()),
+                    )
+                    .reflect(agent_deployments_writer)
+                    .touched_objects(),
                     move |agent_deployment| {
                         kafka_topics_of_cluster(
                             &kafka_topic_store_for_agents,
@@ -292,6 +304,8 @@ async fn main() -> anyhow::Result<()> {
                     topic_controller::error_policy,
                     Arc::new(topic_controller::Ctx {
                         client: client.clone(),
+                        kafka_clusters,
+                        agent_deployments,
                     }),
                 )
                 .for_each_concurrent(16, move |result| {

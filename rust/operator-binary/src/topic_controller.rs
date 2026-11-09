@@ -33,6 +33,7 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 use crate::{
     controller::agent_resource_names_of,
     crd::{KAFKA_OPERATOR_NAME, v1alpha1::KafkaCluster},
+    store,
 };
 
 pub const TOPIC_CONTROLLER_NAME: &str = "kafkatopic";
@@ -55,15 +56,11 @@ pub enum Error {
         source: error_boundary::InvalidObject,
     },
 
-    #[snafu(display("failed to get the KafkaCluster"))]
-    GetKafkaCluster {
-        source: stackable_operator::client::Error,
-    },
+    #[snafu(display("the KafkaCluster store is not ready"))]
+    KafkaClusterStoreNotReady { source: store::Error },
 
-    #[snafu(display("failed to get the agent Deployment"))]
-    GetAgentDeployment {
-        source: stackable_operator::client::Error,
-    },
+    #[snafu(display("the agent Deployment store is not ready"))]
+    AgentDeploymentStoreNotReady { source: store::Error },
 
     #[snafu(display("failed to update the status of the KafkaTopic"))]
     UpdateStatus {
@@ -86,6 +83,8 @@ impl ReconcilerError for Error {
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
+    pub kafka_clusters: Store<DeserializeGuard<KafkaCluster>>,
+    pub agent_deployments: Store<Deployment>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -123,22 +122,24 @@ pub async fn reconcile_topic(
     let namespace = kafka_topic.namespace().unwrap_or_default();
     let cluster_name = &kafka_topic.spec.cluster_ref.name;
 
-    let kafka_cluster = ctx
-        .client
-        .get_opt::<DeserializeGuard<KafkaCluster>>(cluster_name.as_ref(), &namespace)
+    store::wait_until_ready(&ctx.kafka_clusters)
         .await
-        .context(GetKafkaClusterSnafu)?;
+        .context(KafkaClusterStoreNotReadySnafu)?;
+    store::wait_until_ready(&ctx.agent_deployments)
+        .await
+        .context(AgentDeploymentStoreNotReadySnafu)?;
+    let kafka_cluster = ctx
+        .kafka_clusters
+        .get(&ObjectRef::new(cluster_name.as_ref()).within(&namespace));
     let agent_deployment_name = agent_resource_names_of(cluster_name).deployment_name();
     let agent_deployment = ctx
-        .client
-        .get_opt::<Deployment>(agent_deployment_name.as_ref(), &namespace)
-        .await
-        .context(GetAgentDeploymentSnafu)?;
+        .agent_deployments
+        .get(&ObjectRef::new(agent_deployment_name.as_ref()).within(&namespace));
 
     match operator_action_for(
         kafka_topic,
-        &cluster_state_from(kafka_cluster.as_ref()),
-        &agent_state_from(agent_deployment.as_ref()),
+        &cluster_state_from(kafka_cluster.as_deref()),
+        &agent_state_from(agent_deployment.as_deref()),
         Timestamp::now(),
     ) {
         OperatorAction::LeaveToAgent => {}

@@ -3243,6 +3243,7 @@ dependencies = [
  "const_format",
  "futures",
  "indoc",
+ "kube-runtime",
  "rstest",
  "semver",
  "serde",
