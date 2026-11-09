@@ -2,7 +2,10 @@
 
 use serde_json::json;
 use snafu::ResultExt;
-use stackable_kafka_shared::crd::topic::{KAFKA_TOPIC_FINALIZER, v1alpha1::KafkaTopic};
+use stackable_kafka_shared::{
+    client::is_not_found,
+    crd::topic::{KAFKA_TOPIC_FINALIZER, v1alpha1::KafkaTopic},
+};
 use stackable_operator::{
     agent::deletion::v1alpha1::DeletionPolicy,
     kube::{ResourceExt, runtime::controller::Action},
@@ -97,7 +100,7 @@ async fn cleanup(kafka_topic: &KafkaTopic, ctx: &Ctx) -> Result<()> {
 }
 
 /// Fails if the `KafkaTopic` was changed since it was read, so concurrent changes to the
-/// finalizers are not lost.
+/// finalizers are not lost. A `KafkaTopic` that is already gone needs no finalizer.
 async fn set_finalizer(
     kafka_topic: &KafkaTopic,
     ctx: &Ctx,
@@ -118,9 +121,9 @@ async fn set_finalizer(
             "finalizers": finalizers,
         }
     });
-    ctx.client
-        .merge_patch(kafka_topic, patch)
-        .await
-        .context(UpdateFinalizersSnafu)?;
-    Ok(())
+    match ctx.client.merge_patch(kafka_topic, patch).await {
+        Ok(_) => Ok(()),
+        Err(error) if is_not_found(&error) => Ok(()),
+        Err(error) => Err(error).context(UpdateFinalizersSnafu),
+    }
 }

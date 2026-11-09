@@ -7,7 +7,10 @@ use std::sync::Arc;
 use const_format::concatcp;
 use serde_json::json;
 use snafu::{ResultExt, Snafu};
-use stackable_kafka_shared::crd::topic::{KAFKA_TOPIC_FINALIZER, v1alpha1::KafkaTopic};
+use stackable_kafka_shared::{
+    client::is_not_found,
+    crd::topic::{KAFKA_TOPIC_FINALIZER, v1alpha1::KafkaTopic},
+};
 use stackable_operator::{
     agent::condition::{
         ConditionStatus, ManagedCondition, ManagedConditionType, update_conditions,
@@ -345,7 +348,8 @@ fn agent_unavailable_condition(
 }
 
 /// Fails if the `KafkaTopic` was changed since it was read, so concurrent changes to the
-/// finalizers, e.g. by an agent that is still shutting down, are not lost.
+/// finalizers, e.g. by an agent that is still shutting down, are not lost. A `KafkaTopic` that
+/// is already gone needs no finalizer.
 async fn remove_finalizer(kafka_topic: &KafkaTopic, ctx: &Ctx) -> Result<()> {
     let finalizers = kafka_topic
         .finalizers()
@@ -359,11 +363,11 @@ async fn remove_finalizer(kafka_topic: &KafkaTopic, ctx: &Ctx) -> Result<()> {
             "finalizers": finalizers,
         }
     });
-    ctx.client
-        .merge_patch(kafka_topic, patch)
-        .await
-        .context(RemoveFinalizerSnafu)?;
-    Ok(())
+    match ctx.client.merge_patch(kafka_topic, patch).await {
+        Ok(_) => Ok(()),
+        Err(error) if is_not_found(&error) => Ok(()),
+        Err(error) => Err(error).context(RemoveFinalizerSnafu),
+    }
 }
 
 #[cfg(test)]
