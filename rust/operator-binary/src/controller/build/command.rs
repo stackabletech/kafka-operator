@@ -11,7 +11,7 @@ use stackable_operator::{
     v2::{builder::pod::container::EnvVarName, product_logging::framework::STACKABLE_LOG_DIR},
 };
 
-use super::properties::ConfigFileName;
+use super::{container::FILE_LOG_DIRECTORY, properties::ConfigFileName};
 use crate::{
     controller::{build::security::copy_opa_tls_cert_command, security::ValidatedKafkaSecurity},
     crd::{
@@ -60,7 +60,7 @@ pub fn broker_kafka_container_commands(
         {COMMON_BASH_TRAP_FUNCTIONS}
         {remove_vector_shutdown_file_command}
         prepare_signal_handlers
-        mkdir --parents \"$FILE_LOG_DIRECTORY\"
+        mkdir --parents \"${file_log_directory}\" || true
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
         {set_realm_env}
 
@@ -72,6 +72,7 @@ pub fn broker_kafka_container_commands(
         {create_vector_shutdown_file_command}
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+        file_log_directory = FILE_LOG_DIRECTORY.as_ref(),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         set_realm_env = export_kerberos_realm_command(kafka_security).unwrap_or_default(),
         import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
@@ -155,7 +156,7 @@ pub fn controller_kafka_container_command(
         {COMMON_BASH_TRAP_FUNCTIONS}
         {remove_vector_shutdown_file_command}
         prepare_signal_handlers
-        mkdir --parents \"$FILE_LOG_DIRECTORY\"
+        mkdir --parents \"${file_log_directory}\" || true
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
         {set_realm_env}
 
@@ -182,6 +183,7 @@ pub fn controller_kafka_container_command(
         {create_vector_shutdown_file_command}
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
+        file_log_directory = FILE_LOG_DIRECTORY.as_ref(),
         // Mirrors `broker_kafka_container_commands`: empty when Kerberos is disabled.
         set_realm_env = export_kerberos_realm_command(kafka_security).unwrap_or_default(),
         import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
