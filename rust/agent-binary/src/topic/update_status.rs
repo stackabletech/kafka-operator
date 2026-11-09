@@ -9,10 +9,9 @@ use stackable_operator::{
 
 use super::{
     condition::{TopicSyncOutcome, conditions_from},
-    controller::{Ctx, Result, UpdateStatusSnafu},
+    controller::{Ctx, Result, TOPIC_CONTROLLER_NAME, UpdateStatusSnafu},
     plan::TopicState,
 };
-use crate::AGENT_NAME;
 
 /// Patches the status only if it changed, so the agent does not trigger its own watch.
 pub(crate) async fn update_status(
@@ -32,7 +31,7 @@ pub(crate) async fn update_status(
 
     if new_status != current_status {
         ctx.client
-            .apply_patch_status(AGENT_NAME, kafka_topic, &new_status)
+            .apply_patch_status(TOPIC_CONTROLLER_NAME, kafka_topic, &new_status)
             .await
             .context(UpdateStatusSnafu)?;
     }
