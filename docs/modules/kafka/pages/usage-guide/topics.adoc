@@ -43,7 +43,7 @@ A topic name consists of up to 249 characters out of `a-z`, `A-Z`, `0-9`, `.`, `
 Kafka allows names that are not valid Kubernetes object names, for example with uppercase letters or underscores.
 Such topics need `topicName`.
 
-Topics starting with `+__+` are internal to Kafka, such as `+__consumer_offsets+`, and are rejected.
+The prefix `+__+` is reserved for the internal topics of Kafka, such as `+__consumer_offsets+`, and is rejected.
 
 The topic name cannot be changed, and `topicName` can neither be added nor removed later.
 To rename a topic, create a new KafkaTopic.
@@ -62,6 +62,7 @@ An unsupported change is reported in the `Synced` condition, and all other chang
 
 `configOverrides` replaces all configs set on the topic.
 Configs that are set on the topic but missing in `configOverrides` are reset to the broker defaults.
+Kafka applies all config changes of a topic together, so a change it rejects blocks the other changes until it is corrected.
 
 The throttles of partition reassignments, `leader.replication.throttled.replicas` and `follower.replication.throttled.replicas`, are left untouched and cannot be set in `configOverrides`.
 

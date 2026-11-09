@@ -124,8 +124,9 @@ spec:
 ----
 
 The default resources of the agent are sufficient for a few thousand topics.
-The operator also keeps all KafkaTopics of all clusters it watches in memory, and every change of a KafkaCluster or its agent Deployment makes it check all KafkaTopics of that cluster.
-With many thousands of topics, increase the CPU and memory of the operator in its Helm values.
+The operator also keeps all KafkaTopics of all clusters it watches in memory, about 20 KiB each, and every change of a KafkaCluster or its agent Deployment makes it check all KafkaTopics of that cluster.
+With the default limits of the operator, 100m CPU and 128Mi memory, updating the conditions of 3000 KafkaTopics takes about three minutes.
+With thousands of topics, increase the CPU and memory of the operator in its Helm values.
 
 == Disabling management access
 
