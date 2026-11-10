@@ -145,7 +145,7 @@ The reason and message of a condition explain its status:
 |===
 
 [[pausing]]
-== Pausing
+== Pausing reconciliation
 
 The reconciliation of a single KafkaTopic can be paused, independently of the xref:usage-guide/operations/cluster-operations.adoc[cluster operations] of the KafkaCluster:
 
