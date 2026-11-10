@@ -45,6 +45,54 @@ pub mod versioned {
         plural = "kafkatopics",
         status = "KafkaTopicStatus",
         selectable = ".spec.clusterRef.name",
+        printcolumn(name = "Topic", type_ = "string", json_path = ".status.topicName"),
+        printcolumn(
+            name = "Cluster",
+            type_ = "string",
+            json_path = ".spec.clusterRef.name"
+        ),
+        printcolumn(
+            name = "Partitions",
+            type_ = "integer",
+            json_path = ".status.partitions"
+        ),
+        printcolumn(
+            name = "Replication factor",
+            type_ = "integer",
+            json_path = ".status.replicationFactor"
+        ),
+        printcolumn(
+            name = "Ready",
+            type_ = "string",
+            json_path = r#".status.conditions[?(@.type=="Ready")].status"#
+        ),
+        printcolumn(
+            name = "Synced",
+            type_ = "string",
+            json_path = r#".status.conditions[?(@.type=="Synced")].status"#
+        ),
+        printcolumn(
+            name = "Reason",
+            type_ = "string",
+            json_path = r#".status.conditions[?(@.type=="Synced")].reason"#
+        ),
+        printcolumn(
+            name = "Topic ID",
+            type_ = "string",
+            json_path = ".status.topicId",
+            priority = 1
+        ),
+        printcolumn(
+            name = "Deletion policy",
+            type_ = "string",
+            json_path = ".spec.deletionPolicy",
+            priority = 1
+        ),
+        printcolumn(
+            name = "Age",
+            type_ = "date",
+            json_path = ".metadata.creationTimestamp"
+        ),
         namespaced
     ))]
     #[derive(Clone, CustomResource, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -270,6 +318,12 @@ mod tests {
         assert_eq!(
             ".spec.clusterRef.name",
             version["selectableFields"][0]["jsonPath"]
+        );
+        assert_eq!(
+            10,
+            version["additionalPrinterColumns"]
+                .as_array()
+                .map_or(0, Vec::len)
         );
         assert_eq!(
             "self == oldSelf",

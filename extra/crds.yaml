@@ -2260,7 +2260,40 @@ spec:
     singular: kafkatopic
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.topicName
+      name: Topic
+      type: string
+    - jsonPath: .spec.clusterRef.name
+      name: Cluster
+      type: string
+    - jsonPath: .status.partitions
+      name: Partitions
+      type: integer
+    - jsonPath: .status.replicationFactor
+      name: Replication factor
+      type: integer
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Synced")].status
+      name: Synced
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Synced")].reason
+      name: Reason
+      type: string
+    - jsonPath: .status.topicId
+      name: Topic ID
+      priority: 1
+      type: string
+    - jsonPath: .spec.deletionPolicy
+      name: Deletion policy
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: A Kafka topic, created and updated by the Stackable agent of the referenced Apache Kafka cluster.
