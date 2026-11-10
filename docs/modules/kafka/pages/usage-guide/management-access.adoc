@@ -24,6 +24,7 @@ Enable management access with `spec.clusterConfig.managementAccess` and choose h
 
 [source,yaml]
 ----
+---
 apiVersion: kafka.stackable.tech/v1alpha1
 kind: KafkaCluster
 metadata:
