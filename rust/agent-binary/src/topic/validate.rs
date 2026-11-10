@@ -44,8 +44,9 @@ pub(crate) fn validate(
 }
 
 /// The name of the oldest other `KafkaTopic` for the same topic of the same cluster, by creation
-/// time and name. Checked against all `KafkaTopic`s in the store, so the result does not depend
-/// on the reconcile order.
+/// time and name. The store is complete, because kube-runtime starts reconciles only after its
+/// initial list. Two `KafkaTopic`s created in the same second may both manage the topic until the
+/// next resync.
 fn conflicting_owner_name(
     kafka_topic: &KafkaTopic,
     topic_name: &TopicName,

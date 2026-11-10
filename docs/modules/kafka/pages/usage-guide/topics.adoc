@@ -101,9 +101,33 @@ status:
 <3> The replication factor, excluding replicas that a running reassignment removes. It is not set if the partitions have different replication factors.
 <4> The configs set on the topic, without broker and default values.
 
-The `Ready` condition shows whether the topic exists in Kafka.
-The `Synced` condition shows whether the topic matches the KafkaTopic.
-If it does not, the reason and message of the condition explain why, for example an unsupported change, a request rejected by Kafka, a paused reconciliation or an agent that is not running.
+The `Ready` condition shows whether the topic exists in Kafka, and the `Synced` condition whether the topic matches the KafkaTopic.
+The reason and message of a condition explain its status:
+
+[cols="1,1,3", options="header"]
+|===
+| Condition | Status | Reasons
+
+| `Ready`
+| `True`
+| `Available`: the topic exists.
+
+| `Ready`
+| `False`
+| `Unavailable`: the topic does not exist. `Conflict`: another KafkaTopic manages the topic.
+
+| `Ready`
+| `Unknown`
+| `InvalidSpec`, `KafkaRejected`, `ConnectionFailed`: the agent could not look at the topic. `AgentUnavailable`: no agent is running.
+
+| `Synced`
+| `True`
+| `Synced`: the topic matches the spec. `ReassignmentInProgress`: it matches, while partitions are being reassigned.
+
+| `Synced`
+| `False`
+| `UnsupportedChange`, `ReconciliationPaused`, `Conflict`, `InvalidSpec`, `KafkaRejected`, `ConnectionFailed` or `AgentUnavailable`, with the details in the message.
+|===
 
 == Pausing
 
@@ -136,3 +160,4 @@ If the KafkaCluster is created again with the same PersistentVolumeClaims, its t
 
 If the KafkaCluster exists but has no agent, for example because management access is disabled or the KafkaCluster is xref:usage-guide/operations/cluster-operations.adoc[stopped], the deletion waits for the agent.
 In this case, the finalizer `kafka.stackable.tech/kafkatopic` can be removed manually, which leaves the topic in Kafka.
+A KafkaTopic that no agent has managed yet has no finalizer and is deleted at once.

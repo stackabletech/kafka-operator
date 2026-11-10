@@ -148,6 +148,8 @@ async fn fail_with_status<T>(
     Err(error)
 }
 
+/// Watch events still trigger a reconcile while awaiting a change, e.g. the operator overwriting
+/// the conditions.
 fn requeue(sync_outcome: &TopicSyncOutcome) -> Action {
     match sync_outcome {
         TopicSyncOutcome::InvalidSpec { .. } => Action::await_change(),
