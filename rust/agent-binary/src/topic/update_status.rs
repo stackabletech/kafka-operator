@@ -1,7 +1,10 @@
 //! The status of a `KafkaTopic` for the outcome of a sync.
 
 use snafu::ResultExt;
-use stackable_kafka_shared::crd::topic::v1alpha1::{KafkaTopic, KafkaTopicStatus};
+use stackable_kafka_shared::{
+    client::is_not_found,
+    crd::topic::v1alpha1::{KafkaTopic, KafkaTopicStatus},
+};
 use stackable_operator::{
     agent::condition::update_conditions,
     k8s_openapi::{apimachinery::pkg::apis::meta::v1::Time, jiff::Timestamp},
@@ -30,10 +33,15 @@ pub(crate) async fn update_status(
     );
 
     if new_status != current_status {
-        ctx.client
+        match ctx
+            .client
             .apply_patch_status(TOPIC_CONTROLLER_NAME, kafka_topic, &new_status)
             .await
-            .context(UpdateStatusSnafu)?;
+        {
+            Ok(_) => {}
+            Err(error) if is_not_found(&error) => {}
+            Err(error) => return Err(error).context(UpdateStatusSnafu),
+        }
     }
     Ok(())
 }

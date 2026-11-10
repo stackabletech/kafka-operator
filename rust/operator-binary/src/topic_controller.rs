@@ -322,14 +322,19 @@ async fn set_agent_unavailable_conditions(
     );
 
     if new_conditions != current_conditions {
-        ctx.client
+        match ctx
+            .client
             .apply_patch_status(
                 TOPIC_CONTROLLER_NAME,
                 kafka_topic,
                 &json!({ "conditions": new_conditions }),
             )
             .await
-            .context(UpdateStatusSnafu)?;
+        {
+            Ok(_) => {}
+            Err(error) if is_not_found(&error) => {}
+            Err(error) => return Err(error).context(UpdateStatusSnafu),
+        }
     }
     Ok(())
 }

@@ -9,6 +9,9 @@ pub fn is_not_found(error: &Error) -> bool {
         Error::PatchResource {
             source: kube::Error::Api(status),
             ..
+        } | Error::PatchResourceStatus {
+            source: kube::Error::Api(status),
+            ..
         } if status.code == 404
     )
 }
