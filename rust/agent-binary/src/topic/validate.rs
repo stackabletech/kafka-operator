@@ -47,7 +47,7 @@ pub(crate) fn validate(
 /// time and name. The store is complete, because kube-runtime starts reconciles only after its
 /// initial list. Two `KafkaTopic`s created in the same second may both manage the topic until the
 /// next resync.
-fn conflicting_owner_name(
+pub(crate) fn conflicting_owner_name(
     kafka_topic: &KafkaTopic,
     topic_name: &TopicName,
     kafka_topics: &Store<DeserializeGuard<KafkaTopic>>,

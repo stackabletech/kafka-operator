@@ -148,6 +148,7 @@ While paused, the agent does not change the topic in Kafka, but still updates th
 With the default `deletionPolicy: Retain`, deleting a KafkaTopic leaves the topic in Kafka.
 
 With `deletionPolicy: Delete`, the agent deletes the topic in Kafka when the KafkaTopic is deleted, also if a conflicting KafkaTopic declares the same topic.
+A conflicting KafkaTopic never deletes the topic.
 To hand a topic over to another KafkaTopic instead, switch the old one to `deletionPolicy: Retain` before deleting it.
 The KafkaTopic gets a finalizer once the agent manages the topic, so the deletion waits until the topic is deleted.
 If the reconciliation of the KafkaTopic is paused, the deletion waits until it is resumed.
