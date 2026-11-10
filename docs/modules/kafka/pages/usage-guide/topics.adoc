@@ -74,6 +74,7 @@ A KafkaTopic for a topic that already exists in Kafka takes over the topic.
 WARNING: Taking over a topic is destructive.
 The configs of the topic are replaced by `configOverrides`, which can delete data, for example with a shorter `retention.ms` or another `cleanup.policy`.
 With `deletionPolicy: Delete`, deleting the KafkaTopic also deletes a topic that existed before the KafkaTopic.
+See <<take-over-as-it-is>> for a takeover without changes.
 
 A KafkaTopic refers to its topic by name.
 If the topic is deleted and created again outside of the KafkaTopic, the KafkaTopic takes over the new topic as well.
@@ -81,6 +82,19 @@ If the topic is deleted and created again outside of the KafkaTopic, the KafkaTo
 If several KafkaTopics declare the same topic in the same cluster, the oldest KafkaTopic manages the topic, and the others report a `Conflict`.
 When the oldest KafkaTopic is deleted, the next one takes over within five minutes: it adopts the topic if it was retained, or creates an empty topic if it was deleted.
 
+[[take-over-as-it-is]]
+=== Taking over a topic as it is
+
+To take over a topic without changing it, let the agent show its current state first:
+
+. Create the KafkaTopic with `topicOperation.reconciliationPaused: true`, see <<pausing>>.
+  The agent only observes the topic and fills the status.
+. Copy `status.config` into `configOverrides`, and `status.partitions` and `status.replicationFactor` into the spec, see <<status>>.
+  Leave out the replication throttles of a running reassignment, see <<configs>>.
+. Set `reconciliationPaused` to `false`.
+  The topic matches the spec, so the agent changes nothing.
+
+[[status]]
 == Status
 
 The status shows the topic in Kafka:
@@ -130,6 +144,7 @@ The reason and message of a condition explain its status:
 | `UnsupportedChange`, `ReconciliationPaused`, `Conflict`, `InvalidSpec`, `KafkaRejected`, `ConnectionFailed` or `AgentUnavailable`, with the details in the message.
 |===
 
+[[pausing]]
 == Pausing
 
 The reconciliation of a single KafkaTopic can be paused, independently of the xref:usage-guide/operations/cluster-operations.adoc[cluster operations] of the KafkaCluster:
