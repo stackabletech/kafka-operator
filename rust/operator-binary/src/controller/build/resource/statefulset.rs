@@ -167,6 +167,9 @@ fn add_common_pod_config(
         .context(AddVolumeSnafu)?
         .add_empty_dir_volume(
             &*STACKABLE_LOG_DIR_NAME,
+            // Only the Kafka log files are budgeted. The `containerdebug` files in this
+            // volume are rotated by time, not by size, so they have no budget; raising
+            // `FILE_LOG_LEVEL` via `envOverrides` can therefore evict the Pod.
             Some(product_logging::framework::calculate_log_volume_size_limit(
                 &[MAX_KAFKA_LOG_FILES_SIZE],
             )),
