@@ -40,7 +40,7 @@ pub mod versioned {
     /// The referenced `KafkaCluster` must have `clusterConfig.managementAccess` enabled or this
     /// resource will not be reconciled.
     #[versioned(crd(
-        doc = "A Kafka topic, created and updated by the agent of the referenced Kafka cluster.",
+        doc = "A Kafka topic, created and updated by the Stackable agent of the referenced Apache Kafka cluster.",
         group = "kafka.stackable.tech",
         plural = "kafkatopics",
         status = "KafkaTopicStatus",
