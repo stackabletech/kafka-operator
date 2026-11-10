@@ -34,19 +34,19 @@ pub(crate) fn validate(
         });
     }
 
-    if let Some(owner) = conflicting_owner(kafka_topic, &topic_name, kafka_topics) {
+    if let Some(owner_name) = conflicting_owner_name(kafka_topic, &topic_name, kafka_topics) {
         return Err(TopicSyncOutcome::Conflict {
-            message: format!("the topic {topic_name} is managed by the KafkaTopic {owner:?}"),
+            message: format!("the topic {topic_name} is managed by the KafkaTopic {owner_name}"),
         });
     }
 
     Ok(topic_name)
 }
 
-/// The oldest other `KafkaTopic` for the same topic of the same cluster, by creation time and
-/// name. Checked against all `KafkaTopic`s in the store, so the result does not depend on the
-/// reconcile order.
-pub(crate) fn conflicting_owner(
+/// The name of the oldest other `KafkaTopic` for the same topic of the same cluster, by creation
+/// time and name. Checked against all `KafkaTopic`s in the store, so the result does not depend
+/// on the reconcile order.
+fn conflicting_owner_name(
     kafka_topic: &KafkaTopic,
     topic_name: &TopicName,
     kafka_topics: &Store<DeserializeGuard<KafkaTopic>>,
@@ -61,37 +61,13 @@ pub(crate) fn conflicting_owner(
         .state()
         .iter()
         .filter_map(|other_kafka_topic| other_kafka_topic.0.as_ref().ok())
-        .filter(|other_kafka_topic| is_same_topic(kafka_topic, other_kafka_topic, topic_name))
+        .filter(|other_kafka_topic| {
+            other_kafka_topic.spec.cluster_ref.name == kafka_topic.spec.cluster_ref.name
+                && other_kafka_topic.declared_topic_name() == topic_name.as_ref()
+        })
         .min_by_key(|other_kafka_topic| key(other_kafka_topic))
         .filter(|oldest_kafka_topic| key(oldest_kafka_topic) != key(kafka_topic))
         .map(ResourceExt::name_any)
-}
-
-/// Whether another `KafkaTopic` that is not being deleted declares the same topic of the same
-/// cluster, regardless of its age.
-pub(crate) fn has_other_kafka_topic(
-    kafka_topic: &KafkaTopic,
-    topic_name: &TopicName,
-    kafka_topics: &Store<DeserializeGuard<KafkaTopic>>,
-) -> bool {
-    kafka_topics
-        .state()
-        .iter()
-        .filter_map(|other_kafka_topic| other_kafka_topic.0.as_ref().ok())
-        .any(|other_kafka_topic| {
-            other_kafka_topic.name_any() != kafka_topic.name_any()
-                && other_kafka_topic.metadata.deletion_timestamp.is_none()
-                && is_same_topic(kafka_topic, other_kafka_topic, topic_name)
-        })
-}
-
-fn is_same_topic(
-    kafka_topic: &KafkaTopic,
-    other_kafka_topic: &KafkaTopic,
-    topic_name: &TopicName,
-) -> bool {
-    other_kafka_topic.spec.cluster_ref.name == kafka_topic.spec.cluster_ref.name
-        && other_kafka_topic.declared_topic_name() == topic_name.as_ref()
 }
 
 #[cfg(test)]
@@ -143,11 +119,11 @@ mod tests {
 
         assert_eq!(
             None,
-            conflicting_owner(inner(&older), &topic_name("orders"), &topics)
+            conflicting_owner_name(inner(&older), &topic_name("orders"), &topics)
         );
         assert_eq!(
             Some("older".to_owned()),
-            conflicting_owner(inner(&newer), &topic_name("orders"), &topics)
+            conflicting_owner_name(inner(&newer), &topic_name("orders"), &topics)
         );
     }
 
@@ -159,11 +135,11 @@ mod tests {
 
         assert_eq!(
             None,
-            conflicting_owner(inner(&first), &topic_name("orders"), &topics)
+            conflicting_owner_name(inner(&first), &topic_name("orders"), &topics)
         );
         assert_eq!(
             Some("a".to_owned()),
-            conflicting_owner(inner(&second), &topic_name("orders"), &topics)
+            conflicting_owner_name(inner(&second), &topic_name("orders"), &topics)
         );
     }
 
@@ -175,31 +151,8 @@ mod tests {
 
         assert_eq!(
             Some("explicit".to_owned()),
-            conflicting_owner(inner(&from_metadata_name), &topic_name("orders"), &topics)
+            conflicting_owner_name(inner(&from_metadata_name), &topic_name("orders"), &topics)
         );
-    }
-
-    #[test]
-    fn find_other_kafka_topics_regardless_of_their_age() {
-        let older = created_topic("older", 10, Some("orders"));
-        let newer = created_topic("newer", 20, Some("orders"));
-        let mut deleted = created_topic("deleted", 30, Some("payments"));
-        if let Ok(deleted) = &mut deleted.0 {
-            deleted.metadata.deletion_timestamp = deleted.metadata.creation_timestamp.clone();
-        }
-        let payments = created_topic("payments", 40, None);
-        let topics = store(vec![older.clone(), newer, deleted, payments.clone()]);
-
-        assert!(has_other_kafka_topic(
-            inner(&older),
-            &topic_name("orders"),
-            &topics
-        ));
-        assert!(!has_other_kafka_topic(
-            inner(&payments),
-            &topic_name("payments"),
-            &topics
-        ));
     }
 
     #[rstest::rstest]

@@ -15,7 +15,6 @@ use tracing::info;
 use super::{
     controller::{Ctx, KafkaSnafu, Result, UpdateFinalizersSnafu},
     plan::TopicState,
-    validate::has_other_kafka_topic,
 };
 
 /// Handles a deletion and removes a finalizer that is no longer needed. Returns `Some` if the
@@ -66,11 +65,8 @@ fn has_finalizer(kafka_topic: &KafkaTopic) -> bool {
         .any(|finalizer| finalizer == KAFKA_TOPIC_FINALIZER)
 }
 
-/// Deletes the topic in Kafka if the `deletionPolicy` says so and no other `KafkaTopic` declares
-/// it.
-///
-/// The policy is read from the `KafkaTopic` being deleted, so switching it to `Retain` releases a
-/// deletion that is stuck because Kafka cannot be reached.
+/// Deletes the topic in Kafka if the `deletionPolicy` says so. The policy is read from the
+/// `KafkaTopic` being deleted, so switching it to `Retain` releases a stuck deletion.
 async fn cleanup(kafka_topic: &KafkaTopic, ctx: &Ctx) -> Result<()> {
     if kafka_topic.spec.deletion_policy != DeletionPolicy::Delete {
         return Ok(());
@@ -79,9 +75,6 @@ async fn cleanup(kafka_topic: &KafkaTopic, ctx: &Ctx) -> Result<()> {
     let Ok(topic_name) = kafka_topic.topic_name() else {
         return Ok(());
     };
-    if has_other_kafka_topic(kafka_topic, &topic_name, &ctx.kafka_topics) {
-        return Ok(());
-    }
 
     ctx.admin_client
         .lock()

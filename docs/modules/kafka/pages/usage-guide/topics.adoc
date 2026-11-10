@@ -78,7 +78,7 @@ A KafkaTopic refers to its topic by name.
 If the topic is deleted and created again outside of the KafkaTopic, the KafkaTopic takes over the new topic as well.
 
 If several KafkaTopics declare the same topic in the same cluster, the oldest KafkaTopic manages the topic, and the others report a `Conflict`.
-When the oldest KafkaTopic is deleted, the next one takes over the topic within five minutes.
+When the oldest KafkaTopic is deleted, the next one takes over within five minutes: it adopts the topic if it was retained, or creates an empty topic if it was deleted.
 
 == Status
 
@@ -123,8 +123,8 @@ While paused, the agent does not change the topic in Kafka, but still updates th
 
 With the default `deletionPolicy: Retain`, deleting a KafkaTopic leaves the topic in Kafka.
 
-With `deletionPolicy: Delete`, the agent deletes the topic in Kafka when the KafkaTopic is deleted, unless another KafkaTopic declares the same topic.
-If that KafkaTopic is deleted as well before it takes over the topic, the topic stays in Kafka.
+With `deletionPolicy: Delete`, the agent deletes the topic in Kafka when the KafkaTopic is deleted, also if a conflicting KafkaTopic declares the same topic.
+To hand a topic over to another KafkaTopic instead, switch the old one to `deletionPolicy: Retain` before deleting it.
 The KafkaTopic gets a finalizer once the agent manages the topic, so the deletion waits until the topic is deleted.
 If the reconciliation of the KafkaTopic is paused, the deletion waits until it is resumed.
 If the brokers cannot be reached, the KafkaTopic reports `ConnectionFailed` and the agent retries the deletion.
