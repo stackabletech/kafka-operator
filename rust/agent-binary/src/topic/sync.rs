@@ -34,6 +34,7 @@ pub(crate) async fn sync(
     *topic_state = observed
         .as_ref()
         .map(|observed| TopicState::observed(topic_name.clone(), observed));
+    // After observing, so the status is still being updated while the reconciliation is paused.
     if kafka_topic.spec.topic_operation.reconciliation_paused {
         return Ok(TopicSyncOutcome::ReconciliationPaused);
     }
