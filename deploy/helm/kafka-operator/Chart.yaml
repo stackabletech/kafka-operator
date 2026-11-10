@@ -46,4 +46,4 @@ annotations:
       version: v1alpha1
       name: kafkatopics.kafka.stackable.tech
       displayName: KafkaTopic
-      description: A Kafka topic, created and updated by the agent of the referenced Kafka cluster.
+      description: A Kafka topic, created and updated by the Stackable agent of the referenced Apache Kafka cluster.
