@@ -36,8 +36,8 @@ spec:
 ----
 <1> The KafkaCluster in the same namespace that manages the topic. It cannot be changed.
 <2> The name of the topic in Kafka. Defaults to `metadata.name`. It cannot be changed.
-<3> The number of partitions. Defaults to the broker setting `num.partitions` when the topic is created.
-<4> The number of replicas of each partition. Defaults to the broker setting `default.replication.factor` when the topic is created.
+<3> The number of partitions. Defaults to `num.partitions` of the KRaft controllers when the topic is created.
+<4> The number of replicas of each partition. Defaults to `default.replication.factor` of the KRaft controllers when the topic is created.
 <5> The configs of the topic, see <<configs>>.
 <6> What happens to the topic when the KafkaTopic is deleted, see <<deletion>>.
 

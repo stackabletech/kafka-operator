@@ -117,14 +117,15 @@ pub mod versioned {
         }]))]
         pub topic_name: Option<TopicName>,
 
-        /// Number of partitions. Can only be increased. Defaults to the broker setting
-        /// `num.partitions` when the topic is created.
+        /// Number of partitions. Can only be increased. Defaults to `num.partitions` of the KRaft
+        /// controllers when the topic is created.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[schemars(range(min = 1))]
         pub partitions: Option<i32>,
 
         /// Number of replicas of each partition. Changes are not applied to existing topics.
-        /// Defaults to the broker setting `default.replication.factor` when the topic is created.
+        /// Defaults to `default.replication.factor` of the KRaft controllers when the topic is
+        /// created.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[schemars(range(min = 1))]
         pub replication_factor: Option<i16>,
