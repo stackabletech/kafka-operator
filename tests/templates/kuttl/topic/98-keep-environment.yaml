@@ -1,0 +1,7 @@
+---
+# With --skip-delete, the namespace is kept, so the deleted cluster is created again to experiment
+# with. See the script for the details.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: bash keep-environment.sh

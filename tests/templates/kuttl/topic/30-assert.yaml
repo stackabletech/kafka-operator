@@ -1,0 +1,21 @@
+---
+# The agent adds the partitions and applies the changed config.
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 300
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaTopic
+metadata:
+  name: orders
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Available
+    - type: Synced
+      status: "True"
+      reason: Synced
+  partitions: 5
+  config:
+    retention.ms: "7200000"

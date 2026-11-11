@@ -1,0 +1,9 @@
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+spec:
+  clusterConfig:
+    managementAccess:
+      enabled: false

@@ -17,6 +17,7 @@ anyhow.workspace = true
 clap.workspace = true
 const_format.workspace = true
 futures.workspace = true
+kube-runtime.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true

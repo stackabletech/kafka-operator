@@ -6348,6 +6348,7 @@ rec {
         features = {
           "unstable-runtime" = [ "unstable-runtime-subscribe" "unstable-runtime-stream-control" "unstable-runtime-reconcile-on" ];
         };
+        resolvedDefaultFeatures = [ "unstable-runtime-stream-control" ];
       };
       "lazy_static" = rec {
         crateName = "lazy_static";
@@ -10962,8 +10963,24 @@ rec {
             packageId = "clap";
           }
           {
+            name = "const_format";
+            packageId = "const_format";
+          }
+          {
+            name = "futures";
+            packageId = "futures";
+          }
+          {
+            name = "serde_json";
+            packageId = "serde_json";
+          }
+          {
             name = "snafu";
             packageId = "snafu 0.9.2";
+          }
+          {
+            name = "stackable-kafka-admin";
+            packageId = "stackable-kafka-admin";
           }
           {
             name = "stackable-kafka-shared";
@@ -10973,6 +10990,11 @@ rec {
             name = "stackable-operator";
             packageId = "stackable-operator";
             features = [ "agent" "crds" "webhook" ];
+          }
+          {
+            name = "strum";
+            packageId = "strum";
+            features = [ "derive" ];
           }
           {
             name = "tokio";
@@ -10989,6 +11011,12 @@ rec {
             name = "built";
             packageId = "built";
             features = [ "chrono" "git2" ];
+          }
+        ];
+        devDependencies = [
+          {
+            name = "rstest";
+            packageId = "rstest";
           }
         ];
 
@@ -11029,6 +11057,12 @@ rec {
           {
             name = "indoc";
             packageId = "indoc";
+          }
+          {
+            name = "kube-runtime";
+            packageId = "kube-runtime";
+            usesDefaultFeatures = false;
+            features = [ "unstable-runtime-stream-control" ];
           }
           {
             name = "semver";
@@ -11098,6 +11132,23 @@ rec {
         ];
         dependencies = [
           {
+            name = "regex";
+            packageId = "regex";
+          }
+          {
+            name = "serde";
+            packageId = "serde";
+            features = [ "derive" ];
+          }
+          {
+            name = "serde_json";
+            packageId = "serde_json";
+          }
+          {
+            name = "snafu";
+            packageId = "snafu 0.9.2";
+          }
+          {
             name = "stackable-operator";
             packageId = "stackable-operator";
             features = [ "agent" "crds" "webhook" ];
@@ -11110,11 +11161,17 @@ rec {
         ];
         devDependencies = [
           {
+            name = "indoc";
+            packageId = "indoc";
+          }
+          {
             name = "rstest";
             packageId = "rstest";
           }
         ];
-
+        features = {
+        };
+        resolvedDefaultFeatures = [ "test-support" ];
       };
       "stackable-operator" = rec {
         crateName = "stackable-operator";
