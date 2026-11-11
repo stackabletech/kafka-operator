@@ -74,7 +74,7 @@ Kafka applies all config changes of a topic together, so a change it rejects blo
 
 The throttles of partition reassignments, `leader.replication.throttled.replicas` and `follower.replication.throttled.replicas`, are left untouched and cannot be set in `configOverrides`.
 
-NOTE: Configs changed outside of the KafkaTopic are reverted within five minutes, for example changes made with `kafka-configs.sh`.
+Configs changed outside of the KafkaTopic are reverted within five minutes, for example changes made with `kafka-configs.sh`.
 
 == Existing topics
 
@@ -97,7 +97,7 @@ What it takes over depends on the `deletionPolicy` of the deleted KafkaTopic, se
 * `Retain`: the topic and its data stay in Kafka and are adopted.
 * `Delete`: the topic is deleted first, and the next KafkaTopic creates a new, empty topic.
 
-IMPORTANT: To hand a topic over to another KafkaTopic without losing data, set `deletionPolicy: Retain` on the old KafkaTopic before deleting it.
+To hand a topic over to another KafkaTopic without losing data, set `deletionPolicy: Retain` on the old KafkaTopic before deleting it.
 
 [[take-over-as-it-is]]
 === Taking over a topic as it is
@@ -194,7 +194,7 @@ If the brokers cannot be reached, the KafkaTopic reports `ConnectionFailed` and 
 Switching the KafkaTopic to `deletionPolicy: Retain` releases the deletion.
 Switching an existing KafkaTopic to `Delete` applies to the topic as it is, including data that existed before the KafkaTopic.
 
-CAUTION: With `deletionPolicy: Delete` every deletion of the KafkaTopic deletes the topic and all its data.
+WARNING: With `deletionPolicy: Delete` every deletion of the KafkaTopic deletes the topic and all its data.
 This includes adopted topics that existed before the KafkaTopic and deletions by tools that prune resources such as Argo CD or Flux.
 
 When the KafkaCluster or its namespace is deleted, the operator removes the finalizers of its KafkaTopics, so the deletion does not block.
