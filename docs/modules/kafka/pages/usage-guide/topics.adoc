@@ -8,6 +8,9 @@ This requires xref:usage-guide/management-access.adoc[management access] to be e
 The KafkaTopic is the source of truth for its topic: changes made to the topic outside of the KafkaTopic, for example with `kafka-configs.sh`, are reverted.
 The agent checks every topic at least every five minutes.
 
+IMPORTANT: With management access enabled, anyone who can create KafkaTopics in the namespace of the KafkaCluster controls all topics of that cluster, including existing ones and their deletion.
+Kafka's own authorization only applies to the agent, not to the user of a KafkaTopic.
+
 NOTE: Other operators, such as Strimzi, also provide a resource of the kind `KafkaTopic`.
 If both are installed, use the full resource name with `kubectl`, for example `kubectl get kafkatopics.kafka.stackable.tech`.
 
@@ -47,11 +50,14 @@ Such topics need `topicName`.
 The prefix `+__+` is reserved for the internal topics of Kafka, such as `+__consumer_offsets+`, and is rejected.
 
 The topic name cannot be changed, and `topicName` can neither be added nor removed later.
-To rename a topic, create a new KafkaTopic.
+Kafka cannot rename topics, and a KafkaTopic with another name creates a new topic.
 
 === Partitions and replication factor
 
 The number of partitions can only be increased, because Kafka cannot remove partitions.
+
+WARNING: Increasing the partitions changes which partition a key is assigned to.
+Consumers that rely on the order of messages with the same key are affected.
 
 Changing the replication factor of an existing topic is not supported, because Kafka requires an explicit assignment of the replicas to brokers.
 Use `kafka-reassign-partitions.sh` or Cruise Control for this.
@@ -62,32 +68,43 @@ An unsupported change is reported in the `Synced` condition, and all other chang
 === Configs
 
 `configOverrides` replaces all configs set on the topic.
+Values are strings, so numbers must be quoted.
 Configs that are set on the topic but missing in `configOverrides` are reset to the broker defaults.
 Kafka applies all config changes of a topic together, so a change it rejects blocks the other changes until it is corrected.
 
 The throttles of partition reassignments, `leader.replication.throttled.replicas` and `follower.replication.throttled.replicas`, are left untouched and cannot be set in `configOverrides`.
 
+NOTE: Configs changed outside of the KafkaTopic are reverted within five minutes, for example changes made with `kafka-configs.sh`.
+
 == Existing topics
 
 A KafkaTopic for a topic that already exists in Kafka takes over the topic.
 
-WARNING: Taking over a topic is destructive.
+WARNING: Taking over a topic is destructive and cannot be undone.
+The agent treats a topic that existed before the KafkaTopic exactly like a topic it created itself.
 The configs of the topic are replaced by `configOverrides`, which can delete data, for example with a shorter `retention.ms` or another `cleanup.policy`.
-With `deletionPolicy: Delete`, deleting the KafkaTopic also deletes a topic that existed before the KafkaTopic.
+With `deletionPolicy: Delete`, deleting the KafkaTopic deletes the topic and all its data, even if both existed long before the KafkaTopic.
+Neither the agent nor the operator keeps a backup of the topic data.
 See <<take-over-as-it-is>> for a takeover without changes.
 
 A KafkaTopic refers to its topic by name.
 If the topic is deleted and created again outside of the KafkaTopic, the KafkaTopic takes over the new topic as well.
 
 If several KafkaTopics declare the same topic in the same cluster, the oldest KafkaTopic manages the topic, and the others report a `Conflict`.
-When the oldest KafkaTopic is deleted, the next one takes over within five minutes: it adopts the topic if it was retained, or creates an empty topic if it was deleted.
+When the oldest KafkaTopic is deleted, the next oldest one takes over the topic within five minutes and applies its own spec to it.
+What it takes over depends on the `deletionPolicy` of the deleted KafkaTopic, see <<deletion>>:
+
+* `Retain`: the topic and its data stay in Kafka and are adopted.
+* `Delete`: the topic is deleted first, and the next KafkaTopic creates a new, empty topic.
+
+IMPORTANT: To hand a topic over to another KafkaTopic without losing data, set `deletionPolicy: Retain` on the old KafkaTopic before deleting it.
 
 [[take-over-as-it-is]]
 === Taking over a topic as it is
 
 To take over a topic without changing it, let the agent show its current state first:
 
-. Create the KafkaTopic with `topicOperation.reconciliationPaused: true`, see <<pausing>>.
+. Create the KafkaTopic for the existing topic with `topicOperation.reconciliationPaused: true`, see <<pausing>>.
   The agent only observes the topic and fills the status.
 . Copy `status.config` into `configOverrides`, and `status.partitions` and `status.replicationFactor` into the spec, see <<status>>.
   Leave out the replication throttles of a running reassignment, see <<configs>>.
@@ -115,6 +132,8 @@ status:
 <2> The name of the topic in Kafka.
 <3> The replication factor, excluding replicas that a running reassignment removes. It is not set if the partitions have different replication factors.
 <4> The configs set on the topic, without broker and default values.
+
+While the agent cannot reach Kafka, the status keeps the last observed state.
 
 The `Ready` condition shows whether the topic exists in Kafka, and the `Synced` condition whether the topic matches the KafkaTopic.
 The reason and message of a condition explain its status:
@@ -147,7 +166,7 @@ The reason and message of a condition explain its status:
 [[pausing]]
 == Pausing reconciliation
 
-The reconciliation of a single KafkaTopic can be paused, independently of the xref:usage-guide/operations/cluster-operations.adoc[cluster operations] of the KafkaCluster:
+The reconciliation of a single KafkaTopic can be paused:
 
 [source,yaml]
 ----
@@ -157,6 +176,9 @@ spec:
 ----
 
 While paused, the agent does not change the topic in Kafka, but still updates the status.
+
+Pausing the KafkaCluster with its xref:usage-guide/operations/cluster-operations.adoc[cluster operations] does not pause its KafkaTopics.
+A stopped KafkaCluster has no agent, so its KafkaTopics are not reconciled, see <<deletion>>.
 
 [[deletion]]
 == Deletion
@@ -170,10 +192,13 @@ The KafkaTopic gets a finalizer once the agent manages the topic, so the deletio
 If the reconciliation of the KafkaTopic is paused, the deletion waits until it is resumed.
 If the brokers cannot be reached, the KafkaTopic reports `ConnectionFailed` and the agent retries the deletion.
 Switching the KafkaTopic to `deletionPolicy: Retain` releases the deletion.
+Switching an existing KafkaTopic to `Delete` applies to the topic as it is, including data that existed before the KafkaTopic.
+
+CAUTION: With `deletionPolicy: Delete` every deletion of the KafkaTopic deletes the topic and all its data.
+This includes adopted topics that existed before the KafkaTopic and deletions by tools that prune resources such as Argo CD or Flux.
 
 When the KafkaCluster or its namespace is deleted, the operator removes the finalizers of its KafkaTopics, so the deletion does not block.
-The topics are not deleted in Kafka in this case.
-If the KafkaCluster is created again with the same PersistentVolumeClaims, its topics still exist, but without KafkaTopics.
+The topics are not deleted in Kafka in this case, so a KafkaCluster created again with the same PersistentVolumeClaims still has them.
 
 If the KafkaCluster exists but has no agent, for example because management access is disabled or the KafkaCluster is xref:usage-guide/operations/cluster-operations.adoc[stopped], the deletion waits for the agent.
 In this case, the finalizer `kafka.stackable.tech/kafkatopic` can be removed manually, which leaves the topic in Kafka.
