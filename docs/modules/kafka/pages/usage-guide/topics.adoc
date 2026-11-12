@@ -36,8 +36,8 @@ spec:
 ----
 <1> The KafkaCluster in the same namespace that manages the topic. It cannot be changed.
 <2> The name of the topic in Kafka. Defaults to `metadata.name`. It cannot be changed.
-<3> The number of partitions. Defaults to the broker setting `num.partitions` when the topic is created.
-<4> The number of replicas of each partition. Defaults to the broker setting `default.replication.factor` when the topic is created.
+<3> The number of partitions. Defaults to `num.partitions` of the KRaft controllers when the topic is created.
+<4> The number of replicas of each partition. Defaults to `default.replication.factor` of the KRaft controllers when the topic is created.
 <5> The configs of the topic, see <<configs>>.
 <6> What happens to the topic when the KafkaTopic is deleted, see <<deletion>>.
 
@@ -63,6 +63,12 @@ Changing the replication factor of an existing topic is not supported, because K
 Use `kafka-reassign-partitions.sh` or Cruise Control for this.
 
 An unsupported change is reported in the `Synced` condition, and all other changes are still applied.
+
+The agent creates a topic as soon as it is able to reach a broker.
+This could be while the KafkaCluster is still starting and only a subset of the brokers being online.
+Kafka assigns the partitions to the brokers that are registered at that time, and the agent never reassigns partitions.
+We recommend to delay creating KafkaTopics until the KafkaCluster is ready.
+However, if for some reason the topic was created earlier (with only a subset of brokers), partitions of a topic can be spread with `kafka-reassign-partitions.sh` as described in the https://kafka.apache.org/44/operations/basic-kafka-operations/#expanding-your-cluster[Kafka documentation{external-link-icon}^].
 
 [[configs]]
 === Configs
