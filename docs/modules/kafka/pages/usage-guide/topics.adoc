@@ -64,9 +64,11 @@ Use `kafka-reassign-partitions.sh` or Cruise Control for this.
 
 An unsupported change is reported in the `Synced` condition, and all other changes are still applied.
 
-The agent creates a topic as soon as it reaches a broker, also while the KafkaCluster is still starting.
+The agent creates a topic as soon as it is able to reach a broker.
+This could be while the KafkaCluster is still starting and only a subset of the brokers being online.
 Kafka assigns the partitions to the brokers that are registered at that time, and the agent never reassigns partitions.
-Partitions of a topic created before all brokers were running can be spread with `kafka-reassign-partitions.sh` as described in the https://kafka.apache.org/44/operations/basic-kafka-operations/#expanding-your-cluster[Kafka documentation{external-link-icon}^].
+We recommend to delay creating KafkaTopics until the KafkaCluster is ready.
+However, if for some reason the topic was created earlier (with only a subset of brokers), partitions of a topic can be spread with `kafka-reassign-partitions.sh` as described in the https://kafka.apache.org/44/operations/basic-kafka-operations/#expanding-your-cluster[Kafka documentation{external-link-icon}^].
 
 [[configs]]
 === Configs
