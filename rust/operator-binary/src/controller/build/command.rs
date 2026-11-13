@@ -15,8 +15,8 @@ use super::{container::FILE_LOG_DIRECTORY, properties::ConfigFileName};
 use crate::{
     controller::{build::security::copy_opa_tls_cert_command, security::ValidatedKafkaSecurity},
     crd::{
-        BROKER_ID_POD_MAP_DIR, KafkaPodDescriptor, METRICS_PORT, STACKABLE_CONFIG_DIR,
-        STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LOG_CONFIG_DIR, role::KafkaRole,
+        BROKER_ID_POD_MAP_DIR, METRICS_PORT, STACKABLE_CONFIG_DIR, STACKABLE_KERBEROS_KRB5_PATH,
+        STACKABLE_LOG_CONFIG_DIR,
     },
 };
 
@@ -124,33 +124,31 @@ fn broker_start_command(kraft_mode: bool) -> String {
 
 /// Selects the quorum format flag for the given controller.
 ///
-/// The controller with lowest `node_id` starts with `--standalone` while all others
-/// start with `--no-initial-controllers` and are added later to the voter list
-/// by the `quorum-manager`.
+/// The bootstrap controller (chosen once and persisted, see
+/// [`crate::crd::KafkaClusterStatus::kraft_bootstrap_controller_node_id`]) starts with `--standalone` while all
+/// others start with `--no-initial-controllers` and are added later to the voter list by the
+/// `quorum-manager`. Without a bootstrap controller, every controller uses
+/// `--no-initial-controllers`.
 ///
-/// Known limitation: If the controller with the lowest `node_id` loses it's PVC it will
-/// create a new conflicting quorum upon restart.
-fn controller_quorum_format_flag(controller_descriptors: &[KafkaPodDescriptor]) -> String {
-    let bootstrap_node_id = controller_descriptors
-        .iter()
-        .filter(|descriptor| descriptor.role == KafkaRole::Controller)
-        .map(|descriptor| descriptor.node_id)
-        .min()
-        .unwrap_or(0);
-
-    formatdoc! {"
-        if [ \"$REPLICA_ID\" = \"{bootstrap_node_id}\" ]; then
-          FORMAT_QUORUM_FLAG=--standalone
-        else
-          FORMAT_QUORUM_FLAG=--no-initial-controllers
-        fi
-        "
+/// Known limitation: If the bootstrap controller loses its PVC it will create a new conflicting
+/// quorum upon restart.
+fn controller_quorum_format_flag(bootstrap_node_id: Option<u32>) -> String {
+    match bootstrap_node_id {
+        Some(bootstrap_node_id) => formatdoc! {"
+            if [ \"$REPLICA_ID\" = \"{bootstrap_node_id}\" ]; then
+              FORMAT_QUORUM_FLAG=--standalone
+            else
+              FORMAT_QUORUM_FLAG=--no-initial-controllers
+            fi
+            "
+        },
+        None => "FORMAT_QUORUM_FLAG=--no-initial-controllers\n".to_owned(),
     }
 }
 
 pub fn controller_kafka_container_command(
     kafka_security: &ValidatedKafkaSecurity,
-    controller_descriptors: Vec<KafkaPodDescriptor>,
+    bootstrap_node_id: Option<u32>,
 ) -> String {
     formatdoc! {"
         {COMMON_BASH_TRAP_FUNCTIONS}
@@ -194,7 +192,7 @@ pub fn controller_kafka_container_command(
         jaas_file = ConfigFileName::Jaas,
         admin_client_source = ADMIN_CLIENT_PROPERTIES_SOURCE_PATH,
         admin_client_config = ADMIN_CLIENT_PROPERTIES_PATH,
-        quorum_format_flag = controller_quorum_format_flag(&controller_descriptors),
+        quorum_format_flag = controller_quorum_format_flag(bootstrap_node_id),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR)
     }
 }
@@ -405,7 +403,7 @@ mod tests {
 
     #[test]
     fn controller_command_does_not_export_a_realm_without_kerberos() {
-        let command = controller_kafka_container_command(&plaintext(), vec![]);
+        let command = controller_kafka_container_command(&plaintext(), None);
         assert!(!command.contains("KERBEROS_REALM"));
     }
 
@@ -414,7 +412,7 @@ mod tests {
         // `jaas.properties` is always present in the ConfigMap (empty when Kerberos is off),
         // so the copy is unconditional, matching `broker_start_command`.
         for security in [kerberos(), plaintext()] {
-            let command = controller_kafka_container_command(&security, vec![]);
+            let command = controller_kafka_container_command(&security, None);
             assert!(command.contains("cp /stackable/config/jaas.properties /tmp/jaas.properties"));
             assert!(command.contains("config-utils template /tmp/jaas.properties"));
         }
@@ -446,7 +444,7 @@ mod tests {
 
     #[test]
     fn controller_command_templates_the_admin_client_config_for_pre_stop() {
-        let command = controller_kafka_container_command(&kerberos(), vec![]);
+        let command = controller_kafka_container_command(&kerberos(), None);
         assert!(
             command.contains(
                 "cp /stackable/config/admin-client.properties /tmp/admin-client.properties"
@@ -1157,38 +1155,12 @@ mod tests {
         );
     }
 
-    /// Builds a minimal [`KafkaPodDescriptor`] for the given role and replica.
-    fn pod_descriptor(role: KafkaRole, replica: u16, node_id: u32) -> KafkaPodDescriptor {
-        KafkaPodDescriptor {
-            namespace: "default".parse().expect("valid namespace name"),
-            role_group_statefulset_name: "kafka-controller-default"
-                .parse()
-                .expect("valid statefulset name"),
-            role_group_service_name: "kafka-controller-default-headless"
-                .parse()
-                .expect("valid service name"),
-            replica,
-            cluster_domain: stackable_operator::commons::networking::DomainName::try_from(
-                "cluster.local",
-            )
-            .expect("valid domain"),
-            node_id,
-            role,
-            client_port: 9093.into(),
-        }
-    }
-
-    /// The controller with the lowest `node_id` bootstraps the quorum by itself
-    /// (`--standalone`); every other controller joins via the `quorum-manager` sidecar's
-    /// `add-controller` loop (`--no-initial-controllers`).
+    /// The bootstrap controller bootstraps the quorum by itself (`--standalone`); every other
+    /// controller joins via the `quorum-manager` sidecar's `add-controller` loop
+    /// (`--no-initial-controllers`).
     #[test]
-    fn controller_kafka_container_command_branches_on_the_lowest_node_id() {
-        let descriptors = vec![
-            pod_descriptor(KafkaRole::Controller, 0, 5),
-            pod_descriptor(KafkaRole::Controller, 1, 6),
-            pod_descriptor(KafkaRole::Controller, 2, 7),
-        ];
-        let command = controller_kafka_container_command(&plaintext(), descriptors);
+    fn controller_kafka_container_command_branches_on_the_bootstrap_node_id() {
+        let command = controller_kafka_container_command(&plaintext(), Some(5));
 
         assert!(command.contains(r#"if [ "$REPLICA_ID" = "5" ]; then"#));
         assert!(command.contains("FORMAT_QUORUM_FLAG=--standalone"));
@@ -1199,6 +1171,14 @@ mod tests {
         // No `--initial-controllers <voter list>`, and no synthetic directory-id suffix.
         assert!(!command.contains("--initial-controllers"));
         assert!(!command.contains("0000000000-"));
+    }
+
+    /// Without a bootstrap controller, no controller may bootstrap a quorum.
+    #[test]
+    fn controller_kafka_container_command_without_bootstrap_node_id_never_uses_standalone() {
+        let command = controller_kafka_container_command(&plaintext(), None);
+        assert!(command.contains("FORMAT_QUORUM_FLAG=--no-initial-controllers"));
+        assert!(!command.contains("--standalone"));
     }
 
     /// Brokers are never voters and never the bootstrap candidate — they always join (or, for

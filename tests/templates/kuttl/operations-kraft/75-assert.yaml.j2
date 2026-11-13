@@ -1,0 +1,48 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 600
+commands:
+  - script: kubectl -n $NAMESPACE wait --for=condition=available kafkaclusters.kafka.stackable.tech/test-kafka --timeout 301s
+  - script: |
+      # :9093 is the TLS client port of this test fixture's default security config, not a
+      # fixed Kafka port - if the fixture's TLS/port config changes, update this too.
+      #
+      # Ask both an original controller and the new `extra` controller: a second, rogue quorum
+      # would show up as `extra-0` leading a single-voter quorum of its own.
+      for controller in test-kafka-controller-default-0.test-kafka-controller-default-headless \
+                        test-kafka-controller-extra-0.test-kafka-controller-extra-headless; do
+        kubectl exec -n $NAMESPACE test-kafka-controller-default-0 -c kafka -- \
+          /stackable/kafka/bin/kafka-metadata-quorum.sh \
+          --bootstrap-controller $controller.$NAMESPACE.svc.cluster.local:9093 \
+          --command-config /stackable/config/admin-client.properties \
+          describe --replication | tail -n +2 | awk '$NF == "Leader" || $NF == "Follower"' | wc -l | grep -q '^4$' || exit 1
+      done
+    # `timeout` is known-inert here: kuttl's TestAssert `commands` don't read this field (only
+    # TestStep commands do); left in place only as documentation of the intended budget.
+    timeout: 30
+---
+# The bootstrap controller is the one chosen when the cluster was created (default-0), not the
+# lowest node id of the current spec (extra-0).
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+status:
+  kraftBootstrapControllerNodeId: 2110489703
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-controller-default
+status:
+  readyReplicas: 3
+  replicas: 3
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-kafka-controller-extra
+status:
+  readyReplicas: 1
+  replicas: 1

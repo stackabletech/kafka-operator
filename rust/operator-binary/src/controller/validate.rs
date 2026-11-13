@@ -34,7 +34,7 @@ use crate::{
         ValidatedAgentConfig, ValidatedBrokerConfig, ValidatedCluster, ValidatedClusterConfig,
         ValidatedControllerConfig, ValidatedRoleConfig,
         dereference::DereferencedObjects,
-        replicas_or_default,
+        pod_node_ids, replicas_or_default,
         security::{self, ValidatedKafkaSecurity},
     },
     crd::{
@@ -69,6 +69,11 @@ pub enum Error {
     #[snafu(display("failed to merge and validate the role group config"))]
     ValidateRoleGroupConfig {
         source: stackable_operator::config::fragment::ValidationError,
+    },
+
+    #[snafu(display("failed to predict the node ids of the pods"))]
+    PredictNodeIds {
+        source: crate::controller::PodDescriptorsError,
     },
 
     #[snafu(display("invalid metadata manager"))]
@@ -393,6 +398,15 @@ pub fn validate(
         })
         .transpose()?;
 
+    let kraft_bootstrap_controller_node_id = match metadata_manager {
+        crate::crd::MetadataManager::KRaft => resolve_kraft_bootstrap_controller_node_id(
+            dereferenced_objects.persisted_kraft_bootstrap_controller_node_id,
+            &broker_role_group_configs,
+            &controller_role_group_configs,
+        )?,
+        _ => None,
+    };
+
     Ok(ValidatedCluster {
         metadata: ValidatedCluster::object_meta(&name, &namespace, &uid),
         name,
@@ -418,7 +432,31 @@ pub fn validate(
         controller_role_group_configs,
         bootstrap_listeners: dereferenced_objects.bootstrap_listeners,
         agent_config,
+        kraft_bootstrap_controller_node_id,
     })
+}
+
+/// Decides the KRaft bootstrap controller's `node.id`, i.e. the one controller that formats with
+/// `--standalone`.
+///
+/// A persisted choice always wins, even if the spec now contains a controller with a lower
+/// `node.id`: a controller role group added later can hash to a lower node-id offset, and its
+/// pod-0 (with a fresh PVC) would otherwise bootstrap a second, independent quorum under the same
+/// cluster id. Only if nothing is persisted yet (a new cluster) is the lowest controller `node.id`
+/// of the current spec chosen. Returns `None` if there is neither (no controller replicas).
+fn resolve_kraft_bootstrap_controller_node_id(
+    persisted: Option<u32>,
+    broker_role_group_configs: &BTreeMap<RoleGroupName, BrokerRoleGroupConfig>,
+    controller_role_group_configs: &BTreeMap<RoleGroupName, ControllerRoleGroupConfig>,
+) -> Result<Option<u32>> {
+    let controller_node_ids =
+        pod_node_ids(broker_role_group_configs, controller_role_group_configs)
+            .context(PredictNodeIdsSnafu)?
+            .into_iter()
+            .filter(|pod| pod.role == KafkaRole::Controller)
+            .map(|pod| pod.node_id);
+
+    Ok(persisted.or_else(|| controller_node_ids.into_iter().min()))
 }
 
 /// The role-level config, resolved from the role's `roleConfig`.
@@ -677,6 +715,7 @@ mod tests {
                 app_version_label, broker_role_group_config, client_auth_tls,
                 controller_role_group_config, kerberos, minimal_kafka, plaintext, server_tls,
                 validate_with_operator_image, validated_cluster,
+                validated_cluster_with_persisted_kraft_bootstrap,
             },
         },
         crd::v1alpha1::UserProvidedAuthentication,
@@ -1148,5 +1187,83 @@ mod tests {
         );
 
         let _cluster = validated_cluster(&kafka);
+    }
+
+    /// A KRaft cluster with the `default` controller role group plus a second one, `extra`,
+    /// whose node-id offset (87094686) is lower than `default`'s (2110489703).
+    fn kraft_cluster_with_lower_offset_controller_group() -> crate::crd::v1alpha1::KafkaCluster {
+        minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 4.3.1
+              clusterConfig:
+                metadataManager: KRaft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+                  extra:
+                    replicas: 1
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        )
+    }
+
+    /// Regression test: adding a controller role group that hashes to a lower node-id offset
+    /// must not move the bootstrap controller, or its fresh pod-0 bootstraps a second quorum.
+    #[test]
+    fn kraft_bootstrap_controller_stays_persisted_when_lower_offset_group_is_added() {
+        let cluster = validated_cluster_with_persisted_kraft_bootstrap(
+            &kraft_cluster_with_lower_offset_controller_group(),
+            Some(2110489703),
+        );
+        assert_eq!(cluster.kraft_bootstrap_controller_node_id, Some(2110489703));
+    }
+
+    /// Without a persisted choice (a new cluster), the lowest controller `node.id` bootstraps.
+    #[test]
+    fn kraft_bootstrap_controller_is_lowest_node_id_for_new_cluster() {
+        let cluster = validated_cluster_with_persisted_kraft_bootstrap(
+            &kraft_cluster_with_lower_offset_controller_group(),
+            None,
+        );
+        assert_eq!(cluster.kraft_bootstrap_controller_node_id, Some(87094686));
+    }
+
+    #[test]
+    fn kraft_bootstrap_controller_is_none_in_zookeeper_mode() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+        assert_eq!(
+            validated_cluster(&kafka).kraft_bootstrap_controller_node_id,
+            None
+        );
     }
 }

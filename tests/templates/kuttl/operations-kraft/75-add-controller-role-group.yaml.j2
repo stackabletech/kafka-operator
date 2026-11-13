@@ -1,0 +1,47 @@
+#
+# Regression test: adding a controller role group whose node ids are lower than those of the
+# controller that bootstrapped the quorum must not bootstrap a second quorum.
+#
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 600
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+spec:
+  image:
+{% if test_scenario['values']['kafka-kraft'].find(",") > 0 %}
+    custom: "{{ test_scenario['values']['kafka-kraft'].split(',')[1] }}"
+    productVersion: "{{ test_scenario['values']['kafka-kraft'].split(',')[0] }}"
+{% else %}
+    productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
+{% endif %}
+  clusterConfig:
+    metadataManager: KRaft
+{% if lookup('env', 'VECTOR_AGGREGATOR') %}
+    vectorAggregatorConfigMapName: vector-aggregator-discovery
+{% endif %}
+  controllers:
+    config:
+      logging:
+        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+    roleGroups:
+      default:
+        replicas: 3
+      # `extra` hashes to a lower node-id offset (87094686) than `default` (2110489703). Its
+      # pod-0 must join the existing quorum, not bootstrap a second one.
+      extra:
+        replicas: 1
+  brokers:
+    config:
+      logging:
+        enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
+    roleGroups:
+      default:
+        replicas: 3
+  clusterOperation:
+    stopped: false
+    reconciliationPaused: false
