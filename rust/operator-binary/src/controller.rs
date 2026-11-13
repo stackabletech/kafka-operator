@@ -71,8 +71,10 @@ pub use stackable_operator::v2::types::operator::{RoleGroupName, RoleName};
 
 use crate::{
     controller::{
-        apply::Applier, node_id_hasher::node_id_hash32_offset, security::ValidatedKafkaSecurity,
-        update_status::update_status,
+        apply::Applier,
+        node_id_hasher::node_id_hash32_offset,
+        security::ValidatedKafkaSecurity,
+        update_status::{persist_kraft_bootstrap_controller_node_id, update_status},
     },
     crd::{
         APP_NAME, KAFKA_OPERATOR_NAME, KafkaPodDescriptor, MetadataManager,
@@ -182,6 +184,10 @@ pub struct ValidatedCluster {
     /// addresses and the `Listener` watch triggers a new run once it does.
     pub bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
     pub agent_config: Option<ValidatedAgentConfig>,
+    /// KRaft only: the `node.id` of the controller that bootstraps the metadata quorum.
+    /// Persisted once in the cluster status and then never changed.
+    /// Empty in ZooKeeper mode, or if no controller replica was ever requested.
+    pub kraft_bootstrap_controller_node_id: Option<u32>,
 }
 
 /// The number of pods a role group runs when its `replicas` is unset.
@@ -194,6 +200,69 @@ pub(crate) const DEFAULT_REPLICAS: u16 = 1;
 /// The role group's replica count, or [`DEFAULT_REPLICAS`] if it is unset.
 pub(crate) fn replicas_or_default(replicas: Option<u16>) -> u16 {
     replicas.unwrap_or(DEFAULT_REPLICAS)
+}
+
+/// The Kafka `node.id` of one predicted pod, see [`pod_node_ids`].
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PodNodeId<'a> {
+    pub role: KafkaRole,
+    pub role_group_name: &'a RoleGroupName,
+    pub replica: u16,
+    pub node_id: u32,
+}
+
+/// Predicts the `node.id` of every pod of the given role groups.
+///
+/// A pod's `node.id` is the node-id hash offset of its role group plus its replica index. The
+/// offsets must be unique across the whole cluster, so collisions are detected across all role
+/// groups of both roles.
+///
+/// Pods are predicted from the replica count rather than read from the live cluster to avoid
+/// instance churn; an unset count falls back to [`DEFAULT_REPLICAS`].
+pub(crate) fn pod_node_ids<'a>(
+    broker_role_group_configs: &'a BTreeMap<RoleGroupName, BrokerRoleGroupConfig>,
+    controller_role_group_configs: &'a BTreeMap<RoleGroupName, ControllerRoleGroupConfig>,
+) -> Result<Vec<PodNodeId<'a>>, PodDescriptorsError> {
+    // In `KafkaRole` variant order, which decides the reported side of a hash collision.
+    let role_groups = broker_role_group_configs
+        .iter()
+        .map(|(role_group_name, rg)| (KafkaRole::Broker, role_group_name, rg.replicas))
+        .chain(
+            controller_role_group_configs
+                .iter()
+                .map(|(role_group_name, rg)| (KafkaRole::Controller, role_group_name, rg.replicas)),
+        );
+
+    let mut pod_node_ids = Vec::new();
+    let mut seen_hashes = HashMap::<u32, (KafkaRole, RoleGroupName)>::new();
+
+    for (role, role_group_name, replicas) in role_groups {
+        let node_id_hash_offset = node_id_hash32_offset(&role, role_group_name.as_ref());
+
+        // The node id hash offset must be unique across the cluster.
+        if let Some((colliding_role, colliding_role_group)) = seen_hashes.get(&node_id_hash_offset)
+        {
+            return KafkaNodeIdHashCollisionSnafu {
+                role,
+                role_group: role_group_name.clone(),
+                colliding_role: colliding_role.clone(),
+                colliding_role_group: colliding_role_group.clone(),
+            }
+            .fail();
+        }
+        seen_hashes.insert(node_id_hash_offset, (role.clone(), role_group_name.clone()));
+
+        for replica in 0..replicas_or_default(replicas) {
+            pod_node_ids.push(PodNodeId {
+                role: role.clone(),
+                role_group_name,
+                replica,
+                node_id: node_id_hash_offset + u32::from(replica),
+            });
+        }
+    }
+
+    Ok(pod_node_ids)
 }
 
 impl ValidatedCluster {
@@ -234,65 +303,27 @@ impl ValidatedCluster {
         requested_kafka_role: Option<&KafkaRole>,
     ) -> Result<Vec<KafkaPodDescriptor>, PodDescriptorsError> {
         let client_port = self.cluster_config.kafka_security.client_port();
-        let mut pod_descriptors = Vec::new();
-        let mut seen_hashes = HashMap::<u32, (KafkaRole, RoleGroupName)>::new();
 
-        // In `KafkaRole` variant order, which decides the reported side of a hash collision.
-        let broker_role_groups: Vec<(&RoleGroupName, Option<u16>)> = self
-            .broker_role_group_configs
-            .iter()
-            .map(|(role_group_name, rg)| (role_group_name, rg.replicas))
-            .collect();
-        let controller_role_groups: Vec<(&RoleGroupName, Option<u16>)> = self
-            .controller_role_group_configs
-            .iter()
-            .map(|(role_group_name, rg)| (role_group_name, rg.replicas))
-            .collect();
-        let role_groups = [
-            (KafkaRole::Broker, broker_role_groups),
-            (KafkaRole::Controller, controller_role_groups),
-        ];
-
-        for (role, role_groups) in &role_groups {
-            for (role_group_name, replicas) in role_groups {
-                let role_group_name = *role_group_name;
-                let node_id_hash_offset = node_id_hash32_offset(role, role_group_name.as_ref());
-
-                // The node id hash offset must be unique across the cluster.
-                if let Some((colliding_role, colliding_role_group)) =
-                    seen_hashes.get(&node_id_hash_offset)
-                {
-                    return KafkaNodeIdHashCollisionSnafu {
-                        role: role.clone(),
-                        role_group: role_group_name.clone(),
-                        colliding_role: colliding_role.clone(),
-                        colliding_role_group: colliding_role_group.clone(),
-                    }
-                    .fail();
-                }
-                seen_hashes.insert(node_id_hash_offset, (role.clone(), role_group_name.clone()));
-
-                if requested_kafka_role.is_none() || Some(role) == requested_kafka_role {
-                    let resource_names = self.role_group_resource_names(role, role_group_name);
-                    let role_group_statefulset_name = resource_names.stateful_set_name();
-                    let role_group_service_name = resource_names.headless_service_name();
-                    // Pods must be predicted from a concrete count (e.g. for KRaft quorum
-                    // voters), so an unset replica count falls back to the default.
-                    for replica in 0..replicas_or_default(*replicas) {
-                        pod_descriptors.push(KafkaPodDescriptor {
-                            namespace: self.namespace.clone(),
-                            role_group_service_name: role_group_service_name.clone(),
-                            role_group_statefulset_name: role_group_statefulset_name.clone(),
-                            replica,
-                            cluster_domain: self.cluster_domain.clone(),
-                            node_id: node_id_hash_offset + u32::from(replica),
-                            role: role.clone(),
-                            client_port: client_port.clone(),
-                        });
-                    }
-                }
+        let pod_descriptors = pod_node_ids(
+            &self.broker_role_group_configs,
+            &self.controller_role_group_configs,
+        )?
+        .into_iter()
+        .filter(|pod| requested_kafka_role.is_none_or(|requested| *requested == pod.role))
+        .map(|pod| {
+            let resource_names = self.role_group_resource_names(&pod.role, pod.role_group_name);
+            KafkaPodDescriptor {
+                namespace: self.namespace.clone(),
+                role_group_service_name: resource_names.headless_service_name(),
+                role_group_statefulset_name: resource_names.stateful_set_name(),
+                replica: pod.replica,
+                cluster_domain: self.cluster_domain.clone(),
+                node_id: pod.node_id,
+                role: pod.role,
+                client_port: client_port.clone(),
             }
-        }
+        })
+        .collect();
 
         Ok(pod_descriptors)
     }
@@ -572,6 +603,9 @@ pub async fn reconcile_kafka(
         .await
         .context(DereferenceSnafu)?;
 
+    let persisted_kraft_bootstrap_controller_node_id =
+        dereferenced_objects.persisted_kraft_bootstrap_controller_node_id;
+
     // validate (no client required)
     let validated_cluster = validate::validate(
         kafka,
@@ -589,6 +623,15 @@ pub async fn reconcile_kafka(
         "The following security settings are used"
     );
 
+    // Persist a newly chosen KRaft bootstrap controller before any controller Pod can act on it.
+    if let Some(node_id) = validated_cluster.kraft_bootstrap_controller_node_id
+        && persisted_kraft_bootstrap_controller_node_id != Some(node_id)
+    {
+        persist_kraft_bootstrap_controller_node_id(client, kafka, node_id)
+            .await
+            .context(UpdateStatusSnafu)?;
+    }
+
     // build (no client required)
     let resources = build::build(&validated_cluster).context(BuildResourcesSnafu)?;
 
@@ -605,9 +648,14 @@ pub async fn reconcile_kafka(
         .context(ApplyResourcesSnafu)?;
 
     // update status (client required)
-    update_status(client, kafka, applied)
-        .await
-        .context(UpdateStatusSnafu)?;
+    update_status(
+        client,
+        kafka,
+        validated_cluster.kraft_bootstrap_controller_node_id,
+        applied,
+    )
+    .await
+    .context(UpdateStatusSnafu)?;
 
     Ok(Action::await_change())
 }
@@ -864,6 +912,7 @@ pub(crate) mod test_support {
                 authorization_config,
                 kubernetes_cluster_info: cluster_info(),
                 bootstrap_listeners: Vec::new(),
+                persisted_kraft_bootstrap_controller_node_id: None,
             },
             &operator_environment(),
             Some(OPERATOR_IMAGE),
@@ -890,10 +939,32 @@ pub(crate) mod test_support {
                 authorization_config: None,
                 kubernetes_cluster_info: cluster_info(),
                 bootstrap_listeners: Vec::new(),
+                persisted_kraft_bootstrap_controller_node_id: None,
             },
             &operator_environment(),
             operator_image,
         )
+    }
+
+    /// Runs the real validate step as if a previous reconcile had persisted the given KRaft
+    /// bootstrap controller `node.id` in the cluster status.
+    pub fn validated_cluster_with_persisted_kraft_bootstrap(
+        kafka: &v1alpha1::KafkaCluster,
+        persisted_kraft_bootstrap_controller_node_id: Option<u32>,
+    ) -> ValidatedCluster {
+        validate(
+            kafka,
+            DereferencedObjects {
+                authentication_classes: ResolvedAuthenticationClasses::new(Vec::new()),
+                authorization_config: None,
+                kubernetes_cluster_info: cluster_info(),
+                bootstrap_listeners: Vec::new(),
+                persisted_kraft_bootstrap_controller_node_id,
+            },
+            &operator_environment(),
+            Some(OPERATOR_IMAGE),
+        )
+        .expect("validate should succeed for the test fixture")
     }
 }
 

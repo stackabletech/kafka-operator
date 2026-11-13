@@ -530,6 +530,25 @@ mod tests {
         build(&cluster).expect("build succeeds when the whole KRaft cluster is stopped");
     }
 
+    /// The KRaft bootstrap controller recorded on the [`ValidatedCluster`] (i.e. the persisted
+    /// one, if any) is what every controller's start command carries -- not the lowest
+    /// `node.id` of the current spec.
+    #[test]
+    fn build_uses_the_resolved_kraft_bootstrap_controller() {
+        let mut cluster = kraft_mode_cluster();
+        cluster.kraft_bootstrap_controller_node_id = Some(42);
+        let resources = build(&cluster).expect("build succeeds");
+
+        let controller_stateful_set = resources
+            .stateful_sets
+            .iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
+            .expect("the controller StatefulSet is built");
+        let controller_stateful_set =
+            serde_json::to_string(controller_stateful_set).expect("serializable StatefulSet");
+        assert!(controller_stateful_set.contains(r#"[ \"$REPLICA_ID\" = \"42\" ]"#));
+    }
+
     #[test]
     fn build_produces_expected_resource_names() {
         let cluster = kraft_mode_cluster();

@@ -276,10 +276,6 @@ fn role_pod(
         .with_value(&KAFKA_NODE_ID_OFFSET, &node_id_offset)
         .merge(rg_config.env_overrides.clone());
 
-    let controller_pod_descriptors = cluster
-        .pod_descriptors(Some(&ROLE))
-        .context(BuildPodDescriptorsSnafu)?;
-
     let startup_probe = probes::controller_tcp_probe(kafka_security.client_port(), 5, 5, 60)
         .context(BuildProbeSnafu)?;
     let liveness_probe = probes::controller_stuck_unattached_liveness_probe(
@@ -304,7 +300,7 @@ fn role_pod(
         ])
         .args(vec![controller_kafka_container_command(
             kafka_security,
-            controller_pod_descriptors,
+            cluster.kraft_bootstrap_controller_node_id,
         )]);
 
     cb_kafka

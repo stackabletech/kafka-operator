@@ -410,6 +410,13 @@ impl KafkaPodDescriptor {
 pub struct KafkaClusterStatus {
     #[serde(default)]
     pub conditions: Vec<ClusterCondition>,
+
+    /// KRaft only: the `node.id` of the controller that bootstrapped the metadata quorum.
+    /// Chosen once, as the lowest controller `node.id` at the first reconcile, and never
+    /// changed afterwards, so that controller role groups added later never bootstrap a
+    /// second quorum, even if their `node.id`s are lower.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kraft_bootstrap_controller_node_id: Option<u32>,
 }
 
 #[derive(

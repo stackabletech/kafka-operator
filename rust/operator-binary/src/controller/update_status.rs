@@ -22,6 +22,11 @@ pub enum Error {
     ApplyStatus {
         source: stackable_operator::client::Error,
     },
+
+    #[snafu(display("failed to persist the KRaft bootstrap controller node id in the status"))]
+    PersistKraftBootstrapControllerNodeId {
+        source: stackable_operator::client::Error,
+    },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -29,9 +34,13 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 /// Computes the cluster status from the applied resources and patches it onto the
 /// [`v1alpha1::KafkaCluster`]. Takes [`KubernetesResources<Applied>`] so the type system
 /// proves the status derives from applied resources, not merely built ones.
+///
+/// `kraft_bootstrap_controller_node_id` must always be passed (if known): the status is written
+/// with server-side apply, which removes fields this field manager wrote before but omits now.
 pub async fn update_status(
     client: &Client,
     kafka: &v1alpha1::KafkaCluster,
+    kraft_bootstrap_controller_node_id: Option<u32>,
     applied: KubernetesResources<Applied>,
 ) -> Result<()> {
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
@@ -44,6 +53,7 @@ pub async fn update_status(
 
     let status = KafkaClusterStatus {
         conditions: compute_conditions(kafka, &[&ss_cond_builder, &cluster_operation_cond_builder]),
+        kraft_bootstrap_controller_node_id,
     };
 
     client
@@ -51,5 +61,28 @@ pub async fn update_status(
         .await
         .context(ApplyStatusSnafu)?;
 
+    Ok(())
+}
+
+/// Persists a newly chosen KRaft bootstrap controller `node.id` in the cluster status.
+///
+/// Must run before the StatefulSets are applied: once a controller Pod has formatted its storage
+/// with `--standalone`, the choice must survive even if a later step of this reconcile run fails
+/// and the spec changes before the next one.
+///
+/// A JSON merge patch touches only this field, so the conditions are left alone. The subsequent
+/// [`update_status`] writes the same value with server-side apply.
+pub async fn persist_kraft_bootstrap_controller_node_id(
+    client: &Client,
+    kafka: &v1alpha1::KafkaCluster,
+    node_id: u32,
+) -> Result<()> {
+    client
+        .merge_patch_status(
+            kafka,
+            &serde_json::json!({ "kraftBootstrapControllerNodeId": node_id }),
+        )
+        .await
+        .context(PersistKraftBootstrapControllerNodeIdSnafu)?;
     Ok(())
 }
