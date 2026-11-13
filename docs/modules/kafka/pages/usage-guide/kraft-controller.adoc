@@ -113,8 +113,10 @@ KRaft mode requires major configuration changes compared to ZooKeeper mode:
   with `kafka-storage.sh format --standalone`, bootstrapping a single-node quorum by itself.
   Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
   Brokers always format with `--no-initial-controllers` too; they are never voters.
-* `controller.quorum.bootstrap.servers` points at each controller role group's own headless Service DNS name, not
-  individual pod addresses, unless Kerberos is enabled. See below for details related to Kerberos.
+* `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers, not the role groups' headless Services.
+  A headless Service also resolves to pods that are not ready yet, so a starting controller could resolve it to its own address,
+  and then never find the quorum leader. With one entry per pod, Kafka picks a random entry for every attempt.
+  As a consequence, whenever the number of controller replicas changes, **both** the controller **and** broker pods are rolled by the restart controller.
 
 == Kerberos
 
@@ -135,11 +137,9 @@ When Kerberos is enabled:
   to initiate GSSAPI connections to its peers, not only accept them.
 * The `quorum-manager` sidecar and the `preStop` hook authenticate to the CONTROLLER listener
   as the controller's own pod principal.
-* `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers.
-  This is required by Kerberos: a GSSAPI client derives the service principal from the hostname
+* `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers (see above).
+  Kerberos requires this as well: a GSSAPI client derives the service principal from the hostname
   it dials, and the CONTROLLER listener can only offer the pod's own principal.
-  It means that, with Kerberos enabled, whenever the controller replicas is changed,
-  **both** the controller **and** broker pods are rolled by the restart controller.
 
 == Known Issues
 

@@ -26,10 +26,7 @@ pub fn build(
     pod_descriptors: &[KafkaPodDescriptor],
     overrides: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let kraft_controllers = kraft_controllers(
-        pod_descriptors,
-        cluster_config.kafka_security.has_kerberos_enabled(),
-    );
+    let kraft_controllers = kraft_controllers(pod_descriptors);
 
     let mut result = BTreeMap::from([
         (

@@ -39,7 +39,10 @@ All notable changes to this project will be documented in this file.
   On termination, a new `preStop` hook on the controller container (`kafka`) removes the pod from
   the voter list before shutdown.
   The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
-  to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
+  to ensure only one voter is added/removed at a time and thus keep the quorum healthy. ([#1010]).
+- `controller.quorum.bootstrap.servers` always lists all currently running controller pod address.
+  It doesn't contain bootstrap service address anymore to avoid the problem of new controller pods
+  not being able to join the quorum because they connect to themselves ([#1062]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
 - Bump stackable-operator to 0.121.0 ([#994], [#1011], [#1021], [#1029], [#1043]).
@@ -124,6 +127,7 @@ All notable changes to this project will be documented in this file.
 [#1051]: https://github.com/stackabletech/kafka-operator/pull/1051
 [#1052]: https://github.com/stackabletech/kafka-operator/pull/1052
 [#1055]: https://github.com/stackabletech/kafka-operator/pull/1055
+[#1062]: https://github.com/stackabletech/kafka-operator/pull/1062
 
 ## [26.7.0] - 2026-07-21
 
