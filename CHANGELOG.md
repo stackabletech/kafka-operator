@@ -42,7 +42,7 @@ All notable changes to this project will be documented in this file.
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy.
   The controller that bootstraps the quorum is chosen once and recorded in
   `status.kraftBootstrapControllerNodeId`, so adding a controller role group never bootstraps a
-  second quorum  ([#1010], [#XXXX]).
+  second quorum  ([#1010], [#1061]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
 - Bump stackable-operator to 0.121.0 ([#994], [#1011], [#1021], [#1029], [#1043]).
@@ -127,6 +127,7 @@ All notable changes to this project will be documented in this file.
 [#1051]: https://github.com/stackabletech/kafka-operator/pull/1051
 [#1052]: https://github.com/stackabletech/kafka-operator/pull/1052
 [#1055]: https://github.com/stackabletech/kafka-operator/pull/1055
+[#1061]: https://github.com/stackabletech/kafka-operator/pull/1061
 
 ## [26.7.0] - 2026-07-21
 
