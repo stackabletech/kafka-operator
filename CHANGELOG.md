@@ -86,6 +86,10 @@ All notable changes to this project will be documented in this file.
   `CONTAINERDEBUG_LOG_DIRECTORY`, which containerdebug stopped reading in its version 0.2.0 when it
   moved to `stackable-telemetry`; the directory is now set via `FILE_LOG_DIRECTORY`. The file is
   rotated hourly and at most two files are kept, because rotation is opt-in ([#1055]).
+- The CONTROLLER listener of KRaft controllers now always requires a client certificate, like the
+  INTERNAL listener of brokers. Previously, it accepted TLS connections without a client certificate
+  unless a TLS AuthenticationClass or OPA was configured. With Kerberos, clients are still
+  authenticated via SASL instead ([#XXXX]).
 
 ### Removed
 

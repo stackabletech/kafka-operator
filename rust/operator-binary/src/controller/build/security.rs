@@ -563,10 +563,7 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
 
 /// Returns required Kafka configuration settings for the `controller.properties` file
 /// depending on the tls and authentication settings.
-pub fn controller_config_settings(
-    security: &ValidatedKafkaSecurity,
-    opa_authorization: bool,
-) -> BTreeMap<String, String> {
+pub fn controller_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<String, String> {
     let mut config = BTreeMap::new();
 
     insert_listener_ssl_stores(
@@ -582,17 +579,15 @@ pub fn controller_config_settings(
         &KafkaListenerName::Internal,
         STACKABLE_TLS_KAFKA_INTERNAL_DIR,
     );
-    // We set either client tls with authentication or client tls without authentication
-    // If authentication is explicitly required we do not want to have any other CAs to
-    // be trusted.
+    // The CONTROLLER listener only serves node-to-node traffic (brokers, other controllers and
+    // the quorum-manager tooling), all of which present the internal certificate. Like the
+    // INTERNAL listener, it therefore always requires client authentication, so that nothing
+    // without an internal certificate can talk to the KRaft quorum.
+    // This also gives the nodes a non-ANONYMOUS principal (the subject of their internal
+    // certificate), which OPA uses to identify them as super users.
     //
-    // With OPA, the nodes are identified as super users by the subject of their internal
-    // certificate. Without client authentication, the principal on the CONTROLLER listener is
-    // ANONYMOUS. With Kerberos, the principal is derived from the SASL authentication instead.
-    if security.tls_client_authentication_class().is_some()
-        || (opa_authorization && !security.has_kerberos_enabled())
-    {
-        // client auth required
+    // With Kerberos, the listener is SASL_SSL and clients are authenticated via SASL instead.
+    if !security.has_kerberos_enabled() {
         config.insert(
             KafkaListenerName::Controller.listener_ssl_client_auth(),
             SSL_CLIENT_AUTH_REQUIRED.to_string(),
@@ -1072,7 +1067,7 @@ mod tests {
 
     #[test]
     fn controller_config_opa_adds_authorizer_truststore() {
-        let config = controller_config_settings(&opa(), false);
+        let config = controller_config_settings(&opa());
         assert!(config.contains_key("opa.authorizer.truststore.path"));
         assert!(config.contains_key("opa.authorizer.truststore.password"));
         assert!(config.contains_key("opa.authorizer.truststore.type"));
@@ -1081,30 +1076,42 @@ mod tests {
     #[test]
     fn controller_config_plaintext_has_internal_tls() {
         // Internal TLS is mandatory, so the controller config is non-empty even for a plaintext
-        // cluster: it carries the controller + internal SSL stores, but no client-cert auth
-        // (there is no client authentication class).
-        let config = controller_config_settings(&plaintext(), false);
+        // cluster: it carries the controller + internal SSL stores and requires client certs on
+        // the CONTROLLER listener.
+        let config = controller_config_settings(&plaintext());
         assert!(
             config.contains_key(&KafkaListenerName::Controller.listener_ssl_keystore_location())
         );
         assert!(config.contains_key(&KafkaListenerName::Internal.listener_ssl_keystore_location()));
-        assert!(!config.contains_key(&KafkaListenerName::Controller.listener_ssl_client_auth()));
+        assert_eq!(
+            config
+                .get(&KafkaListenerName::Controller.listener_ssl_client_auth())
+                .map(String::as_str),
+            Some("required")
+        );
     }
 
     #[test]
-    fn controller_config_opa_requires_client_auth_unless_kerberos() {
+    fn controller_config_requires_client_auth_unless_kerberos() {
         let key = KafkaListenerName::Controller.listener_ssl_client_auth();
 
-        let config = controller_config_settings(&internal_tls(), true);
-        assert_eq!(config.get(&key).map(String::as_str), Some("required"));
+        for security in [
+            plaintext(),
+            server_tls(),
+            client_auth_tls(),
+            internal_tls(),
+            opa(),
+        ] {
+            let config = controller_config_settings(&security);
+            assert_eq!(config.get(&key).map(String::as_str), Some("required"));
+        }
 
-        assert!(!controller_config_settings(&internal_tls(), false).contains_key(&key));
-        assert!(!controller_config_settings(&kerberos(), true).contains_key(&key));
+        assert!(!controller_config_settings(&kerberos()).contains_key(&key));
     }
 
     #[test]
     fn controller_config_internal_tls_covers_controller_and_internal() {
-        let config = controller_config_settings(&internal_tls(), false);
+        let config = controller_config_settings(&internal_tls());
         assert!(config.contains_key("listener.name.controller.ssl.keystore.location"));
         assert!(config.contains_key("listener.name.internal.ssl.keystore.location"));
     }
@@ -1120,7 +1127,7 @@ mod tests {
 
     #[test]
     fn controller_config_sets_the_controller_sasl_mechanism_with_kerberos() {
-        let config = controller_config_settings(&kerberos(), false);
+        let config = controller_config_settings(&kerberos());
         assert_eq!(
             config.get("sasl.mechanism.controller.protocol"),
             Some(&"GSSAPI".to_string())
@@ -1134,14 +1141,14 @@ mod tests {
                 .contains_key("sasl.mechanism.controller.protocol")
         );
         assert!(
-            !controller_config_settings(&internal_tls(), false)
+            !controller_config_settings(&internal_tls())
                 .contains_key("sasl.mechanism.controller.protocol")
         );
     }
 
     #[test]
     fn controller_config_kerberos_adds_sasl() {
-        let config = controller_config_settings(&kerberos(), false);
+        let config = controller_config_settings(&kerberos());
         assert_eq!(
             config.get("sasl.enabled.mechanisms"),
             Some(&"GSSAPI".to_string())
