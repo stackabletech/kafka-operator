@@ -89,7 +89,7 @@ All notable changes to this project will be documented in this file.
 - The CONTROLLER listener of KRaft controllers now always requires a client certificate, like the
   INTERNAL listener of brokers. Previously, it accepted TLS connections without a client certificate
   unless a TLS AuthenticationClass or OPA was configured. With Kerberos, clients are still
-  authenticated via SASL instead ([#XXXX]).
+  authenticated via SASL instead ([#1065]).
 
 ### Removed
 
@@ -128,6 +128,7 @@ All notable changes to this project will be documented in this file.
 [#1051]: https://github.com/stackabletech/kafka-operator/pull/1051
 [#1052]: https://github.com/stackabletech/kafka-operator/pull/1052
 [#1055]: https://github.com/stackabletech/kafka-operator/pull/1055
+[#1065]: https://github.com/stackabletech/kafka-operator/pull/1065
 
 ## [26.7.0] - 2026-07-21
 
