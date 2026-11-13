@@ -58,7 +58,8 @@ pub enum KafkaListenerName {
     /// This listener is defined when Kraft mode is enabled.
     /// It is responsible for broker/controller as well as controller/controller communications
     /// and therefore it is present on *both* brokers and controller properties files.
-    /// The protocol used is SSL, or SASL_SSL when Kerberos is enabled.
+    /// The only protocol used is SSL with the internal pod certificates, also when Kerberos is
+    /// enabled.
     /// The advertised host names are FQDN pod names of the controllers.
     ///
     /// Note: there is no listener for client/controller communication.

@@ -114,14 +114,11 @@ pub fn get_kafka_listener_config(
         port: kafka_security.internal_port().to_string(),
     });
     listener_security_protocol_map.insert(KafkaListenerName::Internal, KafkaListenerProtocol::Ssl);
-    listener_security_protocol_map.insert(
-        KafkaListenerName::Controller,
-        if kafka_security.has_kerberos_enabled() {
-            KafkaListenerProtocol::SaslSsl
-        } else {
-            KafkaListenerProtocol::Ssl
-        },
-    );
+    // The Kafka nodes authenticate each other with the pod certificates of the internal
+    // `SecretClass`, also when Kerberos is enabled. Kerberos principals do not identify a
+    // specific node, so they must not be used for inter-node traffic.
+    listener_security_protocol_map
+        .insert(KafkaListenerName::Controller, KafkaListenerProtocol::Ssl);
 
     // BOOTSTRAP
     if kafka_security.has_kerberos_enabled() {
@@ -515,7 +512,7 @@ mod tests {
                 bootstrap_name = KafkaListenerName::Bootstrap,
                 bootstrap_protocol = KafkaListenerProtocol::SaslSsl,
                 controller_name = KafkaListenerName::Controller,
-                controller_protocol = KafkaListenerProtocol::SaslSsl,
+                controller_protocol = KafkaListenerProtocol::Ssl,
             )
         );
     }

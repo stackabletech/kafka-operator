@@ -18,7 +18,7 @@ use stackable_operator::{
     },
 };
 
-use super::{RoleGroupBuilder, controller_jaas_section};
+use super::RoleGroupBuilder;
 use crate::{
     controller::{
         BrokerRoleGroupConfig, PodDescriptorsError, RoleGroupName, ValidatedBrokerConfig,
@@ -367,12 +367,6 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
         return String::new();
     }
 
-    // Broker pods reach the CONTROLLER listener as SASL clients; the only principals in
-    // their keytab (see `mount_broker_kerberos_volume`) are for the broker and bootstrap listener
-    // addresses, so their CONTROLLER section must reuse the broker address.
-    let controller_section =
-        controller_jaas_section(&node_address_cmd(STACKABLE_LISTENER_BROKER_DIR));
-
     formatdoc! {"
         bootstrap.KafkaServer {{
             com.sun.security.auth.module.Krb5LoginModule required
@@ -391,8 +385,6 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
             keyTab=\"{STACKABLE_KERBEROS_KEYTAB_PATH}\"
             principal=\"kafka/{broker_address}@${{env:KERBEROS_REALM}}\";
         }};
-
-        {controller_section}
     ",
     bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
     broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
@@ -483,5 +475,8 @@ mod tests {
         // The bootstrap and client principals embed distinct listener addresses.
         assert!(jaas.contains("/stackable/listener-bootstrap"));
         assert!(jaas.contains("/stackable/listener-broker"));
+        // The nodes authenticate each other with their internal pod certificates, never with
+        // Kerberos, so there is no login context for the CONTROLLER listener.
+        assert!(!jaas.contains("controller.KafkaServer"));
     }
 }
