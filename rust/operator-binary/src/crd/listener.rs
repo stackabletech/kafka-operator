@@ -16,53 +16,64 @@ const LISTENER_PORTS_DIR: &str = "ports";
 
 #[derive(strum::Display, Debug, EnumString)]
 pub enum KafkaListenerProtocol {
-    /// Unencrypted and unauthenticated HTTP connections
+    /// Unencrypted and unauthenticated Kafka protocol connections
     #[strum(serialize = "PLAINTEXT")]
     Plaintext,
 
-    /// Encrypted and server-authenticated HTTPS connections
+    /// TLS-encrypted Kafka protocol connections, with optional client certificate authentication
+    /// (`ssl.client.auth`)
     #[strum(serialize = "SSL")]
     Ssl,
 
-    /// Kerberos authentication
+    /// SASL authentication over TLS. The operator only configures the GSSAPI (Kerberos) mechanism.
     #[strum(serialize = "SASL_SSL")]
     SaslSsl,
 }
 
 #[derive(strum::Display, Debug, EnumString, Ord, Eq, PartialEq, PartialOrd)]
 pub enum KafkaListenerName {
-    /// The purpose of this listener is to handle client/broker communications.
-    /// It can be configured to use the SSL or SASL_SSL (Kerberos) protocols
-    /// if the brokers use TLS for communication (and possible authentication).
-    /// The PLAINTEXT protocol is used when `spec.clusterConfig.tls.serverSecretClass: null`
-    /// The advertised listener hosts are derived from the pod (broker) listener volume.
+    /// Handles client/broker communication. The protocol is:
+    ///
+    /// - SASL_SSL if Kerberos is enabled
+    /// - SSL if `spec.clusterConfig.tls.serverSecretClass` or a TLS AuthenticationClass is set
+    ///   (client certificates are required with the AuthenticationClass)
+    /// - PLAINTEXT otherwise
+    ///
+    /// The advertised host and port are read from the broker listener volume.
     #[strum(serialize = "CLIENT")]
     Client,
-    /// The purpose if this listener is to handle broker internal communications.
-    /// Unlike the client listener, the only protocol used here is SSL even when
-    /// `spec.clusterConfig.tls.internalSecretClass: null`.
-    /// The advertised listener hosts are the same as the client (broker listener host)
-    /// but with a different port.
+    /// Handles broker/broker communication (`inter.broker.listener.name`).
+    /// The protocol is always SSL with client certificates required, using the pod certificates
+    /// of `spec.clusterConfig.tls.internalSecretClass` (default `tls`), also when Kerberos is
+    /// enabled.
+    /// The advertised host is the FQDN of the broker pod in the headless service.
     #[strum(serialize = "INTERNAL")]
     Internal,
-    /// This is almost identical with the `Client` listener with the following exceptions:
+    /// Like the `Client` listener with SASL_SSL, with the following differences:
     ///
     /// - it is only defined if Kerberos is enabled
     /// - it uses a different port
-    /// - the keystore associated with the listener volume uses a different CA
+    /// - the Kerberos principal is derived from the bootstrap listener address instead of the
+    ///   broker listener address
     ///
-    /// Note: the corresponding K8S service is *always* defined, not just if Kerberos is enabled
-    /// and it is published in the discovery ConfigMap for clients to consume.
+    /// It uses the same TLS keystore as the `Client` listener, whose certificate covers both the
+    /// broker and the bootstrap listener addresses.
+    ///
+    /// Note: the bootstrap `Listener` is created for every broker role group, not only if
+    /// Kerberos is enabled. Its addresses are published in the discovery ConfigMap, with the
+    /// bootstrap port if Kerberos is enabled and the client port otherwise.
     #[strum(serialize = "BOOTSTRAP")]
     Bootstrap,
-    /// This listener is defined when Kraft mode is enabled.
-    /// It is responsible for broker/controller as well as controller/controller communications
-    /// and therefore it is present on *both* brokers and controller properties files.
-    /// The only protocol used is SSL with the internal pod certificates, also when Kerberos is
-    /// enabled.
-    /// The advertised host names are FQDN pod names of the controllers.
+    /// Handles broker/controller and controller/controller communication in KRaft mode.
+    /// Only the controllers bind this listener; brokers connect to it as clients, so it appears
+    /// in the `controller.listener.names` and the security protocol map of both properties files.
+    /// The protocol is always SSL with client certificates required, using the pod certificates
+    /// of the internal `SecretClass`, also when Kerberos is enabled.
+    /// The controllers are addressed by their pod FQDNs (`controller.quorum.bootstrap.servers`).
     ///
-    /// Note: there is no listener for client/controller communication.
+    /// Note: there is no listener for client/controller communication. The only other clients
+    /// are the quorum management admin tools running inside the controller pods, which use the
+    /// same pod certificates.
     #[strum(serialize = "CONTROLLER")]
     Controller,
 }
