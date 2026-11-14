@@ -8,8 +8,9 @@ All notable changes to this project will be documented in this file.
 
 - Support floating tags for product images via the new `spec.image.stackableVersionPolicy` field
   ([#1021]).
-- Support Kerberos (GSSAPI) authentication on KRaft controllers, covering both
-  broker-to-controller and controller-to-controller (Raft) traffic ([#1024]).
+- Support Kerberos (GSSAPI) client authentication for KRaft clusters, including dynamic controller
+  quorum scaling. Brokers and controllers authenticate each other with their internal TLS
+  certificates (mTLS on the CONTROLLER listener), not with Kerberos ([#1024], [#XXXX]).
 - The logs of the `containerdebug` process are now collected by the Vector agent and forwarded to
   the Vector aggregator ([#1055]).
 - Support for Kafka 4.3.1 ([#1022]).
@@ -23,7 +24,8 @@ All notable changes to this project will be documented in this file.
   them. The operator removes the finalizers of KafkaTopics whose KafkaCluster is deleted ([#1050]).
 - The OPA authorizer is now also configured on KRaft controllers. Previously, requests that brokers
   forward to the controllers (e.g. creating or deleting topics) were not authorized at all.
-  The Kafka nodes are now configured as super users, so that traffic between them does not hit OPA.
+  The Kafka nodes are now configured as super users, identified by the subjects of their internal
+  TLS certificates, so that traffic between them does not hit OPA.
   Controllers now get the same affinity to OPA as brokers ([#1051]).
 
 ### Changed
@@ -32,6 +34,10 @@ All notable changes to this project will be documented in this file.
   Abbreviated values such as `26.7` are no longer accepted ([#1021]).
 - BREAKING: `spec.image.pullPolicy` now defaults to `IfNotPresent` for non-floating tags instead of
   always defaulting to `Always` ([#1021]).
+- BREAKING: The CONTROLLER listener of KRaft controllers now always requires TLS client
+  authentication, also when no authentication or authorization is configured. Tools connecting
+  directly to a controller (e.g. `kafka-metadata-quorum.sh`) must present a certificate of the
+  internal `SecretClass` ([#XXXX]).
 - The dynamic KRaft quorum created by the operator is now scaled automatically. Previously,
   manual intervention was needed after every scale operation.
   This change introduces a new side-car container (`quorum-manager`) to all controller pods

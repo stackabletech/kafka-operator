@@ -7,3 +7,7 @@ client can authenticate via GSSAPI to produce/consume a message.
 
 This bundles the KRaft cluster setup from `smoke-kraft` with the KDC deployment,
 `SecretClass`/`AuthenticationClass` and produce/consume job from `kerberos`.
+
+The brokers and controllers authenticate each other with their internal pod certificates (mTLS
+on the CONTROLLER listener), not with Kerberos. The scale-up and scale-down steps check that the
+quorum manager still admits and removes controllers in this setup.

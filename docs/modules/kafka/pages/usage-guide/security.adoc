@@ -244,7 +244,7 @@ The operator sets `super.users` to the principals of all nodes of the cluster:
 
 * The nodes authenticate each other with the TLS certificates that the secret operator provides for the `internalSecretClass`.
   The principal is the subject DN of the certificate, which contains the FQDN of the pod and a generic common name, e.g. `DC=local,DC=cluster,DC=svc,DC=default,DC=simple-kafka-broker-default-headless,DC=simple-kafka-broker-default-0,CN=generated certificate for pod`.
-* If Kerberos is enabled, the short names of the Kerberos services of the brokers and the controllers are added as well.
+* Kerberos principals are never added, also when Kerberos is enabled: the nodes do not use Kerberos to authenticate each other.
 
 Kafka compares the principal of a request with each `super.users` entry for exact equality; wildcards are not supported.
 The common name `CN=generated certificate for pod` is therefore part of every certificate-based entry.
