@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
   ([#1021]).
 - Support Kerberos (GSSAPI) client authentication for KRaft clusters, including dynamic controller
   quorum scaling. Brokers and controllers authenticate each other with their internal TLS
-  certificates (mTLS on the CONTROLLER listener), not with Kerberos ([#1024], [#XXXX]).
+  certificates (mTLS on the CONTROLLER listener), not with Kerberos ([#1024], [#1069]).
 - The logs of the `containerdebug` process are now collected by the Vector agent and forwarded to
   the Vector aggregator ([#1055]).
 - Support for Kafka 4.3.1 ([#1022]).
@@ -26,7 +26,7 @@ All notable changes to this project will be documented in this file.
   forward to the controllers (e.g. creating or deleting topics) were not authorized at all.
   The Kafka nodes are now configured as super users, identified by the subjects of their internal
   TLS certificates, so that traffic between them does not hit OPA.
-  Controllers now get the same affinity to OPA as brokers ([#1051]).
+  Controllers now get the same affinity to OPA as brokers ([#1051], [#1069]).
 
 ### Changed
 
@@ -37,7 +37,7 @@ All notable changes to this project will be documented in this file.
 - BREAKING: The CONTROLLER listener of KRaft controllers now always requires TLS client
   authentication, also when no authentication or authorization is configured. Tools connecting
   directly to a controller (e.g. `kafka-metadata-quorum.sh`) must present a certificate of the
-  internal `SecretClass` ([#XXXX]).
+  internal `SecretClass` ([#1069]).
 - The dynamic KRaft quorum created by the operator is now scaled automatically. Previously,
   manual intervention was needed after every scale operation.
   This change introduces a new side-car container (`quorum-manager`) to all controller pods
@@ -48,7 +48,7 @@ All notable changes to this project will be documented in this file.
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy. ([#1010]).
 - `controller.quorum.bootstrap.servers` always lists all currently running controller pod address.
   It doesn't contain bootstrap service address anymore to avoid the problem of new controller pods
-  not being able to join the quorum because they connect to themselves ([#XXXX]).
+  not being able to join the quorum because they connect to themselves ([#1069]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
 - Bump stackable-operator to 0.121.0 ([#994], [#1011], [#1021], [#1029], [#1043]).
@@ -133,7 +133,7 @@ All notable changes to this project will be documented in this file.
 [#1051]: https://github.com/stackabletech/kafka-operator/pull/1051
 [#1052]: https://github.com/stackabletech/kafka-operator/pull/1052
 [#1055]: https://github.com/stackabletech/kafka-operator/pull/1055
-[#XXXX]: https://github.com/stackabletech/kafka-operator/pull/XXXX
+[#1069]: https://github.com/stackabletech/kafka-operator/pull/1069
 
 ## [26.7.0] - 2026-07-21
 
