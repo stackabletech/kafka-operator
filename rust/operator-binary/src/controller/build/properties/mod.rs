@@ -110,11 +110,19 @@ pub(crate) fn kraft_controller_quorum_service(cluster: &ValidatedCluster) -> Str
 /// authorizing them, so the controllers must run the authorizer too. Empty if OPA is not
 /// configured.
 ///
-/// The Kafka nodes themselves are super users, so that traffic between them does not
-/// hit OPA. Forwarded requests are still authorized against the original client principal.
+/// # Why `super.users` is not set
+///
+/// Every request is authorized by OPA, including the traffic between the Kafka nodes, so the
+/// Rego rules must allow the nodes. Their principal is the subject DN of their internal pod
+/// certificate, e.g. `DC=local,...,DC=<pod>,CN=generated certificate for pod`, see the
+/// documentation on internal traffic in the security usage guide.
+///
+/// Listing the subjects of all pods in `super.users` instead would tie every node's config to the
+/// set of pods: on a controller scale-up, the running controllers would not know the subject of
+/// the new controller and deny its requests until they are restarted, while the `OrderedReady`
+/// rollout waits for the new controller to become ready first.
 pub(crate) fn opa_authorizer_properties(
     cluster_config: &ValidatedClusterConfig,
-    pod_descriptors: &[KafkaPodDescriptor],
 ) -> BTreeMap<String, String> {
     let Some(opa_connect_string) = cluster_config.opa_connect() else {
         return BTreeMap::new();
@@ -133,57 +141,7 @@ pub(crate) fn opa_authorizer_properties(
             "opa.authorizer.url".to_string(),
             opa_connect_string.to_string(),
         ),
-        ("super.users".to_string(), super_users(pod_descriptors)),
     ])
-}
-
-/// The `super.users` value: the principals of all Kafka nodes.
-///
-/// Internal traffic is authenticated with the pod certificates of the internal `SecretClass`
-/// (mTLS), whose subject DN is `CN=generated certificate for pod,DC=<pod>,DC=<service>,
-/// DC=<namespace>,DC=svc,DC=<cluster domain parts>`, see the secret-operator.
-///
-/// # Why there are no Kerberos principals
-///
-/// The nodes never authenticate each other with Kerberos, also when Kerberos is enabled for
-/// clients: the INTERNAL and CONTROLLER listeners are SSL. Kerberos principals must not be added
-/// here. Kafka compares `super.users` with the principal after
-/// `sasl.kerberos.principal.to.local.rules`, which by default map `kafka/<host>@<REALM>` to
-/// `kafka` for any host, so an entry like `User:kafka` would not be tied to the Kafka nodes.
-///
-/// # Why the `CN=generated certificate for pod` entry is required
-///
-/// The secret-operator always adds this common name to the subject of the pod certificates,
-/// regardless of whether domain components are added as well. Kafka's default principal for an
-/// mTLS client is the complete subject DN in RFC 2253 notation, which lists the RDNs in reverse
-/// order, so the CN is the last component: `DC=local,...,DC=<pod>,CN=generated certificate for pod`.
-///
-/// Kafka compares each `super.users` entry for exact equality with the principal; there is no
-/// support for wildcards or prefixes (the only wildcard Kafka knows is `User:*` in ACLs, which
-/// matches all users). An entry without the CN, or with a `*` in place of it, therefore never
-/// matches, and the brokers and controllers would be denied access to each other.
-///
-/// This could only be avoided by rewriting the principal with `ssl.principal.mapping.rules`,
-/// which is not done here.
-///
-/// See the Kafka documentation:
-/// - [Authorization and ACLs](https://kafka.apache.org/44/security/authorization-and-acls/)
-/// - [`ssl.principal.mapping.rules`](https://kafka.apache.org/44/security/authorization-and-acls/#customizing-ssl-user-name)
-fn super_users(pod_descriptors: &[KafkaPodDescriptor]) -> String {
-    let principals: BTreeSet<String> = pod_descriptors
-        .iter()
-        .map(|desc| {
-            // The certificate encodes `CN`, then the `DC`s from the pod up to the cluster domain
-            // suffix. Java prints the subject DN in RFC 2253 order, which is reversed.
-            let pod_fqdn = desc.pod_fqdn();
-            let mut rdns: Vec<String> = vec!["CN=generated certificate for pod".to_string()];
-            rdns.extend(pod_fqdn.split('.').map(|dc| format!("DC={dc}")));
-            rdns.reverse();
-            format!("User:{}", rdns.join(","))
-        })
-        .collect();
-
-    principals.into_iter().collect::<Vec<_>>().join(";")
 }
 
 #[cfg(test)]
@@ -234,25 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn super_users_contains_the_pod_certificate_subject_of_every_node() {
-        let pod_descriptors = vec![
-            pod_descriptor(KafkaRole::Controller, 0, 9093),
-            pod_descriptor(KafkaRole::Broker, 1, 9092),
-        ];
-
-        assert_eq!(
-            super_users(&pod_descriptors),
-            "User:DC=local,DC=cluster,DC=svc,DC=default,DC=kafka-controller-default-headless,DC=kafka-controller-default-0,CN=generated certificate for pod;\
-             User:DC=local,DC=cluster,DC=svc,DC=default,DC=kafka-controller-default-headless,DC=kafka-controller-default-1,CN=generated certificate for pod"
-        );
-    }
-
-    #[test]
-    fn opa_super_users_contain_only_pod_certificate_subjects_with_kerberos() {
-        let pod_descriptors = vec![
-            pod_descriptor(KafkaRole::Controller, 0, 9093),
-            pod_descriptor(KafkaRole::Broker, 1, 9092),
-        ];
+    fn opa_authorizer_properties_do_not_set_super_users() {
         let cluster_config = ValidatedClusterConfig {
             kafka_security: crate::controller::test_support::kerberos(),
             authorization_config: Some(crate::crd::authorization::KafkaAuthorizationConfig {
@@ -264,15 +204,13 @@ mod tests {
             broker_id_pod_config_map_name: None,
         };
 
-        let properties = opa_authorizer_properties(&cluster_config, &pod_descriptors);
-        let super_users = properties.get("super.users").expect("super.users is set");
+        let properties = opa_authorizer_properties(&cluster_config);
 
-        for entry in super_users.split(';') {
-            assert!(
-                entry.starts_with("User:") && entry.ends_with(",CN=generated certificate for pod"),
-                "every super user must be a pod certificate subject, got [{entry}]"
-            );
-        }
+        assert_eq!(
+            properties.get("authorizer.class.name").map(String::as_str),
+            Some("org.openpolicyagent.kafka.OpaAuthorizer")
+        );
+        assert_eq!(properties.get("super.users"), None);
     }
 
     /// Two replicas of the `default` role group (in reverse order), one replica of the `other`

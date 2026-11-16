@@ -10,7 +10,6 @@ use crate::{
         },
     },
     crd::{
-        KafkaPodDescriptor,
         listener::{KafkaListenerConfig, KafkaListenerName},
         role::{
             KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
@@ -27,7 +26,6 @@ use crate::{
 pub fn build(
     cluster_config: &ValidatedClusterConfig,
     listener_config: &KafkaListenerConfig,
-    pod_descriptors: &[KafkaPodDescriptor],
     controller_quorum_bootstrap_servers: String,
     overrides: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
@@ -93,7 +91,7 @@ pub fn build(
         }
     }
 
-    result.extend(opa_authorizer_properties(cluster_config, pod_descriptors));
+    result.extend(opa_authorizer_properties(cluster_config));
 
     result.extend(broker_config_settings(&cluster_config.kafka_security));
     result.extend(graceful_shutdown_config_properties());

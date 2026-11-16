@@ -313,7 +313,7 @@ pub fn mount_broker_tls_volumes(
 ///
 /// Besides the pod scope, the certificate covers `controller_quorum_service_name`, the headless
 /// Service of all controllers that the brokers dial, so that their TLS hostname verification
-/// accepts it. The scope adds a SAN only; the subject DN, which `super.users` matches, is derived
+/// accepts it. The scope adds a SAN only; the subject DN, which OPA rules match, is derived
 /// from the pod and stays unchanged.
 ///
 /// # Panics
@@ -543,7 +543,7 @@ pub fn controller_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap
     // each other with the pod certificates of the internal `SecretClass`, whose subjects are
     // pinned to the pod, and never with Kerberos. All clients of this listener (brokers, the
     // other controllers and the quorum management admin client) present that certificate. With
-    // OPA, the nodes are identified as super users by its subject.
+    // OPA, the Rego rules identify the nodes by its subject.
     config.insert(
         KafkaListenerName::Controller.listener_ssl_client_auth(),
         SSL_CLIENT_AUTH_REQUIRED.to_string(),

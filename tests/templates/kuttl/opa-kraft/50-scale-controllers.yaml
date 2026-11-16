@@ -1,0 +1,9 @@
+---
+# Scaling up the controllers must not deadlock: the new controller starts while the existing
+# controllers still run with the old configuration, so they must allow it without a restart.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: >-
+      kubectl patch kafkacluster test-kafka --namespace $NAMESPACE --type merge
+      --patch '{"spec": {"controllers": {"roleGroups": {"default": {"replicas": 4}}}}}'
