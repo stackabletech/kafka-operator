@@ -9,8 +9,9 @@ All notable changes to this project will be documented in this file.
 - Support floating tags for product images via the new `spec.image.stackableVersionPolicy` field
   ([#1021]).
 - Support Kerberos (GSSAPI) client authentication for KRaft clusters, including dynamic controller
-  quorum scaling. Brokers and controllers authenticate each other with their internal TLS
-  certificates (mTLS on the CONTROLLER listener), not with Kerberos ([#1024], [#1069]).
+  quorum scaling.
+  Brokers and controllers authenticate each other with their internal TLS certificates (mTLS on
+  the CONTROLLER listener), not with Kerberos ([#1024], [#1069]).
 - The logs of the `containerdebug` process are now collected by the Vector agent and forwarded to
   the Vector aggregator ([#1055]).
 - Support for Kafka 4.3.1 ([#1022]).
@@ -35,9 +36,9 @@ All notable changes to this project will be documented in this file.
 - BREAKING: `spec.image.pullPolicy` now defaults to `IfNotPresent` for non-floating tags instead of
   always defaulting to `Always` ([#1021]).
 - BREAKING: The CONTROLLER listener of KRaft controllers now always requires TLS client
-  authentication, also when no authentication or authorization is configured. Tools connecting
-  directly to a controller (e.g. `kafka-metadata-quorum.sh`) must present a certificate of the
-  internal `SecretClass` ([#1069]).
+  authentication, even when no authentication or authorization is configured.
+  Tools connecting directly to a controller (e.g. `kafka-metadata-quorum.sh`) must present a
+  certificate of the internal `SecretClass` ([#1069]).
 - The dynamic KRaft quorum created by the operator is now scaled automatically. Previously,
   manual intervention was needed after every scale operation.
   This change introduces a new side-car container (`quorum-manager`) to all controller pods
@@ -45,10 +46,10 @@ All notable changes to this project will be documented in this file.
   On termination, a new `preStop` hook on the controller container (`kafka`) removes the pod from
   the voter list before shutdown.
   The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
-  to ensure only one voter is added/removed at a time and thus keep the quorum healthy. ([#1010]).
-- `controller.quorum.bootstrap.servers` always lists all currently running controller pod address.
-  It doesn't contain bootstrap service address anymore to avoid the problem of new controller pods
-  not being able to join the quorum because they connect to themselves ([#1069]).
+  to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
+- Brokers now reach the KRaft controllers through the headless Services of the controller role
+  groups (`controller.quorum.bootstrap.servers`) instead of the individual controller pods.
+  Changing the number of controller replicas therefore no longer restarts the brokers ([#1069]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
 - Bump stackable-operator to 0.121.0 ([#994], [#1011], [#1021], [#1029], [#1043]).

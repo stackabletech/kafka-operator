@@ -115,7 +115,8 @@ KRaft mode requires major configuration changes compared to ZooKeeper mode:
   Brokers always format with `--no-initial-controllers` too; they are never voters.
 * On controllers, `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers, not the role groups' headless Services.
   A headless Service also resolves to pods that are not ready yet, so a starting controller could resolve it to its own address,
-  and then never find the quorum leader. With one entry per pod, Kafka picks a random entry for every attempt.
+  and then never find the quorum leader.
+  With one entry per pod, Kafka picks a random entry for every attempt.
   As a consequence, whenever the number of controller replicas changes, the controller pods are rolled by the restart controller.
 * On brokers, `controller.quorum.bootstrap.servers` lists the headless Services of all controller role groups.
   A broker is never part of these Services, so it cannot resolve them to its own address.
@@ -128,7 +129,7 @@ Reference an `AuthenticationClass` with the Kerberos provider as described in
 xref:usage-guide/security.adoc[Security].
 
 Kerberos is only used on the client-facing listeners of the brokers.
-The `CONTROLLER` listener always uses `SSL` with mutual authentication: brokers and controllers authenticate each other with the certificates of the `internalSecretClass`, also when Kerberos is enabled.
+The `CONTROLLER` listener always uses `SSL` with mutual authentication: brokers and controllers authenticate each other with the certificates of the `internalSecretClass`, even when Kerberos is enabled.
 Controllers therefore have no keytab.
 
 == Known Issues

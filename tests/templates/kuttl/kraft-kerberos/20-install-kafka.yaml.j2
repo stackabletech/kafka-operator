@@ -45,18 +45,18 @@ commands:
             gracefulShutdownTimeout: 30s # speed up tests
           roleGroups:
             default:
-              # 3 controller replicas so that this test actually exercises inter-controller
-              # (Raft) Kerberos-authenticated traffic on the CONTROLLER listener, not just
-              # broker-to-controller traffic.
+              # 3 controller replicas so that this test exercises inter-controller (Raft)
+              # traffic on the mTLS CONTROLLER listener with Kerberos enabled for clients, not
+              # just broker-to-controller traffic.
               replicas: 3
         brokers:
           config:
             logging:
               enableVectorAgent: {{ lookup('env', 'VECTOR_AGGREGATOR') | length > 0 }}
             brokerListenerClass: {{ test_scenario['values']['broker-listener-class'] }}
-            # bootstrap-listener-class is orthogonal to this test's focus on Kerberos over the
-            # CONTROLLER listener (that axis is already covered by the plain `kerberos` test
-            # case), so it is pinned here rather than parameterized as a test dimension.
+            # bootstrap-listener-class is orthogonal to this test's focus on a KRaft cluster with
+            # Kerberos enabled (that axis is already covered by the plain `kerberos` test case),
+            # so it is pinned here rather than parameterized as a test dimension.
             bootstrapListenerClass: cluster-internal
             gracefulShutdownTimeout: 30s # speed up tests
           roleGroups:

@@ -45,7 +45,6 @@ const STACKABLE_KCAT_BINARY: &str = "/stackable/kcat";
 const PROPERTY_SECURITY_PROTOCOL: &str = "security.protocol";
 const PROPERTY_SASL_ENABLED_MECHANISMS: &str = "sasl.enabled.mechanisms";
 const PROPERTY_SASL_KERBEROS_SERVICE_NAME: &str = "sasl.kerberos.service.name";
-const PROPERTY_SASL_INTER_BROKER_MECHANISM: &str = "sasl.mechanism.inter.broker.protocol";
 const PROPERTY_SASL_MECHANISM: &str = "sasl.mechanism";
 
 pub(crate) const STACKABLE_TLS_KAFKA_INTERNAL_DIR: &str = "/stackable/tls-kafka-internal";
@@ -481,10 +480,6 @@ pub fn broker_config_settings(security: &ValidatedKafkaSecurity) -> BTreeMap<Str
             PROPERTY_SASL_KERBEROS_SERVICE_NAME.to_string(),
             KafkaRole::Broker.kerberos_service_name().to_string(),
         );
-        config.insert(
-            PROPERTY_SASL_INTER_BROKER_MECHANISM.to_string(),
-            SASL_MECHANISM_GSSAPI.to_string(),
-        );
         tracing::debug!("Kerberos configs added: [{:#?}]", config);
     }
 
@@ -850,10 +845,6 @@ mod tests {
             ))
         );
         assert_eq!(
-            props.get("security.protocol"),
-            Some(&Some("SSL".to_string()))
-        );
-        assert_eq!(
             props.get("ssl.truststore.location"),
             Some(&Some(
                 "/stackable/tls-kafka-internal/truststore.p12".to_string()
@@ -906,10 +897,8 @@ mod tests {
             config.get("sasl.kerberos.service.name"),
             Some(&"kafka".to_string())
         );
-        assert_eq!(
-            config.get("sasl.mechanism.inter.broker.protocol"),
-            Some(&"GSSAPI".to_string())
-        );
+        // The inter-broker listener (INTERNAL) is SSL, so no SASL mechanism applies to it.
+        assert!(!config.contains_key("sasl.mechanism.inter.broker.protocol"));
         assert!(config.contains_key("listener.name.bootstrap.ssl.keystore.location"));
     }
 

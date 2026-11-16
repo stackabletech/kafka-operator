@@ -328,6 +328,10 @@ mod tests {
         // Scaling a controller role group rolls the controllers, but not the brokers.
         assert_eq!(kraft_controller_pods(&three_replicas).len(), 3);
         assert_eq!(kraft_controller_pods(&five_replicas).len(), 5);
+        assert_ne!(
+            kraft_controller_pods(&three_replicas),
+            kraft_controller_pods(&five_replicas)
+        );
         assert_eq!(
             kraft_controller_services(&three_replicas),
             kraft_controller_services(&five_replicas)
