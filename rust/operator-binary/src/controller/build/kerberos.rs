@@ -42,6 +42,10 @@ pub enum Error {
 /// Brokers are exposed through listener-operator `Listener` volumes (the broker and bootstrap
 /// listeners), so the keytab's principals must cover both.
 ///
+/// Only brokers get a keytab: Kerberos is used on the client-facing listeners only. The Kafka
+/// nodes authenticate each other with their internal pod certificates, so KRaft controllers
+/// have no Kerberos configuration at all.
+///
 /// # Panics
 ///
 /// Panics if the volume mount cannot be added to the container builder. Only call this on a
@@ -53,75 +57,25 @@ pub fn mount_broker_kerberos_volume(
     let Some(kerberos_secret_class) = kafka_security.kerberos_secret_class() else {
         return Ok(None);
     };
-    let mut keytab = keytab_volume_source(&kerberos_secret_class);
-    keytab
-        .with_listener_volume_scope(&*LISTENER_BROKER_VOLUME_NAME)
-        .with_listener_volume_scope(&*LISTENER_BOOTSTRAP_VOLUME_NAME);
-    mount_keytab_volume(
-        &mut keytab,
-        KafkaRole::Broker.kerberos_service_name(),
-        cb_kafka,
-    )
-    .map(Some)
-}
-
-/// Mounts the Kerberos keytab and `krb5.conf` volume into a controller's `kafka` container and
-/// returns the pod volume, when Kerberos is enabled; `None` otherwise.
-///
-/// KRaft controllers have no listener-operator `Listener` volume: they are only reachable through
-/// their own StatefulSet pod DNS name, so the keytab must be pod-scoped, matching how the
-/// controller's internal TLS certificate is provisioned in
-/// [`mount_controller_tls_volume`](super::security::mount_controller_tls_volume).
-///
-/// # Panics
-///
-/// Panics if the volume mount cannot be added to the container builder. Only call this on a
-/// container builder whose mount paths are still distinct from the ones added here.
-pub fn mount_controller_kerberos_volume(
-    kafka_security: &ValidatedKafkaSecurity,
-    cb_kafka: &mut ContainerBuilder,
-) -> Result<Option<Volume>, Error> {
-    let Some(kerberos_secret_class) = kafka_security.kerberos_secret_class() else {
-        return Ok(None);
-    };
-    let mut keytab = keytab_volume_source(&kerberos_secret_class);
-    keytab.with_pod_scope();
-    mount_keytab_volume(
-        &mut keytab,
-        KafkaRole::Controller.kerberos_service_name(),
-        cb_kafka,
-    )
-    .map(Some)
-}
-
-/// The secret-operator volume source for the keytab and `krb5.conf`, before it is scoped to the
-/// addresses the role's principals must cover.
-fn keytab_volume_source(kerberos_secret_class: &str) -> SecretOperatorVolumeSourceBuilder {
-    SecretOperatorVolumeSourceBuilder::new(
-        kerberos_secret_class,
+    let kerberos_secret_operator_volume = SecretOperatorVolumeSourceBuilder::new(
+        &kerberos_secret_class,
         // We need both public (krb5.conf) and private (keytab) parts.
         SecretClassVolumeProvisionParts::PublicPrivate,
     )
-}
-
-/// Builds the scoped `keytab` volume source into the pod volume and mounts it into the `kafka`
-/// container.
-fn mount_keytab_volume(
-    keytab: &mut SecretOperatorVolumeSourceBuilder,
-    kerberos_service_name: &str,
-    cb_kafka: &mut ContainerBuilder,
-) -> Result<Volume, Error> {
-    let kerberos_secret_operator_volume = keytab
-        .with_kerberos_service_name(kerberos_service_name)
-        .build()
-        .context(KerberosSecretVolumeSnafu)?;
+    .with_listener_volume_scope(&*LISTENER_BROKER_VOLUME_NAME)
+    .with_listener_volume_scope(&*LISTENER_BOOTSTRAP_VOLUME_NAME)
+    .with_kerberos_service_name(KafkaRole::Broker.kerberos_service_name())
+    .build()
+    .context(KerberosSecretVolumeSnafu)?;
     cb_kafka
         .add_volume_mount(&*KERBEROS_VOLUME_NAME, STACKABLE_KERBEROS_DIR)
         .expect("The mount paths are statically defined and there should be no duplicates.");
 
-    Ok(VolumeBuilder::new(&*KERBEROS_VOLUME_NAME)
-        .ephemeral(kerberos_secret_operator_volume)
-        .build())
+    Ok(Some(
+        VolumeBuilder::new(&*KERBEROS_VOLUME_NAME)
+            .ephemeral(kerberos_secret_operator_volume)
+            .build(),
+    ))
 }
 
 constant!(pub KRB5_CONFIG: EnvVarName = "KRB5_CONFIG");

@@ -158,7 +158,6 @@ pub fn controller_kafka_container_command(
         prepare_signal_handlers
         mkdir --parents \"${file_log_directory}\" || true
         containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
-        {set_realm_env}
 
         {import_opa_tls_cert}
 
@@ -168,9 +167,6 @@ pub fn controller_kafka_container_command(
         cp {config_dir}/{properties_file} /tmp/{properties_file}
 
         config-utils template /tmp/{properties_file}
-
-        cp {config_dir}/{jaas_file} /tmp/{jaas_file}
-        config-utils template /tmp/{jaas_file}
 
         cp {admin_client_source} {admin_client_config}
         config-utils template {admin_client_config}
@@ -184,14 +180,11 @@ pub fn controller_kafka_container_command(
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         file_log_directory = FILE_LOG_DIRECTORY.as_ref(),
-        // Mirrors `broker_kafka_container_commands`: empty when Kerberos is disabled.
-        set_realm_env = export_kerberos_realm_command(kafka_security).unwrap_or_default(),
         import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
         config_dir = STACKABLE_CONFIG_DIR,
         properties_file = ConfigFileName::ControllerProperties,
-        jaas_file = ConfigFileName::Jaas,
         admin_client_source = ADMIN_CLIENT_PROPERTIES_SOURCE_PATH,
         admin_client_config = ADMIN_CLIENT_PROPERTIES_PATH,
         quorum_format_flag = controller_quorum_format_flag(&controller_descriptors),
@@ -201,9 +194,8 @@ pub fn controller_kafka_container_command(
 
 const KAFKA_METADATA_QUORUM_BINARY: &str = "/stackable/kafka/bin/kafka-metadata-quorum.sh";
 
-/// The rendered admin-client config. The raw ConfigMap file is copied here and passed through
-/// `config-utils template` first, because under Kerberos its `sasl.jaas.config` carries
-/// `${env:...}` placeholders (see `controller_admin_client_properties`).
+/// The rendered admin-client config. Like every other config file, the raw ConfigMap file is
+/// copied here and passed through `config-utils template` before use.
 const ADMIN_CLIENT_PROPERTIES_PATH: &str = "/tmp/admin-client.properties";
 const ADMIN_CLIENT_PROPERTIES_SOURCE_PATH: &str = "/stackable/config/admin-client.properties";
 
@@ -253,7 +245,7 @@ const CONTROLLER_QUORUM_MANAGER_LOOP_SCRIPT: &str =
 
 /// The sidecar's main-loop command: while this controller's local Raft state is `observer`,
 /// admit it into the quorum's voter set once that is safe.
-pub fn quorum_manager_container_command(security: &ValidatedKafkaSecurity) -> String {
+pub fn quorum_manager_container_command() -> String {
     format!(
         r#"
         set -uo pipefail
@@ -262,7 +254,6 @@ pub fn quorum_manager_container_command(security: &ValidatedKafkaSecurity) -> St
         [ -n "$POD_INDEX" ] || exit 0
         {export_replica_id}
         {extract_bootstrap_servers}
-        {set_realm_env}
 
         if cp {config_dir}/{controller_properties_file} /tmp/{controller_properties_file} \
           && config-utils template /tmp/{controller_properties_file} \
@@ -293,7 +284,6 @@ pub fn quorum_manager_container_command(security: &ValidatedKafkaSecurity) -> St
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
         extract_bootstrap_servers = extract_bootstrap_servers_command(),
-        set_realm_env = export_kerberos_realm_command(security).unwrap_or_default(),
         config_dir = STACKABLE_CONFIG_DIR,
         controller_properties_file = ConfigFileName::ControllerProperties,
         admin_client_source = ADMIN_CLIENT_PROPERTIES_SOURCE_PATH,
@@ -404,44 +394,29 @@ mod tests {
     use crate::controller::test_support::{kerberos, plaintext};
 
     #[test]
-    fn controller_command_does_not_export_a_realm_without_kerberos() {
-        let command = controller_kafka_container_command(&plaintext(), vec![]);
-        assert!(!command.contains("KERBEROS_REALM"));
-    }
-
-    #[test]
-    fn controller_command_always_templates_the_jaas_file() {
-        // `jaas.properties` is always present in the ConfigMap (empty when Kerberos is off),
-        // so the copy is unconditional, matching `broker_start_command`.
+    fn controller_command_has_no_kerberos_setup() {
+        // The controllers never use Kerberos: the nodes authenticate each other with their
+        // internal pod certificates, also when Kerberos is enabled for clients.
         for security in [kerberos(), plaintext()] {
             let command = controller_kafka_container_command(&security, vec![]);
-            assert!(command.contains("cp /stackable/config/jaas.properties /tmp/jaas.properties"));
-            assert!(command.contains("config-utils template /tmp/jaas.properties"));
+            assert!(!command.contains("KERBEROS_REALM"));
+            assert!(!command.contains("jaas.properties"));
         }
+        assert!(!quorum_manager_container_command().contains("KERBEROS_REALM"));
     }
 
     #[test]
     fn quorum_manager_templates_the_admin_client_config() {
-        let command = quorum_manager_container_command(&kerberos());
+        let command = quorum_manager_container_command();
         assert!(
             command.contains(
                 "cp /stackable/config/admin-client.properties /tmp/admin-client.properties"
             )
         );
         assert!(command.contains("config-utils template /tmp/admin-client.properties"));
-        // It must connect with the *rendered* copy, not the raw ConfigMap file, or the
-        // `${env:...}` placeholders in `sasl.jaas.config` reach the JAAS parser verbatim.
+        // It must connect with the *rendered* copy, not the raw ConfigMap file.
         assert!(command.contains("ADMIN_CLIENT_CONFIG=/tmp/admin-client.properties"));
         assert!(!command.contains("ADMIN_CLIENT_CONFIG=/stackable/config/admin-client.properties"));
-    }
-
-    #[test]
-    fn quorum_manager_exports_the_kerberos_realm() {
-        // The sidecar is a separate container: it inherits nothing from the kafka container's
-        // startup, so it must derive $KERBEROS_REALM itself for `config-utils template` to
-        // resolve the principal.
-        let command = quorum_manager_container_command(&kerberos());
-        assert!(command.contains("KERBEROS_REALM"));
     }
 
     #[test]
@@ -457,7 +432,7 @@ mod tests {
 
     #[test]
     fn quorum_manager_container_command_targets_the_bootstrap_servers_not_localhost() {
-        let command = quorum_manager_container_command(&kerberos());
+        let command = quorum_manager_container_command();
         assert!(command.contains(
             "grep '^controller.quorum.bootstrap.servers=' /stackable/config/controller.properties"
         ));
@@ -475,7 +450,7 @@ mod tests {
     /// removed. Backgrounding it and having the trap actively `kill` it closes that window.
     #[test]
     fn quorum_manager_container_command_kills_an_in_flight_add_controller_attempt_on_term() {
-        let command = quorum_manager_container_command(&kerberos());
+        let command = quorum_manager_container_command();
         assert!(command.contains("trap 'handle_term_signal' TERM"));
         // The poll interval is slept in the background and `wait`ed on, so bash can run the
         // trap immediately instead of only after a foreground `sleep` returns.
@@ -517,13 +492,13 @@ mod tests {
     #[test]
     fn quorum_manager_container_command_string_merges_controller_and_admin_client_properties_for_add_controller()
      {
-        let command = quorum_manager_container_command(&kerberos());
+        let command = quorum_manager_container_command();
         // Renders this controller's own `controller.properties` (carries `node.id` and
         // `listeners`) via the same REPLICA_ID derivation used by the `kafka` container.
         assert!(command.contains("export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET))"));
         assert!(command.contains("config-utils template /tmp/controller.properties"));
         // Merges it with the *rendered* admin-client config (carries `security.protocol`,
-        // `ssl.*` and, under Kerberos, `sasl.jaas.config`), controller.properties first so
+        // `ssl.*`), controller.properties first so
         // the client config wins on any key collision (see `ADD_CONTROLLER_PROPERTIES_PATH`).
         assert!(command.contains(
             "cat /tmp/controller.properties /tmp/admin-client.properties > /tmp/add-controller.properties"
@@ -846,7 +821,7 @@ mod tests {
     /// its own `timeout` wrapper, delaying pod termination by minutes.
     #[test]
     fn every_cli_call_has_a_kill_after_so_timeout_is_actually_enforced() {
-        let container_command = quorum_manager_container_command(&kerberos());
+        let container_command = quorum_manager_container_command();
 
         // Both scripts are handed the CLI path by their operator-generated preamble and
         // then refer to it by variable, so that assignment is the only place the literal

@@ -57,18 +57,15 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
 /// Builds the contents of the `controller.quorum.bootstrap.servers` property: the FQDNs of all
 /// KRaft controller pods.
 ///
-/// # Reasons for NOT using the role group's headless service
+/// # Reason for NOT using the role group's headless service
 ///
-/// * When a new controller pod starts (without metadata) it finds the quorum leader
-///   by fetching from a bootstrap server. Kafka treats every entry of this list as
-///   one bootstrap node and picks a random entry for each attempt.
-///   The headless Service publishes not-ready addresses, so a single Service entry
-///   can resolve to the starting pod itself. That connection succeeds, so
-///   Kafka NEVER tries another address and the pod never learns the leader (see
-///   <https://github.com/stackabletech/kafka-operator/issues/1062>).
-/// * With Kerberos, the CONTROLLER listener's acceptor offers the principal `kafka/<pod-fqdn>`,
-///   which is also what the Raft voter endpoints advertise. Dialling the headless Service asks for
-///   `kafka/<service>` and fails authentication.
+/// When a new controller pod starts (without metadata) it finds the quorum leader
+/// by fetching from a bootstrap server. Kafka treats every entry of this list as
+/// one bootstrap node and picks a random entry for each attempt.
+/// The headless Service publishes not-ready addresses, so a single Service entry
+/// can resolve to the starting pod itself. That connection succeeds, so
+/// Kafka NEVER tries another address and the pod never learns the leader (see
+/// <https://github.com/stackabletech/kafka-operator/issues/1062>).
 ///
 /// This has a cost: the list changes on every scaling operation of a controller role group, so
 /// scaling rolls all controller and broker pods. With OPA, `super.users` lists every pod as well,
@@ -118,13 +115,7 @@ pub(crate) fn opa_authorizer_properties(
             "opa.authorizer.url".to_string(),
             opa_connect_string.to_string(),
         ),
-        (
-            "super.users".to_string(),
-            super_users(
-                pod_descriptors,
-                cluster_config.kafka_security.has_kerberos_enabled(),
-            ),
-        ),
+        ("super.users".to_string(), super_users(pod_descriptors)),
     ])
 }
 
@@ -133,7 +124,14 @@ pub(crate) fn opa_authorizer_properties(
 /// Internal traffic is authenticated with the pod certificates of the internal `SecretClass`
 /// (mTLS), whose subject DN is `CN=generated certificate for pod,DC=<pod>,DC=<service>,
 /// DC=<namespace>,DC=svc,DC=<cluster domain parts>`, see the secret-operator.
-/// With Kerberos, the node principals are mapped to the short name of the service.
+///
+/// # Why there are no Kerberos principals
+///
+/// The nodes never authenticate each other with Kerberos, also when Kerberos is enabled for
+/// clients: the INTERNAL and CONTROLLER listeners are SSL. Kerberos principals must not be added
+/// here. Kafka compares `super.users` with the principal after
+/// `sasl.kerberos.principal.to.local.rules`, which by default map `kafka/<host>@<REALM>` to
+/// `kafka` for any host, so an entry like `User:kafka` would not be tied to the Kafka nodes.
 ///
 /// # Why the `CN=generated certificate for pod` entry is required
 ///
@@ -153,8 +151,8 @@ pub(crate) fn opa_authorizer_properties(
 /// See the Kafka documentation:
 /// - [Authorization and ACLs](https://kafka.apache.org/44/security/authorization-and-acls/)
 /// - [`ssl.principal.mapping.rules`](https://kafka.apache.org/44/security/authorization-and-acls/#customizing-ssl-user-name)
-fn super_users(pod_descriptors: &[KafkaPodDescriptor], kerberos_enabled: bool) -> String {
-    let mut principals: BTreeSet<String> = pod_descriptors
+fn super_users(pod_descriptors: &[KafkaPodDescriptor]) -> String {
+    let principals: BTreeSet<String> = pod_descriptors
         .iter()
         .map(|desc| {
             // The certificate encodes `CN`, then the `DC`s from the pod up to the cluster domain
@@ -166,14 +164,6 @@ fn super_users(pod_descriptors: &[KafkaPodDescriptor], kerberos_enabled: bool) -
             format!("User:{}", rdns.join(","))
         })
         .collect();
-
-    if kerberos_enabled {
-        principals.extend(
-            [KafkaRole::Broker, KafkaRole::Controller]
-                .iter()
-                .map(|role| format!("User:{}", role.kerberos_service_name())),
-        );
-    }
 
     principals.into_iter().collect::<Vec<_>>().join(";")
 }
@@ -231,18 +221,38 @@ mod tests {
         ];
 
         assert_eq!(
-            super_users(&pod_descriptors, false),
+            super_users(&pod_descriptors),
             "User:DC=local,DC=cluster,DC=svc,DC=default,DC=kafka-controller-default-headless,DC=kafka-controller-default-0,CN=generated certificate for pod;\
              User:DC=local,DC=cluster,DC=svc,DC=default,DC=kafka-controller-default-headless,DC=kafka-controller-default-1,CN=generated certificate for pod"
         );
     }
 
     #[test]
-    fn super_users_contains_the_service_name_with_kerberos() {
-        let pod_descriptors = vec![pod_descriptor(KafkaRole::Controller, 0, 9093)];
+    fn opa_super_users_contain_only_pod_certificate_subjects_with_kerberos() {
+        let pod_descriptors = vec![
+            pod_descriptor(KafkaRole::Controller, 0, 9093),
+            pod_descriptor(KafkaRole::Broker, 1, 9092),
+        ];
+        let cluster_config = ValidatedClusterConfig {
+            kafka_security: crate::controller::test_support::kerberos(),
+            authorization_config: Some(crate::crd::authorization::KafkaAuthorizationConfig {
+                opa_connect: "http://opa.default.svc.cluster.local:8081/v1/data/kafka".to_owned(),
+                secret_class: None,
+            }),
+            metadata_manager: crate::crd::MetadataManager::KRaft,
+            zookeeper_config_map_name: None,
+            broker_id_pod_config_map_name: None,
+        };
 
-        assert!(super_users(&pod_descriptors, true).ends_with(";User:kafka"));
-        assert!(!super_users(&pod_descriptors, false).contains("User:kafka"));
+        let properties = opa_authorizer_properties(&cluster_config, &pod_descriptors);
+        let super_users = properties.get("super.users").expect("super.users is set");
+
+        for entry in super_users.split(';') {
+            assert!(
+                entry.starts_with("User:") && entry.ends_with(",CN=generated certificate for pod"),
+                "every super user must be a pod certificate subject, got [{entry}]"
+            );
+        }
     }
 
     #[test]
@@ -265,8 +275,7 @@ mod tests {
 
         // One entry per controller pod, *not* the role group's headless Service: a single
         // Service entry can resolve to the starting pod itself, which then never finds the
-        // leader (#1062). Under Kerberos the pod FQDN is also the only acceptable GSSAPI
-        // service principal.
+        // leader (#1062).
         assert_eq!(
             kraft_controllers(&pod_descriptors),
             vec![

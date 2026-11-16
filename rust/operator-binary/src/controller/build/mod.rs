@@ -741,7 +741,6 @@ mod tests {
                     &*STACKABLE_LOG_DIR_NAME,
                 ],
                 KafkaRole::Controller => vec![
-                    &*KERBEROS_VOLUME_NAME,
                     &*STACKABLE_LOG_CONFIG_DIR_NAME,
                     &*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                     &*OPA_TLS_VOLUME_NAME,

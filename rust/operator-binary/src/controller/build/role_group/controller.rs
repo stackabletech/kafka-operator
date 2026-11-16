@@ -18,7 +18,7 @@ use stackable_operator::{
     },
 };
 
-use super::{RoleGroupBuilder, controller_jaas_section};
+use super::RoleGroupBuilder;
 use crate::{
     controller::{
         ControllerRoleGroupConfig, PodDescriptorsError, RoleGroupName, ValidatedCluster,
@@ -31,10 +31,6 @@ use crate::{
                 common_kafka_env, common_operator_env_vars, container_ports, log_config_volume,
             },
             jvm,
-            kerberos::{
-                self, KAFKA_OPTS, KERBEROS_VOLUME_NAME, KRB5_CONFIG, kerberos_env_vars,
-                mount_controller_kerberos_volume,
-            },
             properties::{
                 ConfigFileName, controller_properties, listener::get_kafka_listener_config,
             },
@@ -52,9 +48,8 @@ use crate::{
         security::ValidatedKafkaSecurity,
     },
     crd::{
-        CONTROLLER_POD_FQDN_TEMPLATE, KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT,
-        STACKABLE_CONFIG_DIR, STACKABLE_CONFIG_DIR_NAME, STACKABLE_DATA_DIR,
-        STACKABLE_KERBEROS_DIR, STACKABLE_KERBEROS_KRB5_PATH, STACKABLE_LOG_CONFIG_DIR,
+        KAFKA_HEAP_OPTS, LOG_DIRS_VOLUME_NAME, METRICS_PORT, STACKABLE_CONFIG_DIR,
+        STACKABLE_CONFIG_DIR_NAME, STACKABLE_DATA_DIR, STACKABLE_LOG_CONFIG_DIR,
         STACKABLE_LOG_CONFIG_DIR_NAME, STACKABLE_LOG_DIR_NAME,
         role::{KAFKA_NODE_ID_OFFSET, KafkaRole, controller::ControllerContainer},
     },
@@ -82,9 +77,6 @@ pub enum Error {
 
     #[snafu(display("failed to build the TLS volume"))]
     BuildInternalTlsVolume { source: security::Error },
-
-    #[snafu(display("failed to build the Kerberos volume"))]
-    BuildKerberosVolume { source: kerberos::Error },
 
     #[snafu(display("failed to build container probe"))]
     BuildProbe { source: probes::Error },
@@ -154,8 +146,11 @@ pub(crate) fn build<'a>(
     })
 }
 
-/// `controller.properties` rendered with the role group's overrides, the controller's JAAS
-/// config, and `admin-client.properties`.
+/// `controller.properties` rendered with the role group's overrides, and
+/// `admin-client.properties`.
+///
+/// Controllers have no JAAS config: the CONTROLLER listener is SSL also when Kerberos is
+/// enabled, and the nodes authenticate each other with their internal pod certificates.
 fn role_config_map_data(
     cluster: &ValidatedCluster,
     role_group_name: &RoleGroupName,
@@ -190,20 +185,12 @@ fn role_config_map_data(
                 file: ConfigFileName::ControllerProperties,
             })?,
         ),
-        // This file contains the JAAS configuration for Kerberos authentication
-        // It has the ".properties" extension but is not a Java properties file.
-        // It is processed by `config-utils` to substitute "env:" and "file:" variables
-        // and this tool currently doesn't support the JAAS login configuration format.
-        (
-            ConfigFileName::Jaas.to_string(),
-            jaas_config_file(kafka_security.has_kerberos_enabled()),
-        ),
         // `admin-client.properties` is only needed by the controller-side sidecar running
         // `kafka-metadata-quorum.sh` against the CONTROLLER listener; brokers don't need it.
         (
             ConfigFileName::AdminClient.to_string(),
             to_java_properties_string(
-                controller_admin_client_properties(kafka_security)
+                controller_admin_client_properties()
                     .iter()
                     .filter_map(|(k, v)| v.as_ref().map(|v| (k, v))),
             )
@@ -229,18 +216,10 @@ fn role_pod(
 
     let mut cb_kafka = new_container_builder(ControllerContainer::Kafka.name());
 
-    // The push order below (Kerberos, `log-config`, then the internal TLS volume, which is not
-    // next to Kerberos as it is for brokers) is part of the pod template: a pod's `volumes` is
-    // an ordered list, so changing the order changes the template of every deployed StatefulSet
-    // and restarts its pods. The order is pinned by `pod_volumes_keep_their_order` in
-    // `build/mod.rs`.
+    // The push order below is part of the pod template: a pod's `volumes` is an ordered list,
+    // so changing the order changes the template of every deployed StatefulSet and restarts its pods.
+    // The order is pinned by `pod_volumes_keep_their_order` in `build/mod.rs`.
     let mut pod_volumes: Vec<Volume> = Vec::new();
-
-    if let Some(kerberos_volume) = mount_controller_kerberos_volume(kafka_security, &mut cb_kafka)
-        .context(BuildKerberosVolumeSnafu)?
-    {
-        pod_volumes.push(kerberos_volume);
-    }
 
     let node_id_offset = node_id_hash32_offset(&ROLE, role_group_name.as_ref()).to_string();
 
@@ -265,10 +244,6 @@ fn role_pod(
             )
             .context(ConstructJvmArgumentsSnafu)?,
         )
-        // Kerberos env goes on the `kafka` container only. `controller_shared_env` is also
-        // the `quorum-manager` sidecar's base, and `KAFKA_OPTS` points the JVM at
-        // `/tmp/jaas.properties`, which only the `kafka` container renders.
-        .merge(kerberos_env_vars(kafka_security))
         .merge(rg_config.env_overrides.clone())
         .into();
 
@@ -354,7 +329,7 @@ fn role_pod(
 
     let containers = vec![
         cb_kafka.build(),
-        build_quorum_manager_container(image, kafka_security, quorum_manager_env),
+        build_quorum_manager_container(image, quorum_manager_env),
     ];
 
     Ok((containers, pod_volumes))
@@ -399,12 +374,11 @@ fn controller_pod_shared_env_vars(
 /// Builds the `quorum-manager` sidecar for a controller pod.
 fn build_quorum_manager_container(
     resolved_product_image: &ResolvedProductImage,
-    kafka_security: &ValidatedKafkaSecurity,
     env: EnvVarSet,
 ) -> Container {
     let mut cb = new_container_builder(&QUORUM_MANAGER_CONTAINER_NAME);
 
-    let mut local_env = EnvVarSet::new()
+    let local_env = EnvVarSet::new()
         // `kafka-metadata-quorum.sh` goes through `kafka-run-class.sh`, which defaults
         // `KAFKA_HEAP_OPTS` to `-Xmx256M` when unset. Set an explicit, modest heap so the
         // JVM's max heap plus its base/metaspace/SSL-buffer overhead stays comfortably
@@ -415,7 +389,7 @@ fn build_quorum_manager_container(
         .command(vec![
             "/bin/bash".to_string(),
             "-c".to_string(),
-            quorum_manager_container_command(kafka_security),
+            quorum_manager_container_command(),
         ])
         .resources(
             ResourceRequirementsBuilder::new()
@@ -441,47 +415,10 @@ fn build_quorum_manager_container(
         .add_volume_mount(&*LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .expect("The mount paths are statically defined and there should be no duplicates.");
 
-    if kafka_security.has_kerberos_enabled() {
-        // `controller_admin_client_properties` authenticates with the pod-scoped keytab
-        // mounted by `mount_controller_kerberos_volume`; the volume is already on the pod, this
-        // container just needs its own mount and `KRB5_CONFIG`. It deliberately does *not*
-        // get `KAFKA_OPTS`: that points the JVM at `/tmp/jaas.properties`, which only the
-        // `kafka` container renders.
-        cb.add_volume_mount(&*KERBEROS_VOLUME_NAME, STACKABLE_KERBEROS_DIR)
-            .expect("The mount paths are statically defined and there should be no duplicates.");
-
-        local_env = local_env
-            .with_value(&KRB5_CONFIG, STACKABLE_KERBEROS_KRB5_PATH)
-            // `KRB5_CONFIG` only reaches native MIT tools; the JVM reads the
-            // `java.security.krb5.conf` system property, without which the admin client fails
-            // with "Unable to locate KDC for realm". Unlike the `kafka` container's `KAFKA_OPTS`
-            // this deliberately omits `java.security.auth.login.config`: that points at
-            // `/tmp/jaas.properties`, which only the `kafka` container renders. This container
-            // authenticates with the inline `sasl.jaas.config` in `admin-client.properties`.
-            .with_value(
-                &KAFKA_OPTS,
-                format!("-Djava.security.krb5.conf={STACKABLE_KERBEROS_KRB5_PATH}"),
-            );
-    }
-
     // This allows to override explicit env vars set in this function.
     cb.add_env_vars(local_env.merge(env));
 
     cb.build()
-}
-
-// Generate JAAS configuration file for Kerberos authentication
-// or an empty string if Kerberos is not enabled.
-// See https://docs.oracle.com/javase/8/docs/technotes/guides/security/jgss/tutorials/LoginConfigFile.html
-fn jaas_config_file(is_kerberos_enabled: bool) -> String {
-    if !is_kerberos_enabled {
-        return String::new();
-    }
-
-    // Controller pods have no listener-operator `Listener` volume; their keytab is
-    // pod-scoped, so their CONTROLLER section uses their own pod FQDN — the same expression
-    // already used for `KAFKA_LISTENERS` in `controller_properties.rs`.
-    controller_jaas_section(CONTROLLER_POD_FQDN_TEMPLATE)
 }
 
 #[cfg(test)]
@@ -502,43 +439,26 @@ mod tests {
         }
     }
 
-    /// The `quorum-manager` sidecar sets `KAFKA_HEAP_OPTS` unconditionally, and
-    /// `KRB5_CONFIG`/`KAFKA_OPTS` when Kerberos is enabled. All three must still be
-    /// overridable by the caller's `env` (in practice, the rolegroup's `envOverrides`), the
-    /// same way [`env_overrides_override_operator_set_env_vars`] proves it for the `kafka`
-    /// container's env.
+    /// The `quorum-manager` sidecar sets `KAFKA_HEAP_OPTS`, which must still be overridable by
+    /// the rolegroup's `envOverrides`.
     #[test]
     fn quorum_manager_container_env_can_be_overridden() {
         let resolved_product_image = test_resolved_product_image();
-        let kafka_security = crate::controller::test_support::kerberos();
-        assert!(
-            kafka_security.has_kerberos_enabled(),
-            "sanity check failed: the fixture must have Kerberos enabled so that KRB5_CONFIG \
-             and KAFKA_OPTS are set in the first place"
-        );
+        let overrides = EnvVarSet::new().with_value(&KAFKA_HEAP_OPTS, "-Xmx999M");
 
-        let overrides = EnvVarSet::new()
-            .with_value(&KAFKA_HEAP_OPTS, "-Xmx999M")
-            .with_value(&KRB5_CONFIG, "/custom/krb5.conf")
-            .with_value(&KAFKA_OPTS, "-Doverridden=true");
-
-        let container =
-            build_quorum_manager_container(&resolved_product_image, &kafka_security, overrides);
+        let container = build_quorum_manager_container(&resolved_product_image, overrides);
         let env = container.env.expect("the sidecar has env vars");
 
-        for (name, expected_value) in [
-            ("KAFKA_HEAP_OPTS", "-Xmx999M"),
-            ("KRB5_CONFIG", "/custom/krb5.conf"),
-            ("KAFKA_OPTS", "-Doverridden=true"),
-        ] {
-            let matching: Vec<_> = env.iter().filter(|env_var| env_var.name == name).collect();
-            assert_eq!(
-                matching.len(),
-                1,
-                "the override must replace the operator-set {name}, not duplicate it"
-            );
-            assert_eq!(matching[0].value.as_deref(), Some(expected_value));
-        }
+        let matching: Vec<_> = env
+            .iter()
+            .filter(|env_var| env_var.name == "KAFKA_HEAP_OPTS")
+            .collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "the override must replace the operator-set KAFKA_HEAP_OPTS, not duplicate it"
+        );
+        assert_eq!(matching[0].value.as_deref(), Some("-Xmx999M"));
     }
 
     #[test]
@@ -549,10 +469,5 @@ mod tests {
         let _ = *ROLEGROUP_HEADLESS_SERVICE_NAME;
         let _ = *CLUSTER_DOMAIN;
         let _ = *QUORUM_MANAGER_CONTAINER_NAME;
-    }
-
-    #[test]
-    fn jaas_config_file_empty_without_kerberos() {
-        assert_eq!(jaas_config_file(false), "");
     }
 }
