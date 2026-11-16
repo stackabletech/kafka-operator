@@ -284,7 +284,7 @@ fn role_pod(
 
     cb_kafka
         .add_env_vars(env)
-        .add_container_ports(container_ports(kafka_security))
+        .add_container_ports(container_ports(&ROLE, kafka_security))
         .add_volume_mount(&*LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .expect("The mount paths are statically defined and there should be no duplicates.")
         .add_volume_mount(&*STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
