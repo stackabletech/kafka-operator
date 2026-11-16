@@ -118,9 +118,10 @@ KRaft mode requires major configuration changes compared to ZooKeeper mode:
   and then never find the quorum leader.
   With one entry per pod, Kafka picks a random entry for every attempt.
   As a consequence, whenever the number of controller replicas changes, the controller pods are rolled by the restart controller.
-* On brokers, `controller.quorum.bootstrap.servers` lists the headless Services of all controller role groups.
-  A broker is never part of these Services, so it cannot resolve them to its own address.
-  Changing the number of controller replicas therefore does not roll the brokers.
+* On brokers, `controller.quorum.bootstrap.servers` lists a single headless Service, `<cluster-name>-controller-headless`, which selects the controllers of all role groups.
+  A broker is never part of this Service, so it cannot resolve it to its own address.
+  The Service only resolves to controllers that are ready, i.e. members of the quorum, so a broker never connects to a controller that is still starting.
+  Adding or removing controller role groups or replicas therefore never rolls the brokers.
 
 == Kerberos
 

@@ -70,7 +70,7 @@ pub enum KafkaListenerName {
     /// The protocol is always SSL with client certificates required, using the pod certificates
     /// of the internal `SecretClass`, also when Kerberos is enabled.
     /// In `controller.quorum.bootstrap.servers`, controllers address each other by their pod
-    /// FQDNs, while brokers address the controllers' role group headless Services.
+    /// FQDNs, while brokers address the headless Service of all controllers.
     ///
     /// Note: there is no listener for client/controller communication. The only other clients
     /// are the quorum management admin tools running inside the controller pods, which use the

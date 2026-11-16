@@ -15,7 +15,7 @@ use stackable_operator::{
     constant,
     k8s_openapi::api::core::v1::Volume,
     shared::time::Duration,
-    v2::types::kubernetes::VolumeName,
+    v2::types::kubernetes::{ServiceName, VolumeName},
 };
 
 use crate::{
@@ -311,6 +311,11 @@ pub fn mount_broker_tls_volumes(
 
 /// Adds the internal TLS volume mount to the controller's container builder.
 ///
+/// Besides the pod scope, the certificate covers `controller_quorum_service_name`, the headless
+/// Service of all controllers that the brokers dial, so that their TLS hostname verification
+/// accepts it. The scope adds a SAN only; the subject DN, which `super.users` matches, is derived
+/// from the pod and stays unchanged.
+///
 /// # Panics
 ///
 /// Panics if the volume mount cannot be added to the container builder. Only call this on a
@@ -319,6 +324,7 @@ pub fn mount_controller_tls_volume(
     security: &ValidatedKafkaSecurity,
     cb_kafka: &mut ContainerBuilder,
     requested_secret_lifetime: &Duration,
+    controller_quorum_service_name: &ServiceName,
 ) -> Result<Volume, Error> {
     let volume = VolumeBuilder::new(&*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME)
         .ephemeral(
@@ -329,6 +335,7 @@ pub fn mount_controller_tls_volume(
                 SecretClassVolumeProvisionParts::PublicPrivate,
             )
             .with_pod_scope()
+            .with_service_scope(controller_quorum_service_name.to_string())
             .with_format(SecretFormat::TlsPkcs12)
             .with_auto_tls_cert_lifetime(*requested_secret_lifetime)
             .with_auto_tls_cert_domain_components_in_subject_dn(true)

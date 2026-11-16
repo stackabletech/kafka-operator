@@ -316,6 +316,7 @@ fn role_pod(
             kafka_security,
             &mut cb_kafka,
             &config.requested_secret_lifetime,
+            &cluster.controller_quorum_service_name(),
         )
         .context(BuildInternalTlsVolumeSnafu)?,
     );

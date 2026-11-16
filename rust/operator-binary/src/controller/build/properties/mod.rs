@@ -8,8 +8,9 @@ pub mod security_properties;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use self::listener::headless_service_address;
 use crate::{
-    controller::ValidatedClusterConfig,
+    controller::{ValidatedCluster, ValidatedClusterConfig},
     crd::{KafkaPodDescriptor, role::KafkaRole},
 };
 
@@ -67,36 +68,40 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
 /// <https://github.com/stackabletech/kafka-operator/issues/1062>).
 ///
 /// This has a cost: the list changes on every scaling operation of a controller role group, so
-/// scaling rolls all controller pods. Brokers use [`kraft_controller_services`] instead and are
-/// not affected.
+/// scaling rolls all controller pods. Brokers use [`kraft_controller_quorum_service`] instead and
+/// are not affected.
 pub(crate) fn kraft_controller_pods(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
-    kraft_controller_addresses(pod_descriptors, KafkaPodDescriptor::pod_fqdn)
-}
-
-/// Builds the brokers' `controller.quorum.bootstrap.servers` property: the FQDNs of the headless
-/// Services of all KRaft controller role groups.
-///
-/// Unlike controllers (see [`kraft_controller_pods`]), a broker is never part of a controller
-/// role group's headless Service, so it cannot resolve it to its own address. The list only
-/// changes if controller role groups are added or removed, so scaling the controllers does not
-/// roll the brokers.
-pub(crate) fn kraft_controller_services(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
-    kraft_controller_addresses(pod_descriptors, KafkaPodDescriptor::service_fqdn)
-}
-
-/// The sorted, deduplicated `<host>:<port>` addresses of all KRaft controllers, with the host
-/// derived from each controller's pod descriptor by `host`.
-fn kraft_controller_addresses(
-    pod_descriptors: &[KafkaPodDescriptor],
-    host: impl Fn(&KafkaPodDescriptor) -> String,
-) -> Vec<String> {
     pod_descriptors
         .iter()
         .filter(|pd| pd.role == KafkaRole::Controller)
-        .map(|desc| format!("{host}:{port}", host = host(desc), port = desc.client_port))
+        .map(|desc| {
+            format!(
+                "{host}:{port}",
+                host = desc.pod_fqdn(),
+                port = desc.client_port
+            )
+        })
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+/// Builds the brokers' `controller.quorum.bootstrap.servers` property: the address of the
+/// headless Service of all KRaft controllers, see
+/// [`build_controller_quorum_service`][bcqs].
+///
+/// Unlike controllers (see [`kraft_controller_pods`]), a broker is never part of this Service,
+/// so it cannot resolve it to its own address. The address depends on neither the controller role
+/// groups nor their replicas, so changing the controllers never restarts the brokers.
+///
+/// [bcqs]: crate::controller::build::resource::service::build_controller_quorum_service
+pub(crate) fn kraft_controller_quorum_service(cluster: &ValidatedCluster) -> String {
+    headless_service_address(
+        &cluster.controller_quorum_service_name(),
+        &cluster.namespace,
+        &cluster.cluster_domain,
+        &cluster.cluster_config.kafka_security.client_port(),
+    )
 }
 
 /// The OPA authorizer properties shared by brokers and controllers.
@@ -183,6 +188,8 @@ fn super_users(pod_descriptors: &[KafkaPodDescriptor]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -305,19 +312,54 @@ mod tests {
         );
     }
 
-    #[test]
-    fn kraft_controller_services_lists_each_role_group_service_once() {
+    /// A KRaft cluster with the given `controllers.roleGroups`, as YAML.
+    fn kraft_cluster_with_controller_role_groups(role_groups: &str) -> ValidatedCluster {
+        let kafka = crate::controller::test_support::minimal_kafka(&format!(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: KRaft
+              controllers:
+                roleGroups: {role_groups}
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#
+        ));
+        crate::controller::test_support::validated_cluster(&kafka)
+    }
+
+    /// The brokers' address must not depend on the controller role groups or their replicas, so
+    /// that changing the controllers never restarts the brokers.
+    #[rstest]
+    #[case::three_replicas("{default: {replicas: 3}}")]
+    #[case::five_replicas("{default: {replicas: 5}}")]
+    #[case::two_role_groups("{default: {replicas: 3}, other: {replicas: 2}}")]
+    fn kraft_controller_quorum_service_is_independent_of_the_controllers(
+        #[case] controller_role_groups: &str,
+    ) {
+        let cluster = kraft_cluster_with_controller_role_groups(controller_role_groups);
+
         assert_eq!(
-            kraft_controller_services(&controllers_of_two_role_groups_and_a_broker()),
-            vec![
-                "kafka-controller-default-headless.default.svc.cluster.local:9093".to_string(),
-                "kafka-controller-other-headless.default.svc.cluster.local:9093".to_string(),
-            ]
+            kraft_controller_quorum_service(&cluster),
+            format!(
+                "simple-kafka-controller-headless.default.svc.cluster.local:{port}",
+                port = cluster.cluster_config.kafka_security.client_port()
+            )
         );
     }
 
     #[test]
-    fn only_kraft_controller_pods_change_with_the_replica_count() {
+    fn kraft_controller_pods_change_with_the_replica_count() {
         let three_replicas: Vec<_> = (0..3)
             .map(|replica| pod_descriptor(KafkaRole::Controller, replica, 9093))
             .collect();
@@ -325,16 +367,12 @@ mod tests {
             .map(|replica| pod_descriptor(KafkaRole::Controller, replica, 9093))
             .collect();
 
-        // Scaling a controller role group rolls the controllers, but not the brokers.
+        // Scaling a controller role group rolls the controllers.
         assert_eq!(kraft_controller_pods(&three_replicas).len(), 3);
         assert_eq!(kraft_controller_pods(&five_replicas).len(), 5);
         assert_ne!(
             kraft_controller_pods(&three_replicas),
             kraft_controller_pods(&five_replicas)
-        );
-        assert_eq!(
-            kraft_controller_services(&three_replicas),
-            kraft_controller_services(&five_replicas)
         );
     }
 }

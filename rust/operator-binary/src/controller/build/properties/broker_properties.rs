@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::{kraft_controller_services, opa_authorizer_properties};
+use super::opa_authorizer_properties;
 use crate::{
     controller::{
         ValidatedClusterConfig,
@@ -20,14 +20,17 @@ use crate::{
     },
 };
 
+/// Builds `broker.properties`.
+///
+/// `controller_quorum_bootstrap_servers` is only used in KRaft mode, see
+/// [`kraft_controller_quorum_service`](super::kraft_controller_quorum_service).
 pub fn build(
     cluster_config: &ValidatedClusterConfig,
     listener_config: &KafkaListenerConfig,
     pod_descriptors: &[KafkaPodDescriptor],
+    controller_quorum_bootstrap_servers: String,
     overrides: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let kraft_controllers = kraft_controller_services(pod_descriptors);
-
     let mut result = BTreeMap::from([
         (
             KAFKA_LOG_DIRS.to_string(),
@@ -49,8 +52,6 @@ pub fn build(
     ]);
 
     if cluster_config.is_kraft_mode() {
-        let kraft_controllers = kraft_controllers.join(",");
-
         // Running in KRaft mode
         result.extend([
             (
@@ -68,7 +69,7 @@ pub fn build(
             ),
             (
                 KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS.to_string(),
-                kraft_controllers.clone(),
+                controller_quorum_bootstrap_servers,
             ),
         ]);
     } else {

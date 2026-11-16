@@ -47,9 +47,11 @@ All notable changes to this project will be documented in this file.
   the voter list before shutdown.
   The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
-- Brokers now reach the KRaft controllers through the headless Services of the controller role
-  groups (`controller.quorum.bootstrap.servers`) instead of the individual controller pods.
-  Changing the number of controller replicas therefore no longer restarts the brokers ([#1069]).
+- Brokers now reach the KRaft controllers through a new headless Service of all ready controllers,
+  `<cluster-name>-controller-headless` (`controller.quorum.bootstrap.servers`), instead of the
+  individual controller pods.
+  Changing the controller role groups or their replicas therefore no longer restarts the brokers
+  ([#1069]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
 - Bump stackable-operator to 0.121.0 ([#994], [#1011], [#1021], [#1029], [#1043]).

@@ -30,7 +30,10 @@ use crate::{
             },
             jvm,
             kerberos::{self, kerberos_env_vars, mount_broker_kerberos_volume},
-            properties::{ConfigFileName, broker_properties, listener::get_kafka_listener_config},
+            properties::{
+                ConfigFileName, broker_properties, kraft_controller_quorum_service,
+                listener::get_kafka_listener_config,
+            },
             recommended_labels_for_role_group_resources,
             recommended_labels_for_unversioned_role_group_resources,
             resource::{
@@ -163,6 +166,7 @@ fn role_config_map_data(
         &cluster.cluster_config,
         &listener_config,
         &pod_descriptors,
+        kraft_controller_quorum_service(cluster),
         rg_config
             .config_overrides
             .broker_properties
