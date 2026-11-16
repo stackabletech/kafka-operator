@@ -176,7 +176,6 @@ metadata:
   name: test-kafka-controller-headless
 spec:
   clusterIP: None
-  publishNotReadyAddresses: false
   selector:
     app.kubernetes.io/component: controller
     app.kubernetes.io/instance: test-kafka
