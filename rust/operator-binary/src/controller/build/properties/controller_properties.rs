@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::{kraft_controllers, opa_authorizer_properties};
+use super::{kraft_controller_pods, opa_authorizer_properties};
 use crate::{
     controller::{
         ValidatedClusterConfig,
@@ -25,7 +25,7 @@ pub fn build(
     pod_descriptors: &[KafkaPodDescriptor],
     overrides: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let kraft_controllers = kraft_controllers(pod_descriptors).join(",");
+    let kraft_controllers = kraft_controller_pods(pod_descriptors).join(",");
 
     let mut result = BTreeMap::from([
         (

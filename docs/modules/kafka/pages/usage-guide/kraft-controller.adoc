@@ -113,10 +113,13 @@ KRaft mode requires major configuration changes compared to ZooKeeper mode:
   with `kafka-storage.sh format --standalone`, bootstrapping a single-node quorum by itself.
   Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
   Brokers always format with `--no-initial-controllers` too; they are never voters.
-* `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers, not the role groups' headless Services.
+* On controllers, `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers, not the role groups' headless Services.
   A headless Service also resolves to pods that are not ready yet, so a starting controller could resolve it to its own address,
   and then never find the quorum leader. With one entry per pod, Kafka picks a random entry for every attempt.
-  As a consequence, whenever the number of controller replicas changes, **both** the controller **and** broker pods are rolled by the restart controller.
+  As a consequence, whenever the number of controller replicas changes, the controller pods are rolled by the restart controller.
+* On brokers, `controller.quorum.bootstrap.servers` lists the headless Services of all controller role groups.
+  A broker is never part of these Services, so it cannot resolve them to its own address.
+  Changing the number of controller replicas therefore does not roll the brokers.
 
 == Kerberos
 

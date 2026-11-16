@@ -54,33 +54,46 @@ pub fn uses_legacy_log4j(product_version: &str) -> bool {
     product_version.starts_with("3.")
 }
 
-/// Builds the contents of the `controller.quorum.bootstrap.servers` property: the FQDNs of all
-/// KRaft controller pods.
+/// Builds the controllers' `controller.quorum.bootstrap.servers` property: the FQDNs of all KRaft
+/// controller pods.
 ///
 /// # Reason for NOT using the role group's headless service
 ///
-/// When a new controller pod starts (without metadata) it finds the quorum leader
-/// by fetching from a bootstrap server. Kafka treats every entry of this list as
-/// one bootstrap node and picks a random entry for each attempt.
-/// The headless Service publishes not-ready addresses, so a single Service entry
-/// can resolve to the starting pod itself. That connection succeeds, so
+/// When a new controller pod starts (without metadata) it finds the quorum leader by fetching
+/// from a bootstrap server. Kafka treats every entry of this list as one bootstrap node and picks
+/// a random entry for each attempt. The headless Service publishes not-ready addresses, so a
+/// single Service entry can resolve to the starting pod itself. That connection succeeds, so
 /// Kafka NEVER tries another address and the pod never learns the leader (see
 /// <https://github.com/stackabletech/kafka-operator/issues/1062>).
 ///
 /// This has a cost: the list changes on every scaling operation of a controller role group, so
-/// scaling rolls all controller and broker pods. With OPA, `super.users` lists every pod as well,
-/// so those clusters already roll on any scaling operation.
-pub(crate) fn kraft_controllers(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
+/// scaling rolls all controller pods. Brokers use [`kraft_controller_services`] instead and are
+/// not affected.
+pub(crate) fn kraft_controller_pods(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
+    kraft_controller_addresses(pod_descriptors, KafkaPodDescriptor::pod_fqdn)
+}
+
+/// Builds the brokers' `controller.quorum.bootstrap.servers` property: the FQDNs of the headless
+/// Services of all KRaft controller role groups.
+///
+/// Unlike controllers (see [`kraft_controller_pods`]), a broker is never part of a controller
+/// role group's headless Service, so it cannot resolve it to its own address. The list only
+/// changes if controller role groups are added or removed, so scaling the controllers does not
+/// roll the brokers.
+pub(crate) fn kraft_controller_services(pod_descriptors: &[KafkaPodDescriptor]) -> Vec<String> {
+    kraft_controller_addresses(pod_descriptors, KafkaPodDescriptor::service_fqdn)
+}
+
+/// The sorted, deduplicated `<host>:<port>` addresses of all KRaft controllers, with the host
+/// derived from each controller's pod descriptor by `host`.
+fn kraft_controller_addresses(
+    pod_descriptors: &[KafkaPodDescriptor],
+    host: impl Fn(&KafkaPodDescriptor) -> String,
+) -> Vec<String> {
     pod_descriptors
         .iter()
         .filter(|pd| pd.role == KafkaRole::Controller)
-        .map(|desc| {
-            format!(
-                "{host}:{port}",
-                host = desc.pod_fqdn(),
-                port = desc.client_port
-            )
-        })
+        .map(|desc| format!("{host}:{port}", host = host(desc), port = desc.client_port))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
@@ -255,29 +268,32 @@ mod tests {
         }
     }
 
-    #[test]
-    fn kraft_controllers_lists_individual_controller_pod_fqdns() {
+    /// Two replicas of the `default` role group (in reverse order), one replica of the `other`
+    /// role group and a broker, which must be filtered out.
+    fn controllers_of_two_role_groups_and_a_broker() -> Vec<KafkaPodDescriptor> {
         let mut other_group_pod = pod_descriptor(KafkaRole::Controller, 0, 9093);
         other_group_pod.role_group_statefulset_name = "kafka-controller-other"
             .parse()
-            .expect("valid statefulset name");
+            .expect("should be a valid statefulset name");
         other_group_pod.role_group_service_name = "kafka-controller-other-headless"
             .parse()
-            .expect("valid service name");
+            .expect("should be a valid service name");
 
-        let pod_descriptors = vec![
+        vec![
             pod_descriptor(KafkaRole::Controller, 1, 9093),
             pod_descriptor(KafkaRole::Controller, 0, 9093),
             other_group_pod,
-            // Brokers must be filtered out of the controller quorum bootstrap servers list.
             pod_descriptor(KafkaRole::Broker, 0, 9092),
-        ];
+        ]
+    }
 
+    #[test]
+    fn kraft_controller_pods_lists_individual_controller_pod_fqdns() {
         // One entry per controller pod, *not* the role group's headless Service: a single
         // Service entry can resolve to the starting pod itself, which then never finds the
         // leader (#1062).
         assert_eq!(
-            kraft_controllers(&pod_descriptors),
+            kraft_controller_pods(&controllers_of_two_role_groups_and_a_broker()),
             vec![
                 "kafka-controller-default-0.kafka-controller-default-headless.default.svc.cluster.local:9093"
                     .to_string(),
@@ -290,7 +306,18 @@ mod tests {
     }
 
     #[test]
-    fn kraft_controllers_grows_with_the_replica_count() {
+    fn kraft_controller_services_lists_each_role_group_service_once() {
+        assert_eq!(
+            kraft_controller_services(&controllers_of_two_role_groups_and_a_broker()),
+            vec![
+                "kafka-controller-default-headless.default.svc.cluster.local:9093".to_string(),
+                "kafka-controller-other-headless.default.svc.cluster.local:9093".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_kraft_controller_pods_change_with_the_replica_count() {
         let three_replicas: Vec<_> = (0..3)
             .map(|replica| pod_descriptor(KafkaRole::Controller, replica, 9093))
             .collect();
@@ -298,9 +325,12 @@ mod tests {
             .map(|replica| pod_descriptor(KafkaRole::Controller, replica, 9093))
             .collect();
 
-        // Deliberate consequence of per-pod addressing: the list changes with the replica count,
-        // so scaling a controller role group rolls the controller and broker pods.
-        assert_eq!(kraft_controllers(&three_replicas).len(), 3);
-        assert_eq!(kraft_controllers(&five_replicas).len(), 5);
+        // Scaling a controller role group rolls the controllers, but not the brokers.
+        assert_eq!(kraft_controller_pods(&three_replicas).len(), 3);
+        assert_eq!(kraft_controller_pods(&five_replicas).len(), 5);
+        assert_eq!(
+            kraft_controller_services(&three_replicas),
+            kraft_controller_services(&five_replicas)
+        );
     }
 }
