@@ -21,7 +21,7 @@ use stackable_operator::{
 use super::RoleGroupBuilder;
 use crate::{
     controller::{
-        ControllerRoleGroupConfig, PodDescriptorsError, RoleGroupName, ValidatedCluster,
+        ControllerRoleGroupConfig, RoleGroupName, ValidatedCluster,
         build::{
             command::{
                 controller_kafka_container_command, controller_remove_self_pre_stop_command,
@@ -71,9 +71,6 @@ pub enum Error {
         source: PropertiesWriterError,
         file: ConfigFileName,
     },
-
-    #[snafu(display("failed to build pod descriptors"))]
-    BuildPodDescriptors { source: PodDescriptorsError },
 
     #[snafu(display("failed to build the TLS volume"))]
     BuildInternalTlsVolume { source: security::Error },
@@ -161,9 +158,7 @@ fn role_config_map_data(
     let listener_config =
         get_kafka_listener_config(cluster, kafka_security, &ROLE, role_group_name);
 
-    let pod_descriptors = cluster
-        .pod_descriptors(None)
-        .context(BuildPodDescriptorsSnafu)?;
+    let pod_descriptors = cluster.pod_descriptors(None);
 
     let kafka_config = controller_properties::build(
         &cluster.cluster_config,

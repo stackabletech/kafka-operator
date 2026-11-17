@@ -5,13 +5,7 @@
 //! touches the raw [`v1alpha1::KafkaCluster`] spec. [`reconcile_kafka`] consumes it to
 //! build (under [`build`]) and apply the child resources.
 
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, HashMap},
-    marker::PhantomData,
-    str::FromStr,
-    sync::Arc,
-};
+use std::{borrow::Cow, collections::BTreeMap, marker::PhantomData, str::FromStr, sync::Arc};
 
 use const_format::concatcp;
 use snafu::{ResultExt, Snafu};
@@ -71,10 +65,7 @@ pub(crate) mod validate;
 pub use stackable_operator::v2::types::operator::{RoleGroupName, RoleName};
 
 use crate::{
-    controller::{
-        apply::Applier, node_id_hasher::node_id_hash32_offset, security::ValidatedKafkaSecurity,
-        update_status::update_status,
-    },
+    controller::{apply::Applier, security::ValidatedKafkaSecurity, update_status::update_status},
     crd::{
         APP_NAME, KAFKA_OPERATOR_NAME, KafkaPodDescriptor, MetadataManager,
         authorization::KafkaAuthorizationConfig,
@@ -105,7 +96,7 @@ pub fn agent_resource_names_of(cluster_name: &ClusterName) -> AgentResourceNames
 }
 
 #[derive(Snafu, Debug)]
-pub enum PodDescriptorsError {
+pub enum PodNodeIdsError {
     #[snafu(display(
         "the node id hash offset of role group {role}/{role_group} collides with {colliding_role}/{colliding_role_group}; node ids must be unique across the cluster",
         role = role.as_ref(),
@@ -184,6 +175,9 @@ pub struct ValidatedCluster {
     /// addresses and the `Listener` watch triggers a new run once it does.
     pub bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
     pub agent_config: Option<ValidatedAgentConfig>,
+    /// The predicted `node.id` of every pod, with the node-id hash offsets already checked for
+    /// collisions across all role groups.
+    pub pod_node_ids: Vec<PodNodeId>,
     /// KRaft only: the controller that bootstraps the metadata quorum.
     /// Persisted once in the cluster status and then never changed.
     /// Empty in ZooKeeper mode, or if no controller replica was ever requested.
@@ -220,67 +214,13 @@ pub(crate) fn replicas_or_default(replicas: Option<u16>) -> u16 {
     replicas.unwrap_or(DEFAULT_REPLICAS)
 }
 
-/// The Kafka `node.id` of one predicted pod, see [`pod_node_ids`].
+/// The Kafka `node.id` of one predicted pod.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PodNodeId<'a> {
+pub struct PodNodeId {
     pub role: KafkaRole,
-    pub role_group_name: &'a RoleGroupName,
+    pub role_group_name: RoleGroupName,
     pub replica: u16,
     pub node_id: u32,
-}
-
-/// Predicts the `node.id` of every pod of the given role groups.
-///
-/// A pod's `node.id` is the node-id hash offset of its role group plus its replica index. The
-/// offsets must be unique across the whole cluster, so collisions are detected across all role
-/// groups of both roles.
-///
-/// Pods are predicted from the replica count rather than read from the live cluster to avoid
-/// instance churn; an unset count falls back to [`DEFAULT_REPLICAS`].
-pub(crate) fn pod_node_ids<'a>(
-    broker_role_group_configs: &'a BTreeMap<RoleGroupName, BrokerRoleGroupConfig>,
-    controller_role_group_configs: &'a BTreeMap<RoleGroupName, ControllerRoleGroupConfig>,
-) -> Result<Vec<PodNodeId<'a>>, PodDescriptorsError> {
-    // In `KafkaRole` variant order, which decides the reported side of a hash collision.
-    let role_groups = broker_role_group_configs
-        .iter()
-        .map(|(role_group_name, rg)| (KafkaRole::Broker, role_group_name, rg.replicas))
-        .chain(
-            controller_role_group_configs
-                .iter()
-                .map(|(role_group_name, rg)| (KafkaRole::Controller, role_group_name, rg.replicas)),
-        );
-
-    let mut pod_node_ids = Vec::new();
-    let mut seen_hashes = HashMap::<u32, (KafkaRole, RoleGroupName)>::new();
-
-    for (role, role_group_name, replicas) in role_groups {
-        let node_id_hash_offset = node_id_hash32_offset(&role, role_group_name.as_ref());
-
-        // The node id hash offset must be unique across the cluster.
-        if let Some((colliding_role, colliding_role_group)) = seen_hashes.get(&node_id_hash_offset)
-        {
-            return KafkaNodeIdHashCollisionSnafu {
-                role,
-                role_group: role_group_name.clone(),
-                colliding_role: colliding_role.clone(),
-                colliding_role_group: colliding_role_group.clone(),
-            }
-            .fail();
-        }
-        seen_hashes.insert(node_id_hash_offset, (role.clone(), role_group_name.clone()));
-
-        for replica in 0..replicas_or_default(replicas) {
-            pod_node_ids.push(PodNodeId {
-                role: role.clone(),
-                role_group_name,
-                replica,
-                node_id: node_id_hash_offset + u32::from(replica),
-            });
-        }
-    }
-
-    Ok(pod_node_ids)
 }
 
 impl ValidatedCluster {
@@ -316,40 +256,34 @@ impl ValidatedCluster {
 
     /// Predicts the pods of this cluster (or just `requested_kafka_role`'s pods, if given).
     ///
-    /// Pods are predicted rather than read from the live cluster to avoid instance churn. The
-    /// node-id hash offsets must be unique across the whole cluster, so collisions are detected
-    /// across all role groups regardless of `requested_kafka_role`.
+    /// Pods are predicted rather than read from the live cluster to avoid instance churn.
     ///
     /// Resource names reuse resource names so they stay in sync with the StatefulSet and
     /// headless Service this descriptor refers to.
     pub fn pod_descriptors(
         &self,
         requested_kafka_role: Option<&KafkaRole>,
-    ) -> Result<Vec<KafkaPodDescriptor>, PodDescriptorsError> {
+    ) -> Vec<KafkaPodDescriptor> {
         let client_port = self.cluster_config.kafka_security.client_port();
 
-        let pod_descriptors = pod_node_ids(
-            &self.broker_role_group_configs,
-            &self.controller_role_group_configs,
-        )?
-        .into_iter()
-        .filter(|pod| requested_kafka_role.is_none_or(|requested| *requested == pod.role))
-        .map(|pod| {
-            let resource_names = self.role_group_resource_names(&pod.role, pod.role_group_name);
-            KafkaPodDescriptor {
-                namespace: self.namespace.clone(),
-                role_group_service_name: resource_names.headless_service_name(),
-                role_group_statefulset_name: resource_names.stateful_set_name(),
-                replica: pod.replica,
-                cluster_domain: self.cluster_domain.clone(),
-                node_id: pod.node_id,
-                role: pod.role,
-                client_port: client_port.clone(),
-            }
-        })
-        .collect();
-
-        Ok(pod_descriptors)
+        self.pod_node_ids
+            .iter()
+            .filter(|pod| requested_kafka_role.is_none_or(|requested| *requested == pod.role))
+            .map(|pod| {
+                let resource_names =
+                    self.role_group_resource_names(&pod.role, &pod.role_group_name);
+                KafkaPodDescriptor {
+                    namespace: self.namespace.clone(),
+                    role_group_service_name: resource_names.headless_service_name(),
+                    role_group_statefulset_name: resource_names.stateful_set_name(),
+                    replica: pod.replica,
+                    cluster_domain: self.cluster_domain.clone(),
+                    node_id: pod.node_id,
+                    role: pod.role.clone(),
+                    client_port: client_port.clone(),
+                }
+            })
+            .collect()
     }
 
     /// Type-safe names for the per-cluster RBAC resources: the ServiceAccount shared by all
@@ -1010,7 +944,7 @@ mod tests {
     };
 
     use super::{
-        CONTROLLER_NAME, OPERATOR_NAME, PRODUCT_NAME, PodDescriptorsError,
+        CONTROLLER_NAME, OPERATOR_NAME, PRODUCT_NAME,
         test_support::{minimal_kafka, validated_cluster},
     };
     use crate::{
@@ -1024,48 +958,6 @@ mod tests {
         let _ = *PRODUCT_NAME;
         let _ = *OPERATOR_NAME;
         let _ = *CONTROLLER_NAME;
-    }
-
-    /// Two broker role groups whose names hash to the same node-id offset must be
-    /// rejected: a collision would hand two pods the same Kafka `node.id`. `rg865`
-    /// and `rg1400` are a known colliding pair for the `broker` role (see
-    /// [`node_id_hash32_offset`](super::node_id_hasher::node_id_hash32_offset)).
-    #[test]
-    fn pod_descriptors_rejects_node_id_hash_collision() {
-        let kafka = minimal_kafka(
-            r#"
-            apiVersion: kafka.stackable.tech/v1alpha1
-            kind: KafkaCluster
-            metadata:
-              name: simple-kafka
-              namespace: default
-              uid: 12345678-1234-1234-1234-123456789012
-            spec:
-              image:
-                productVersion: 3.9.2
-              clusterConfig:
-                zookeeperConfigMapName: xyz
-              brokers:
-                roleGroups:
-                  rg865:
-                    replicas: 1
-                  rg1400:
-                    replicas: 1
-            "#,
-        );
-        let validated = validated_cluster(&kafka);
-
-        match validated.pod_descriptors(None) {
-            Err(PodDescriptorsError::KafkaNodeIdHashCollision {
-                role,
-                colliding_role,
-                ..
-            }) => {
-                assert_eq!(role, KafkaRole::Broker);
-                assert_eq!(colliding_role, KafkaRole::Broker);
-            }
-            other => panic!("expected a node-id hash collision error, got {other:?}"),
-        }
     }
 
     /// The predicted pods follow the StatefulSet's replica count: a role group scaled to zero
@@ -1098,9 +990,7 @@ mod tests {
             "#,
         );
         let validated = validated_cluster(&kafka);
-        let descriptors = validated
-            .pod_descriptors(None)
-            .expect("non-colliding role groups must not error");
+        let descriptors = validated.pod_descriptors(None);
 
         for (role_group, expected_replicas) in [
             ("unset", super::DEFAULT_REPLICAS),
@@ -1154,9 +1044,7 @@ mod tests {
         );
         let validated = validated_cluster(&kafka);
 
-        let descriptors = validated
-            .pod_descriptors(None)
-            .expect("non-colliding role groups must not error");
+        let descriptors = validated.pod_descriptors(None);
 
         assert_eq!(descriptors.len(), 3);
         let node_ids: BTreeSet<u32> = descriptors.iter().map(|d| d.node_id).collect();

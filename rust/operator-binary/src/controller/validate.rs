@@ -3,7 +3,10 @@
 //! Synchronously validates inputs that don't require a Kubernetes client. Produces
 //! [`ValidatedCluster`], consumed by the rest of `reconcile_kafka`.
 
-use std::{collections::BTreeMap, str::FromStr};
+use std::{
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+};
 
 use serde::Serialize;
 use snafu::{OptionExt, ResultExt, Snafu, ensure};
@@ -31,10 +34,12 @@ use stackable_operator::{
 use crate::{
     controller::{
         AgentConnection, BrokerRoleGroupConfig, ControllerRoleGroupConfig,
-        KraftBootstrapController, RoleGroupName, ValidatedAgentConfig, ValidatedBrokerConfig,
-        ValidatedCluster, ValidatedClusterConfig, ValidatedControllerConfig, ValidatedRoleConfig,
+        KafkaNodeIdHashCollisionSnafu, KraftBootstrapController, PodNodeId, PodNodeIdsError,
+        RoleGroupName, ValidatedAgentConfig, ValidatedBrokerConfig, ValidatedCluster,
+        ValidatedClusterConfig, ValidatedControllerConfig, ValidatedRoleConfig,
         dereference::DereferencedObjects,
-        pod_node_ids, replicas_or_default,
+        node_id_hasher::node_id_hash32_offset,
+        replicas_or_default,
         security::{self, ValidatedKafkaSecurity},
     },
     crd::{
@@ -73,7 +78,7 @@ pub enum Error {
 
     #[snafu(display("failed to predict the node ids of the pods"))]
     PredictNodeIds {
-        source: crate::controller::PodDescriptorsError,
+        source: crate::controller::PodNodeIdsError,
     },
 
     #[snafu(display("invalid metadata manager"))]
@@ -398,12 +403,14 @@ pub fn validate(
         })
         .transpose()?;
 
+    let pod_node_ids = pod_node_ids(&broker_role_group_configs, &controller_role_group_configs)
+        .context(PredictNodeIdsSnafu)?;
+
     let kraft_bootstrap_controller = match metadata_manager {
         crate::crd::MetadataManager::KRaft => resolve_kraft_bootstrap_controller(
             dereferenced_objects.persisted_kraft_bootstrap_controller_node_id,
-            &broker_role_group_configs,
-            &controller_role_group_configs,
-        )?,
+            &pod_node_ids,
+        ),
         _ => None,
     };
 
@@ -432,8 +439,63 @@ pub fn validate(
         controller_role_group_configs,
         bootstrap_listeners: dereferenced_objects.bootstrap_listeners,
         agent_config,
+        pod_node_ids,
         kraft_bootstrap_controller,
     })
+}
+
+/// Predicts the `node.id` of every pod of the given role groups.
+///
+/// A pod's `node.id` is the node-id hash offset of its role group plus its replica index. The
+/// offsets must be unique across the whole cluster, so collisions are detected across all role
+/// groups of both roles.
+///
+/// Pods are predicted from the replica count rather than read from the live cluster to avoid
+/// instance churn; an unset count falls back to [`DEFAULT_REPLICAS`](crate::controller::DEFAULT_REPLICAS).
+fn pod_node_ids(
+    broker_role_group_configs: &BTreeMap<RoleGroupName, BrokerRoleGroupConfig>,
+    controller_role_group_configs: &BTreeMap<RoleGroupName, ControllerRoleGroupConfig>,
+) -> Result<Vec<PodNodeId>, PodNodeIdsError> {
+    // In `KafkaRole` variant order, which decides the reported side of a hash collision.
+    let role_groups = broker_role_group_configs
+        .iter()
+        .map(|(role_group_name, rg)| (KafkaRole::Broker, role_group_name, rg.replicas))
+        .chain(
+            controller_role_group_configs
+                .iter()
+                .map(|(role_group_name, rg)| (KafkaRole::Controller, role_group_name, rg.replicas)),
+        );
+
+    let mut pod_node_ids = Vec::new();
+    let mut seen_hashes = HashMap::<u32, (KafkaRole, RoleGroupName)>::new();
+
+    for (role, role_group_name, replicas) in role_groups {
+        let node_id_hash_offset = node_id_hash32_offset(&role, role_group_name.as_ref());
+
+        // The node id hash offset must be unique across the cluster.
+        if let Some((colliding_role, colliding_role_group)) = seen_hashes.get(&node_id_hash_offset)
+        {
+            return KafkaNodeIdHashCollisionSnafu {
+                role,
+                role_group: role_group_name.clone(),
+                colliding_role: colliding_role.clone(),
+                colliding_role_group: colliding_role_group.clone(),
+            }
+            .fail();
+        }
+        seen_hashes.insert(node_id_hash_offset, (role.clone(), role_group_name.clone()));
+
+        for replica in 0..replicas_or_default(replicas) {
+            pod_node_ids.push(PodNodeId {
+                role: role.clone(),
+                role_group_name: role_group_name.clone(),
+                replica,
+                node_id: node_id_hash_offset + u32::from(replica),
+            });
+        }
+    }
+
+    Ok(pod_node_ids)
 }
 
 /// Decides the KRaft bootstrap controller's `node.id`, i.e. the one controller that formats with
@@ -446,23 +508,17 @@ pub fn validate(
 /// of the current spec chosen. Returns `None` if there is neither (no controller replicas).
 fn resolve_kraft_bootstrap_controller(
     persisted: Option<u32>,
-    broker_role_group_configs: &BTreeMap<RoleGroupName, BrokerRoleGroupConfig>,
-    controller_role_group_configs: &BTreeMap<RoleGroupName, ControllerRoleGroupConfig>,
-) -> Result<Option<KraftBootstrapController>> {
-    let controller_node_ids =
-        pod_node_ids(broker_role_group_configs, controller_role_group_configs)
-            .context(PredictNodeIdsSnafu)?
-            .into_iter()
-            .filter(|pod| pod.role == KafkaRole::Controller)
-            .map(|pod| pod.node_id);
-
-    Ok(match persisted {
+    pod_node_ids: &[PodNodeId],
+) -> Option<KraftBootstrapController> {
+    match persisted {
         Some(node_id) => Some(KraftBootstrapController::Persisted(node_id)),
-        None => controller_node_ids
-            .into_iter()
+        None => pod_node_ids
+            .iter()
+            .filter(|pod| pod.role == KafkaRole::Controller)
+            .map(|pod| pod.node_id)
             .min()
             .map(KraftBootstrapController::New),
-    })
+    }
 }
 
 /// The role-level config, resolved from the role's `roleConfig`.
@@ -715,7 +771,7 @@ mod tests {
     use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id, validate_agent_connection};
     use crate::{
         controller::{
-            AgentConnection, KraftBootstrapController,
+            AgentConnection, KraftBootstrapController, PodNodeIdsError,
             security::ValidatedKafkaSecurity,
             test_support::{
                 app_version_label, broker_role_group_config, client_auth_tls,
@@ -724,7 +780,7 @@ mod tests {
                 validated_cluster_with_persisted_kraft_bootstrap,
             },
         },
-        crd::v1alpha1::UserProvidedAuthentication,
+        crd::{role::KafkaRole, v1alpha1::UserProvidedAuthentication},
     };
 
     fn anonymous() -> UserProvidedAuthentication {
@@ -1274,5 +1330,50 @@ mod tests {
             "#,
         );
         assert_eq!(validated_cluster(&kafka).kraft_bootstrap_controller, None);
+    }
+
+    /// Two broker role groups whose names hash to the same node-id offset must be rejected, also
+    /// without KRaft: a collision would hand two pods the same Kafka `node.id`. `rg865` and
+    /// `rg1400` are a known colliding pair for the `broker` role (see
+    /// [`node_id_hash32_offset`](crate::controller::node_id_hasher::node_id_hash32_offset)).
+    #[test]
+    fn validate_rejects_node_id_hash_collision() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  rg865:
+                    replicas: 1
+                  rg1400:
+                    replicas: 1
+            "#,
+        );
+
+        match validate_with_operator_image(&kafka, None) {
+            Err(Error::PredictNodeIds {
+                source:
+                    PodNodeIdsError::KafkaNodeIdHashCollision {
+                        role,
+                        colliding_role,
+                        ..
+                    },
+            }) => {
+                assert_eq!(role, KafkaRole::Broker);
+                assert_eq!(colliding_role, KafkaRole::Broker);
+            }
+            Err(error) => panic!("expected a node-id hash collision error, got {error:?}"),
+            Ok(_) => panic!("expected a node-id hash collision error, but validation succeeded"),
+        }
     }
 }
