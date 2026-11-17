@@ -112,7 +112,7 @@ KRaft mode requires major configuration changes compared to ZooKeeper mode:
 * Exactly one controller formats with `kafka-storage.sh format --standalone`, bootstrapping a single-node quorum by itself.
   It is the controller with the numerically lowest `node.id` when the cluster is first reconciled.
   The operator records this choice in `status.kraftBootstrapControllerNodeId` of the KafkaCluster and never changes it afterwards,
-  so controller role groups added later (even with lower ``node.id``s) always join the existing quorum.
+  so controller role groups added later (even with lower values for `node.id`) always join the existing quorum.
   If the status is lost (e.g. the KafkaCluster is restored from a backup without its status), the operator chooses the bootstrap
   controller again from the current spec. This is harmless as long as the PersistentVolumeClaims of the controllers are restored too.
   Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
