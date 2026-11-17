@@ -121,7 +121,7 @@ KRaft mode requires major configuration changes compared to ZooKeeper mode:
 * On brokers, `controller.quorum.bootstrap.servers` lists a single headless Service, `<cluster-name>-controller-headless`, which selects the controllers of all role groups.
   A broker is never part of this Service, so it cannot resolve it to its own address.
   The Service only resolves to controllers that are ready, i.e. members of the quorum, so a broker never connects to a controller that is still starting.
-  Adding or removing controller role groups or replicas therefore never rolls the brokers (unless OPA is active).
+  Adding or removing controller role groups or replicas therefore never rolls the brokers.
 
 == Kerberos
 
