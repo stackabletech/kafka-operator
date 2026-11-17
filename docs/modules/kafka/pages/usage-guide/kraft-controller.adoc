@@ -141,7 +141,7 @@ Controllers therefore have no keytab.
 
 * Automatic migration from Apache ZooKeeper to KRaft is not supported.
 * The quorum is created once by the controller with the lowest `node.id` using `--standalone`. If this controller
-  loses it's PVC, a new conflicting quorum is created on restart.
+  loses its PVC, a new conflicting quorum is created on restart.
 * A Controller that loses its persistent volume is not re-admitted to the voter set automatically, because it
   returns with a new directory ID while the quorum still lists the old one.
 
