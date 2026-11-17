@@ -26,6 +26,10 @@ All notable changes to this project will be documented in this file.
   The Kafka nodes are now configured as super users, so that traffic between them does not hit OPA.
   Controllers now get the same affinity to OPA as brokers, which means users need to update their
   OPA rules for intra-node traffic. ([#1051]).
+- New status field `status.kraftBootstrapControllerNodeId` that records the KRaft controller that
+  bootstrapped the quorum. Previously a new controller role group would create a second quorum and
+  thus make the cluster unusable. A node ID hash collision between role groups is now reported during
+  validation, also in ZooKeeper mode ([#1061]).
 
 ### Changed
 
@@ -40,10 +44,6 @@ All notable changes to this project will be documented in this file.
   On termination, a new `preStop` hook on the controller container (`kafka`) removes the pod from
   the voter list before shutdown.
   The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
-  to ensure only one voter is added/removed at a time and thus keep the quorum healthy.
-  The controller that bootstraps the quorum is chosen once and recorded in
-  `status.kraftBootstrapControllerNodeId`, so adding a controller role group never bootstraps a
-  second quorum  ([#1010], [#1061]).
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
 - BREAKING: KRaft nodes now authenticate each other only with their internal TLS certificates,
   also when Kerberos is enabled, and the CONTROLLER listener always requires a client certificate.
