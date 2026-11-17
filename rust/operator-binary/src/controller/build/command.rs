@@ -392,24 +392,11 @@ mod tests {
     use crate::controller::test_support::{kerberos, plaintext};
 
     #[test]
-    fn controller_command_does_not_export_a_realm_without_kerberos() {
-        let command = controller_kafka_container_command(&plaintext(), None);
-        assert!(!command.contains("KERBEROS_REALM"));
-    }
-
-    #[test]
-    fn controller_command_always_templates_the_jaas_file() {
-        // `jaas.properties` is always present in the ConfigMap (empty when Kerberos is off),
-        // so the copy is unconditional, matching `broker_start_command`.
-        for security in [kerberos(), plaintext()] {
-            let command = controller_kafka_container_command(&security, None);
-            assert!(command.contains("cp /stackable/config/jaas.properties /tmp/jaas.properties"));
-            assert!(command.contains("config-utils template /tmp/jaas.properties"));
     fn controller_command_has_no_kerberos_setup() {
         // The controllers never use Kerberos: the nodes authenticate each other with their
         // internal pod certificates, also when Kerberos is enabled for clients.
         for security in [kerberos(), plaintext()] {
-            let command = controller_kafka_container_command(&security, vec![]);
+            let command = controller_kafka_container_command(&security, None);
             assert!(!command.contains("KERBEROS_REALM"));
             assert!(!command.contains("jaas.properties"));
         }
