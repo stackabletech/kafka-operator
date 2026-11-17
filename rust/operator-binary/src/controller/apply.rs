@@ -166,15 +166,12 @@ impl<'a> Applier<'a> {
                     field_manager: Some(KAFKA_OPERATOR_NAME.to_string()),
                     ..PatchParams::default()
                 };
-                let status = serde_json::json!({
-                    "status": { "kraftBootstrapControllerNodeId": node_id }
-                });
                 self.client
                     .get_api::<v1alpha1::KafkaCluster>(self.namespace.as_ref())
                     .patch_status(
                         self.cluster_name.as_ref(),
                         &patch_params,
-                        &Patch::Merge(status),
+                        &Patch::Merge(kraft_bootstrap_controller_status_patch(node_id)),
                     )
                     .await
                     .context(PersistKraftBootstrapControllerSnafu)?;
@@ -200,5 +197,33 @@ impl<'a> Applier<'a> {
         }
 
         Ok(applied_resources)
+    }
+}
+
+/// The merge patch that records the KRaft bootstrap controller in the cluster status.
+///
+/// It is not built by serializing a `KafkaClusterStatus`, because that would also send
+/// `conditions` and thereby overwrite them.
+fn kraft_bootstrap_controller_status_patch(node_id: u32) -> serde_json::Value {
+    serde_json::json!({
+        "status": { "kraftBootstrapControllerNodeId": node_id }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crd::KafkaClusterStatus;
+
+    /// The patch is hand-written JSON, so a renamed status field would still compile while the
+    /// API server silently dropped the patch.
+    #[test]
+    fn kraft_bootstrap_controller_status_patch_uses_the_status_field_name() {
+        let patch = kraft_bootstrap_controller_status_patch(42);
+
+        let status: KafkaClusterStatus = serde_json::from_value(patch["status"].clone())
+            .expect("the patch should contain a valid status");
+
+        assert_eq!(status.kraft_bootstrap_controller_node_id, Some(42));
     }
 }
