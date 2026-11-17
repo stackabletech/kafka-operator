@@ -30,9 +30,9 @@ use stackable_operator::{
 
 use crate::{
     controller::{
-        AgentConnection, BrokerRoleGroupConfig, ControllerRoleGroupConfig, RoleGroupName,
-        ValidatedAgentConfig, ValidatedBrokerConfig, ValidatedCluster, ValidatedClusterConfig,
-        ValidatedControllerConfig, ValidatedRoleConfig,
+        AgentConnection, BrokerRoleGroupConfig, ControllerRoleGroupConfig,
+        KraftBootstrapController, RoleGroupName, ValidatedAgentConfig, ValidatedBrokerConfig,
+        ValidatedCluster, ValidatedClusterConfig, ValidatedControllerConfig, ValidatedRoleConfig,
         dereference::DereferencedObjects,
         pod_node_ids, replicas_or_default,
         security::{self, ValidatedKafkaSecurity},
@@ -398,8 +398,8 @@ pub fn validate(
         })
         .transpose()?;
 
-    let kraft_bootstrap_controller_node_id = match metadata_manager {
-        crate::crd::MetadataManager::KRaft => resolve_kraft_bootstrap_controller_node_id(
+    let kraft_bootstrap_controller = match metadata_manager {
+        crate::crd::MetadataManager::KRaft => resolve_kraft_bootstrap_controller(
             dereferenced_objects.persisted_kraft_bootstrap_controller_node_id,
             &broker_role_group_configs,
             &controller_role_group_configs,
@@ -432,7 +432,7 @@ pub fn validate(
         controller_role_group_configs,
         bootstrap_listeners: dereferenced_objects.bootstrap_listeners,
         agent_config,
-        kraft_bootstrap_controller_node_id,
+        kraft_bootstrap_controller,
     })
 }
 
@@ -444,11 +444,11 @@ pub fn validate(
 /// pod-0 (with a fresh PVC) would otherwise bootstrap a second, independent quorum under the same
 /// cluster id. Only if nothing is persisted yet (a new cluster) is the lowest controller `node.id`
 /// of the current spec chosen. Returns `None` if there is neither (no controller replicas).
-fn resolve_kraft_bootstrap_controller_node_id(
+fn resolve_kraft_bootstrap_controller(
     persisted: Option<u32>,
     broker_role_group_configs: &BTreeMap<RoleGroupName, BrokerRoleGroupConfig>,
     controller_role_group_configs: &BTreeMap<RoleGroupName, ControllerRoleGroupConfig>,
-) -> Result<Option<u32>> {
+) -> Result<Option<KraftBootstrapController>> {
     let controller_node_ids =
         pod_node_ids(broker_role_group_configs, controller_role_group_configs)
             .context(PredictNodeIdsSnafu)?
@@ -456,7 +456,13 @@ fn resolve_kraft_bootstrap_controller_node_id(
             .filter(|pod| pod.role == KafkaRole::Controller)
             .map(|pod| pod.node_id);
 
-    Ok(persisted.or_else(|| controller_node_ids.into_iter().min()))
+    Ok(match persisted {
+        Some(node_id) => Some(KraftBootstrapController::Persisted(node_id)),
+        None => controller_node_ids
+            .into_iter()
+            .min()
+            .map(KraftBootstrapController::New),
+    })
 }
 
 /// The role-level config, resolved from the role's `roleConfig`.
@@ -709,7 +715,7 @@ mod tests {
     use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id, validate_agent_connection};
     use crate::{
         controller::{
-            AgentConnection,
+            AgentConnection, KraftBootstrapController,
             security::ValidatedKafkaSecurity,
             test_support::{
                 app_version_label, broker_role_group_config, client_auth_tls,
@@ -1227,7 +1233,10 @@ mod tests {
             &kraft_cluster_with_lower_offset_controller_group(),
             Some(2110489703),
         );
-        assert_eq!(cluster.kraft_bootstrap_controller_node_id, Some(2110489703));
+        assert_eq!(
+            cluster.kraft_bootstrap_controller,
+            Some(KraftBootstrapController::Persisted(2110489703))
+        );
     }
 
     /// Without a persisted choice (a new cluster), the lowest controller `node.id` bootstraps.
@@ -1237,7 +1246,10 @@ mod tests {
             &kraft_cluster_with_lower_offset_controller_group(),
             None,
         );
-        assert_eq!(cluster.kraft_bootstrap_controller_node_id, Some(87094686));
+        assert_eq!(
+            cluster.kraft_bootstrap_controller,
+            Some(KraftBootstrapController::New(87094686))
+        );
     }
 
     #[test]
@@ -1261,9 +1273,6 @@ mod tests {
                     replicas: 1
             "#,
         );
-        assert_eq!(
-            validated_cluster(&kafka).kraft_bootstrap_controller_node_id,
-            None
-        );
+        assert_eq!(validated_cluster(&kafka).kraft_bootstrap_controller, None);
     }
 }

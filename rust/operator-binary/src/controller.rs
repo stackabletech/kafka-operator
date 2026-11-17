@@ -72,10 +72,8 @@ pub use stackable_operator::v2::types::operator::{RoleGroupName, RoleName};
 
 use crate::{
     controller::{
-        apply::Applier,
-        node_id_hasher::node_id_hash32_offset,
-        security::ValidatedKafkaSecurity,
-        update_status::{persist_kraft_bootstrap_controller_node_id, update_status},
+        apply::Applier, node_id_hasher::node_id_hash32_offset, security::ValidatedKafkaSecurity,
+        update_status::update_status,
     },
     crd::{
         APP_NAME, KAFKA_OPERATOR_NAME, KafkaPodDescriptor, MetadataManager,
@@ -145,6 +143,7 @@ pub struct KubernetesResources<T> {
     pub pod_disruption_budgets: Vec<PodDisruptionBudget>,
     pub service_accounts: Vec<ServiceAccount>,
     pub role_bindings: Vec<RoleBinding>,
+    pub kraft_bootstrap_controller: Option<KraftBootstrapController>,
     pub status: PhantomData<T>,
 }
 
@@ -185,10 +184,28 @@ pub struct ValidatedCluster {
     /// addresses and the `Listener` watch triggers a new run once it does.
     pub bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
     pub agent_config: Option<ValidatedAgentConfig>,
-    /// KRaft only: the `node.id` of the controller that bootstraps the metadata quorum.
+    /// KRaft only: the controller that bootstraps the metadata quorum.
     /// Persisted once in the cluster status and then never changed.
     /// Empty in ZooKeeper mode, or if no controller replica was ever requested.
-    pub kraft_bootstrap_controller_node_id: Option<u32>,
+    pub kraft_bootstrap_controller: Option<KraftBootstrapController>,
+}
+
+/// The KRaft controller that bootstraps the metadata quorum, identified by its `node.id`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KraftBootstrapController {
+    /// Recorded in the cluster status by an earlier reconcile run.
+    Persisted(u32),
+
+    /// Chosen by this reconcile run. The apply step persists it before the StatefulSets.
+    New(u32),
+}
+
+impl KraftBootstrapController {
+    pub fn node_id(self) -> u32 {
+        match self {
+            Self::Persisted(node_id) | Self::New(node_id) => node_id,
+        }
+    }
 }
 
 /// The number of pods a role group runs when its `replicas` is unset.
@@ -267,6 +284,12 @@ pub(crate) fn pod_node_ids<'a>(
 }
 
 impl ValidatedCluster {
+    /// The `node.id` of the KRaft bootstrap controller, if there is one.
+    pub fn kraft_bootstrap_controller_node_id(&self) -> Option<u32> {
+        self.kraft_bootstrap_controller
+            .map(KraftBootstrapController::node_id)
+    }
+
     /// The `ObjectMeta` that lets [`ValidatedCluster`] act as the owner [`Resource`] for child
     /// objects: just `name`, `namespace` and `uid`.
     pub(crate) fn object_meta(
@@ -626,9 +649,6 @@ pub async fn reconcile_kafka(
         .await
         .context(DereferenceSnafu)?;
 
-    let persisted_kraft_bootstrap_controller_node_id =
-        dereferenced_objects.persisted_kraft_bootstrap_controller_node_id;
-
     // validate (no client required)
     let validated_cluster = validate::validate(
         kafka,
@@ -646,15 +666,6 @@ pub async fn reconcile_kafka(
         "The following security settings are used"
     );
 
-    // Persist a newly chosen KRaft bootstrap controller before any controller Pod can act on it.
-    if let Some(node_id) = validated_cluster.kraft_bootstrap_controller_node_id
-        && persisted_kraft_bootstrap_controller_node_id != Some(node_id)
-    {
-        persist_kraft_bootstrap_controller_node_id(client, kafka, node_id)
-            .await
-            .context(UpdateStatusSnafu)?;
-    }
-
     // build (no client required)
     let resources = build::build(&validated_cluster).context(BuildResourcesSnafu)?;
 
@@ -671,14 +682,9 @@ pub async fn reconcile_kafka(
         .context(ApplyResourcesSnafu)?;
 
     // update status (client required)
-    update_status(
-        client,
-        kafka,
-        validated_cluster.kraft_bootstrap_controller_node_id,
-        applied,
-    )
-    .await
-    .context(UpdateStatusSnafu)?;
+    update_status(client, kafka, applied)
+        .await
+        .context(UpdateStatusSnafu)?;
 
     Ok(Action::await_change())
 }

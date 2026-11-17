@@ -275,7 +275,7 @@ fn role_pod(
         ])
         .args(vec![controller_kafka_container_command(
             kafka_security,
-            cluster.kraft_bootstrap_controller_node_id,
+            cluster.kraft_bootstrap_controller_node_id(),
         )]);
 
     cb_kafka

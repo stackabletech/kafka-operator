@@ -177,6 +177,7 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>
         pod_disruption_budgets,
         service_accounts,
         role_bindings,
+        kraft_bootstrap_controller: cluster.kraft_bootstrap_controller,
         status: PhantomData,
     })
 }
@@ -299,7 +300,7 @@ mod tests {
     };
     use crate::{
         controller::{
-            KubernetesResources, Prepared, ValidatedCluster,
+            KraftBootstrapController, KubernetesResources, Prepared, ValidatedCluster,
             test_support::{
                 bootstrap_listener, ingress_address, minimal_kafka, validated_cluster,
                 validated_cluster_with_security, zookeeper_mode_cluster,
@@ -550,7 +551,7 @@ mod tests {
     #[test]
     fn build_uses_the_resolved_kraft_bootstrap_controller() {
         let mut cluster = kraft_mode_cluster();
-        cluster.kraft_bootstrap_controller_node_id = Some(42);
+        cluster.kraft_bootstrap_controller = Some(KraftBootstrapController::Persisted(42));
         let resources = build(&cluster).expect("build succeeds");
 
         let controller_stateful_set = resources

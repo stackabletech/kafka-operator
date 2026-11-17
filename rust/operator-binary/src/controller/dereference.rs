@@ -83,9 +83,6 @@ pub struct DereferencedObjects {
     pub authorization_config: Option<KafkaAuthorizationConfig>,
     pub kubernetes_cluster_info: KubernetesClusterInfo,
     pub bootstrap_listeners: Vec<listener::v1alpha1::Listener>,
-    /// KRaft only: the bootstrap controller `node.id` persisted in the cluster status by a
-    /// previous reconcile run, if any. See
-    /// [`crate::crd::KafkaClusterStatus::kraft_bootstrap_controller_node_id`].
     pub persisted_kraft_bootstrap_controller_node_id: Option<u32>,
 }
 
