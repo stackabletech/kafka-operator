@@ -231,31 +231,30 @@ include::example$security/03b-authorization-kafkacluster-custom-properties.yaml[
 
 A full list of settings and their respective defaults can be found https://github.com/anderseknert/opa-kafka-plugin[here].
 
-The OPA Rego rules authorize requests from external clients.
-Communication between the Kafka nodes is not authorized by OPA, see <<authorization-internal-traffic>>.
+The OPA Rego rules authorize all requests, both from external clients and between the Kafka nodes.
+The rules must therefore allow the internal traffic as well, see <<authorization-internal-traffic>>.
 
 === [[authorization-internal-traffic]]Internal traffic
 
-The Kafka nodes (brokers and controllers) are configured as `super.users`, so that the traffic between them is allowed without asking OPA.
-You do not need to write Rego rules for it.
-Requests that a broker forwards to a controller on behalf of a client, such as creating a topic, are still authorized against the principal of the original client.
+The Kafka nodes (brokers and, in KRaft mode, controllers) authenticate each other with the TLS certificates that the secret operator provides for the `internalSecretClass`, also when Kerberos is enabled for clients.
+The principal of a node is the subject DN of its certificate, which contains the FQDN of the Pod and a generic common name, e.g. `DC=local,DC=cluster,DC=svc,DC=default,DC=simple-kafka-broker-default-headless,DC=simple-kafka-broker-default-0,CN=generated certificate for pod`.
 
-The operator sets `super.users` to the principals of all nodes of the cluster:
+The internal traffic arrives on these listeners:
 
-* The nodes authenticate each other with the TLS certificates that the secret operator provides for the `internalSecretClass`.
-  The principal is the subject DN of the certificate, which contains the FQDN of the pod and a generic common name, e.g. `DC=local,DC=cluster,DC=svc,DC=default,DC=simple-kafka-broker-default-headless,DC=simple-kafka-broker-default-0,CN=generated certificate for pod`.
-* If Kerberos is enabled, the short names of the Kerberos services of the brokers and the controllers are added as well.
+* `INTERNAL`: between brokers, e.g. replication.
+* `CONTROLLER`: from brokers to controllers and between controllers (KRaft only).
 
-Kafka compares the principal of a request with each `super.users` entry for exact equality; wildcards are not supported.
-The common name `CN=generated certificate for pod` is therefore part of every certificate-based entry.
-The secret operator always sets it in the subject of the pod certificates.
+Match the principal, not only the listener: in KRaft mode, the brokers forward some client requests, such as creating a topic, to the controllers.
+The controllers authorize them on the `CONTROLLER` listener with the principal of the original client.
+For the same reason, do not restrict the rules for clients to the client listeners.
+
+An OpaCluster and Rego rules that allow the nodes of the KafkaCluster `simple-kafka` in the namespace `default` could look as follows.
+Adapt the namespace, the cluster domain and the role groups to your cluster:
+
+[source,yaml]
+----
+include::example$security/02-authorization-opa.yaml[]
+----
 
 NOTE: Everything that presents a certificate with the subject DN of a node, issued by the CA of the `internalSecretClass`, is treated as a Kafka node.
 Restrict who can obtain such certificates accordingly.
-
-If you previously set `super.users` for the Kafka nodes yourself, for example with `configOverrides`, you can remove that override.
-The operator now sets the principals of all nodes automatically.
-Keep an override only if you need additional super users, such as specific client principals, and then include the entries for the nodes as well, because the override replaces the value set by the operator.
-
-NOTE: Scaling a role changes the nodes of the cluster and with them the node properties.
-This restarts all Pods of the cluster, see xref:usage-guide/operations/cluster-operations.adoc#scaling-restarts[Scaling operations restart the whole cluster].

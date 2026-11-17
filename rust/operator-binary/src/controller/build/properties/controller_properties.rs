@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::{kraft_controllers, opa_authorizer_properties};
+use super::{kraft_controller_pods, opa_authorizer_properties};
 use crate::{
     controller::{
         ValidatedClusterConfig,
@@ -25,11 +25,7 @@ pub fn build(
     pod_descriptors: &[KafkaPodDescriptor],
     overrides: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let kraft_controllers = kraft_controllers(
-        pod_descriptors,
-        cluster_config.kafka_security.has_kerberos_enabled(),
-    )
-    .join(",");
+    let kraft_controllers = kraft_controller_pods(pod_descriptors).join(",");
 
     let mut result = BTreeMap::from([
         (
@@ -73,11 +69,8 @@ pub fn build(
         );
     }
 
-    result.extend(opa_authorizer_properties(cluster_config, pod_descriptors));
-    result.extend(controller_config_settings(
-        &cluster_config.kafka_security,
-        cluster_config.opa_connect().is_some(),
-    ));
+    result.extend(opa_authorizer_properties(cluster_config));
+    result.extend(controller_config_settings(&cluster_config.kafka_security));
     result.extend(graceful_shutdown_config_properties());
     result.extend(overrides);
 

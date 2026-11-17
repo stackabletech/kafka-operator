@@ -14,7 +14,6 @@
 pub(crate) mod broker;
 pub(crate) mod controller;
 
-use indoc::formatdoc;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{
     commons::affinity::StackableAffinity,
@@ -29,7 +28,7 @@ use stackable_operator::{
 use super::resource;
 use crate::{
     controller::{RoleGroupName, ValidatedCluster, validate::ValidatedLogging},
-    crd::{STACKABLE_KERBEROS_KEYTAB_PATH, role::KafkaRole},
+    crd::role::KafkaRole,
 };
 
 /// Why emitting one role group's Kubernetes objects failed. The caller adds which role and role
@@ -108,24 +107,4 @@ impl RoleGroupBuilder<'_> {
     pub(crate) fn build_statefulset(&self) -> Result<StatefulSet, Error> {
         resource::statefulset::build_statefulset(self).context(StatefulSetSnafu)
     }
-}
-
-/// The JAAS section for the CONTROLLER listener, which both roles render, authenticating as
-/// `kafka/<controller_principal_address>`.
-///
-/// Unlike the broker's bootstrap and client sections, this context is used for BOTH sides of
-/// every CONTROLLER-listener connection: brokers connect out to controllers, and controllers
-/// connect to each other for Raft. This is the only listener in this operator where the process
-/// must act as a GSSAPI initiator as well as an acceptor, so `isInitiator` is intentionally left
-/// at its default (`true`).
-fn controller_jaas_section(controller_principal_address: &str) -> String {
-    formatdoc! {"
-        controller.KafkaServer {{
-            com.sun.security.auth.module.Krb5LoginModule required
-            useKeyTab=true
-            storeKey=true
-            keyTab=\"{STACKABLE_KERBEROS_KEYTAB_PATH}\"
-            principal=\"kafka/{controller_principal_address}@${{env:KERBEROS_REALM}}\";
-        }};
-    "}
 }

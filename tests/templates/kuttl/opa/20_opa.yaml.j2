@@ -37,11 +37,6 @@ data:
 
     allow if {
       is_external_request
-      input.requestContext.principal.name == "kafka"
-    }
-
-    allow if {
-      is_external_request
       input.requestContext.principal.name == "developer"
       resource_is_allowed
     }

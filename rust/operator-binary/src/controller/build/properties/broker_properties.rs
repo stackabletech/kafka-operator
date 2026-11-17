@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::{kraft_controllers, opa_authorizer_properties};
+use super::opa_authorizer_properties;
 use crate::{
     controller::{
         ValidatedClusterConfig,
@@ -10,7 +10,6 @@ use crate::{
         },
     },
     crd::{
-        KafkaPodDescriptor,
         listener::{KafkaListenerConfig, KafkaListenerName},
         role::{
             KAFKA_ADVERTISED_LISTENERS, KAFKA_BROKER_ID, KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS,
@@ -20,17 +19,16 @@ use crate::{
     },
 };
 
+/// Builds `broker.properties`.
+///
+/// `controller_quorum_bootstrap_servers` is only used in KRaft mode, see
+/// [`kraft_controller_quorum_service`](super::kraft_controller_quorum_service).
 pub fn build(
     cluster_config: &ValidatedClusterConfig,
     listener_config: &KafkaListenerConfig,
-    pod_descriptors: &[KafkaPodDescriptor],
+    controller_quorum_bootstrap_servers: String,
     overrides: BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    let kraft_controllers = kraft_controllers(
-        pod_descriptors,
-        cluster_config.kafka_security.has_kerberos_enabled(),
-    );
-
     let mut result = BTreeMap::from([
         (
             KAFKA_LOG_DIRS.to_string(),
@@ -52,8 +50,6 @@ pub fn build(
     ]);
 
     if cluster_config.is_kraft_mode() {
-        let kraft_controllers = kraft_controllers.join(",");
-
         // Running in KRaft mode
         result.extend([
             (
@@ -71,7 +67,7 @@ pub fn build(
             ),
             (
                 KAFKA_CONTROLLER_QUORUM_BOOTSTRAP_SERVERS.to_string(),
-                kraft_controllers.clone(),
+                controller_quorum_bootstrap_servers,
             ),
         ]);
     } else {
@@ -95,7 +91,7 @@ pub fn build(
         }
     }
 
-    result.extend(opa_authorizer_properties(cluster_config, pod_descriptors));
+    result.extend(opa_authorizer_properties(cluster_config));
 
     result.extend(broker_config_settings(&cluster_config.kafka_security));
     result.extend(graceful_shutdown_config_properties());

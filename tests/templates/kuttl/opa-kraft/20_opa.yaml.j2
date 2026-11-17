@@ -9,10 +9,46 @@ data:
   kafka.rego: |
     package authz
 
+    internal_listeners := {"INTERNAL", "CONTROLLER"}
+
+    # Regular expression matching the subject DN of the internal TLS certificates of the Pods of
+    # a role group.
+    subject_dn_pattern(role_group) := pattern if {
+      fqdn := [
+        `local`,
+        `cluster`,
+        `svc`,
+        `$NAMESPACE`,
+        concat("", [role_group, `-headless`]),
+        concat("", [role_group, `-[0-9]+`]),
+      ]
+      domain_components := [concat("", [`DC=`, dc]) | some dc in fqdn]
+      fields := array.concat(domain_components, [`CN=generated certificate for pod`])
+      pattern := concat("", ["^", concat(",", fields), "$"])
+    }
+
+    node_role_groups := [
+      `test-kafka-broker-default`,
+      `test-kafka-controller-default`,
+    ]
+
+    is_internal_request if input.requestContext.listenerName in internal_listeners
+
+    is_kafka_node if {
+      some role_group in node_role_groups
+      regex.match(subject_dn_pattern(role_group), input.requestContext.principal.name)
+    }
+
     default allow := false
 
-    # The Kafka nodes are super users and do not hit OPA for their own traffic,
-    # so only the developer needs a rule.
+    # The Kafka nodes are not super users, so their traffic must be allowed explicitly.
+    allow if {
+      is_internal_request
+      is_kafka_node
+    }
+
+    # Client requests that the brokers forward to the controllers (e.g. creating topics) are
+    # authorized on the CONTROLLER listener, so the client rules are not restricted to a listener.
     allow if {
       input.requestContext.principal.name == "developer"
       resource_is_allowed

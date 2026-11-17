@@ -85,7 +85,6 @@ constant!(pub BROKER_ID_POD_MAP_DIR_NAME: VolumeName = "broker-id-pod-map-dir");
 /// Used for:
 /// - the address where the CONTROLLER listener is *bound*.
 /// - the endpoint registered with the quorum's voter.
-/// - when Kerberos is enabled, it is also the host in the controller's Kerberos service principal.
 pub const CONTROLLER_POD_FQDN_TEMPLATE: &str = "${env:POD_NAME}.${env:ROLEGROUP_HEADLESS_SERVICE_NAME}.${env:NAMESPACE}.svc.${env:CLUSTER_DOMAIN}";
 
 #[derive(Snafu, Debug)]

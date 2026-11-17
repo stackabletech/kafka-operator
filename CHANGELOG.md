@@ -24,7 +24,8 @@ All notable changes to this project will be documented in this file.
 - The OPA authorizer is now also configured on KRaft controllers. Previously, requests that brokers
   forward to the controllers (e.g. creating or deleting topics) were not authorized at all.
   The Kafka nodes are now configured as super users, so that traffic between them does not hit OPA.
-  Controllers now get the same affinity to OPA as brokers ([#1051]).
+  Controllers now get the same affinity to OPA as brokers, which means users need to update their
+  OPA rules for intra-node traffic. ([#1051]).
 
 ### Changed
 
@@ -40,6 +41,10 @@ All notable changes to this project will be documented in this file.
   the voter list before shutdown.
   The controller `StatefulSet` is now scaled using `OrderedReady` instead of the `Parallel` strategy
   to ensure only one voter is added/removed at a time and thus keep the quorum healthy ([#1010]).
+- BREAKING: KRaft nodes now authenticate each other only with their internal TLS certificates,
+  also when Kerberos is enabled, and the CONTROLLER listener always requires a client certificate.
+  Controllers use individual pod FQDNs for the bootstrap server list while brokers use headless
+  Service of all controllers ([#1069]).
 - Internal operator refactoring: introduce a build() step in the reconciler that
   assembles all relevant Kubernetes resources before anything is applied ([#985]).
 - Bump stackable-operator to 0.121.0 ([#994], [#1011], [#1021], [#1029], [#1043]).
@@ -124,6 +129,7 @@ All notable changes to this project will be documented in this file.
 [#1051]: https://github.com/stackabletech/kafka-operator/pull/1051
 [#1052]: https://github.com/stackabletech/kafka-operator/pull/1052
 [#1055]: https://github.com/stackabletech/kafka-operator/pull/1055
+[#1069]: https://github.com/stackabletech/kafka-operator/pull/1069
 
 ## [26.7.0] - 2026-07-21
 

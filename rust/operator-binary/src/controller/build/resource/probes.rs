@@ -126,11 +126,15 @@ pub fn controller_raft_state_probe(
 /// A `Probe` combining a plain TCP check of the controller's KRaft listener with a check that
 /// its local Raft state isn't stuck in `unattached`.
 ///
-/// This is needed to work around a bug in KRaft where a new controller is stuck in a loop
-/// trying to fetch Raft metadata from its self.
+/// This is a safety net: a controller that never learns the quorum leader stays `unattached`
+/// forever, and restarting it is the only way out.
 ///
-/// This can happen when the headless service used to point to the bootstrap controllers
-/// happens to resolve to this exact pod.
+/// The original cause, a bootstrap address resolving to the controller itself, is avoided by
+/// listing the individual controller pods in `controller.quorum.bootstrap.servers` (see
+/// [`kraft_controller_pods`][kcp]). A controller can still get stuck when none of the listed pods
+/// reaches the leader, for example when more controllers run than the operator predicts.
+///
+/// [kcp]: crate::controller::build::properties::kraft_controller_pods
 ///
 /// The TCP check uses this pod's own IP (`$POD_IP`, from the downward API) rather than its
 /// FQDN so a DNS hiccup would not wrongly kill a healthy controller.

@@ -10,7 +10,10 @@ use stackable_operator::{
 use crate::{
     controller::{
         RoleGroupName, ValidatedCluster,
-        build::{recommended_labels_for_role_group_resources, role_group_selector},
+        build::{
+            recommended_labels_for_role_group_resources, recommended_labels_for_role_resources,
+            role_group_selector, role_selector,
+        },
         security::ValidatedKafkaSecurity,
     },
     crd::{METRICS_PORT, METRICS_PORT_NAME, role::KafkaRole},
@@ -50,6 +53,54 @@ pub fn build_rolegroup_headless_service(
             ports: Some(headless_ports(kafka_security)),
             selector: Some(role_group_selector(validated_cluster, role, role_group_name).into()),
             publish_not_ready_addresses: Some(true),
+            ..ServiceSpec::default()
+        }),
+        status: None,
+    }
+}
+
+/// The headless [`Service`] selecting the KRaft controllers of all role groups, which the brokers
+/// use as `controller.quorum.bootstrap.servers`.
+///
+/// Its name does not depend on the controller role groups or their replicas, so changing the
+/// controllers never changes the brokers' config and never restarts them.
+///
+/// Unlike the role group headless Services, it does not publish not-ready addresses: a controller
+/// is only ready once it is a member of the quorum (see the controller readiness probe), so a
+/// broker never connects to a controller that is still starting and does not know the leader yet.
+///
+/// Controllers must not use this Service themselves: it could resolve to the starting controller
+/// itself, see [`kraft_controller_pods`][kcp].
+///
+/// [kcp]: crate::controller::build::properties::kraft_controller_pods
+pub fn build_controller_quorum_service(
+    validated_cluster: &ValidatedCluster,
+    kafka_security: &ValidatedKafkaSecurity,
+) -> Service {
+    let role = KafkaRole::Controller;
+    Service {
+        metadata: ObjectMetaBuilder::new()
+            .name_and_namespace(validated_cluster)
+            .name(
+                validated_cluster
+                    .controller_quorum_service_name()
+                    .to_string(),
+            )
+            .ownerreference(ownerreference_from_resource(
+                validated_cluster,
+                None,
+                Some(true),
+            ))
+            .with_labels(recommended_labels_for_role_resources(
+                validated_cluster,
+                &role,
+            ))
+            .build(),
+        spec: Some(ServiceSpec {
+            cluster_ip: Some("None".to_string()),
+            ports: Some(headless_ports(kafka_security)),
+            selector: Some(role_selector(validated_cluster, &role).into()),
+            publish_not_ready_addresses: Some(false),
             ..ServiceSpec::default()
         }),
         status: None,
@@ -210,6 +261,86 @@ mod tests {
                 }
             }),
             serde_json::to_value(service).expect("must be serializable")
+        );
+    }
+
+    /// The brokers' bootstrap Service selects the controllers of all role groups, and only the
+    /// ready ones.
+    #[test]
+    fn controller_quorum_service_selects_all_ready_controllers() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: KRaft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+                  other:
+                    replicas: 2
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+        let cluster = validated_cluster(&kafka);
+        let kafka_security = &cluster.cluster_config.kafka_security;
+
+        let service = build_controller_quorum_service(&cluster, kafka_security);
+
+        assert_eq!(
+            json!({
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/component": "controller",
+                        "app.kubernetes.io/instance": "simple-kafka",
+                        "app.kubernetes.io/managed-by": "kafka.stackable.tech_kafkacluster",
+                        "app.kubernetes.io/name": "kafka",
+                        "app.kubernetes.io/version": app_version_label("3.9.2"),
+                        "stackable.tech/vendor": "Stackable"
+                    },
+                    "name": "simple-kafka-controller-headless",
+                    "namespace": "default",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "kafka.stackable.tech/v1alpha1",
+                            "controller": true,
+                            "kind": "KafkaCluster",
+                            "name": "simple-kafka",
+                            "uid": "12345678-1234-1234-1234-123456789012"
+                        }
+                    ]
+                },
+                "spec": {
+                    "clusterIP": "None",
+                    "ports": [
+                        {
+                            "name": kafka_security.client_port_name(),
+                            "port": i32::from(kafka_security.client_port()),
+                            "protocol": "TCP"
+                        }
+                    ],
+                    "publishNotReadyAddresses": false,
+                    "selector": {
+                        "app.kubernetes.io/component": "controller",
+                        "app.kubernetes.io/instance": "simple-kafka",
+                        "app.kubernetes.io/name": "kafka"
+                    }
+                }
+            }),
+            serde_json::to_value(service).expect("should be serializable")
         );
     }
 }
