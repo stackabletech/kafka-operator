@@ -26,6 +26,7 @@ use crate::{
                 discovery::build_discovery_configmap,
                 pdb::build_pdb,
                 rbac::{build_role_binding, build_service_account},
+                service::build_controller_quorum_service,
             },
             role_group::RoleGroupBuilder,
         },
@@ -143,10 +144,18 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>
         .collect();
 
     let RoleGroupResources {
-        services,
+        mut services,
         mut config_maps,
         stateful_sets,
     } = built;
+
+    // The brokers bootstrap the KRaft quorum via this Service.
+    if !cluster.controller_role_group_configs.is_empty() {
+        services.push(build_controller_quorum_service(
+            cluster,
+            &cluster.cluster_config.kafka_security,
+        ));
+    }
 
     config_maps.push(build_discovery_configmap(cluster).context(DiscoveryConfigMapSnafu)?);
 
@@ -250,6 +259,11 @@ pub(crate) fn recommended_labels_for_unversioned_role_group_resources(
 
 pub(crate) fn agent_selector(cluster: &ValidatedCluster) -> Labels {
     label::agent_selector(&cluster.name, &PRODUCT_NAME)
+}
+
+/// Selector labels matching the pods of all role groups of a role.
+pub(crate) fn role_selector(cluster: &ValidatedCluster, role_name: &RoleName) -> Labels {
+    label::role_selector(&cluster.name, &PRODUCT_NAME, role_name)
 }
 
 /// Selector labels matching the pods of a role group.
@@ -572,7 +586,8 @@ mod tests {
                 "simple-kafka-controller-default"
             ]
         );
-        // One headless and one metrics Service per role group.
+        // One headless and one metrics Service per role group, plus the headless Service of all
+        // controllers that the brokers bootstrap the quorum with.
         assert_eq!(
             sorted_names(&resources.services),
             [
@@ -580,6 +595,7 @@ mod tests {
                 "simple-kafka-broker-default-metrics",
                 "simple-kafka-controller-default-headless",
                 "simple-kafka-controller-default-metrics",
+                "simple-kafka-controller-headless",
             ]
         );
         // Only broker role groups get a bootstrap Listener.
@@ -760,7 +776,6 @@ mod tests {
                     &*STACKABLE_LOG_DIR_NAME,
                 ],
                 KafkaRole::Controller => vec![
-                    &*KERBEROS_VOLUME_NAME,
                     &*STACKABLE_LOG_CONFIG_DIR_NAME,
                     &*STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME,
                     &*OPA_TLS_VOLUME_NAME,
@@ -779,6 +794,36 @@ mod tests {
                 .collect();
             assert_eq!(actual, expected, "{role:?} pod volumes");
         }
+    }
+
+    /// The brokers dial the controllers via the headless Service of all controllers, so the
+    /// controllers' internal TLS certificate must cover its name, or the brokers' TLS hostname
+    /// verification fails.
+    #[test]
+    fn controller_internal_tls_certificate_covers_the_controller_quorum_service() {
+        let cluster = kraft_mode_cluster();
+        let resources = build(&cluster).expect("build should succeed");
+
+        let internal_tls_volume = pod_spec(stateful_set_spec(
+            &resources,
+            &cluster,
+            &KafkaRole::Controller,
+        ))
+        .volumes
+        .iter()
+        .flatten()
+        .find(|volume| volume.name == STACKABLE_TLS_KAFKA_INTERNAL_VOLUME_NAME.to_string())
+        .expect("the controller should have an internal TLS volume");
+        let scope = internal_tls_volume
+            .ephemeral
+            .as_ref()
+            .and_then(|ephemeral| ephemeral.volume_claim_template.as_ref())
+            .and_then(|template| template.metadata.as_ref())
+            .and_then(|metadata| metadata.annotations.as_ref())
+            .and_then(|annotations| annotations.get("secrets.stackable.tech/scope"))
+            .expect("the internal TLS volume should have a scope annotation");
+
+        assert_eq!(scope, "pod,service=simple-kafka-controller-headless");
     }
 
     /// ZooKeeper mode has no `controller` role, so `build()` emits no controller resources while

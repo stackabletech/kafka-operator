@@ -18,11 +18,10 @@ use stackable_operator::{
     },
 };
 
-use super::{RoleGroupBuilder, controller_jaas_section};
+use super::RoleGroupBuilder;
 use crate::{
     controller::{
-        BrokerRoleGroupConfig, PodDescriptorsError, RoleGroupName, ValidatedBrokerConfig,
-        ValidatedCluster,
+        BrokerRoleGroupConfig, RoleGroupName, ValidatedBrokerConfig, ValidatedCluster,
         build::{
             command::broker_kafka_container_commands,
             container::{
@@ -30,7 +29,10 @@ use crate::{
             },
             jvm,
             kerberos::{self, kerberos_env_vars, mount_broker_kerberos_volume},
-            properties::{ConfigFileName, broker_properties, listener::get_kafka_listener_config},
+            properties::{
+                ConfigFileName, broker_properties, kraft_controller_quorum_service,
+                listener::get_kafka_listener_config,
+            },
             recommended_labels_for_role_group_resources,
             recommended_labels_for_unversioned_role_group_resources,
             resource::{
@@ -68,9 +70,6 @@ pub enum Error {
         source: PropertiesWriterError,
         file: ConfigFileName,
     },
-
-    #[snafu(display("failed to build pod descriptors"))]
-    BuildPodDescriptors { source: PodDescriptorsError },
 
     #[snafu(display("failed to build the TLS volumes"))]
     BuildTlsVolumes { source: security::Error },
@@ -155,14 +154,10 @@ fn role_config_map_data(
     let listener_config =
         get_kafka_listener_config(cluster, kafka_security, &ROLE, role_group_name);
 
-    let pod_descriptors = cluster
-        .pod_descriptors(None)
-        .context(BuildPodDescriptorsSnafu)?;
-
     let kafka_config = broker_properties::build(
         &cluster.cluster_config,
         &listener_config,
-        &pod_descriptors,
+        kraft_controller_quorum_service(cluster),
         rg_config
             .config_overrides
             .broker_properties
@@ -293,7 +288,7 @@ fn role_pod(
 
     cb_kafka
         .add_env_vars(env)
-        .add_container_ports(container_ports(kafka_security))
+        .add_container_ports(container_ports(&ROLE, kafka_security))
         .add_volume_mount(&*LOG_DIRS_VOLUME_NAME, STACKABLE_DATA_DIR)
         .expect("The mount paths are statically defined and there should be no duplicates.")
         .add_volume_mount(&*STACKABLE_CONFIG_DIR_NAME, STACKABLE_CONFIG_DIR)
@@ -367,12 +362,6 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
         return String::new();
     }
 
-    // Broker pods reach the CONTROLLER listener as SASL clients; the only principals in
-    // their keytab (see `mount_broker_kerberos_volume`) are for the broker and bootstrap listener
-    // addresses, so their CONTROLLER section must reuse the broker address.
-    let controller_section =
-        controller_jaas_section(&node_address_cmd(STACKABLE_LISTENER_BROKER_DIR));
-
     formatdoc! {"
         bootstrap.KafkaServer {{
             com.sun.security.auth.module.Krb5LoginModule required
@@ -391,8 +380,6 @@ fn jaas_config_file(is_kerberos_enabled: bool) -> String {
             keyTab=\"{STACKABLE_KERBEROS_KEYTAB_PATH}\"
             principal=\"kafka/{broker_address}@${{env:KERBEROS_REALM}}\";
         }};
-
-        {controller_section}
     ",
     bootstrap_address = node_address_cmd(STACKABLE_LISTENER_BOOTSTRAP_DIR),
     broker_address = node_address_cmd(STACKABLE_LISTENER_BROKER_DIR),
@@ -483,5 +470,8 @@ mod tests {
         // The bootstrap and client principals embed distinct listener addresses.
         assert!(jaas.contains("/stackable/listener-bootstrap"));
         assert!(jaas.contains("/stackable/listener-broker"));
+        // The nodes authenticate each other with their internal pod certificates, never with
+        // Kerberos, so there is no login context for the CONTROLLER listener.
+        assert!(!jaas.contains("controller.KafkaServer"));
     }
 }

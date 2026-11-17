@@ -1,0 +1,81 @@
+---
+apiVersion: opa.stackable.tech/v1alpha1
+kind: OpaCluster
+metadata:
+  name: simple-opa
+spec:
+  image:
+    productVersion: 1.20.2
+  servers:
+    config:
+      logging:
+        containers:
+          opa:
+            loggers:
+              decision:
+                level: INFO
+    roleGroups:
+      default: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-rego-rules
+  labels:
+    opa.stackable.tech/bundle: "true"
+data:
+  kafka.rego: |
+    package kafka
+
+    # Listeners used by the Kafka nodes to talk to each other:
+    # INTERNAL between brokers, CONTROLLER to and between KRaft controllers.
+    internal_listeners := {"INTERNAL", "CONTROLLER"}
+
+    # Builds a regular expression matching the subject DN of the internal TLS certificates
+    # of the Pods of a role group.
+    subject_dn_pattern(role_group) := pattern if {
+      fqdn := [
+        `local`,                              # cluster domain
+        `cluster`,                            # cluster domain
+        `svc`,
+        `default`,                            # namespace
+        concat("", [role_group, `-headless`]),  # Pod subdomain
+        concat("", [role_group, `-[0-9]+`]),    # Pod name
+      ]
+      domain_components := [concat("", [`DC=`, dc]) | some dc in fqdn]
+      fields := array.concat(domain_components, [`CN=generated certificate for pod`])
+      pattern := concat("", ["^", concat(",", fields), "$"])
+    }
+
+    # The role groups of the KafkaCluster "simple-kafka".
+    # Add one entry per broker and controller role group.
+    node_role_groups := [
+      `simple-kafka-broker-default`,
+      `simple-kafka-controller-default`, # only in KRaft mode
+    ]
+
+    is_internal_request if input.requestContext.listenerName in internal_listeners
+
+    is_kafka_node if {
+      some role_group in node_role_groups
+      regex.match(subject_dn_pattern(role_group), input.requestContext.principal.name)
+    }
+
+    default allow := false
+
+    # Traffic between the Kafka nodes.
+    allow if {
+      is_internal_request
+      is_kafka_node
+    }
+
+    # Requests of clients.
+    # Do not restrict these rules to the client listeners: in KRaft mode, the brokers forward some
+    # client requests (e.g. creating topics) to the controllers, which authorize them on the
+    # CONTROLLER listener with the principal of the client.
+    allow if {
+      # TODO Replace with your own rules, for example:
+      input.requestContext.principal.name == "alice"
+      input.action.resourcePattern.resourceType == "TOPIC"
+      input.action.resourcePattern.name == "alice-topic"
+    }

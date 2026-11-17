@@ -49,7 +49,8 @@ use stackable_operator::{
         role_utils,
         types::{
             kubernetes::{
-                ConfigMapName, ListenerClassName, ListenerName, NamespaceName, SecretClassName, Uid,
+                ConfigMapName, ListenerClassName, ListenerName, NamespaceName, SecretClassName,
+                ServiceName, Uid,
             },
             operator::{ClusterName, ControllerName, OperatorName, ProductName, ProductVersion},
         },
@@ -363,6 +364,28 @@ impl ValidatedCluster {
         role_group_name: &RoleGroupName,
     ) -> ListenerName {
         build::resource::listener::bootstrap_listener_name(&self.name, role, role_group_name)
+    }
+
+    /// The name of the headless [`Service`] selecting the ready KRaft controllers of all role
+    /// groups, `<cluster>-controller-headless`.
+    ///
+    /// Brokers use it as their `controller.quorum.bootstrap.servers`, see
+    /// [`kraft_controller_quorum_service`](build::properties::kraft_controller_quorum_service).
+    pub fn controller_quorum_service_name(&self) -> ServiceName {
+        const SUFFIX: &str = "-controller-headless";
+
+        // Compile-time checks that `<cluster_name>-controller-headless` is a valid Service name.
+        const _: () = assert!(
+            ClusterName::MAX_LENGTH + SUFFIX.len() <= ServiceName::MAX_LENGTH,
+            "The string `<cluster_name>-controller-headless` must not exceed the limit of Service \
+            names."
+        );
+        // The cluster name is an RFC 1035 label name. Appending a suffix of lowercase letters and
+        // dashes that ends with a letter keeps it one.
+        let _ = ClusterName::IS_RFC_1035_LABEL_NAME;
+
+        ServiceName::from_str(&format!("{}{SUFFIX}", self.name))
+            .expect("the cluster name with a static suffix must be a valid Service name")
     }
 }
 

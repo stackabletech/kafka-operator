@@ -125,8 +125,14 @@ pub(crate) fn common_kafka_env(
 }
 
 /// The ports the `kafka` container exposes: metrics and the client port, plus the bootstrap port
-/// when Kerberos is enabled.
-pub(crate) fn container_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<ContainerPort> {
+/// on brokers when Kerberos is enabled.
+///
+/// Controllers have no bootstrap listener: Kerberos is only used on the client-facing listeners of
+/// the brokers.
+pub(crate) fn container_ports(
+    kafka_role: &KafkaRole,
+    kafka_security: &ValidatedKafkaSecurity,
+) -> Vec<ContainerPort> {
     let mut ports = vec![
         ContainerPort {
             name: Some(METRICS_PORT_NAME.to_string()),
@@ -141,7 +147,7 @@ pub(crate) fn container_ports(kafka_security: &ValidatedKafkaSecurity) -> Vec<Co
             ..ContainerPort::default()
         },
     ];
-    if kafka_security.has_kerberos_enabled() {
+    if *kafka_role == KafkaRole::Broker && kafka_security.has_kerberos_enabled() {
         ports.push(ContainerPort {
             name: Some(kafka_security.bootstrap_port_name().to_string()),
             container_port: kafka_security.bootstrap_port().into(),
@@ -172,7 +178,33 @@ pub(crate) fn log_config_volume(
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
+    use crate::controller::test_support::{kerberos, plaintext};
+
+    fn port_numbers(ports: Vec<ContainerPort>) -> Vec<i32> {
+        ports.into_iter().map(|port| port.container_port).collect()
+    }
+
+    #[rstest]
+    #[case::broker_with_kerberos(KafkaRole::Broker, kerberos(), true)]
+    #[case::controller_with_kerberos(KafkaRole::Controller, kerberos(), false)]
+    #[case::broker_without_kerberos(KafkaRole::Broker, plaintext(), false)]
+    #[case::controller_without_kerberos(KafkaRole::Controller, plaintext(), false)]
+    fn container_ports_include_the_bootstrap_port_only_on_kerberos_brokers(
+        #[case] kafka_role: KafkaRole,
+        #[case] kafka_security: ValidatedKafkaSecurity,
+        #[case] expect_bootstrap_port: bool,
+    ) {
+        let ports = port_numbers(container_ports(&kafka_role, &kafka_security));
+
+        assert_eq!(
+            ports.contains(&i32::from(kafka_security.bootstrap_port())),
+            expect_bootstrap_port
+        );
+        assert!(ports.contains(&i32::from(kafka_security.client_port())));
+    }
 
     #[test]
     fn test_constants() {
