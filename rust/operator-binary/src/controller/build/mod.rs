@@ -777,8 +777,6 @@ mod tests {
         }
     }
 
-    /// ZooKeeper mode has no `controller` role, so `build()` emits no controller resources while
-    /// still producing the broker's bootstrap Listener.
     /// The brokers dial the controllers via the headless Service of all controllers, so the
     /// controllers' internal TLS certificate must cover its name, or the brokers' TLS hostname
     /// verification fails.
@@ -809,6 +807,8 @@ mod tests {
         assert_eq!(scope, "pod,service=simple-kafka-controller-headless");
     }
 
+    /// ZooKeeper mode has no `controller` role, so `build()` emits no controller resources while
+    /// still producing the broker's bootstrap Listener.
     #[test]
     fn build_zookeeper_mode_has_no_controller_resources() {
         let cluster = zookeeper_mode_cluster();
