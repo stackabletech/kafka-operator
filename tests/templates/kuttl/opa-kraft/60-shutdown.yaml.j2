@@ -1,0 +1,31 @@
+#
+# Scale the Kafka cluster down to zero while OPA is still running.
+# Otherwise the namespace deletion tears everything down in no particular order and
+# the Kafka nodes log authorization errors (e.g. missing ALTER on CLUSTER) once
+# OPA is gone.
+#
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+timeout: 600
+---
+apiVersion: kafka.stackable.tech/v1alpha1
+kind: KafkaCluster
+metadata:
+  name: test-kafka
+spec:
+  image:
+{% if test_scenario['values']['kafka-kraft'].find(",") > 0 %}
+    custom: "{{ test_scenario['values']['kafka-kraft'].split(',')[1] }}"
+    productVersion: "{{ test_scenario['values']['kafka-kraft'].split(',')[0] }}"
+{% else %}
+    productVersion: "{{ test_scenario['values']['kafka-kraft'] }}"
+{% endif %}
+  controllers:
+    roleGroups:
+      default:
+        replicas: 0
+  brokers:
+    roleGroups:
+      default:
+        replicas: 0
