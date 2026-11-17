@@ -43,10 +43,9 @@ NOTE: Using `spec.controllers` is mutually exclusive with `spec.clusterConfig.zo
 
 === Resources
 
-Each Pod's https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[resource requirements]
-are the sum of its containers. Controller Pods run an additional `quorum-manager` sidecar
-(see <<_internal_operator_details, Internal operator details>>) whose resources are fixed and *not* configurable through
-`spec.controllers.config.resources`. Only the `kafka` container is eligible.
+Each Pod's https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[resource requirements] are the sum of its containers.
+Controller Pods run an additional `quorum-manager` sidecar (see <<_internal_operator_details, Internal operator details>>) whose resources are fixed and *not* configurable through `spec.controllers.config.resources`.
+Only the `kafka` container is eligible.
 
 [cols="2,3,2,2,2,2", options="header"]
 |===
@@ -105,21 +104,19 @@ KRaft mode requires major configuration changes compared to ZooKeeper mode:
 
 * `cluster-id`: This is set to the `metadata.name` of the KafkaCluster resource during initial formatting
 * `node.id`: This is a calculated integer, hashed from the `role` and `rolegroup` and added `replica` id.
-* `process.roles`: Will always only be `broker` or `controller`. Mixed `broker,controller` servers are not supported.
-* Each controller pod runs an additional `quorum-manager` sidecar container that, on startup, admits the pod into
-  the KRaft voter set.
+* `process.roles`: Will always only be `broker` or `controller`.
+  Mixed `broker,controller` servers are not supported.
+* Each controller pod runs an additional `quorum-manager` sidecar container that, on startup, admits the pod into the KRaft voter set.
   On pod restart or termination, the controller is removed from the voter set by the `preStop` hook on the `kafka` container.
 * Exactly one controller formats with `kafka-storage.sh format --standalone`, bootstrapping a single-node quorum by itself.
   It is the controller with the numerically lowest `node.id` when the cluster is first reconciled.
-  The operator records this choice in `status.kraftBootstrapControllerNodeId` of the KafkaCluster and never changes it afterwards,
-  so controller role groups added later (even with lower values for `node.id`) always join the existing quorum.
-  If the status is lost (e.g. the KafkaCluster is restored from a backup without its status), the operator chooses the bootstrap
-  controller again from the current spec. This is harmless as long as the PersistentVolumeClaims of the controllers are restored too.
+  The operator records this choice in `status.kraftBootstrapControllerNodeId` of the KafkaCluster and never changes it afterwards, so controller role groups added later (even with lower values for `node.id`) always join the existing quorum.
+  If the status is lost (e.g. the KafkaCluster is restored from a backup without its status), the operator chooses the bootstrap controller again from the current spec.
+  This is harmless as long as the PersistentVolumeClaims of the controllers are restored too.
   Every other controller formats with `--no-initial-controllers` and joins purely through the sidecar's `add-controller` call.
   Brokers always format with `--no-initial-controllers` too; they are never voters.
 * On controllers, `controller.quorum.bootstrap.servers` lists the individual pod FQDNs of all controllers, not the role groups' headless Services.
-  A headless Service also resolves to pods that are not ready yet, so a starting controller could resolve it to its own address,
-  and then never find the quorum leader.
+  A headless Service also resolves to pods that are not ready yet, so a starting controller could resolve it to its own address, and then never find the quorum leader.
   With one entry per pod, Kafka picks a random entry for every attempt.
   As a consequence, whenever the number of controller replicas changes, the controller pods are rolled by the restart controller.
 * On brokers, `controller.quorum.bootstrap.servers` lists a single headless Service, `<cluster-name>-controller-headless`, which selects the controllers of all role groups.
@@ -130,8 +127,7 @@ KRaft mode requires major configuration changes compared to ZooKeeper mode:
 == Kerberos
 
 KRaft clusters support Kerberos (GSSAPI) authentication for clients.
-Reference an `AuthenticationClass` with the Kerberos provider as described in
-xref:usage-guide/security.adoc[Security].
+Reference an `AuthenticationClass` with the Kerberos provider as described in xref:usage-guide/security.adoc[Security].
 
 Kerberos is only used on the client-facing listeners of the brokers.
 The `CONTROLLER` listener always uses `SSL` with mutual authentication: brokers and controllers authenticate each other with the certificates of the `internalSecretClass`, even when Kerberos is enabled.
@@ -140,10 +136,9 @@ Controllers therefore have no keytab.
 == Known Issues
 
 * Automatic migration from Apache ZooKeeper to KRaft is not supported.
-* The quorum is created once by the controller with the lowest `node.id` using `--standalone`. If this controller
-  loses its PVC, a new conflicting quorum is created on restart.
-* A Controller that loses its persistent volume is not re-admitted to the voter set automatically, because it
-  returns with a new directory ID while the quorum still lists the old one.
+* The quorum is created once by the controller with the lowest `node.id` using `--standalone`.
+  If this controller loses its PVC, a new conflicting quorum is created on restart.
+* A Controller that loses its persistent volume is not re-admitted to the voter set automatically, because it returns with a new directory ID while the quorum still lists the old one.
 
 === Prevention
 
@@ -161,9 +156,11 @@ NOTE: Before starting the migration we recommend to reduce producer/consumer ope
 To make the migration step as clear as possible, we'll use a complete working example throughout this guide.
 The example cluster will be kept minimal without any additional configuration.
 
-We'll use Kafka version `3.9.2` for this purpose. This is because this is the last version from the 3.x Kafka series that runs on ZooKeeper mode and is supported by the SDP.
+We'll use Kafka version `3.9.2` for this purpose.
+This is because this is the last version from the 3.x Kafka series that runs on ZooKeeper mode and is supported by the SDP.
 
-We'll also assign broker ids manually from the beginning to simplify this guide. In a real-world scenario, you do not have this option at cluster creation because your cluster is already running.
+We'll also assign broker ids manually from the beginning to simplify this guide.
+In a real-world scenario, you do not have this option at cluster creation because your cluster is already running.
 Instead, you'll have to collect these ids from the running cluster and configure manual assignment as part of step 1 below.
 
 We start by creating a dedicated namespace to work in and deploy the Kafka cluster including ZooKeeper and credentials.
