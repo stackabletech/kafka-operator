@@ -546,7 +546,7 @@ mod tests {
     }
 
     /// The KRaft bootstrap controller recorded on the [`ValidatedCluster`] (i.e. the persisted
-    /// one, if any) is what every controller's start command carries -- not the lowest
+    /// one, if any) is what every controller's start command carries, not the lowest
     /// `node.id` of the current spec.
     #[test]
     fn build_uses_the_resolved_kraft_bootstrap_controller() {
