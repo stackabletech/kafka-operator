@@ -1,0 +1,7 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: >-
+      kubectl patch kafkacluster test-kafka --namespace $NAMESPACE --type merge
+      --patch '{"spec": {"clusterOperation": {"stopped": false}}}'
