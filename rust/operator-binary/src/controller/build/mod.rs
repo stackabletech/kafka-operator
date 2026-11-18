@@ -177,6 +177,7 @@ pub fn build(cluster: &ValidatedCluster) -> Result<KubernetesResources<Prepared>
         pod_disruption_budgets,
         service_accounts,
         role_bindings,
+        kraft_bootstrap_controller: cluster.kraft_bootstrap_controller,
         status: PhantomData,
     })
 }
@@ -299,7 +300,7 @@ mod tests {
     };
     use crate::{
         controller::{
-            KubernetesResources, Prepared, ValidatedCluster,
+            KraftBootstrapController, KubernetesResources, Prepared, ValidatedCluster,
             test_support::{
                 bootstrap_listener, ingress_address, minimal_kafka, validated_cluster,
                 validated_cluster_with_security, zookeeper_mode_cluster,
@@ -542,6 +543,25 @@ mod tests {
         let cluster = validated_cluster(&kafka);
 
         build(&cluster).expect("build succeeds when the whole KRaft cluster is stopped");
+    }
+
+    /// The KRaft bootstrap controller recorded on the [`ValidatedCluster`] (i.e. the persisted
+    /// one, if any) is what every controller's start command carries, not the lowest
+    /// `node.id` of the current spec.
+    #[test]
+    fn build_uses_the_resolved_kraft_bootstrap_controller() {
+        let mut cluster = kraft_mode_cluster();
+        cluster.kraft_bootstrap_controller = Some(KraftBootstrapController::Persisted(42));
+        let resources = build(&cluster).expect("build succeeds");
+
+        let controller_stateful_set = resources
+            .stateful_sets
+            .iter()
+            .find(|sts| sts.metadata.name.as_deref() == Some("simple-kafka-controller-default"))
+            .expect("the controller StatefulSet is built");
+        let controller_stateful_set =
+            serde_json::to_string(controller_stateful_set).expect("serializable StatefulSet");
+        assert!(controller_stateful_set.contains(r#"[ \"$REPLICA_ID\" = \"42\" ]"#));
     }
 
     #[test]

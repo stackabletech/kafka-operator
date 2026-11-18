@@ -1,0 +1,9 @@
+---
+# Stop and restart the whole cluster while OPA keeps running, to verify that
+# the controllers and brokers come back up and re-form the quorum with authorization enabled.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: >-
+      kubectl patch kafkacluster test-kafka --namespace $NAMESPACE --type merge
+      --patch '{"spec": {"clusterOperation": {"stopped": true}}}'

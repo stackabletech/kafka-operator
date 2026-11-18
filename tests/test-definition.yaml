@@ -79,10 +79,6 @@ dimensions:
       - secret-class
       - secret
 tests:
-  - name: operations-kraft
-    dimensions:
-      - kafka-kraft
-      - openshift
   - name: smoke-kraft
     dimensions:
       - kafka-kraft
@@ -180,9 +176,14 @@ suites:
   - name: smoke-latest
     select:
       - smoke
+      - smoke-kraft
     patch:
       - dimensions:
           - expr: last
+          - name: use-client-tls
+            expr: "true"
+          - name: use-client-auth-tls
+            expr: "true"
   - name: openshift
     patch:
       - dimensions:

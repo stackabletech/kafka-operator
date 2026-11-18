@@ -3,7 +3,10 @@
 //! Synchronously validates inputs that don't require a Kubernetes client. Produces
 //! [`ValidatedCluster`], consumed by the rest of `reconcile_kafka`.
 
-use std::{collections::BTreeMap, str::FromStr};
+use std::{
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+};
 
 use serde::Serialize;
 use snafu::{OptionExt, ResultExt, Snafu, ensure};
@@ -30,10 +33,12 @@ use stackable_operator::{
 
 use crate::{
     controller::{
-        AgentConnection, BrokerRoleGroupConfig, ControllerRoleGroupConfig, RoleGroupName,
-        ValidatedAgentConfig, ValidatedBrokerConfig, ValidatedCluster, ValidatedClusterConfig,
-        ValidatedControllerConfig, ValidatedRoleConfig,
+        AgentConnection, BrokerRoleGroupConfig, ControllerRoleGroupConfig,
+        KafkaNodeIdHashCollisionSnafu, KraftBootstrapController, PodNodeId, PodNodeIdsError,
+        RoleGroupName, ValidatedAgentConfig, ValidatedBrokerConfig, ValidatedCluster,
+        ValidatedClusterConfig, ValidatedControllerConfig, ValidatedRoleConfig,
         dereference::DereferencedObjects,
+        node_id_hasher::node_id_hash32_offset,
         replicas_or_default,
         security::{self, ValidatedKafkaSecurity},
     },
@@ -69,6 +74,11 @@ pub enum Error {
     #[snafu(display("failed to merge and validate the role group config"))]
     ValidateRoleGroupConfig {
         source: stackable_operator::config::fragment::ValidationError,
+    },
+
+    #[snafu(display("failed to predict the node ids of the pods"))]
+    PredictNodeIds {
+        source: crate::controller::PodNodeIdsError,
     },
 
     #[snafu(display("invalid metadata manager"))]
@@ -393,6 +403,17 @@ pub fn validate(
         })
         .transpose()?;
 
+    let pod_node_ids = pod_node_ids(&broker_role_group_configs, &controller_role_group_configs)
+        .context(PredictNodeIdsSnafu)?;
+
+    let kraft_bootstrap_controller = match metadata_manager {
+        crate::crd::MetadataManager::KRaft => resolve_kraft_bootstrap_controller(
+            dereferenced_objects.persisted_kraft_bootstrap_controller_node_id,
+            &pod_node_ids,
+        ),
+        _ => None,
+    };
+
     Ok(ValidatedCluster {
         metadata: ValidatedCluster::object_meta(&name, &namespace, &uid),
         name,
@@ -418,7 +439,86 @@ pub fn validate(
         controller_role_group_configs,
         bootstrap_listeners: dereferenced_objects.bootstrap_listeners,
         agent_config,
+        pod_node_ids,
+        kraft_bootstrap_controller,
     })
+}
+
+/// Predicts the `node.id` of every pod of the given role groups.
+///
+/// A pod's `node.id` is the node-id hash offset of its role group plus its replica index. The
+/// offsets must be unique across the whole cluster, so collisions are detected across all role
+/// groups of both roles.
+///
+/// Pods are predicted from the replica count rather than read from the live cluster to avoid
+/// instance churn; an unset count falls back to [`DEFAULT_REPLICAS`](crate::controller::DEFAULT_REPLICAS).
+fn pod_node_ids(
+    broker_role_group_configs: &BTreeMap<RoleGroupName, BrokerRoleGroupConfig>,
+    controller_role_group_configs: &BTreeMap<RoleGroupName, ControllerRoleGroupConfig>,
+) -> Result<Vec<PodNodeId>, PodNodeIdsError> {
+    // In `KafkaRole` variant order, which decides the reported side of a hash collision.
+    let role_groups = broker_role_group_configs
+        .iter()
+        .map(|(role_group_name, rg)| (KafkaRole::Broker, role_group_name, rg.replicas))
+        .chain(
+            controller_role_group_configs
+                .iter()
+                .map(|(role_group_name, rg)| (KafkaRole::Controller, role_group_name, rg.replicas)),
+        );
+
+    let mut pod_node_ids = Vec::new();
+    let mut seen_hashes = HashMap::<u32, (KafkaRole, RoleGroupName)>::new();
+
+    for (role, role_group_name, replicas) in role_groups {
+        let node_id_hash_offset = node_id_hash32_offset(&role, role_group_name.as_ref());
+
+        // The node id hash offset must be unique across the cluster.
+        if let Some((colliding_role, colliding_role_group)) = seen_hashes.get(&node_id_hash_offset)
+        {
+            return KafkaNodeIdHashCollisionSnafu {
+                role,
+                role_group: role_group_name.clone(),
+                colliding_role: colliding_role.clone(),
+                colliding_role_group: colliding_role_group.clone(),
+            }
+            .fail();
+        }
+        seen_hashes.insert(node_id_hash_offset, (role.clone(), role_group_name.clone()));
+
+        for replica in 0..replicas_or_default(replicas) {
+            pod_node_ids.push(PodNodeId {
+                role: role.clone(),
+                role_group_name: role_group_name.clone(),
+                replica,
+                node_id: node_id_hash_offset + u32::from(replica),
+            });
+        }
+    }
+
+    Ok(pod_node_ids)
+}
+
+/// Decides the KRaft bootstrap controller's `node.id`, i.e. the one controller that formats with
+/// `--standalone`.
+///
+/// A persisted choice always wins, even if the spec now contains a controller with a lower
+/// `node.id`: a controller role group added later can hash to a lower node-id offset, and its
+/// pod-0 (with a fresh PVC) would otherwise bootstrap a second, independent quorum under the same
+/// cluster id. Only if nothing is persisted yet (a new cluster) is the lowest controller `node.id`
+/// of the current spec chosen. Returns `None` if there is neither (no controller replicas).
+fn resolve_kraft_bootstrap_controller(
+    persisted: Option<u32>,
+    pod_node_ids: &[PodNodeId],
+) -> Option<KraftBootstrapController> {
+    match persisted {
+        Some(node_id) => Some(KraftBootstrapController::Persisted(node_id)),
+        None => pod_node_ids
+            .iter()
+            .filter(|pod| pod.role == KafkaRole::Controller)
+            .map(|pod| pod.node_id)
+            .min()
+            .map(KraftBootstrapController::New),
+    }
 }
 
 /// The role-level config, resolved from the role's `roleConfig`.
@@ -671,15 +771,16 @@ mod tests {
     use super::{Error, KAFKA_CLUSTER_ID, inject_cluster_id, validate_agent_connection};
     use crate::{
         controller::{
-            AgentConnection,
+            AgentConnection, KraftBootstrapController, PodNodeIdsError,
             security::ValidatedKafkaSecurity,
             test_support::{
                 app_version_label, broker_role_group_config, client_auth_tls,
                 controller_role_group_config, kerberos, minimal_kafka, plaintext, server_tls,
                 validate_with_operator_image, validated_cluster,
+                validated_cluster_with_persisted_kraft_bootstrap,
             },
         },
-        crd::v1alpha1::UserProvidedAuthentication,
+        crd::{role::KafkaRole, v1alpha1::UserProvidedAuthentication},
     };
 
     fn anonymous() -> UserProvidedAuthentication {
@@ -1148,5 +1249,131 @@ mod tests {
         );
 
         let _cluster = validated_cluster(&kafka);
+    }
+
+    /// A KRaft cluster with the `default` controller role group plus a second one, `extra`,
+    /// whose node-id offset (87094686) is lower than `default`'s (2110489703).
+    fn kraft_cluster_with_lower_offset_controller_group() -> crate::crd::v1alpha1::KafkaCluster {
+        minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 4.3.1
+              clusterConfig:
+                metadataManager: KRaft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+                  extra:
+                    replicas: 1
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        )
+    }
+
+    /// Regression test: adding a controller role group that hashes to a lower node-id offset
+    /// must not move the bootstrap controller, or its fresh pod-0 bootstraps a second quorum.
+    #[test]
+    fn kraft_bootstrap_controller_stays_persisted_when_lower_offset_group_is_added() {
+        let cluster = validated_cluster_with_persisted_kraft_bootstrap(
+            &kraft_cluster_with_lower_offset_controller_group(),
+            Some(2110489703),
+        );
+        assert_eq!(
+            cluster.kraft_bootstrap_controller,
+            Some(KraftBootstrapController::Persisted(2110489703))
+        );
+    }
+
+    /// Without a persisted choice (a new cluster), the lowest controller `node.id` bootstraps.
+    #[test]
+    fn kraft_bootstrap_controller_is_lowest_node_id_for_new_cluster() {
+        let cluster = validated_cluster_with_persisted_kraft_bootstrap(
+            &kraft_cluster_with_lower_offset_controller_group(),
+            None,
+        );
+        assert_eq!(
+            cluster.kraft_bootstrap_controller,
+            Some(KraftBootstrapController::New(87094686))
+        );
+    }
+
+    #[test]
+    fn kraft_bootstrap_controller_is_none_in_zookeeper_mode() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+        assert_eq!(validated_cluster(&kafka).kraft_bootstrap_controller, None);
+    }
+
+    /// Two broker role groups whose names hash to the same node-id offset must be rejected, also
+    /// without KRaft: a collision would hand two pods the same Kafka `node.id`. `rg865` and
+    /// `rg1400` are a known colliding pair for the `broker` role (see
+    /// [`node_id_hash32_offset`](crate::controller::node_id_hasher::node_id_hash32_offset)).
+    #[test]
+    fn validate_rejects_node_id_hash_collision() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  rg865:
+                    replicas: 1
+                  rg1400:
+                    replicas: 1
+            "#,
+        );
+
+        match validate_with_operator_image(&kafka, None) {
+            Err(Error::PredictNodeIds {
+                source:
+                    PodNodeIdsError::KafkaNodeIdHashCollision {
+                        role,
+                        colliding_role,
+                        ..
+                    },
+            }) => {
+                assert_eq!(role, KafkaRole::Broker);
+                assert_eq!(colliding_role, KafkaRole::Broker);
+            }
+            Err(error) => panic!("expected a node-id hash collision error, got {error:?}"),
+            Ok(_) => panic!("expected a node-id hash collision error, but validation succeeded"),
+        }
     }
 }

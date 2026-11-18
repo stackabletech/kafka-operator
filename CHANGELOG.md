@@ -26,6 +26,10 @@ All notable changes to this project will be documented in this file.
   The Kafka nodes are now configured as super users, so that traffic between them does not hit OPA.
   Controllers now get the same affinity to OPA as brokers, which means users need to update their
   OPA rules for intra-node traffic. ([#1051]).
+- New status field `status.kraftBootstrapControllerNodeId` that records the KRaft controller that
+  bootstrapped the quorum. Previously a new controller role group would create a second quorum and
+  thus make the cluster unusable. A node ID hash collision between role groups is now reported during
+  validation, also in ZooKeeper mode ([#1061]).
 
 ### Changed
 
@@ -129,6 +133,7 @@ All notable changes to this project will be documented in this file.
 [#1051]: https://github.com/stackabletech/kafka-operator/pull/1051
 [#1052]: https://github.com/stackabletech/kafka-operator/pull/1052
 [#1055]: https://github.com/stackabletech/kafka-operator/pull/1055
+[#1061]: https://github.com/stackabletech/kafka-operator/pull/1061
 [#1069]: https://github.com/stackabletech/kafka-operator/pull/1069
 
 ## [26.7.0] - 2026-07-21

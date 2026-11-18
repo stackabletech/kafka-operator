@@ -7,13 +7,20 @@ use stackable_operator::{
     client::Client,
     cluster_resources::{ClusterResource, ClusterResourceApplyStrategy, ClusterResources},
     deep_merger::ObjectOverrides,
-    v2::cluster_resources::cluster_resources_new,
+    kube::api::{Patch, PatchParams},
+    v2::{
+        cluster_resources::cluster_resources_new,
+        types::{kubernetes::NamespaceName, operator::ClusterName},
+    },
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-use crate::controller::{
-    Applied, CONTROLLER_NAME, KubernetesResources, OPERATOR_NAME, PRODUCT_NAME, Prepared,
-    ValidatedCluster,
+use crate::{
+    controller::{
+        Applied, CONTROLLER_NAME, KraftBootstrapController, KubernetesResources, OPERATOR_NAME,
+        PRODUCT_NAME, Prepared, ValidatedCluster,
+    },
+    crd::{KAFKA_OPERATOR_NAME, v1alpha1},
 };
 
 #[derive(Snafu, Debug, EnumDiscriminants)]
@@ -22,6 +29,11 @@ pub enum Error {
     #[snafu(display("failed to apply Kubernetes resource"))]
     ApplyResource {
         source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to persist the KRaft bootstrap controller node id in the status"))]
+    PersistKraftBootstrapController {
+        source: stackable_operator::kube::Error,
     },
 
     #[snafu(display("failed to delete orphaned resources"))]
@@ -38,6 +50,9 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 /// stackable_operator if [`KubernetesResources`] would contain all possible resource types.
 pub struct Applier<'a> {
     client: &'a Client,
+    cluster_name: ClusterName,
+    namespace: NamespaceName,
+    reconciliation_paused: bool,
     cluster_resources: ClusterResources<'a>,
 }
 
@@ -48,6 +63,9 @@ impl<'a> Applier<'a> {
         apply_strategy: ClusterResourceApplyStrategy,
         object_overrides: &'a ObjectOverrides,
     ) -> Applier<'a> {
+        let reconciliation_paused =
+            apply_strategy == ClusterResourceApplyStrategy::ReconciliationPaused;
+
         let cluster_resources = cluster_resources_new(
             &PRODUCT_NAME,
             &OPERATOR_NAME,
@@ -61,6 +79,9 @@ impl<'a> Applier<'a> {
 
         Applier {
             client,
+            cluster_name: cluster.name.clone(),
+            namespace: cluster.namespace.clone(),
+            reconciliation_paused,
             cluster_resources,
         }
     }
@@ -85,6 +106,7 @@ impl<'a> Applier<'a> {
             pod_disruption_budgets,
             service_accounts,
             role_bindings,
+            kraft_bootstrap_controller,
             status: _,
         } = resources;
 
@@ -97,6 +119,9 @@ impl<'a> Applier<'a> {
         let listeners = self.add_resources(listeners).await?;
         let config_maps = self.add_resources(config_maps).await?;
         let pod_disruption_budgets = self.add_resources(pod_disruption_budgets).await?;
+        let kraft_bootstrap_controller = self
+            .persist_kraft_bootstrap_controller(kraft_bootstrap_controller)
+            .await?;
         let stateful_sets = self.add_resources(stateful_sets).await?;
         let deployments = self.add_resources(deployments).await?;
 
@@ -114,8 +139,46 @@ impl<'a> Applier<'a> {
             pod_disruption_budgets,
             service_accounts,
             role_bindings,
+            kraft_bootstrap_controller,
             status: PhantomData,
         })
+    }
+
+    /// Persists a newly chosen KRaft bootstrap controller in the cluster status.
+    ///
+    /// Must run before the StatefulSets are applied: once a controller Pod has formatted its
+    /// storage with `--standalone`, the choice must survive even if a later step of this
+    /// reconcile run fails and the spec changes before the next one.
+    ///
+    /// A JSON merge patch touches only this field, so the conditions are left alone. The
+    /// subsequent status update writes the same value with server-side apply.
+    ///
+    /// Returns the bootstrap controller as persisted in the cluster status. While reconciliation
+    /// is paused, nothing is written, so a new choice is not persisted yet.
+    async fn persist_kraft_bootstrap_controller(
+        &self,
+        kraft_bootstrap_controller: Option<KraftBootstrapController>,
+    ) -> Result<Option<KraftBootstrapController>> {
+        match kraft_bootstrap_controller {
+            Some(KraftBootstrapController::New(_)) if self.reconciliation_paused => Ok(None),
+            Some(KraftBootstrapController::New(node_id)) => {
+                let patch_params = PatchParams {
+                    field_manager: Some(KAFKA_OPERATOR_NAME.to_string()),
+                    ..PatchParams::default()
+                };
+                self.client
+                    .get_api::<v1alpha1::KafkaCluster>(self.namespace.as_ref())
+                    .patch_status(
+                        self.cluster_name.as_ref(),
+                        &patch_params,
+                        &Patch::Merge(kraft_bootstrap_controller_status_patch(node_id)),
+                    )
+                    .await
+                    .context(PersistKraftBootstrapControllerSnafu)?;
+                Ok(Some(KraftBootstrapController::Persisted(node_id)))
+            }
+            persisted_or_none => Ok(persisted_or_none),
+        }
     }
 
     async fn add_resources<T: ClusterResource + Sync>(
@@ -134,5 +197,33 @@ impl<'a> Applier<'a> {
         }
 
         Ok(applied_resources)
+    }
+}
+
+/// The merge patch that records the KRaft bootstrap controller in the cluster status.
+///
+/// It is not built by serializing a `KafkaClusterStatus`, because that would also send
+/// `conditions` and thereby overwrite them.
+fn kraft_bootstrap_controller_status_patch(node_id: u32) -> serde_json::Value {
+    serde_json::json!({
+        "status": { "kraftBootstrapControllerNodeId": node_id }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crd::KafkaClusterStatus;
+
+    /// The patch is hand-written JSON, so a renamed status field would still compile while the
+    /// API server silently dropped the patch.
+    #[test]
+    fn kraft_bootstrap_controller_status_patch_uses_the_status_field_name() {
+        let patch = kraft_bootstrap_controller_status_patch(42);
+
+        let status: KafkaClusterStatus = serde_json::from_value(patch["status"].clone())
+            .expect("the patch should contain a valid status");
+
+        assert_eq!(status.kraft_bootstrap_controller_node_id, Some(42));
     }
 }

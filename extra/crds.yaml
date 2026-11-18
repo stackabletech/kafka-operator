@@ -2238,6 +2238,16 @@ spec:
                   - type
                   type: object
                 type: array
+              kraftBootstrapControllerNodeId:
+                description: |-
+                  KRaft only: the `node.id` of the controller that bootstrapped the metadata quorum.
+                  Chosen once, as the lowest controller `node.id` at the first reconcile, and never
+                  changed afterwards, so that controller role groups added later never bootstrap a
+                  second quorum, even if their `node.id`s are lower.
+                format: uint32
+                minimum: 0.0
+                nullable: true
+                type: integer
             type: object
         required:
         - spec

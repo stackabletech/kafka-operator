@@ -11,7 +11,7 @@ use stackable_operator::{
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{
-    controller::{Applied, KubernetesResources},
+    controller::{Applied, KraftBootstrapController, KubernetesResources},
     crd::{KAFKA_OPERATOR_NAME, KafkaClusterStatus, v1alpha1},
 };
 
@@ -29,6 +29,10 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 /// Computes the cluster status from the applied resources and patches it onto the
 /// [`v1alpha1::KafkaCluster`]. Takes [`KubernetesResources<Applied>`] so the type system
 /// proves the status derives from applied resources, not merely built ones.
+///
+/// The status always includes the persisted KRaft bootstrap controller of the applied resources:
+/// the status is written with server-side apply, which removes fields this field manager wrote
+/// before but omits now.
 pub async fn update_status(
     client: &Client,
     kafka: &v1alpha1::KafkaCluster,
@@ -44,6 +48,9 @@ pub async fn update_status(
 
     let status = KafkaClusterStatus {
         conditions: compute_conditions(kafka, &[&ss_cond_builder, &cluster_operation_cond_builder]),
+        kraft_bootstrap_controller_node_id: applied
+            .kraft_bootstrap_controller
+            .map(KraftBootstrapController::node_id),
     };
 
     client

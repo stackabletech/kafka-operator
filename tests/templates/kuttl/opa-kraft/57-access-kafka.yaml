@@ -1,0 +1,10 @@
+---
+# Run the same access checks again after the restart. The old job has to be deleted first,
+# as a completed job is not re-run. The script is idempotent: the topic is created with
+# --if-not-exists and the consumer group continues after the previously consumed message.
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - script: kubectl delete job access-kafka -n $NAMESPACE --ignore-not-found --wait=true
+  # We need to replace $NAMESPACE (by KUTTL)
+  - script: envsubst '$NAMESPACE' < 40-access-kafka.txt | kubectl apply -n $NAMESPACE -f -
