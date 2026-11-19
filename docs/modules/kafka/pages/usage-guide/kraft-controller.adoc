@@ -227,7 +227,7 @@ We now have a working Kafka cluster with ZooKeeper and some test data.
 
 === 1. Preserve the broker ids
 
-Until now, Kafka generated the broker ids and the operator did not know them.
+Before KRaft support was added to the operator in SDP 25.11.0, Kafka generated the broker ids and the operator did not know them.
 In KRaft mode, the id of a broker is its `node.id`, which must be the same id that is already stored in the broker's data directory and in the cluster metadata.
 The operator can only keep the existing ids if you tell it what they are, so this has to be done before anything else.
 
