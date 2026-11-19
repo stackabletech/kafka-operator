@@ -10862,7 +10862,7 @@ rec {
       };
       "stackable-kafka-admin" = rec {
         crateName = "stackable-kafka-admin";
-        version = "0.0.0-dev";
+        version = "26.11.0-rc1";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./rust/kafka-admin; };
         libName = "stackable_kafka_admin";
@@ -10935,7 +10935,7 @@ rec {
       };
       "stackable-kafka-agent" = rec {
         crateName = "stackable-kafka-agent";
-        version = "0.0.0-dev";
+        version = "26.11.0-rc1";
         edition = "2024";
         crateBin = [
           {
@@ -11023,7 +11023,7 @@ rec {
       };
       "stackable-kafka-operator" = rec {
         crateName = "stackable-kafka-operator";
-        version = "0.0.0-dev";
+        version = "26.11.0-rc1";
         edition = "2024";
         crateBin = [
           {
@@ -11122,7 +11122,7 @@ rec {
       };
       "stackable-kafka-shared" = rec {
         crateName = "stackable-kafka-shared";
-        version = "0.0.0-dev";
+        version = "26.11.0-rc1";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./rust/shared; };
         libName = "stackable_kafka_shared";
