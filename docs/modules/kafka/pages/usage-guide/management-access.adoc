@@ -43,7 +43,7 @@ spec:
       authentication:
         userProvided:
           tls:
-            secretClassName: kafka-client-auth-secret # <2>
+            secretName: kafka-agent-credential # <2>
   controllers:
     roleGroups:
       default:
@@ -54,7 +54,8 @@ spec:
         replicas: 3
 ----
 <1> Deploys the agent. Setting it to `false` removes the agent again.
-<2> The SecretClass that provisions the client certificate of the agent, here the same SecretClass that the brokers use to verify client certificates, see xref:usage-guide/security.adoc[Security].
+<2> A Secret with a client certificate issued for the agent.
+The certificate must be signed by the CA that the brokers use to verify client certificates, that is the CA of the `clientCertSecretClass` of the AuthenticationClass, see xref:usage-guide/security.adoc[Security].
 
 The agent supports the following authentication methods:
 
@@ -62,13 +63,20 @@ The agent supports the following authentication methods:
 This is only possible if the cluster does not require client authentication.
 `tls.secretClassName`:: A client certificate provisioned by the xref:secret-operator:index.adoc[Secret Operator] from the given SecretClass.
 `tls.secretName`:: A static Secret holding the client certificate in the keys `tls.crt` and `tls.key` (PEM), for example a Secret of type `kubernetes.io/tls`.
+If the CA is managed by the Secret Operator, take its xref:secret-operator:secretclass.adoc#ca-rotation[rotation] into account.
+
+WARNING: `tls.secretClassName` is currently only recommended for test and development environments.
+The Secret Operator issues all certificates of a SecretClass with the same generic subject `CN=generated certificate for pod`, so Kafka cannot distinguish the agent from other clients of the same SecretClass.
+Permissions granted to the agent then apply to all of these clients.
+For production, use `tls.secretName` with a certificate whose subject is unique to the agent.
 
 The agent verifies the brokers with the CA of the SecretClass used by the client listener, that is `spec.clusterConfig.tls.serverSecretClass` or the `clientCertSecretClass` of the TLS AuthenticationClass.
 
 == Authorization
 
 The principal of the agent must be allowed to manage topics in Kafka.
-The principal is derived from the subject of the client certificate.
+The principal is derived from the subject of the client certificate, for example `User:CN=kafka-agent`.
+Make sure that no other client uses this principal, as it would be granted the permissions of the agent as well.
 The agent needs the following permissions:
 
 [cols="2,3", options="header"]
