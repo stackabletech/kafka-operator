@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Compute the controller bootstrap id even when ZooKeeper is the metadata manager, to support
+  KRaft migrations ([#1073]).
+- docs: The ZooKeeper to KRaft migration guide was validated against the current operator and
+  corrected ([#1073]).
+
+[#1073]: https://github.com/stackabletech/kafka-operator/pull/1073
+
 ## [26.11.0-rc1] - 2026-11-19
 
 ### Added

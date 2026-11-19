@@ -154,14 +154,42 @@ This guide describes the steps required to migrate an existing Kafka cluster man
 NOTE: Before starting the migration we recommend to reduce producer/consumer operations to a minimum or even pause them completely if possible to reduce the risk of data loss during the migration.
 
 To make the migration step as clear as possible, we'll use a complete working example throughout this guide.
-The example cluster will be kept minimal without any additional configuration.
+The example cluster has one ZooKeeper server and three brokers, uses default resources and a single role group, and is secured as follows:
+
+* Clients authenticate with TLS client certificates, using an `AuthenticationClass` with the TLS provider (`spec.clusterConfig.authentication`).
+* Traffic between the Kafka nodes is encrypted with the `internalSecretClass` `kafka-internal-tls`, and the client-facing listeners with the `tls` `SecretClass` (`serverSecretClass`).
+* Neither Kerberos nor OPA is used.
+
+The example manifests set no other configuration besides what the migration requires.
+
+[IMPORTANT]
+====
+The steps in this guide were only validated for the example above.
+In particular, the interaction of the migration with Kerberos and OPA was *not* tested.
+If your cluster uses either of them, check the following points before you start and test the migration on a non-production copy of your cluster first.
+
+Client authentication::
+The authentication method of the clients does not change during the migration.
+The `CONTROLLER` listener is not affected by it: the controllers and brokers always authenticate each other with the certificates of the `internalSecretClass`, whatever `spec.clusterConfig.authentication` is set to.
+Keep `spec.clusterConfig.authentication` and `spec.clusterConfig.tls` unchanged in every step, as the example manifests do.
+
+Kerberos::
+Kerberos is only used on the client-facing listeners of the brokers.
+The controllers do not use Kerberos and have no keytab, so no Kerberos configuration is needed for them.
+With Kerberos enabled, the example manifests have not been validated, in particular the broker `configOverrides` in steps 3 and 4.
+See xref:usage-guide/security.adoc[Security] for the broker-side Kerberos setup.
+
+OPA::
+When `spec.clusterConfig.authorization.opa` is set, the operator configures the OPA authorizer on the controllers too, and the Rego rules also authorize the requests between the Kafka nodes (see xref:usage-guide/security.adoc[Security]).
+The controllers you add in step 2 are therefore subject to your Rego rules from the moment they start, and they must be allowed to act as controllers, otherwise the quorum cannot form or the metadata migration fails.
+The example does not set up OPA, so this has not been validated.
+====
 
 We'll use Kafka version `3.9.2` for this purpose.
 This is because this is the last version from the 3.x Kafka series that runs on ZooKeeper mode and is supported by the SDP.
 
-We'll also assign broker ids manually from the beginning to simplify this guide.
-In a real-world scenario, you do not have this option at cluster creation because your cluster is already running.
-Instead, you'll have to collect these ids from the running cluster and configure manual assignment as part of step 1 below.
+Like any cluster that was set up before the migration was planned, the example cluster does not configure its broker ids.
+Kafka generated them when the brokers first started, and step 1 below shows how to collect and pin them.
 
 We start by creating a dedicated namespace to work in and deploy the Kafka cluster including ZooKeeper and credentials.
 
@@ -197,15 +225,89 @@ $ /stackable/kafka/bin/kafka-producer-perf-test.sh \
 
 We now have a working Kafka cluster with ZooKeeper and some test data.
 
-=== 1. Start Kraft controllers
+=== 1. Preserve the broker ids
+
+Before KRaft support was added to the operator in SDP 25.11.0, Kafka generated the broker ids and the operator did not know them.
+In KRaft mode, the id of a broker is its `node.id`, which must be the same id that is already stored in the broker's data directory and in the cluster metadata.
+The operator can only keep the existing ids if you tell it what they are, so this has to be done before anything else.
+
+In this step we will perform the following actions:
+
+1. Collect the current broker ids from the running brokers.
+2. Store them in a ConfigMap.
+3. Point `spec.clusterConfig.brokerIdPodConfigMapName` of the `KafkaCluster` resource to this ConfigMap.
+4. Wait for the brokers to restart and verify that their ids did not change.
+
+Each broker records its id in the `meta.properties` file in its data directory:
+
+[source,bash]
+----
+$ kubectl -n kraft-migration exec -c kafka simple-kafka-broker-default-0 -- grep broker.id /stackable/data/topicdata/meta.properties
+broker.id=1001
+----
+
+The ids that Kafka generates usually start at `1001`, and they are not necessarily in the order of the pod indexes.
+The following commands collect the id of every broker Pod, of all role groups, and create a ConfigMap with one `<pod-name>: <broker-id>` entry per Pod:
+
+[source,bash]
+----
+NAMESPACE=kraft-migration
+ARGS=()
+for POD in $(kubectl get pods -n $NAMESPACE \
+  -l app.kubernetes.io/name=kafka,app.kubernetes.io/instance=simple-kafka,app.kubernetes.io/component=broker \
+  -o jsonpath='{.items[*].metadata.name}'); do
+  ID=$(kubectl exec -n $NAMESPACE -c kafka $POD -- grep '^broker.id=' /stackable/data/topicdata/meta.properties | cut -d= -f2)
+  echo "$POD -> $ID"
+  ARGS+=("--from-literal=$POD=$ID")
+done
+kubectl create configmap broker-ids -n $NAMESPACE "${ARGS[@]}"
+----
+
+The output lists the ids that were found:
+
+[source]
+----
+simple-kafka-broker-default-0 -> 1001
+simple-kafka-broker-default-1 -> 1002
+simple-kafka-broker-default-2 -> 1003
+configmap/broker-ids created
+----
+
+Check that the ConfigMap contains an entry for every broker Pod before you continue.
+
+Now point the `KafkaCluster` to the ConfigMap.
+Create the ConfigMap first, because the broker Pods mount it.
+
+[source,bash]
+----
+kubectl -n kraft-migration patch kafkacluster simple-kafka --type merge \
+  -p '{"spec":{"clusterConfig":{"brokerIdPodConfigMapName":"broker-ids"}}}'
+----
+
+The operator restarts the brokers one after the other.
+Once they are all ready, each broker must report the same id as before.
+The `broker.id` in the configuration file of the broker must match the id in its `meta.properties`:
+
+[source,bash]
+----
+$ kubectl -n kraft-migration exec -c kafka simple-kafka-broker-default-0 -- grep broker.id /tmp/broker.properties
+broker.id=1001
+broker.id.generation.enable=false
+----
+
+The `brokerIdPodConfigMapName` property and the ConfigMap must be preserved for the lifetime of the cluster, also after the migration is complete.
+The brokers keep using these ids in KRaft mode, and without the ConfigMap the operator would fall back to generated ids that do not match the ones already stored by the brokers.
+
+The following steps also contain this property in the `KafkaCluster` manifests.
+
+=== 2. Start Kraft controllers
 
 In this step we will perform the following actions:
 
 1. Retrieve the current `cluster.id` as generated by Kafka.
-2. Retrieve and store the current broker ids.
-3. Update the `KafkaCluster` resource to add `spec.controllers` property.
-4. Configure the controllers to run in migration mode.
-5. Apply the changes and wait for all cluster pods to become ready.
+2. Update the `KafkaCluster` resource to add `spec.controllers` property.
+3. Configure the controllers to run in migration mode.
+4. Apply the changes and wait for all cluster pods to become ready.
 
 We can obtain the current `cluster.id` either by inspecting the ZooKeeper data or from `meta.properties` file on one of the brokers.
 
@@ -216,20 +318,11 @@ cluster.id=MyCya7hbTD-Hay8PgCsCYA
 ----
 
 We add this value to the `KAFKA_CLUSTER_ID` environment variable for both brokers and controllers.
+The cluster id is generated by Kafka for each cluster, so replace the value `MyCya7hbTD-Hay8PgCsCYA` in all the example manifests below with your own.
 
-To be able to migrate the existing brokers, we need to preserve their broker ids.
-Similarly to the cluster id, we can obtain the broker ids from the `meta.properties` file on each broker pod.
+The broker ids were already pinned in step 1 and `spec.clusterConfig.brokerIdPodConfigMapName` is part of the manifest below.
 
-[source,bash]
-----
-$ kubectl -n kraft-migration exec -c kafka simple-kafka-broker-default-0 -- cat /stackable/data/topicdata/meta.properties | grep broker.id
-broker.id=2000
-----
-
-We then need to inform the operator to use these ids instead of generating new ones.
-This is done by creating a configmap map containing the id mapping and pointing the `spec.clusterProperties.brokerIdPodConfigMapName` property of the `KafkaCluster` resource to it.
-
-These two properties must be preserved for the rest of the migration process and the lifetime of the cluster.
+The `KAFKA_CLUSTER_ID` environment variable and `brokerIdPodConfigMapName` must be preserved for the rest of the migration process and the lifetime of the cluster.
 
 The complete example `KafkaCluster` resource after applying the required changes looks as follows:
 
@@ -240,7 +333,7 @@ include::example$kraft_migration/02-start-controllers.yaml[]
 
 We `kubectl apply` the updated resource and wait for brokers and controllers to become ready.
 
-=== 2. Migrate metadata
+=== 3. Migrate metadata
 
 In this step we will perform the following actions:
 
@@ -268,10 +361,13 @@ kubectl logs -n kraft-migration simple-kafka-controller-default-0 | grep -i 'com
 || kubectl logs -n kraft-migration simple-kafka-controller-default-2 | grep -i 'completed migration'
 
 ...
-[2025-12-22 09:23:53,372] INFO [KRaftMigrationDriver id=2110489705] Completed migration of metadata from ZooKeeper to KRaft. 0 records were generated in 102 ms across 0 batches. The average time spent waiting on a batch was -1.00 ms. The record types were {}. The current metadata offset is now 280 with an epoch of 3. Saw 0 brokers in the migrated metadata []. (org.apache.kafka.metadata.migration.KRaftMigrationDriver)
+[2026-11-19 11:02:00,532] INFO [KRaftMigrationDriver id=2110489703] Completed migration of metadata from ZooKeeper to KRaft. 59 records were generated in 111 ms across 1 batches. The average time spent waiting on a batch was 28.00 ms. The record types were {TOPIC_RECORD=2, PARTITION_RECORD=53, CONFIG_RECORD=3, PRODUCER_IDS_RECORD=1}. The current metadata offset is now 452 with an epoch of 1. Saw 3 brokers in the migrated metadata [1001, 1002, 1003]. (org.apache.kafka.metadata.migration.KRaftMigrationDriver)
 ----
 
-=== 3. Migrate brokers
+The exact counts depend on the topics and brokers of your cluster.
+Only the controller that leads the quorum logs this message, hence the `||` chain above.
+
+=== 4. Migrate brokers
 
 
 NOTE: This is the last step before fully switching to KRaft mode. In case of unforeseen issues, it is the last step where we can roll back to ZooKeeper mode.
@@ -292,7 +388,7 @@ For this step, the complete example `KafkaCluster` resource looks as follows:
 include::example$kraft_migration/04-migrate-brokers.yaml[]
 ----
 
-=== 4. Enable Kraft mode
+=== 5. Enable Kraft mode
 
 After this step, the cluster will be fully running in KRaft mode and it cannot be rolled back to ZooKeeper mode anymore.
 
@@ -322,12 +418,15 @@ We can consume the previously produced messages by running the command below on 
 --consumer.config /stackable/config/client.properties \
 --bootstrap-server simple-kafka-broker-default-0-listener-broker.kraft-migration.svc.cluster.local:9093 \
 --topic kraft-migration-topic \
---offset earliest \
---partition 0 \
---timeout-ms 10000
+--from-beginning \
+--max-messages 100 \
+--timeout-ms 30000
 ----
 
-=== 5. Cleanup
+The consumer should report `Processed a total of 100 messages`.
+We read from all partitions because the producer does not necessarily write to partition 0.
+
+=== 6. Cleanup
 
 Before proceeding with this step please ensure that the Kafka cluster is fully operational in KRaft mode.
 
@@ -343,6 +442,6 @@ kubectl delete -n kraft-migration zookeeperznodes simple-kafka-znode
 kubectl delete -n kraft-migration zookeeperclusters simple-zk
 ----
 
-=== 6. Next steps
+=== 7. Next steps
 
 After successfully migrating to Kraft mode, consider updating to Kafka version 4 to benefit from the latest features and improvements in KRaft mode.
