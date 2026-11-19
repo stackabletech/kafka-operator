@@ -406,13 +406,13 @@ pub fn validate(
     let pod_node_ids = pod_node_ids(&broker_role_group_configs, &controller_role_group_configs)
         .context(PredictNodeIdsSnafu)?;
 
-    let kraft_bootstrap_controller = match metadata_manager {
-        crate::crd::MetadataManager::KRaft => resolve_kraft_bootstrap_controller(
-            dereferenced_objects.persisted_kraft_bootstrap_controller_node_id,
-            &pod_node_ids,
-        ),
-        _ => None,
-    };
+    // Needs to be computed regardless of which metadata manager is used,
+    // to support the migration from ZooKeeper to KRaft.
+    // Clusters without controllers have no bootstrap controller.
+    let kraft_bootstrap_controller = resolve_kraft_bootstrap_controller(
+        dereferenced_objects.persisted_kraft_bootstrap_controller_node_id,
+        &pod_node_ids,
+    );
 
     Ok(ValidatedCluster {
         metadata: ValidatedCluster::object_meta(&name, &namespace, &uid),
@@ -1308,8 +1308,51 @@ mod tests {
         );
     }
 
+    /// During a ZooKeeper to KRaft migration the cluster is still in ZooKeeper mode, but its
+    /// controllers must already form a quorum, so one of them has to bootstrap it.
     #[test]
-    fn kraft_bootstrap_controller_is_none_in_zookeeper_mode() {
+    fn kraft_bootstrap_controller_is_chosen_in_zookeeper_mode_with_controllers() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: ZooKeeper
+                zookeeperConfigMapName: xyz
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 3
+            "#,
+        );
+
+        let new_cluster = validated_cluster_with_persisted_kraft_bootstrap(&kafka, None);
+        assert!(matches!(
+            new_cluster.kraft_bootstrap_controller,
+            Some(KraftBootstrapController::New(_))
+        ));
+
+        let persisted_cluster =
+            validated_cluster_with_persisted_kraft_bootstrap(&kafka, Some(2110489703));
+        assert_eq!(
+            persisted_cluster.kraft_bootstrap_controller,
+            Some(KraftBootstrapController::Persisted(2110489703))
+        );
+    }
+
+    #[test]
+    fn kraft_bootstrap_controller_is_none_in_zookeeper_mode_without_controllers() {
         let kafka = minimal_kafka(
             r#"
             apiVersion: kafka.stackable.tech/v1alpha1
