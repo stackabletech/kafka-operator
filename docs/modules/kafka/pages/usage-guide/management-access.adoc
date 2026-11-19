@@ -95,6 +95,9 @@ The agent needs the following permissions:
 NOTE: Without `DESCRIBE_CONFIGS`, Kafka still creates a topic, but the agent cannot observe it.
 The KafkaTopic then reports `KafkaRejected`.
 
+Kafka only authorizes the agent, not the users of KafkaTopics.
+Who is allowed to manage topics is therefore decided by the Kubernetes permissions on KafkaTopics, see xref:usage-guide/topics.adoc[Topics].
+
 == Network
 
 The agent connects to the headless Services of the broker role groups, which resolve to the broker Pods.
