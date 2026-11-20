@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [26.11.0] - 2026-11-20
+
 ### Fixed
 
 - Compute the controller bootstrap id even when ZooKeeper is the metadata manager, to support

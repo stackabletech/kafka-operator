@@ -3,7 +3,7 @@ members = ["rust/operator-binary", "rust/agent-binary", "rust/kafka-admin", "rus
 resolver = "2"
 
 [workspace.package]
-version = "26.11.0-rc1"
+version = "26.11.0"
 authors = ["Stackable GmbH <info@stackable.tech>"]
 license = "OSL-3.0"
 edition = "2024"
