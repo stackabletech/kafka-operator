@@ -1,8 +1,7 @@
 = Installation
-:description: Install Stackable Operator for Apache Kafka using stackablectl or Helm, including dependencies like ZooKeeper and required operators for Kubernetes.
+:description: Install Stackable Operator for Apache Kafka using stackablectl or Helm, including the required commons, secret and listener operators for Kubernetes.
 
-Install the Stackable Operator for Apache Kafka and operators for its dependencies -- ZooKeeper --
-as well as the commons, secret and listener operator which are required by all Stackable Operators.
+Install the Stackable Operator for Apache Kafka together with the commons, secret and listener operators, which are required by all Stackable Operators.
 
 There are multiple ways to install the Stackable Operator for Apache Kafka.
 xref:management:stackablectl:index.adoc[] is the preferred way, but Helm is also supported.

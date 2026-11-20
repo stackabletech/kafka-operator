@@ -5,11 +5,18 @@ metadata:
   name: simple-kafka
 spec:
   image:
-    productVersion: 3.9.2
+    productVersion: 4.3.1
   clusterConfig:
-    tls:
-      serverSecretClass: null
-    zookeeperConfigMapName: simple-kafka-znode
+    metadataManager: KRaft
+    managementAccess: # Deploys the agent, which creates and updates KafkaTopics in this cluster
+      enabled: true
+      authentication:
+        userProvided:
+          anonymous: {}
+  controllers:
+    roleGroups:
+      default:
+        replicas: 1
   brokers:
     config:
       bootstrapListenerClass: external-unstable # This exposes your Stacklet outside of Kubernetes. Remove this property if this is not desired
