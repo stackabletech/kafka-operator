@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [26.11.0] - 2026-11-20
+
+### Fixed
+
+- Compute the controller bootstrap id even when ZooKeeper is the metadata manager, to support
+  KRaft migrations ([#1073]).
+- docs: The ZooKeeper to KRaft migration guide was validated against the current operator and
+  corrected ([#1073]).
+
+[#1073]: https://github.com/stackabletech/kafka-operator/pull/1073
+
+## [26.11.0-rc1] - 2026-11-19
+
 ### Added
 
 - Support floating tags for product images via the new `spec.image.stackableVersionPolicy` field
@@ -29,7 +42,7 @@ All notable changes to this project will be documented in this file.
 - New status field `status.kraftBootstrapControllerNodeId` that records the KRaft controller that
   bootstrapped the quorum. Previously a new controller role group would create a second quorum and
   thus make the cluster unusable. A node ID hash collision between role groups is now reported during
-  validation, also in ZooKeeper mode ([#1061], [#1073]).
+  validation, also in ZooKeeper mode ([#1061]).
 
 ### Changed
 
@@ -77,8 +90,6 @@ All notable changes to this project will be documented in this file.
 - The `/ready` endpoint of the operator now also waits for the KafkaTopic CRD. If the CRDs are not
   maintained by the operator (`maintenance.customResourceDefinitions.maintain: false`), install the
   KafkaTopic CRD together with the KafkaCluster CRD ([#1050]).
-- docs: The ZooKeeper to KRaft migration guide was validated against the current operator and
-  corrected ([#1073]).
 
 ### Fixed
 
@@ -137,7 +148,6 @@ All notable changes to this project will be documented in this file.
 [#1055]: https://github.com/stackabletech/kafka-operator/pull/1055
 [#1061]: https://github.com/stackabletech/kafka-operator/pull/1061
 [#1069]: https://github.com/stackabletech/kafka-operator/pull/1069
-[#1073]: https://github.com/stackabletech/kafka-operator/pull/1073
 
 ## [26.7.0] - 2026-07-21
 
