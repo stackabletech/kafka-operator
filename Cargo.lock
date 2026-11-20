@@ -3197,7 +3197,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-admin"
-version = "26.11.0-rc1"
+version = "26.11.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3214,7 +3214,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-agent"
-version = "26.11.0-rc1"
+version = "26.11.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3235,7 +3235,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-operator"
-version = "26.11.0-rc1"
+version = "26.11.0"
 dependencies = [
  "anyhow",
  "built",
@@ -3258,7 +3258,7 @@ dependencies = [
 
 [[package]]
 name = "stackable-kafka-shared"
-version = "26.11.0-rc1"
+version = "26.11.0"
 dependencies = [
  "indoc",
  "regex",
