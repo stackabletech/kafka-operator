@@ -32,7 +32,6 @@ echo "Installing Operators with Helm"
 helm install --wait commons-operator oci://oci.stackable.tech/sdp-charts/commons-operator --version 0.0.0-dev
 helm install --wait secret-operator oci://oci.stackable.tech/sdp-charts/secret-operator --version 0.0.0-dev
 helm install --wait listener-operator oci://oci.stackable.tech/sdp-charts/listener-operator --version 0.0.0-dev
-helm install --wait zookeeper-operator oci://oci.stackable.tech/sdp-charts/zookeeper-operator --version 0.0.0-dev
 helm install --wait kafka-operator oci://oci.stackable.tech/sdp-charts/kafka-operator --version 0.0.0-dev
 # end::helm-install-operators[]
 ;;
@@ -43,7 +42,6 @@ stackablectl operator install \
   commons=0.0.0-dev \
   secret=0.0.0-dev \
   listener=0.0.0-dev \
-  zookeeper=0.0.0-dev \
   kafka=0.0.0-dev
 # end::stackablectl-install-operators[]
 ;;
@@ -52,23 +50,6 @@ echo "Need to provide 'helm' or 'stackablectl' as an argument for which installa
 exit 1
 ;;
 esac
-
-echo "Installing ZooKeeper from zookeeper.yaml"
-# tag::install-zookeeper[]
-kubectl apply -f zookeeper.yaml
-# end::install-zookeeper[]
-
-echo "Installing ZNode from kafka-znode.yaml"
-# tag::install-znode[]
-kubectl apply -f kafka-znode.yaml
-# end::install-znode[]
-
-sleep 15
-
-echo "Awaiting ZooKeeper rollout finish"
-# tag::watch-zookeeper-rollout[]
-kubectl rollout status --watch --timeout=5m statefulset/simple-zk-server-default
-# end::watch-zookeeper-rollout[]
 
 echo "Install KafkaCluster from kafka.yaml"
 # tag::install-kafka[]
@@ -79,47 +60,53 @@ sleep 15
 
 echo "Awaiting Kafka rollout finish"
 # tag::watch-kafka-rollout[]
+kubectl rollout status --watch --timeout=5m statefulset/simple-kafka-controller-default
 kubectl rollout status --watch --timeout=5m statefulset/simple-kafka-broker-default
 # end::watch-kafka-rollout[]
 
-echo "Starting port-forwarding of port 9092"
-# shellcheck disable=2069 # we want all output to be blackholed
-# tag::port-forwarding[]
-kubectl port-forward svc/simple-kafka-broker-default-bootstrap 9092 2>&1 >/dev/null &
-# end::port-forwarding[]
-PORT_FORWARD_PID=$!
-# shellcheck disable=2064 # we want the PID evaluated now, not at the time the trap is
-trap "kill $PORT_FORWARD_PID" EXIT
+echo "Awaiting the Kafka agent"
+# tag::watch-agent-rollout[]
+kubectl rollout status --watch --timeout=5m deployment/simple-kafka-agent
+# end::watch-agent-rollout[]
 
-sleep 15
-
-echo "Creating test topic test-data-topic"
+echo "Creating test topic test-data-topic from kafka-topic.yaml"
 # tag::create-topic[]
-kubectl exec -n default simple-kafka-broker-default-0 -c kafka -t -- /stackable/kafka/bin/kafka-topics.sh \
---create \
---topic test-data-topic \
---partitions 1 \
---bootstrap-server localhost:9092
+kubectl apply -f kafka-topic.yaml
 # end::create-topic[]
 
+echo "Awaiting the KafkaTopic"
+# tag::wait-topic[]
+kubectl wait --for=condition=Ready --timeout=5m kafkatopics.kafka.stackable.tech/test-data-topic
+# end::wait-topic[]
+
 echo "Publish test data"
+# shellcheck disable=SC2016 # the script is expanded in the broker Pod, not here
 # tag::write-data[]
-kubectl exec -n default simple-kafka-broker-default-0 -c kafka -t -- /stackable/kafka/bin/kafka-producer-perf-test.sh \
---producer-props bootstrap.servers=localhost:9092 \
---topic test-data-topic \
---payload-monotonic \
---throughput 1 \
---num-records 5
+kubectl exec -n default simple-kafka-broker-default-0 -c kafka -- bash -c '
+  bootstrap="$(cat /stackable/listener-broker/default-address/address):$(cat /stackable/listener-broker/default-address/ports/kafka-tls)"
+  /stackable/kafka/bin/kafka-producer-perf-test.sh \
+    --producer-props bootstrap.servers="$bootstrap" \
+    --producer.config /stackable/config/client.properties \
+    --topic test-data-topic \
+    --payload-monotonic \
+    --throughput 1 \
+    --num-records 5
+'
 # end::write-data[]
 
 echo "Consume test data"
+# shellcheck disable=SC2016 # the script is expanded in the broker Pod, not here
 # tag::read-data[]
-kubectl exec -n default simple-kafka-broker-default-0 -c kafka -t -- /stackable/kafka/bin/kafka-console-consumer.sh \
---bootstrap-server localhost:9092 \
---topic test-data-topic \
---offset earliest \
---partition 0 \
---timeout-ms 1000
+kubectl exec -n default simple-kafka-broker-default-0 -c kafka -- bash -c '
+  bootstrap="$(cat /stackable/listener-broker/default-address/address):$(cat /stackable/listener-broker/default-address/ports/kafka-tls)"
+  /stackable/kafka/bin/kafka-console-consumer.sh \
+    --bootstrap-server "$bootstrap" \
+    --consumer.config /stackable/config/client.properties \
+    --topic test-data-topic \
+    --offset earliest \
+    --partition 0 \
+    --timeout-ms 1000
+'
 # end::read-data[]
 
 echo "Success!"
