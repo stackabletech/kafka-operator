@@ -6,5 +6,4 @@ versions:
   commons: 26.11.0
   secret: 26.11.0
   listener: 26.11.0
-  zookeeper: 26.11.0
   kafka: 26.11.0
