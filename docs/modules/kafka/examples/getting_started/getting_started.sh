@@ -81,6 +81,9 @@ kubectl wait --for=condition=Ready --timeout=5m kafkatopics.kafka.stackable.tech
 
 echo "Publish test data"
 # shellcheck disable=SC2016 # the script is expanded in the broker Pod, not here
+# Capture the output of the producer and only show it if sending failed.
+produced="$(
+{
 # tag::write-data[]
 kubectl exec -n default simple-kafka-broker-default-0 -c kafka -- bash -c '
   bootstrap="$(cat /stackable/listener-broker/default-address/address):$(cat /stackable/listener-broker/default-address/ports/kafka-tls)"
@@ -93,9 +96,21 @@ kubectl exec -n default simple-kafka-broker-default-0 -c kafka -- bash -c '
     --num-records 5
 '
 # end::write-data[]
+} 2>&1
+)"
+
+if ! grep -q '^5 records sent,' <<< "$produced"; then
+  echo "ERROR: expected 5 records to be sent, producer output:" >&2
+  echo "$produced" >&2
+  exit 1
+fi
 
 echo "Consume test data"
 # shellcheck disable=SC2016 # the script is expanded in the broker Pod, not here
+# The consumer exits with 0 even if it times out without reading anything,
+# so capture its output and verify the summary line explicitly below.
+consumed="$(
+{
 # tag::read-data[]
 kubectl exec -n default simple-kafka-broker-default-0 -c kafka -- bash -c '
   bootstrap="$(cat /stackable/listener-broker/default-address/address):$(cat /stackable/listener-broker/default-address/ports/kafka-tls)"
@@ -105,8 +120,17 @@ kubectl exec -n default simple-kafka-broker-default-0 -c kafka -- bash -c '
     --topic test-data-topic \
     --offset earliest \
     --partition 0 \
-    --timeout-ms 1000
+    --max-messages 5 \
+    --timeout-ms 30000
 '
 # end::read-data[]
+} 2>&1
+)"
+
+if ! grep -qx 'Processed a total of 5 messages' <<< "$consumed"; then
+  echo "ERROR: expected 5 consumed messages, consumer output:" >&2
+  echo "$consumed" >&2
+  exit 1
+fi
 
 echo "Success!"
