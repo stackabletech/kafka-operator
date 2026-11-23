@@ -1,49 +1,16 @@
 = First steps
-:description: Deploy and verify a Kafka cluster on Kubernetes with Stackable Operators, including ZooKeeper setup and data testing.
+:description: Deploy a Kafka cluster in KRaft mode on Kubernetes with Stackable Operators, declare a topic with a KafkaTopic, and verify it by producing and consuming data.
 
-After going through the xref:getting_started/installation.adoc[] section and having installed all the operators, you now deploy a Kafka cluster and the required dependencies.
-Afterward you can <<_verify_that_it_works, verify that it works>> by producing test data into a topic and consuming it.
+After going through the xref:getting_started/installation.adoc[] section and having installed all the operators, you now deploy a Kafka cluster in xref:usage-guide/kraft-controller.adoc[KRaft mode] and declare a topic.
+Afterward you can <<_verify_that_it_works, verify that it works>> by producing test data into the topic and consuming it.
 
 == Setup
 
-Two things need to be installed to create a Kafka cluster:
+Kafka in KRaft mode manages its metadata itself, so no ZooKeeper is needed.
+The cluster consists of two roles:
 
-* A ZooKeeper instance for internal use by Kafka
-* The Kafka cluster itself
-
-Create them in this order by applying the corresponding manifest files.
-The operators you just installed then create the resources according to the manifest.
-
-=== ZooKeeper
-
-Create a file named `zookeeper.yaml` with the following content:
-
-[source,yaml]
-
-----
-include::example$getting_started/zookeeper.yaml[]
-----
-
-and apply it:
-
-[source,bash]
-----
-include::example$getting_started/getting_started.sh[tag=install-zookeeper]
-----
-
-Create a file `kafka-znode.yaml` with the following content:
-
-[source,yaml]
-----
-include::example$getting_started/kafka-znode.yaml[]
-----
-
-and apply it:
-
-[source,bash]
-----
-include::example$getting_started/getting_started.sh[tag=install-znode]
-----
+* The `controllers` store the cluster metadata and take part in the metadata quorum.
+* The `brokers` serve the clients.
 
 === Kafka
 
@@ -56,15 +23,76 @@ include::example$getting_started/kafka.yaml[]
 
 and apply it:
 
+[source,bash]
 ----
 include::example$getting_started/getting_started.sh[tag=install-kafka]
 ----
 
 This creates the actual Kafka instance.
+The cluster has a single controller to keep the resource requirements low.
+For production, use three or more (odd number of) controllers.
+
+The `managementAccess` section makes the operator deploy an _agent_ next to the cluster.
+The agent manages resources inside Kafka, such as topics, so that you can declare them in Kubernetes.
+Here, the agent connects without a client certificate, which is possible because the cluster does not require client authentication.
+Learn more in xref:usage-guide/management-access.adoc[].
+
+Wait until the controllers, the brokers and the agent are ready:
+
+[source,bash]
+----
+include::example$getting_started/getting_started.sh[tag=watch-kafka-rollout]
+include::example$getting_started/getting_started.sh[tag=watch-agent-rollout]
+----
+
+=== Topic
+
+Instead of running the Kafka command line tools, you declare the topic as a `KafkaTopic` resource.
+The agent creates the topic in Kafka and keeps it in the declared state.
+
+Create a file named `kafka-topic.yaml` with the following contents:
+
+[source,yaml]
+----
+include::example$getting_started/kafka-topic.yaml[]
+----
+
+and apply it:
+
+[source,bash]
+----
+include::example$getting_started/getting_started.sh[tag=create-topic]
+----
+
+The topic is named after the resource, `test-data-topic`, and refers to the Kafka cluster with `clusterRef`.
+Wait until the agent reports the topic as ready:
+
+[source,bash]
+----
+include::example$getting_started/getting_started.sh[tag=wait-topic]
+----
+
+NOTE: Other operators, such as Strimzi, also provide a resource of the kind `KafkaTopic`, so the commands use the full resource name.
+
+Show the topic as the agent sees it:
+
+[source,bash]
+----
+kubectl get kafkatopics.kafka.stackable.tech test-data-topic
+----
+
+The output should look somewhat like this:
+
+----
+NAME              TOPIC             CLUSTER        PARTITIONS   REPLICATION FACTOR   READY   SYNCED   REASON   AGE
+test-data-topic   test-data-topic   simple-kafka   1            3                    True    True     Synced   30s
+----
+
+Learn more about topics in xref:usage-guide/topics.adoc[].
 
 == Verify that it works
 
-Next, use the Kafka client scripts to create a topic and publish and consume data.
+Next, use the Kafka client scripts to publish and consume data on the topic created by the agent.
 
 The Kafka operator has created a service called `simple-kafka-broker-default-bootstrap`.
 This service represents the endpoint clients should initially connect to in order to publish and consume data.
@@ -85,7 +113,7 @@ Labels:                   app.kubernetes.io/component=broker
                           app.kubernetes.io/managed-by=listeners.stackable.tech_listener
                           app.kubernetes.io/name=listener
                           app.kubernetes.io/role-group=default
-                          app.kubernetes.io/version=3.9.2-stackable0.0.0-dev
+                          app.kubernetes.io/version=4.3.1-stackable0.0.0-dev
                           stackable.tech/vendor=Stackable
 Annotations:              <none>
 Selector:                 listener.stackable.tech/mnt.9555cbb6f38d4b0ca1771e6d83d28e27=simple-kafka-broker-default-bootstrap
@@ -94,10 +122,10 @@ IP Family Policy:         SingleStack
 IP Families:              IPv4
 IP:                       10.105.88.52
 IPs:                      10.105.88.52
-Port:                     kafka  9092/TCP
-TargetPort:               9092/TCP
-NodePort:                 kafka  32608/TCP
-Endpoints:                10.244.4.22:9092,10.244.4.24:9092,10.244.4.23:9092
+Port:                     kafka-tls  9093/TCP
+TargetPort:               9093/TCP
+NodePort:                 kafka-tls  32608/TCP
+Endpoints:                10.244.4.22:9093,10.244.4.24:9093,10.244.4.23:9093
 Session Affinity:         None
 External Traffic Policy:  Local
 Internal Traffic Policy:  Cluster
@@ -107,20 +135,10 @@ Events:                   <none>
 The output shows that there are three endpoints serviced here.
 They correspond to the three broker pods belonging to the Kafka cluster.
 
-Then, create a port-forward on this service:
+Use the Kafka performance producer script to send a couple of messages to the topic previously created.
+The brokers use TLS, so the command uses the client configuration that the operator provides in the broker Pod and connects to the address of the broker listener:
 
-----
-include::example$getting_started/getting_started.sh[tag=port-forwarding]
-----
-
-Now, create a new topic called `test-data-topic`:
-
-----
-include::example$getting_started/getting_started.sh[tag=create-topic]
-----
-
-Use the Kafka performance producer script to send a couple of messages to the topic previously created:
-
+[source,bash]
 ----
 include::example$getting_started/getting_started.sh[tag=write-data]
 ----
@@ -136,6 +154,7 @@ We are not interested in any performance indicators but appreciate the fact that
 
 Now let's consume the messages from above:
 
+[source,bash]
 ----
 include::example$getting_started/getting_started.sh[tag=read-data]
 ----
@@ -150,8 +169,8 @@ The consumer should print the messages in between logging statements
 4
 ----
 
-You successfully created a Kafka cluster and produced and consumed data.
+You successfully created a Kafka cluster in KRaft mode, declared a topic with a KafkaTopic, and produced and consumed data.
 
 == What's next
 
-Have a look at the xref:usage.adoc[] page to find out more about the features of the Kafka Operator.
+Have a look at the xref:usage.adoc[] page to find out more about the features of the Kafka Operator, for example xref:usage-guide/topics.adoc[declarative topics] and xref:usage-guide/security.adoc[security].

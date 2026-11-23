@@ -1,8 +1,8 @@
 = Getting started
-:description: Start with Apache Kafka using Stackable Operator: Install, set up Kafka, and manage topics in a Kubernetes cluster.
+:description: Start with Apache Kafka in KRaft mode using Stackable Operator: Install, set up Kafka, and manage topics declaratively in a Kubernetes cluster.
 
 This guide gets you started with Apache Kafka using the Stackable Operator.
-It guides you through the installation of the Operator and its dependencies, setting up your first Kafka instance and create, write to and read from a topic.
+It guides you through the installation of the Operator, setting up your first Kafka instance in xref:usage-guide/kraft-controller.adoc[KRaft mode], declaring a topic with a xref:usage-guide/topics.adoc[KafkaTopic] resource, and writing to and reading from that topic.
 
 == Prerequisites
 
