@@ -284,6 +284,7 @@ fn role_pod(
         .args(vec![broker_kafka_container_commands(
             cluster.cluster_config.is_kraft_mode(),
             kafka_security,
+            &config.containerdebug,
         )]);
 
     cb_kafka

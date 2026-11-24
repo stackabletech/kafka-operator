@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use stackable_operator::{
     commons::{affinity::StackableAffinity, opa::OpaConfig, resources::PvcConfig},
     config::{fragment::Fragment, merge::Merge},
+    crd::containerdebug::{default_containerdebug_config, v1alpha1::ContainerdebugConfig},
     k8s_openapi::api::core::v1::PersistentVolumeClaim,
     schemars::{self, JsonSchema},
     shared::time::Duration,
@@ -37,7 +38,7 @@ impl Storage {
     }
 }
 
-#[derive(Clone, Debug, Default, Fragment, JsonSchema, PartialEq)]
+#[derive(Clone, Debug, Fragment, JsonSchema, PartialEq)]
 #[fragment_attrs(
     derive(
         Clone,
@@ -54,6 +55,9 @@ impl Storage {
 pub struct CommonConfig {
     #[fragment_attrs(serde(default))]
     pub affinity: StackableAffinity,
+
+    #[fragment_attrs(serde(default))]
+    pub containerdebug: ContainerdebugConfig,
 
     /// Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
     #[fragment_attrs(serde(default))]
@@ -77,6 +81,7 @@ impl CommonConfig {
     ) -> CommonConfigFragment {
         CommonConfigFragment {
             affinity: get_affinity(cluster_name, role, opa_config),
+            containerdebug: default_containerdebug_config(),
             graceful_shutdown_timeout: Some(Self::DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT),
             requested_secret_lifetime: Some(Self::DEFAULT_SECRET_LIFETIME),
         }

@@ -129,6 +129,13 @@ pub enum Error {
         role_group_name: String,
     },
 
+    #[snafu(display("invalid containerdebug config of {role} role group {role_group_name:?}"))]
+    InvalidContainerdebugConfig {
+        source: stackable_operator::crd::containerdebug::Error,
+        role: KafkaRole,
+        role_group_name: String,
+    },
+
     #[snafu(display(
         "at least one KRaft controller replica is required while any broker replicas are \
          configured; a KRaft cluster with zero controllers has no metadata quorum for its \
@@ -549,6 +556,7 @@ fn validate_broker_role_group_configs(
                 common_config:
                     CommonConfig {
                         affinity,
+                        containerdebug,
                         graceful_shutdown_timeout,
                         requested_secret_lifetime,
                     },
@@ -563,6 +571,12 @@ fn validate_broker_role_group_configs(
                     resources,
                     logging: validate_broker_logging(&logging, vector_aggregator_config_map_name)?,
                     affinity,
+                    containerdebug: containerdebug.validate().with_context(|_| {
+                        InvalidContainerdebugConfigSnafu {
+                            role: KafkaRole::Broker,
+                            role_group_name: role_group_name.to_owned(),
+                        }
+                    })?,
                     graceful_shutdown_timeout: graceful_shutdown_timeout.with_context(|| {
                         MissingGracefulShutdownTimeoutSnafu {
                             role: KafkaRole::Broker,
@@ -605,6 +619,7 @@ fn validate_controller_role_group_configs(
                 common_config:
                     CommonConfig {
                         affinity,
+                        containerdebug,
                         graceful_shutdown_timeout,
                         requested_secret_lifetime,
                     },
@@ -620,6 +635,12 @@ fn validate_controller_role_group_configs(
                         vector_aggregator_config_map_name,
                     )?,
                     affinity,
+                    containerdebug: containerdebug.validate().with_context(|_| {
+                        InvalidContainerdebugConfigSnafu {
+                            role: KafkaRole::Controller,
+                            role_group_name: role_group_name.to_owned(),
+                        }
+                    })?,
                     graceful_shutdown_timeout: graceful_shutdown_timeout.with_context(|| {
                         MissingGracefulShutdownTimeoutSnafu {
                             role: KafkaRole::Controller,

@@ -55,7 +55,7 @@ impl ControllerContainer {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Fragment, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Fragment, JsonSchema)]
 #[fragment_attrs(
     derive(
         Clone,
