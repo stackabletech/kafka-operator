@@ -1440,4 +1440,107 @@ mod tests {
             Ok(_) => panic!("expected a node-id hash collision error, but validation succeeded"),
         }
     }
+
+    /// A role `config` that does not mention `containerdebug` still gets the default, so the
+    /// `containerdebug` field of the CRD must be optional.
+    #[test]
+    fn containerdebug_defaults_when_not_configured() {
+        use stackable_operator::crd::containerdebug::{
+            DEFAULT_INTERVAL, ValidatedContainerdebugConfig,
+        };
+
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: KRaft
+              controllers:
+                config:
+                  gracefulShutdownTimeout: 1h
+                roleGroups:
+                  default:
+                    replicas: 1
+              brokers:
+                config:
+                  gracefulShutdownTimeout: 1h
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+        let cluster = validated_cluster(&kafka);
+        let expected = ValidatedContainerdebugConfig::Enabled {
+            interval: DEFAULT_INTERVAL,
+        };
+
+        assert_eq!(
+            broker_role_group_config(&cluster, "default")
+                .config
+                .containerdebug,
+            expected
+        );
+        assert_eq!(
+            controller_role_group_config(&cluster, "default")
+                .config
+                .containerdebug,
+            expected
+        );
+    }
+
+    /// An invalid `containerdebug` config fails the validation, naming the role and role group.
+    #[test]
+    fn zero_containerdebug_interval_fails_validation() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: KRaft
+              controllers:
+                config:
+                  containerdebug:
+                    interval: 0s
+                roleGroups:
+                  default:
+                    replicas: 1
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+
+        let Err(error) = validate_with_operator_image(&kafka, None) else {
+            panic!("the validation should fail");
+        };
+        let chain: Vec<String> =
+            std::iter::successors(Some(&error as &dyn std::error::Error), |error| {
+                error.source()
+            })
+            .map(ToString::to_string)
+            .collect();
+
+        assert_eq!(
+            chain,
+            [
+                r#"invalid containerdebug config of controller role group "default""#,
+                "the containerdebug interval must not be zero",
+            ]
+        );
+    }
 }
