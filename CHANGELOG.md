@@ -13,7 +13,6 @@ All notable changes to this project will be documented in this file.
 - Getting started guide uses a KRaft cluster instead of ZooKeeper and declares its topic with a
   KafkaTopic managed by the agent ([#1079]).
 
-
 [#1079]: https://github.com/stackabletech/kafka-operator/pull/1079
 [#1081]: https://github.com/stackabletech/kafka-operator/pull/1081
 
