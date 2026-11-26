@@ -131,6 +131,11 @@ spec:
       broker.properties:
         compression.type: uncompressed # overridden by role group below
         controller.quorum.election.backoff.max.ms: "2000"
+        # Work around KAFKA-19354: after a slow start a broker can get stuck fetching from a
+        # follower controller. A longer fetch timeout (default 2000) avoids that. Fixed in Kafka 4.2.0.
+        # The "default" role group below overrides this with 3000 on purpose (asserted in
+        # 31-assert.yaml), so only the other role groups get 10000.
+        controller.quorum.fetch.timeout.ms: "10000"
     envOverrides:
       COMMON_VAR: role-value # overridden by role group below
       ROLE_VAR: role-value   # only defined here at role level

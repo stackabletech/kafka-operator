@@ -71,6 +71,11 @@ spec:
       default:
         replicas: 1
   brokers:
+    # Work around KAFKA-19354: after a slow start a broker can get stuck fetching from a
+    # follower controller. A longer fetch timeout (default 2000) avoids that. Fixed in Kafka 4.2.0.
+    configOverrides:
+      broker.properties:
+        controller.quorum.fetch.timeout.ms: "10000"
     config:
       gracefulShutdownTimeout: 30s # speed up tests
     roleGroups:

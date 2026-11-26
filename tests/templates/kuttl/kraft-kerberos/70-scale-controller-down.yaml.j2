@@ -50,5 +50,10 @@ commands:
             gracefulShutdownTimeout: 30s # speed up tests
           roleGroups:
             default:
+              # See 20-install-kafka.yaml.j2. Must be repeated here, because
+              # kubectl apply would otherwise remove the override set in the earlier step.
+              configOverrides:
+                broker.properties:
+                  controller.quorum.fetch.timeout.ms: "10000"
               replicas: 3
       EOF
