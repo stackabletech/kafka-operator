@@ -3,6 +3,7 @@ use std::str::FromStr;
 use indoc::formatdoc;
 use stackable_operator::{
     constant,
+    crd::containerdebug::ValidatedContainerdebugConfig,
     product_logging::framework::{
         create_vector_shutdown_file_command, remove_vector_shutdown_file_command,
     },
@@ -55,13 +56,14 @@ const EXPORT_REPLICA_ID: &str = "export REPLICA_ID=$((POD_INDEX + NODE_ID_OFFSET
 pub fn broker_kafka_container_commands(
     kraft_mode: bool,
     kafka_security: &ValidatedKafkaSecurity,
+    containerdebug: &ValidatedContainerdebugConfig,
 ) -> String {
     formatdoc! {"
         {COMMON_BASH_TRAP_FUNCTIONS}
         {remove_vector_shutdown_file_command}
         prepare_signal_handlers
         mkdir --parents \"${file_log_directory}\" || true
-        containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
+        {containerdebug_command}
         {set_realm_env}
 
         {import_opa_tls_cert}
@@ -73,6 +75,9 @@ pub fn broker_kafka_container_commands(
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         file_log_directory = FILE_LOG_DIRECTORY.as_ref(),
+        containerdebug_command = containerdebug
+            .background_command(STACKABLE_LOG_DIR)
+            .unwrap_or_default(),
         create_vector_shutdown_file_command = create_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         set_realm_env = export_kerberos_realm_command(kafka_security).unwrap_or_default(),
         import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
@@ -149,13 +154,14 @@ fn controller_quorum_format_flag(bootstrap_node_id: Option<u32>) -> String {
 pub fn controller_kafka_container_command(
     kafka_security: &ValidatedKafkaSecurity,
     bootstrap_node_id: Option<u32>,
+    containerdebug: &ValidatedContainerdebugConfig,
 ) -> String {
     formatdoc! {"
         {COMMON_BASH_TRAP_FUNCTIONS}
         {remove_vector_shutdown_file_command}
         prepare_signal_handlers
         mkdir --parents \"${file_log_directory}\" || true
-        containerdebug --output={STACKABLE_LOG_DIR}/containerdebug-state.json --loop &
+        {containerdebug_command}
 
         {import_opa_tls_cert}
 
@@ -178,6 +184,9 @@ pub fn controller_kafka_container_command(
         ",
         remove_vector_shutdown_file_command = remove_vector_shutdown_file_command(STACKABLE_LOG_DIR),
         file_log_directory = FILE_LOG_DIRECTORY.as_ref(),
+        containerdebug_command = containerdebug
+            .background_command(STACKABLE_LOG_DIR)
+            .unwrap_or_default(),
         import_opa_tls_cert = copy_opa_tls_cert_command(kafka_security),
         derive_pod_index = DERIVE_POD_INDEX,
         export_replica_id = EXPORT_REPLICA_ID,
@@ -389,6 +398,13 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+
+    /// The `containerdebug` config every role group gets when it configures none.
+    fn default_containerdebug() -> ValidatedContainerdebugConfig {
+        ValidatedContainerdebugConfig::Enabled {
+            interval: stackable_operator::crd::containerdebug::DEFAULT_INTERVAL,
+        }
+    }
     use crate::controller::test_support::{kerberos, plaintext};
 
     #[test]
@@ -396,7 +412,8 @@ mod tests {
         // The controllers never use Kerberos: the nodes authenticate each other with their
         // internal pod certificates, also when Kerberos is enabled for clients.
         for security in [kerberos(), plaintext()] {
-            let command = controller_kafka_container_command(&security, None);
+            let command =
+                controller_kafka_container_command(&security, None, &default_containerdebug());
             assert!(!command.contains("KERBEROS_REALM"));
             assert!(!command.contains("jaas.properties"));
         }
@@ -419,7 +436,8 @@ mod tests {
 
     #[test]
     fn controller_command_templates_the_admin_client_config_for_pre_stop() {
-        let command = controller_kafka_container_command(&kerberos(), None);
+        let command =
+            controller_kafka_container_command(&kerberos(), None, &default_containerdebug());
         assert!(
             command.contains(
                 "cp /stackable/config/admin-client.properties /tmp/admin-client.properties"
@@ -1135,7 +1153,8 @@ mod tests {
     /// (`--no-initial-controllers`).
     #[test]
     fn controller_kafka_container_command_branches_on_the_bootstrap_node_id() {
-        let command = controller_kafka_container_command(&plaintext(), Some(5));
+        let command =
+            controller_kafka_container_command(&plaintext(), Some(5), &default_containerdebug());
 
         assert!(command.contains(r#"if [ "$REPLICA_ID" = "5" ]; then"#));
         assert!(command.contains("FORMAT_QUORUM_FLAG=--standalone"));
@@ -1151,7 +1170,8 @@ mod tests {
     /// Without a bootstrap controller, no controller may bootstrap a quorum.
     #[test]
     fn controller_kafka_container_command_without_bootstrap_node_id_never_uses_standalone() {
-        let command = controller_kafka_container_command(&plaintext(), None);
+        let command =
+            controller_kafka_container_command(&plaintext(), None, &default_containerdebug());
         assert!(command.contains("FORMAT_QUORUM_FLAG=--no-initial-controllers"));
         assert!(!command.contains("--standalone"));
     }

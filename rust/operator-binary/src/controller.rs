@@ -20,7 +20,10 @@ use stackable_operator::{
         resources::{NoRuntimeLimits, Resources},
     },
     constant,
-    crd::{listener, management_access::v1alpha1::TlsClientCredential},
+    crd::{
+        containerdebug::ValidatedContainerdebugConfig, listener,
+        management_access::v1alpha1::TlsClientCredential,
+    },
     k8s_openapi::api::{
         apps::v1::{Deployment, StatefulSet},
         core::v1::{ConfigMap, Service, ServiceAccount},
@@ -479,6 +482,7 @@ pub struct ValidatedBrokerConfig {
     pub resources: Resources<Storage, NoRuntimeLimits>,
     pub logging: validate::ValidatedLogging,
     pub affinity: StackableAffinity,
+    pub containerdebug: ValidatedContainerdebugConfig,
     pub graceful_shutdown_timeout: Duration,
     pub requested_secret_lifetime: Duration,
     pub bootstrap_listener_class: ListenerClassName,
@@ -493,6 +497,7 @@ pub struct ValidatedControllerConfig {
     pub resources: Resources<Storage, NoRuntimeLimits>,
     pub logging: validate::ValidatedLogging,
     pub affinity: StackableAffinity,
+    pub containerdebug: ValidatedContainerdebugConfig,
     pub graceful_shutdown_timeout: Duration,
     pub requested_secret_lifetime: Duration,
 }

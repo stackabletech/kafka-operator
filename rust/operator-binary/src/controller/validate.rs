@@ -129,6 +129,13 @@ pub enum Error {
         role_group_name: String,
     },
 
+    #[snafu(display("invalid containerdebug config of {role} role group {role_group_name:?}"))]
+    InvalidContainerdebugConfig {
+        source: stackable_operator::crd::containerdebug::Error,
+        role: KafkaRole,
+        role_group_name: String,
+    },
+
     #[snafu(display(
         "at least one KRaft controller replica is required while any broker replicas are \
          configured; a KRaft cluster with zero controllers has no metadata quorum for its \
@@ -549,6 +556,7 @@ fn validate_broker_role_group_configs(
                 common_config:
                     CommonConfig {
                         affinity,
+                        containerdebug,
                         graceful_shutdown_timeout,
                         requested_secret_lifetime,
                     },
@@ -563,6 +571,12 @@ fn validate_broker_role_group_configs(
                     resources,
                     logging: validate_broker_logging(&logging, vector_aggregator_config_map_name)?,
                     affinity,
+                    containerdebug: containerdebug.validate().with_context(|_| {
+                        InvalidContainerdebugConfigSnafu {
+                            role: KafkaRole::Broker,
+                            role_group_name: role_group_name.to_owned(),
+                        }
+                    })?,
                     graceful_shutdown_timeout: graceful_shutdown_timeout.with_context(|| {
                         MissingGracefulShutdownTimeoutSnafu {
                             role: KafkaRole::Broker,
@@ -605,6 +619,7 @@ fn validate_controller_role_group_configs(
                 common_config:
                     CommonConfig {
                         affinity,
+                        containerdebug,
                         graceful_shutdown_timeout,
                         requested_secret_lifetime,
                     },
@@ -620,6 +635,12 @@ fn validate_controller_role_group_configs(
                         vector_aggregator_config_map_name,
                     )?,
                     affinity,
+                    containerdebug: containerdebug.validate().with_context(|_| {
+                        InvalidContainerdebugConfigSnafu {
+                            role: KafkaRole::Controller,
+                            role_group_name: role_group_name.to_owned(),
+                        }
+                    })?,
                     graceful_shutdown_timeout: graceful_shutdown_timeout.with_context(|| {
                         MissingGracefulShutdownTimeoutSnafu {
                             role: KafkaRole::Controller,
@@ -1418,5 +1439,108 @@ mod tests {
             Err(error) => panic!("expected a node-id hash collision error, got {error:?}"),
             Ok(_) => panic!("expected a node-id hash collision error, but validation succeeded"),
         }
+    }
+
+    /// A role `config` that does not mention `containerdebug` still gets the default, so the
+    /// `containerdebug` field of the CRD must be optional.
+    #[test]
+    fn containerdebug_defaults_when_not_configured() {
+        use stackable_operator::crd::containerdebug::{
+            DEFAULT_INTERVAL, ValidatedContainerdebugConfig,
+        };
+
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: KRaft
+              controllers:
+                config:
+                  gracefulShutdownTimeout: 1h
+                roleGroups:
+                  default:
+                    replicas: 1
+              brokers:
+                config:
+                  gracefulShutdownTimeout: 1h
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+        let cluster = validated_cluster(&kafka);
+        let expected = ValidatedContainerdebugConfig::Enabled {
+            interval: DEFAULT_INTERVAL,
+        };
+
+        assert_eq!(
+            broker_role_group_config(&cluster, "default")
+                .config
+                .containerdebug,
+            expected
+        );
+        assert_eq!(
+            controller_role_group_config(&cluster, "default")
+                .config
+                .containerdebug,
+            expected
+        );
+    }
+
+    /// An invalid `containerdebug` config fails the validation, naming the role and role group.
+    #[test]
+    fn zero_containerdebug_interval_fails_validation() {
+        let kafka = minimal_kafka(
+            r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: KRaft
+              controllers:
+                config:
+                  containerdebug:
+                    interval: 0s
+                roleGroups:
+                  default:
+                    replicas: 1
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+        );
+
+        let Err(error) = validate_with_operator_image(&kafka, None) else {
+            panic!("the validation should fail");
+        };
+        let chain: Vec<String> =
+            std::iter::successors(Some(&error as &dyn std::error::Error), |error| {
+                error.source()
+            })
+            .map(ToString::to_string)
+            .collect();
+
+        assert_eq!(
+            chain,
+            [
+                r#"invalid containerdebug config of controller role group "default""#,
+                "the containerdebug interval must not be zero",
+            ]
+        );
     }
 }

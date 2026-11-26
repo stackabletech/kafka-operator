@@ -271,6 +271,7 @@ fn role_pod(
         .args(vec![controller_kafka_container_command(
             kafka_security,
             cluster.kraft_bootstrap_controller_node_id(),
+            &config.containerdebug,
         )]);
 
     cb_kafka
@@ -461,5 +462,76 @@ mod tests {
         let _ = *ROLEGROUP_HEADLESS_SERVICE_NAME;
         let _ = *CLUSTER_DOMAIN;
         let _ = *QUORUM_MANAGER_CONTAINER_NAME;
+    }
+
+    /// The kafka container starts `containerdebug` from the role group's validated config, which
+    /// reaches the start command through the role group's Pod. The command itself is owned (and
+    /// tested) by operator-rs, so only the wiring is checked here.
+    #[rstest::rstest]
+    #[case::enabled(stackable_operator::crd::containerdebug::ValidatedContainerdebugConfig::Enabled {
+        interval: stackable_operator::shared::time::Duration::from_minutes_unchecked(10)
+    })]
+    #[case::disabled(
+        stackable_operator::crd::containerdebug::ValidatedContainerdebugConfig::Disabled
+    )]
+    fn kafka_container_starts_containerdebug_from_config(
+        #[case] containerdebug: stackable_operator::crd::containerdebug::ValidatedContainerdebugConfig,
+    ) {
+        let expected = containerdebug.background_command(
+            stackable_operator::v2::product_logging::framework::STACKABLE_LOG_DIR,
+        );
+        let cluster = crate::controller::test_support::validated_cluster(
+            &crate::controller::test_support::minimal_kafka(
+                r#"
+            apiVersion: kafka.stackable.tech/v1alpha1
+            kind: KafkaCluster
+            metadata:
+              name: simple-kafka
+              namespace: default
+              uid: 12345678-1234-1234-1234-123456789012
+            spec:
+              image:
+                productVersion: 3.9.2
+              clusterConfig:
+                metadataManager: KRaft
+              controllers:
+                roleGroups:
+                  default:
+                    replicas: 1
+              brokers:
+                roleGroups:
+                  default:
+                    replicas: 1
+            "#,
+            ),
+        );
+        let role_group_name: RoleGroupName = "default".parse().expect("valid role group name");
+        let mut validated_rg =
+            crate::controller::test_support::controller_role_group_config(&cluster, "default")
+                .clone();
+        validated_rg.config.containerdebug = containerdebug;
+
+        let builder =
+            build(&cluster, &role_group_name, &validated_rg).expect("the role group builds");
+        let args = builder
+            .build_statefulset()
+            .expect("the StatefulSet builds")
+            .spec
+            .and_then(|spec| spec.template.spec)
+            .expect("the StatefulSet has a pod spec")
+            .containers
+            .into_iter()
+            .find(|container| container.name == "kafka")
+            .and_then(|container| container.args)
+            .expect("the kafka container has args")
+            .join("\n");
+
+        assert_eq!(
+            args.lines()
+                .map(str::trim)
+                .find(|line| line.starts_with("containerdebug ")),
+            expected.as_deref(),
+            "args: {args}"
+        );
     }
 }
